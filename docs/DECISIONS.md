@@ -117,6 +117,7 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 - `-ffast-math` and its sub-flags are forbidden.
 - `-ffp-contract=off` is set explicitly on all targets.
 - The determinism guarantee is documented as holding per build configuration and compiler.
+- Debug builds of Eyas targets use `-Og` (added 2026-10-10, M1). At `-O0`, Eigen made the M1 1-hour time-keeping test take about 5 min (about 84 µs per physics step, against 0.54 µs in Release). `-Og` keeps debug info, assertions and sanitizers.
 
 **Rationale:** `-Werror` would otherwise fail on warnings inside Eigen with GCC 12+. FMA contraction differs across optimization levels and targets.
 
