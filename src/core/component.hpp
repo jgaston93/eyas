@@ -18,7 +18,7 @@ struct CouplingOutputs {};
 // Read-only inputs to one derivative evaluation.
 struct SimContext {
     double t = 0.0;  // [s] sim time of this evaluation (RK4 stage time)
-    BodyState body;
+    BodyState body;  // q_nb is unit length, even inside RK4 stages (D-014)
     Controls controls;
     Environment env;
     const CouplingOutputs* coupling = nullptr;

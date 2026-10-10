@@ -2,8 +2,10 @@
 // function, determinism, integer-nanosecond time keeping (D-006), the
 // sub-step cap, and zero allocation in advance() (spec §7.1).
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <random>
 #include <vector>
@@ -90,6 +92,16 @@ TEST(Executive, RejectsInvalidConfig) {
     bad = test_config();
     bad.mass.inertia_b(2, 2) = -1.0;  // not positive definite
     EXPECT_THROW(Executive{bad}, InitError);
+}
+
+// The null check must run before anything calls through the pointer.
+TEST(Executive, RejectsNullComponentAndForceModel) {
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(nullptr);
+    EXPECT_THROW(Executive(test_config(), std::move(comps)), InitError);
+    std::vector<std::unique_ptr<ForceModel>> forces;
+    forces.push_back(nullptr);
+    EXPECT_THROW(Executive(test_config(), {}, std::move(forces)), InitError);
 }
 
 TEST(Executive, StateVectorLayout) {
@@ -201,6 +213,80 @@ TEST(Executive, NegativeFrameIsRejectedWithoutSideEffects) {
     EXPECT_EQ(st.substeps, 0);
     EXPECT_EQ(ex.n_steps(), 1);
     EXPECT_EQ(ex.remainder_ns(), 500'000);
+}
+
+// ---- Failure reporting ------------------------------------------------------
+
+// H equal to the airframe mass matrix makes (M_rb − H) zero, so the coupled
+// solve is singular from the first evaluation.
+class CancelsAirframeMass : public DynamicComponent {
+public:
+    explicit CancelsAirframeMass(const MassProperties& mp) : m_(rigid_body_mass_matrix(mp)) {}
+    std::size_t num_states() const override { return 1; }
+    void initial_states(std::span<double> x) const override { x[0] = 0.0; }
+    void derivatives(const SimContext&, std::span<const double>,
+                     ComponentDerivs& out) const override {
+        out.load0_b.F = Vec3(1.0, 0.0, 0.0);
+        out.H = m_;
+    }
+
+private:
+    Mat66 m_;
+};
+
+// Returns NaN from t = t_bad on, so the first steps succeed.
+class NanAfter : public DynamicComponent {
+public:
+    explicit NanAfter(double t_bad) : t_bad_(t_bad) {}
+    std::size_t num_states() const override { return 1; }
+    void initial_states(std::span<double> x) const override { x[0] = 0.0; }
+    void derivatives(const SimContext& ctx, std::span<const double>,
+                     ComponentDerivs& out) const override {
+        out.xdot0[0] = ctx.t >= t_bad_ ? std::numeric_limits<double>::quiet_NaN() : 1.0;
+    }
+
+private:
+    double t_bad_;
+};
+
+TEST(Executive, SingularCoupledSolveIsFlaggedAndStateKept) {
+    const ExecutiveConfig cfg = test_config();
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(std::make_unique<CancelsAirframeMass>(cfg.mass));
+    Executive ex(cfg, std::move(comps));
+    BodyState b;
+    b.vel_b = Vec3(10.0, 0.0, 0.0);
+    ex.set_body_state(b);
+    const std::vector<double> before(ex.state().begin(), ex.state().end());
+
+    const AdvanceStatus st = ex.advance(Controls{}, Environment{}, 5'000'000);
+    EXPECT_TRUE(st.non_finite);
+    EXPECT_EQ(st.substeps, 0);
+    EXPECT_EQ(ex.n_steps(), 0);
+    EXPECT_EQ(std::memcmp(ex.state().data(), before.data(), before.size() * sizeof(double)), 0);
+    EXPECT_EQ(ex.quat_norm_error(), 0.0);  // no step was committed
+}
+
+TEST(Executive, NanMidFrameKeepsLastGoodStep) {
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    // Step 11 (t = 10 → 11 ms) has stages at 10.5 ms, so steps 1–10 succeed.
+    comps.push_back(std::make_unique<NanAfter>(0.0105));
+    Executive ex(test_config(), std::move(comps));
+    ex.set_body_state(BodyState{});
+
+    const AdvanceStatus st = ex.advance(Controls{}, Environment{}, 20'000'000);
+    EXPECT_TRUE(st.non_finite);
+    EXPECT_EQ(st.substeps, 10);
+    EXPECT_EQ(ex.n_steps(), 10);
+    for (const double v : ex.state()) {
+        EXPECT_TRUE(std::isfinite(v));
+    }
+    EXPECT_NEAR(ex.state()[body_layout::kSize], 0.010, 1e-15);
+    EXPECT_LT(ex.quat_norm_error(), 1e-15);  // NaN must not hide behind std::max
+
+    const AdvanceStatus again = ex.advance(Controls{}, Environment{}, 1'000'000);
+    EXPECT_TRUE(again.non_finite);
+    EXPECT_EQ(ex.n_steps(), 10);
 }
 
 // ---- Real-time rules ----------------------------------------------------------

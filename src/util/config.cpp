@@ -31,6 +31,14 @@ void check_and_collect(const YAML::Node& node, const std::string& origin, const 
     if (node.IsMap()) {
         std::set<std::string> seen;
         for (const auto& kv : node) {
+            // A list, map or null key has no name; Scalar() would return ""
+            // for all of them.
+            if (!kv.first.IsScalar()) {
+                std::string msg = origin;
+                msg += ": " + (path.empty() ? std::string("<root>") : path) +
+                       ": map key must be a plain name";
+                throw InitError(msg);
+            }
             const std::string& key = kv.first.Scalar();
             const std::string child = join(path, key);
             if (!seen.insert(key).second) {

@@ -21,13 +21,12 @@
 namespace eyas {
 namespace {
 
-using test::bias_accel;
 using test::Rail;
-using test::skew;
 using test::SpringMassOnRail;
 
 // Independent oracle: Newton–Euler for the whole system with unknowns
-// z = [v̇; ω̇; s̈], solved as one 7×7 system.
+// z = [v̇; ω̇; s̈], solved as one 7×7 system. It shares no kinematics code
+// with SpringMassOnRail, so an error there can't cancel out.
 //   total force:       M (v̇ + ω × v) + m_p a_p = (M + m_p) g_b
 //   moment about CG:   I ω̇ + ω × I ω + m_p r × a_p = m_p r × g_b
 //   along the rail:    m_p e·a_p = f + m_p e·g_b
@@ -40,13 +39,16 @@ Eigen::Matrix<double, 7, 1> oracle(const MassProperties& mp, const Rail& rail, c
     const Vec3& v = b.vel_b;
     const Vec3& w = b.omega_b;
     const Vec3 r = rail.r0_b + s * e;
-    const Vec3 g_b = b.q_nb.conjugate() * gravity_n();
-    const Vec3 bias = bias_accel(rail, b, s, sd);
+    const Vec3 g_b = b.q_nb.toRotationMatrix().transpose() * gravity_n();
+    // Acceleration of a point moving along a rail in the rotating body frame:
+    // a_p = v̇ + ω̇ × r + s̈ e + ω × v + ω × (ω × r) + 2 ṡ ω × e
+    const Vec3 bias = w.cross(v) + w.cross(w.cross(r)) + 2.0 * sd * w.cross(e);
     const double f = -rail.k * s - rail.c * sd;
+    Mat3 r_x;  // r_x u = r × u
+    r_x << 0.0, -r.z(), r.y(), r.z(), 0.0, -r.x(), -r.y(), r.x(), 0.0;
 
-    // a_p = v̇ − [r]× ω̇ + s̈ e + bias
     Eigen::Matrix<double, 3, 7> Ap;
-    Ap << Mat3::Identity(), -skew(r), e;
+    Ap << Mat3::Identity(), -r_x, e;
 
     Eigen::Matrix<double, 7, 7> A = Eigen::Matrix<double, 7, 7>::Zero();
     Eigen::Matrix<double, 7, 1> rhs;
@@ -54,7 +56,7 @@ Eigen::Matrix<double, 7, 1> oracle(const MassProperties& mp, const Rail& rail, c
     A.block<3, 3>(0, 0) += M * Mat3::Identity();
     rhs.head<3>() = (M + m) * g_b - M * w.cross(v) - m * bias;
 
-    A.middleRows<3>(3) = m * skew(r) * Ap;
+    A.middleRows<3>(3) = m * r_x * Ap;
     A.block<3, 3>(3, 3) += I;
     rhs.segment<3>(3) = m * r.cross(g_b) - w.cross(I * w) - m * r.cross(bias);
 
@@ -96,6 +98,46 @@ TEST(CoupledSolve, MatchesDirectSolutionOfCombinedSystem) {
     }
     EXPECT_EQ(xdot[k], sd);
     EXPECT_NEAR(xdot[k + 1], z(6), 1e-12 * std::abs(z(6)));
+}
+
+// Inside RK4 stages 2–4 the stored quaternion is off unit length. The state
+// it represents is the same attitude, so every derivative except q̇ must
+// match the unit-quaternion result, and q̇ = ½ q ⊗ [0, ω] scales with q.
+// Components rotate vectors with ctx.body.q_nb, so the executive must hand
+// them a unit quaternion.
+TEST(CoupledSolve, OffUnitQuaternionGivesSameAccelerations) {
+    const MassProperties mp = make_mass_properties(900.0, 700.0, 2100.0, 1800.0, 150.0);
+    const Rail rail{120.0, 4.0e4, 300.0, Vec3(1.5, -0.4, -1.2), Vec3(0.3, 0.2, 1.0).normalized()};
+
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(std::make_unique<SpringMassOnRail>(rail, 0.07, -0.4));
+    ExecutiveConfig cfg;
+    cfg.mass = mp;
+    Executive ex(cfg, std::move(comps));
+
+    BodyState b;
+    b.vel_b = Vec3(25.0, -3.0, 4.0);
+    b.omega_b = Vec3(0.4, -0.3, 0.6);
+    b.q_nb = Quat(Eigen::AngleAxisd(0.5, Vec3(1.0, 2.0, -1.0).normalized()));
+    ex.set_body_state(b);
+
+    const std::vector<double> x_unit(ex.state().begin(), ex.state().end());
+    std::vector<double> x_off = x_unit;
+    const double scale = 1.01;  // far larger than any RK4 stage drift, to make errors obvious
+    for (std::size_t i = 0; i < 4; ++i) {
+        x_off[body_layout::kQuat + i] *= scale;
+    }
+
+    std::vector<double> xd_unit(ex.num_states());
+    std::vector<double> xd_off(ex.num_states());
+    ex.derivatives(0.0, x_unit, Controls{}, Environment{}, xd_unit);
+    ex.derivatives(0.0, x_off, Controls{}, Environment{}, xd_off);
+
+    for (std::size_t i = 0; i < ex.num_states(); ++i) {
+        const bool is_quat = i >= body_layout::kQuat && i < body_layout::kQuat + 4;
+        const double expected = is_quat ? scale * xd_unit[i] : xd_unit[i];
+        EXPECT_NEAR(xd_off[i], expected, 1e-12 * (1.0 + std::abs(expected))) << "state " << i;
+    }
 }
 
 // Closed-form anchor: rail through the CG, no rotation, no damping. Gravity

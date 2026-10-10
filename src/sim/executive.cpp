@@ -31,9 +31,13 @@ void validate(const ExecutiveConfig& c) {
     }
 }
 
+// Runs in the member initializers, so it checks for null before the body can.
 std::size_t total_states(const std::vector<std::unique_ptr<DynamicComponent>>& components) {
     std::size_t n = body_layout::kSize;
     for (const auto& c : components) {
+        if (!c) {
+            throw InitError("executive: null component");
+        }
         n += c->num_states();
     }
     return n;
@@ -51,18 +55,18 @@ Executive::Executive(const ExecutiveConfig& config,
       components_(std::move(components)),
       forces_(std::move(forces)),
       x_(total_states(components_), 0.0),
+      x_prev_(x_.size(), 0.0),
       rk4_(x_.size()),
       xdot0_(x_.size() - body_layout::kSize, 0.0),
       G_((x_.size() - body_layout::kSize) * 6, 0.0) {
     validate(config);
     std::size_t offset = body_layout::kSize;
     for (const auto& c : components_) {
-        if (!c) {
-            throw InitError("executive: null component");
-        }
+        const std::size_t n = c->num_states();
         offsets_.push_back(offset);
-        c->initial_states(std::span<double>(x_).subspan(offset, c->num_states()));
-        offset += c->num_states();
+        sizes_.push_back(n);
+        c->initial_states(std::span<double>(x_).subspan(offset, n));
+        offset += n;
     }
     for (const auto& f : forces_) {
         if (!f) {
@@ -87,9 +91,14 @@ double Executive::sim_time() const noexcept {
 
 void Executive::derivatives(double t, std::span<const double> x, const Controls& controls,
                             const Environment& env, std::span<double> xdot) const noexcept {
+    // Inside RK4 stages the stored quaternion is off unit length. Components
+    // get the unit one, since they use it to rotate vectors; q̇ uses the
+    // stored one.
+    const BodyState body = unpack_body(x);
     SimContext ctx;
     ctx.t = t;
-    ctx.body = unpack_body(x);
+    ctx.body = body;
+    ctx.body.q_nb.normalize();
     ctx.controls = controls;
     ctx.env = env;
     ctx.coupling = &coupling_;
@@ -105,7 +114,7 @@ void Executive::derivatives(double t, std::span<const double> x, const Controls&
     std::fill(xdot0_.begin(), xdot0_.end(), 0.0);
     std::fill(G_.begin(), G_.end(), 0.0);
     for (std::size_t i = 0; i < components_.size(); ++i) {
-        const std::size_t n = components_[i]->num_states();
+        const std::size_t n = sizes_[i];
         const std::size_t local = offsets_[i] - body_layout::kSize;
         ComponentDerivs d{std::span<double>(xdot0_).subspan(local, n),
                           std::span<double>(G_).subspan(local * 6, n * 6), Wrench{}, Mat66::Zero()};
@@ -117,7 +126,7 @@ void Executive::derivatives(double t, std::span<const double> x, const Controls&
     const Vec6 a = A.partialPivLu().solve(rhs);
 
     // Back-substitution: ẋ_c = ẋ0_c + G_c a
-    body_kinematics(ctx.body, a, xdot);
+    body_kinematics(body, a, xdot);
     for (std::size_t j = 0; j < xdot0_.size(); ++j) {
         double v = xdot0_[j];
         for (std::size_t k = 0; k < 6; ++k) {
@@ -127,21 +136,32 @@ void Executive::derivatives(double t, std::span<const double> x, const Controls&
     }
 }
 
-void Executive::step(const Controls& controls, const Environment& env) noexcept {
+bool Executive::step(const Controls& controls, const Environment& env) noexcept {
     const double h = static_cast<double>(step_ns_) * 1e-9;
     const double t = sim_time();
+    std::copy(x_.begin(), x_.end(), x_prev_.begin());
     rk4_.step([&](double ts, std::span<const double> xs,
                   std::span<double> xd) { derivatives(ts, xs, controls, env, xd); },
               t, h, x_);
+
+    // A singular coupled solve or a component returning NaN/Inf poisons the
+    // whole state. Keep the last good state instead of committing the step.
+    double* q = x_.data() + body_layout::kQuat;
+    const double norm = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+    const bool finite =
+        std::all_of(x_.begin(), x_.end(), [](double v) { return std::isfinite(v); });
+    if (!finite || !(norm > 0.0)) {
+        std::copy(x_prev_.begin(), x_prev_.end(), x_.begin());
+        return false;
+    }
     ++n_steps_;
 
     // Renormalize; record the drift first (spec §6.1, M1).
-    double* q = x_.data() + body_layout::kQuat;
-    const double norm = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
     quat_norm_error_ = std::max(quat_norm_error_, std::abs(norm - 1.0));
     for (int i = 0; i < 4; ++i) {
         q[i] /= norm;
     }
+    return true;
 }
 
 AdvanceStatus Executive::advance(const Controls& controls, const Environment& env,
@@ -164,9 +184,12 @@ AdvanceStatus Executive::advance(const Controls& controls, const Environment& en
 
     quat_norm_error_ = 0.0;
     for (std::int64_t i = 0; i < steps; ++i) {
-        step(controls, env);
+        if (!step(controls, env)) {
+            status.non_finite = true;
+            break;
+        }
+        ++status.substeps;
     }
-    status.substeps = steps;
     return status;
 }
 

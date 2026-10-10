@@ -71,6 +71,21 @@ TEST(Config, DuplicateKeysAreErrors) {
     EXPECT_NO_THROW((void)Config::from_string("a:\n  r: 1\nb:\n  r: 2\n"));
 }
 
+// Config keys are plain names. A list, map or null used as a key has no name,
+// so it is rejected as such rather than misreported as a duplicate.
+TEST(Config, NonScalarKeysAreErrors) {
+    for (const char* yaml :
+         {"? [a, b]\n: 1\n", "? {a: 1}\n: 1\n", "~: 1\n", "? [a, b]\n: 1\n? [c, d]\n: 2\n"}) {
+        try {
+            (void)Config::from_string(yaml);
+            ADD_FAILURE() << "no error for: " << yaml;
+        } catch (const InitError& e) {
+            const std::string msg = e.what();
+            EXPECT_NE(msg.find("key must be a plain name"), std::string::npos) << msg;
+        }
+    }
+}
+
 TEST(Config, NumberWithTwoSignsIsAnError) {
     const Config c = Config::from_string("n: +-5\nq: \"+-5 m\"\n");
     EXPECT_THROW((void)c.number("n"), InitError);

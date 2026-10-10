@@ -27,6 +27,10 @@ struct AdvanceStatus {
     std::int64_t substeps = 0;  // physics steps run by this call
     bool capped = false;        // hit max_substeps; the excess time was dropped
     bool rejected_dt = false;   // dt_host_ns < 0; nothing was done
+    // A sub-step produced a non-finite state (e.g. a singular coupled solve).
+    // That step was discarded, the state is the last good one, and the rest of
+    // this call's time was dropped. The same inputs fail the same way again.
+    bool non_finite = false;
 };
 
 class Executive {
@@ -65,7 +69,9 @@ public:
     double quat_norm_error() const noexcept { return quat_norm_error_; }
 
 private:
-    void step(const Controls& controls, const Environment& env) noexcept;
+    // One RK4 step. Returns false, leaving the state unchanged, if the result
+    // is not finite.
+    bool step(const Controls& controls, const Environment& env) noexcept;
 
     MassProperties mass_;
     Mat66 mass_matrix_;
@@ -75,8 +81,10 @@ private:
     std::vector<std::unique_ptr<DynamicComponent>> components_;
     std::vector<std::unique_ptr<ForceModel>> forces_;
     std::vector<std::size_t> offsets_;  // each component's first state index
+    std::vector<std::size_t> sizes_;    // each component's state count, fixed at init
 
     std::vector<double> x_;
+    std::vector<double> x_prev_;  // state before the current step
     Rk4 rk4_;
 
     // Per-evaluation scratch (sized at init, contents never carried over).
