@@ -100,3 +100,11 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 **Spec:** §1 Goals ("single-main-rotor helicopter with a tail rotor"), §12 Q2.
 **Problem:** A tiltrotor is a likely future target. Several spec assumptions are single-main-rotor specific: a fixed shaft tilt, a singleton main rotor, a fixed evaluation order, linear control gearing, and a drivetrain folded into the main rotor.
 **Resolution:** v1 scope is unchanged, but these assumptions are generalized cheaply now (D-011, D-003).
+
+## 14. Two M1 rigid-body criteria can't detect errors — `resolved → DECISIONS.md D-013 (2026-10-10)`
+**Spec:** M1.
+**Problem:**
+- *Quaternion norm drift < 1e-12 per step, before renormalization.* For constant ω, RK4 applied to q̇ = ½ q ⊗ [0, ω] gives a norm error per step of about (|ω|h/2)⁶/144. At h = 1 ms that stays below double-precision round-off up to about 10 rad/s. The criterion therefore passes on round-off alone, and it can't detect a wrong attitude, because any skew-symmetric rate matrix preserves the norm.
+- *Intermediate-axis instability.* Torque-free motion near the intermediate axis is periodic: the body flips and comes back. A check of the state after 60 s can miss the instability entirely. In an offline check (inertias 1, 2, 3; spin 1 rad/s about axis 2; perturbation 1e-3), the state at t = 60 s was back near the initial spin.
+- The energy and angular-momentum drift bounds (1e-8 over 60 s) hold with a large margin (about 1e-14 at 1–2 rad/s). They are fine as written, but they detect coding errors, not integrator accuracy.
+**Suggested resolution:** see D-013.

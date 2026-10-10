@@ -62,6 +62,21 @@ TEST(Config, UnknownUnitIsAnError) {
     EXPECT_THROW((void)c.quantity("v"), InitError);
 }
 
+// yaml-cpp accepts duplicate keys and returns the first, so a corrected value
+// added further down a hand-edited file would be silently ignored.
+TEST(Config, DuplicateKeysAreErrors) {
+    EXPECT_THROW((void)Config::from_string("r: \"1 m\"\nr: \"2 m\"\n"), InitError);
+    EXPECT_THROW((void)Config::from_string("a:\n  r: \"1 m\"\n  r: \"2 m\"\n"), InitError);
+    EXPECT_THROW((void)Config::from_string("s:\n  - r: 1\n    r: 2\n"), InitError);
+    EXPECT_NO_THROW((void)Config::from_string("a:\n  r: 1\nb:\n  r: 2\n"));
+}
+
+TEST(Config, NumberWithTwoSignsIsAnError) {
+    const Config c = Config::from_string("n: +-5\nq: \"+-5 m\"\n");
+    EXPECT_THROW((void)c.number("n"), InitError);
+    EXPECT_THROW((void)c.quantity("q"), InitError);
+}
+
 TEST(Config, TypeMismatchesAreErrors) {
     const Config c = load();
     EXPECT_THROW((void)c.integer("main_rotor.tip_loss"), InitError);
