@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu:
+    name: Ubuntu ${{ matrix.compiler }} ${{ matrix.preset }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { compiler: gcc, cc: gcc, cxx: g++, preset: debug }
+          - { compiler: gcc, cc: gcc, cxx: g++, preset: release }
+          - { compiler: gcc, cc: gcc, cxx: g++, preset: asan }
+          - { compiler: clang, cc: clang, cxx: clang++, preset: debug }
+    env:
+      CC: ${{ matrix.cc }}
+      CXX: ${{ matrix.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
+
+  # Target platform (DECISIONS D-005): RHEL 9 and RHEL 8, via Rocky Linux.
+  rhel9:
+    name: Rocky Linux 9 (system GCC 11) release
+    runs-on: ubuntu-24.04
+    container: rockylinux:9
+    steps:
+      - name: Install toolchain
+        run: |
+          dnf -y install gcc-c++ cmake git dnf-plugins-core
+          dnf config-manager --set-enabled crb
+          dnf -y install ninja-build
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake --preset release
+      - name: Build
+        run: cmake --build --preset release
+      - name: Test
+        run: ctest --preset release
+
+  rhel8:
+    name: Rocky Linux 8 (gcc-toolset-13) release
+    runs-on: ubuntu-24.04
+    container: rockylinux:8
+    steps:
+      - name: Install toolchain
+        run: |
+          dnf -y install gcc-c++ cmake git dnf-plugins-core
+          dnf config-manager --set-enabled powertools
+          dnf -y install ninja-build gcc-toolset-13-gcc-c++
+      - uses: actions/checkout@v4
+      - name: Configure, build and test
+        shell: bash
+        run: |
+          source /opt/rh/gcc-toolset-13/enable
+          cmake --preset release
+          cmake --build --preset release
+          ctest --preset release
+
+  lint:
+    name: clang-format and clang-tidy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-format-18 clang-tidy-18
+      - name: clang-format
+        run: git ls-files '*.cpp' '*.hpp' | xargs clang-format-18 --dry-run --Werror
+      - name: Configure (for compile_commands.json)
+        run: cmake --preset debug
+      - name: clang-tidy
+        run: |
+          out=$(clang-tidy-18 -p build/debug --quiet src/util/*.cpp src/sim/*.cpp 2>&1 | grep -E "warning:|error:" || true)
+          if [ -n "$out" ]; then echo "$out"; exit 1; fi

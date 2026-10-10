@@ -1,0 +1,76 @@
+# Data Gaps
+
+Missing, unverified or ambiguous aircraft data. Values marked `UNVERIFIED — needs human review` must not be used in code or config until a person has checked them against the source page.
+
+Page references use the GenHel page label, plus the 1-based PDF page of the NASA scan of CR-166309.
+
+---
+
+## UH-60A mass properties: which set the rigid body uses — `RESOLVED by decision; discrepancy deferred`
+**Resolution (2026-10-10):** use the GenHel motion-module inertias as written, as airframe-only values (DECISIONS.md D-002). The digits on PDF p. 342 are confirmed by human review. WEIGHT is total helicopter weight (p. 5.1-39). The discrepancy below remains unexplained and is deferred. Revisit it if Eyas's yaw or roll response disagrees with reference data, or if GenHel Vol. II or the Ballin report turns up.
+
+**Background on the discrepancy:**
+**Source:** GenHel CR-166309.
+- Table 4.2, p. 4.8 (PDF p. 20), typed: whole-aircraft mass properties for 8 loading conditions, in lb·in·s².
+- Motion-module input, p. 5.10-19 (PDF p. 342), handwritten: I_x = 4659.0, I_y = 38512.0, I_z = 36796.0, I_xz = 1882.0 (slug·ft², per the nomenclature on p. 5.10-15).
+- Main-rotor input, p. 5.1-49 (PDF p. 69), handwritten: WEIGHT = 16638.0 lb, FSCG = 355.9 in, WLCG = 248.2 in, BLCG = 0.
+
+**Question:** §5.10.1 says the body equations use the aircraft *less rotor blades*. But the motion-module I_z matches the whole-aircraft value, not whole aircraft minus the ≈ 6970 slug·ft² blade contribution. Are these inertias airframe-only or whole-aircraft? Does WEIGHT include the blades? See SPEC_REVIEW #2 for the arithmetic.
+
+**Human check requested:**
+1. Confirm the handwritten digits above.
+2. Look for any note in GenHel (Vol. I or II) on how the motion-module inertias were derived.
+
+## UH-60A main-rotor constants — partly verified
+**Status (2026-10-10):**
+- **Digits confirmed by human review:** every value in the table below, plus FS_MR/WL_MR/BL_MR = 341.2/315.0/0 in, WEIGHT = 16638.0 lb, and FSCG/WLCG/BLCG = 355.9/248.2/0 in.
+- **Definitions confirmed from the GenHel nomenclature:**
+  - M_b is slug·ft and I_b is slug·ft², both about the hinge (p. 5.1-47, PDF p. 67).
+  - e′ (SPRLMR, ft) is the "Spar length exposed" (p. 5.1-39, PDF p. 59). The reference point it is measured from is not stated. Do **not** assume it is the aerodynamic root cutout from hub center without checking the main-rotor equations.
+  - θ_GEOMR (THLDMR, deg) is a lag-damper kinematics geometry constant (p. 5.1-46, PDF p. 66). It is **not** a blade pitch reference; the geometric blade pitch is T_HOAMR on p. 5.1-44.
+  - WEIGHT is "Total helicopter weight" (p. 5.1-39), so it includes the blades.
+- **Still open:**
+  - i_θ and i_φ are not in the nomenclature (pp. 5.1-39 to 5.1-48). Shaft tilt is assumed; confirm the meaning and sign from the main-rotor equations (§5.1.2) before using them in the hub transform.
+  - The remaining constants on p. 5.1-49 (lag damper, δ_0, T_FILMR, K_FP*, NBS/NSS, δ_3, ΔC_DMR, K_CT/K_CM/K_CL, T_DW*, ρ, a) are not yet reviewed. Review them before use.
+- **Note:** an AI assistant's definitions of i_θ, e′ and θ_GEOMR were checked against the source. Two of the three were wrong. AI answers are not sources.
+
+**Source:** GenHel p. 5.1-49 (PDF p. 69), handwritten. As read:
+
+| Symbol | Value | Symbol | Value |
+|---|---|---|---|
+| R | 26.83 ft | e | 1.25 ft |
+| Ω | 27.0 rad/s | W_b | 256.9 lb |
+| b | 4 | M_b | 86.7 |
+| i_θ (presumably shaft tilt, deg) | −3 | I_b | 1512.6 |
+| Δ_SP | −9.7 | c_r, c_0.75 | 1.73 ft |
+| B (tip loss) | 0.97 | θ_GEOMR | +17.481 |
+
+
+## UH-60A tail-rotor constants — digits verified; two items open
+**Source:** GenHel §5.4.5, p. 5.4-14 (PDF p. 175), handwritten. Symbols are spelled as on the page; they match the program mnemonics. **All digits were confirmed by human review on 2026-10-10.**
+
+| Symbol | Value | | Symbol | Value |
+|---|---|---|---|---|
+| F_STR | 732.0 in | | Γ_TR | 70.0 deg |
+| W_LTR | 324.7 in | | δ3_TR | 35.0 deg |
+| B_LTR | −14.0 in | | C_TR | 0.81 ft |
+| R_TR | 5.5 ft | | A_TR | 5.73 /rad |
+| Ω_TR | 124.62 rad/s | | B | 0.92 |
+| b_TR | 4 | | C_DTR | 0 |
+| TWSTTR | −18 deg/R | | (∂a₀/∂T_TR) | 0.001455 deg/lb |
+| K_BVTTR | 0.796 | | V_BVTTR / BIASTR | 30 kt / 6.0 deg |
+
+### Γ_TR interpretation — accepted, noted for revisit
+- Notation p. 5.4-11 (PDF p. 172) defines Γ_TR (GAMTR, deg) as the "Tail rotor cant angle".
+- The geometry sketch on p. 5.4-4 (PDF p. 165) is a hand-drawn rear view. Its 70° arc appears to run from the horizontal body Y axis to the edge-on rotor disk. That means the disk is 20° off vertical and the thrust points about 20° upward, consistent with the spec's "≈ 20° cant".
+- The human reviewer agrees with this reading, but the sketch is rough. **Revisit if** hover pedal or roll trim, or tail-rotor lift, disagrees with reference data. Also cross-check against the tail-rotor force and moment equations when implementing.
+
+### B_LTR sign — `open`, settle from the equations
+- The UH-60 tail rotor is on the starboard side and body Y is positive to starboard. GenHel's arm is B_TR = (BLTR − BLCGB)/12 (p. 5.4-4). With B_LTR = −14.0 that puts the rotor about 1.2 ft to port, unless Sikorsky buttlines are positive to port.
+- The reviewer doesn't know the Sikorsky buttline convention. **Settle it from the tail-rotor force and moment equations (§5.4.2) when implementing the tail rotor**, and check it for consistency with other buttline data (e.g. BLCG = 0, and the main-rotor and empennage buttlines).
+
+## Tiltrotor data — `missing` (not needed for v1)
+**Context:** DECISIONS D-011.
+- No tiltrotor aircraft data is available.
+- Data for a specific production tiltrotor is likely controlled or proprietary. If obtained, it must live in the access-controlled data directory, never in this repo (spec §2). If it comes as a reference-model vehicle file, the clean-room rule (§2.1) applies.
+- A public analogue would let us develop and validate tiltrotor features without controlled data, the way GenHel serves for the UH-60. The likely candidate is the XV-15, which NASA has documented publicly. The exact reports are to be identified; none has been verified yet.
