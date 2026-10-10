@@ -117,6 +117,7 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 - `-ffast-math` and its sub-flags are forbidden.
 - `-ffp-contract=off` is set explicitly on all targets.
 - The determinism guarantee is documented as holding per build configuration and compiler.
+- Debug builds of Eyas targets use `-Og` (added 2026-10-10, M1). At `-O0`, Eigen made the M1 1-hour time-keeping test take about 5 min (about 84 µs per physics step, against 0.54 µs in Release). `-Og` keeps debug info, assertions and sanitizers.
 
 **Rationale:** `-Werror` would otherwise fail on warnings inside Eigen with GCC 12+. FMA contraction differs across optimization levels and targets.
 
@@ -147,3 +148,31 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 - **Parsing** uses `std::from_chars`, never streams or `strtod`, so results don't depend on the C locale.
 
 **Rationale:** these make data provenance and units checkable by the loader rather than by convention, which directly supports the "never invent data" and SI-at-load rules.
+
+## D-013 M1 rigid-body acceptance tests strengthened (SPEC_REVIEW #14) — `Approved (2026-10-10)`
+**Decision:** the M1 criteria stay, with these additions:
+- **Attitude anchor.** For constant body rate ω, compare the integrated q_nb against the closed-form solution q(t) = q0 ⊗ [cos(|ω|t/2), sin(|ω|t/2) ω/|ω|]. The norm-drift check stays as a diagnostic, with the test's body rate stated in the test.
+- **Intermediate-axis instability.** Test, for a spin Ω about the intermediate principal axis (I₁ < I₂ < I₃) with a small perturbation:
+  - growth in the linear phase at λ = Ω√((I₃ − I₂)(I₂ − I₁)/(I₁I₃)), the rate obtained by linearizing Euler's equations (Padfield 3rd ed. Eq. 3A.24 and its rotational counterpart, App. 3A);
+  - a sign reversal of ω₂ (the flip).
+
+  Do not test the state at the end of the run. Spins about the major and minor axes stay bounded.
+- **Conserved quantities.** Measure angular momentum in the inertial frame (H_n = C_nb I_b ω_b), so the check also exercises the attitude integration.
+
+**Rationale:** as written, the norm criterion is met by round-off, and the end-state instability check can be fooled by the periodic flip (SPEC_REVIEW #14).
+
+## D-014 `AdvanceStatus.non_finite` and a unit quaternion in `SimContext` — `Approved (2026-10-10)` — interface change
+**Context:** the M1 code review found that a singular coupled solve, or a component returning NaN or Inf, silently filled the whole state with NaN, and `quat_norm_error()` still looked healthy (`std::max` ignores NaN). The real-time rules (spec §7) require failures to be flagged, not hidden. The same review found that inside RK4 stages components received the stored, slightly off-unit quaternion in `SimContext::body.q_nb` and used it to rotate vectors.
+**Decision:**
+- Add `bool non_finite` to `AdvanceStatus`, the status `advance()` returns. A sub-step whose result is not finite, or whose quaternion has zero norm, is discarded. The state stays at the last good step, the rest of that call's time is dropped, and the flag is set. Deterministic inputs fail the same way again, so the host sees the flag on every later call until it intervenes (`reset`/`restore`).
+- `SimContext::body.q_nb` is always unit length. The executive normalizes it once per derivative evaluation; q̇ is still computed from the stored quaternion.
+
+**Host handling (guidance for host adapters, which live in the host codebase):** treat `non_finite` as a flight-model fault.
+1. Freeze: stop advancing, or keep calling and accept that the state holds; keep presenting the last good outputs.
+2. Alert the operator that the flight model has faulted and the simulation is frozen.
+3. Log the failing call's controls, environment and time, plus a snapshot of the last good state. Eyas is deterministic, so this reproduces the fault offline.
+4. Recover only on an operator's decision: `restore` a recent snapshot (the usual choice), or `reset` to a trim condition if the fault recurs.
+
+Do not restore and continue automatically and silently: an input-driven fault recurs at the same point and loops, and a model bug goes unreported. (`snapshot`, `restore` and `reset` arrive with the M2 API; until then a host can only freeze, alert and log.)
+
+**Rationale:** additive only; no existing field changes meaning. Detecting ill-conditioned but finite solves (e.g. with an `rcond` estimate) is left until the rotor components exist and there is a real H to size a threshold against.

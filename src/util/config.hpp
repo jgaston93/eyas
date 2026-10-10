@@ -21,6 +21,7 @@ namespace eyas {
 // - Dimensionless values are plain YAML numbers, read with number(). A
 //   quantity without a unit is an error, so a missing unit can never be
 //   silently taken as SI.
+// - A map key given twice is an error at load.
 // - Keys are dotted paths: quantity("main_rotor.radius").
 // - A value tagged !placeholder marks a data gap (DATA_GAPS.md). It still
 //   loads; placeholders() lists every one so init can report them.

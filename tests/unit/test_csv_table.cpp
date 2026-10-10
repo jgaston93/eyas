@@ -64,6 +64,7 @@ TEST(CsvTable, RejectsFormatErrors) {
     EXPECT_THROW(parse_csv_table(src + "x[m],v[1]\n0,abc\n", "t"), InitError);   // not a number
     EXPECT_THROW(parse_csv_table(src + "x[m],v[1]\n0,1.5e\n", "t"), InitError);  // partial
     EXPECT_THROW(parse_csv_table(src + "x[m],v[1]\n0,nan\n", "t"), InitError);   // non-finite
+    EXPECT_THROW(parse_csv_table(src + "x[m],v[1]\n0,+-5\n", "t"), InitError);   // two signs
     EXPECT_THROW(parse_csv_table(src + "x[m],x[m]\n0,1\n", "t"), InitError);     // duplicate
     EXPECT_THROW(parse_csv_table(src + "x[m],v[1]\n", "t"), InitError);          // no rows
     EXPECT_THROW(parse_csv_table(src + "# source: again\nx[m]\n0\n", "t"), InitError);

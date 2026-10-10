@@ -62,6 +62,36 @@ TEST(Config, UnknownUnitIsAnError) {
     EXPECT_THROW((void)c.quantity("v"), InitError);
 }
 
+// yaml-cpp accepts duplicate keys and returns the first, so a corrected value
+// added further down a hand-edited file would be silently ignored.
+TEST(Config, DuplicateKeysAreErrors) {
+    EXPECT_THROW((void)Config::from_string("r: \"1 m\"\nr: \"2 m\"\n"), InitError);
+    EXPECT_THROW((void)Config::from_string("a:\n  r: \"1 m\"\n  r: \"2 m\"\n"), InitError);
+    EXPECT_THROW((void)Config::from_string("s:\n  - r: 1\n    r: 2\n"), InitError);
+    EXPECT_NO_THROW((void)Config::from_string("a:\n  r: 1\nb:\n  r: 2\n"));
+}
+
+// Config keys are plain names. A list, map or null used as a key has no name,
+// so it is rejected as such rather than misreported as a duplicate.
+TEST(Config, NonScalarKeysAreErrors) {
+    for (const char* yaml :
+         {"? [a, b]\n: 1\n", "? {a: 1}\n: 1\n", "~: 1\n", "? [a, b]\n: 1\n? [c, d]\n: 2\n"}) {
+        try {
+            (void)Config::from_string(yaml);
+            ADD_FAILURE() << "no error for: " << yaml;
+        } catch (const InitError& e) {
+            const std::string msg = e.what();
+            EXPECT_NE(msg.find("key must be a plain name"), std::string::npos) << msg;
+        }
+    }
+}
+
+TEST(Config, NumberWithTwoSignsIsAnError) {
+    const Config c = Config::from_string("n: +-5\nq: \"+-5 m\"\n");
+    EXPECT_THROW((void)c.number("n"), InitError);
+    EXPECT_THROW((void)c.quantity("q"), InitError);
+}
+
 TEST(Config, TypeMismatchesAreErrors) {
     const Config c = load();
     EXPECT_THROW((void)c.integer("main_rotor.tip_loss"), InitError);

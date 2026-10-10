@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <system_error>
 
@@ -19,18 +20,37 @@ std::string join(std::string_view path, std::string_view key) {
     return std::string(path) + "." + std::string(key);
 }
 
-void collect_placeholders(const YAML::Node& node, const std::string& path,
-                          std::vector<std::string>& out) {
+// Walks the whole document once at load: lists every !placeholder value and
+// rejects duplicate map keys, which yaml-cpp otherwise accepts silently
+// (lookups return the first, so a later correction would be ignored).
+void check_and_collect(const YAML::Node& node, const std::string& origin, const std::string& path,
+                       std::vector<std::string>& placeholders) {
     if (node.Tag() == "!placeholder") {
-        out.push_back(path);
+        placeholders.push_back(path);
     }
     if (node.IsMap()) {
+        std::set<std::string> seen;
         for (const auto& kv : node) {
-            collect_placeholders(kv.second, join(path, kv.first.Scalar()), out);
+            // A list, map or null key has no name; Scalar() would return ""
+            // for all of them.
+            if (!kv.first.IsScalar()) {
+                std::string msg = origin;
+                msg += ": " + (path.empty() ? std::string("<root>") : path) +
+                       ": map key must be a plain name";
+                throw InitError(msg);
+            }
+            const std::string& key = kv.first.Scalar();
+            const std::string child = join(path, key);
+            if (!seen.insert(key).second) {
+                std::string msg = origin;
+                msg += ": " + child + ": key given twice";
+                throw InitError(msg);
+            }
+            check_and_collect(kv.second, origin, child, placeholders);
         }
     } else if (node.IsSequence()) {
         for (std::size_t i = 0; i < node.size(); ++i) {
-            collect_placeholders(node[i], path + "[" + std::to_string(i) + "]", out);
+            check_and_collect(node[i], origin, path + "[" + std::to_string(i) + "]", placeholders);
         }
     }
 }
@@ -52,7 +72,7 @@ Config Config::from_string(std::string_view yaml, std::string_view origin) {
         throw InitError(std::string(origin) + ": YAML error: " + e.what());
     }
     auto placeholders = std::make_shared<std::vector<std::string>>();
-    collect_placeholders(root, "", *placeholders);
+    check_and_collect(root, std::string(origin), "", *placeholders);
     return Config(root, std::make_shared<const std::string>(origin), "", std::move(placeholders));
 }
 

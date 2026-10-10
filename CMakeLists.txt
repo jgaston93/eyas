@@ -18,12 +18,14 @@ include(EyasCompilerFlags)
 include(EyasDependencies)
 
 add_library(eyas STATIC
+    src/core/rigid_body.cpp
     src/util/axis.cpp
     src/util/config.cpp
     src/util/csv_table.cpp
     src/util/parse.cpp
     src/util/table.cpp
     src/util/units.cpp
+    src/sim/executive.cpp
     src/sim/recorder.cpp)
 add_library(eyas::eyas ALIAS eyas)
 

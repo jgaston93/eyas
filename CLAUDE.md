@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Eyas is a real-time, piloted rotorcraft flight dynamics model (C++20 library), intended to replace an incumbent commercial flight-dynamics package ("the reference model") in a host simulator. Reference vehicle: UH-60A (GenHel, NASA CR-166309).
 
-The design spec is `docs/EYAS_DESIGN.md`. Review findings are in `docs/SPEC_REVIEW.md`, approved departures in `docs/DECISIONS.md`, and data issues in `docs/DATA_GAPS.md`. Implementation status: M0 (scaffolding) done except CI (see `docs/VALIDATION.md`); next is M1.
+The design spec is `docs/EYAS_DESIGN.md`. Review findings are in `docs/SPEC_REVIEW.md`, approved departures in `docs/DECISIONS.md`, and data issues in `docs/DATA_GAPS.md`. Implementation status: M0 (scaffolding) and M1 (6-DOF rigid body core) done (see `docs/VALIDATION.md`); next is M2.
 
 ## How to treat the spec
 
@@ -84,12 +84,12 @@ clang-tidy -p build/debug src/util/*.cpp src/sim/*.cpp
 - **Target platform:** a Linux server running RHEL 8 or RHEL 9 (D-005). Verified in Rocky Linux containers: RHEL 9's system GCC 11 works; RHEL 8 needs `gcc-toolset-13` (configure rejects GCC < 11 with instructions). CMake there is 3.26–3.31. Pin the compiler per build, since determinism is per build and compiler.
 - **CI:** `.github/workflows/ci.yml` (Ubuntu GCC/Clang/ASan, Rocky 8 and 9 containers, format and tidy). To reproduce a Rocky job locally: `docker run --rm -v "$PWD":/src:ro rockylinux:9 ...`, configuring out-of-tree with `cmake -S /src -B /tmp/build`.
 - **Real-time test hook:** `tests/support/alloc_counter.hpp` (`AllocationCounter`) counts heap allocations in a scope through replaced global `operator new`. Use it to assert zero allocations for anything reachable from `advance()`.
-- **Layout:** `src/util/` holds init-time helpers (units, axis and tables, CSV and YAML loaders) and `src/sim/` the executive and recorder. `include/eyas/` will hold the public API from M1 on; `bench/` the timing benchmark; `tools/` offline Python.
+- **Layout:** `src/util/` holds init-time helpers (units, axis and tables, CSV and YAML loaders); `src/core/` the shared types, the §6 component interfaces, the rigid body and RK4; `src/sim/` the executive and recorder. `include/eyas/` will hold the public API (from M2, with `AircraftState`); `bench/` the timing benchmark; `tools/` offline Python (`tools/requirements.txt`, run from a git-ignored `.venv`); `tests/validation/` generators for VALIDATION.md data.
 
 ## Architecture (intended design per spec §5–6)
 
 - **One global state vector.** Every dynamic component declares its own states and computes their derivatives: the 6-DOF body, per-blade flap, lag and elastic states, inflow, and later rotor speed and engine. The integrator (RK4 by default, swappable) advances all of them together. The goal is that adding fidelity means adding states to a component, not restructuring.
-- **Rotor–body coupling solved within each derivative evaluation.** Components return derivatives and loads affine in the body acceleration a = [v̇_b; ω̇_b]: `ẋ = ẋ0 + G·a`, `load = load0 + H·a`. The executive solves one 6×6 system `(M_rb − ΣH) a = Σload0 + Σforces + gravity − gyro` and back-substitutes. Open issue: the mass and reference-point bookkeeping (SPEC_REVIEW #2).
+- **Rotor–body coupling solved within each derivative evaluation.** Components return derivatives and loads affine in the body acceleration a = [v̇_b; ω̇_b]: `ẋ = ẋ0 + G·a`, `load = load0 + H·a`. The executive solves one 6×6 system `(M_rb − ΣH) a = Σload0 + Σforces + gravity − gyro` and back-substitutes. `M_rb` is the airframe without the modeled blades, loads are about the airframe CG, and each component includes gravity on its own mass (D-002).
 - **The derivative function is meant to be a pure function of (t, x, inputs).** Trim and linearization Jacobians and `snapshot()`/`restore()` rely on this. The only hidden state allowed is a cached table-search index.
 - **Executive (§6.10).** `advance(controls, env, dt_host_ns)` (integer nanoseconds, D-006) runs fixed `step()` sub-steps (default 1000 Hz).
   - Time is kept in integer nanoseconds: `t = n_steps × dt`, with the remainder carried between calls and the number of sub-steps per call capped.

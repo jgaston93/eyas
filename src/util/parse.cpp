@@ -20,6 +20,9 @@ std::optional<double> parse_finite_double(std::string_view s) noexcept {
     // from_chars rejects a leading '+'; accept it, as hand-entered data often has one.
     if (!s.empty() && s.front() == '+') {
         s.remove_prefix(1);
+        if (!s.empty() && s.front() == '-') {
+            return std::nullopt;  // "+-5": from_chars would accept the '-'
+        }
     }
     double value = 0.0;
     const char* end = s.data() + s.size();
