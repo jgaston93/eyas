@@ -107,8 +107,11 @@ bool Model::reset(const BodyState& body) noexcept {
 }
 
 Snapshot Model::make_snapshot() const {
+    // Filled with the current state, so restoring a buffer that was never
+    // passed to snapshot() is still valid.
     Snapshot s;
     s.x_.assign(executive_.num_states(), 0.0);
+    (void)snapshot(s);
     return s;
 }
 

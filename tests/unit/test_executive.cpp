@@ -2,6 +2,7 @@
 // function, determinism, integer-nanosecond time keeping (D-006), the
 // sub-step cap, and zero allocation in advance() (spec §7.1).
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -213,6 +214,27 @@ TEST(Executive, NegativeFrameIsRejectedWithoutSideEffects) {
     EXPECT_EQ(st.substeps, 0);
     EXPECT_EQ(ex.n_steps(), 1);
     EXPECT_EQ(ex.remainder_ns(), 500'000);
+}
+
+// restore() is the other way to install a whole state, so it applies the same
+// checks as reset(): a non-finite value or a zero quaternion is refused and
+// nothing changes.
+TEST(Executive, RestoreRejectsInvalidStateWithoutSideEffects) {
+    Executive ex(test_config());
+    ex.set_body_state(BodyState{});
+    (void)ex.advance(Controls{}, Environment{}, 1'500'000);
+    const std::vector<double> before(ex.state().begin(), ex.state().end());
+
+    const std::vector<double> zeros(before.size(), 0.0);  // q_nb = 0
+    EXPECT_FALSE(ex.restore(zeros, 0, 0));
+    std::vector<double> nan_state = before;
+    nan_state[0] = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_FALSE(ex.restore(nan_state, 0, 0));
+
+    EXPECT_TRUE(std::equal(before.begin(), before.end(), ex.state().begin()));
+    EXPECT_EQ(ex.n_steps(), 1);
+    EXPECT_EQ(ex.remainder_ns(), 500'000);
+    EXPECT_TRUE(ex.restore(before, 1, 500'000));
 }
 
 // ---- Failure reporting ------------------------------------------------------

@@ -12,6 +12,9 @@ EulerAngles euler_angles(const Quat& q_nb) noexcept {
     EulerAngles e;
     e.pitch = -std::asin(std::clamp(G(0, 2), -1.0, 1.0));  // clamp: round-off near ±90°
     e.roll = std::atan2(G(1, 2), G(2, 2));
+    if (e.roll <= -std::numbers::pi) {  // atan2(−0.0, x < 0) is −π; the range is (−π, π]
+        e.roll = std::numbers::pi;
+    }
     double h = std::atan2(G(0, 1), G(0, 0));
     if (h < 0.0) {
         h += two_pi;

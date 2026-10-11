@@ -41,7 +41,8 @@ public:
     bool reset(const BodyState& body) noexcept;
 
     // Sets the full state, step count and remainder, e.g. from a snapshot.
-    // Returns false, changing nothing, on a size mismatch or invalid time.
+    // Returns false, changing nothing, on a size mismatch, invalid time, a
+    // non-finite state or a zero quaternion.
     bool restore(std::span<const double> x, std::int64_t n_steps,
                  std::int64_t remainder_ns) noexcept;
 

@@ -26,8 +26,10 @@ struct AircraftState {
     double heading = 0.0;  // ψ_h [rad] [0, 2π), from north
 
     // ---- Tier 5: diagnostics ------------------------------------------------
-    AdvanceStatus last_advance;    // status of the most recent advance()
-    double quat_norm_error = 0.0;  // [-] max |‖q‖ − 1| before renormalization, last advance()
+    AdvanceStatus last_advance;  // status of the most recent advance()
+    // [-] max |‖q‖ − 1| before renormalization over the last advance() that
+    // ran; a rejected dt leaves it unchanged.
+    double quat_norm_error = 0.0;
 };
 
 }  // namespace eyas

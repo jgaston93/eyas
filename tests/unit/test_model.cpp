@@ -242,6 +242,19 @@ TEST(Model, RestoreRejectsMismatchedSnapshot) {
     EXPECT_EQ(m.outputs().sim_time_ns, steps);
 }
 
+// A buffer from make_snapshot() that was never filled holds the state at the
+// time it was made, so restoring it is valid (it used to load q_nb = 0, after
+// which every step failed as non-finite).
+TEST(Model, RestoreOfUnfilledSnapshotKeepsModelRunning) {
+    Model m = make_model();
+    const Snapshot snap = m.make_snapshot();
+    ASSERT_TRUE(m.restore(snap));
+    const AdvanceStatus st = m.advance(hover_controls(), Environment{}, kFrameNs);
+    EXPECT_FALSE(st.non_finite);
+    EXPECT_GT(st.substeps, 0);
+    EXPECT_NEAR(m.outputs().q_nb.norm(), 1.0, 1e-15);
+}
+
 // reset() starts the run again from the given state at t = 0.
 TEST(Model, ResetSetsStateAndZeroesTime) {
     Model m = make_model();

@@ -53,10 +53,11 @@ public:
     // changing nothing, if the state is invalid.
     bool reset(const BodyState& body) noexcept;
 
-    // Init-time: a snapshot buffer sized for this model.
+    // Init-time: a snapshot buffer sized for this model, holding its current state.
     Snapshot make_snapshot() const;
     // Saves into / restores from a buffer from make_snapshot(). Return false,
-    // changing nothing, if the buffer doesn't fit this model.
+    // changing nothing, if the buffer doesn't fit this model or (restore)
+    // holds a non-finite state or a zero quaternion.
     bool snapshot(Snapshot& out) const noexcept;
     bool restore(const Snapshot& in) noexcept;
 

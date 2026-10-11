@@ -86,6 +86,15 @@ TEST(Attitude, HeadingRange) {
     EXPECT_LT(euler_angles(q_from_euler(0.0, 0.0, -1e-17)).heading, 2.0 * pi);
 }
 
+// Roll is reported in (−π, π]. An inverted attitude whose quaternion has
+// signed zeros gives Γ23 = −0.0, and atan2(−0.0, −1) is −π, so it must fold.
+TEST(Attitude, RollRangeExcludesMinusPi) {
+    const Quat inverted(-0.0, 1.0, -0.0, 0.0);  // (w, x, y, z): 180° about x_b
+    const EulerAngles e = euler_angles(inverted);
+    EXPECT_EQ(e.roll, pi);
+    EXPECT_EQ(euler_angles(Quat(0.0, 1.0, 0.0, 0.0)).roll, pi);
+}
+
 // At pitch ±90° roll and heading are not separable. The output must stay finite,
 // with pitch exactly ±π/2 (clamped against round-off) and the same nose
 // direction as the input.

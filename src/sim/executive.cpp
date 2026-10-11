@@ -112,6 +112,12 @@ bool Executive::restore(std::span<const double> x, std::int64_t n_steps,
     if (x.size() != x_.size() || n_steps < 0 || remainder_ns < 0 || remainder_ns >= step_ns_) {
         return false;
     }
+    // Same checks as reset(). No renormalization: a snapshot's quaternion is
+    // already unit, and replay after restore must be bit-identical.
+    const bool finite = std::all_of(x.begin(), x.end(), [](double v) { return std::isfinite(v); });
+    if (!finite || !(unpack_body(x).q_nb.norm() > 0.0)) {
+        return false;
+    }
     std::copy(x.begin(), x.end(), x_.begin());
     n_steps_ = n_steps;
     remainder_ns_ = remainder_ns;
