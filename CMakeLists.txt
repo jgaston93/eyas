@@ -18,7 +18,11 @@ include(EyasCompilerFlags)
 include(EyasDependencies)
 
 add_library(eyas STATIC
+    src/core/attitude.cpp
     src/core/rigid_body.cpp
+    src/env/atmosphere.cpp
+    src/env/geodesy.cpp
+    src/rotor/ideal_thrust.cpp
     src/util/axis.cpp
     src/util/config.cpp
     src/util/csv_table.cpp
@@ -26,6 +30,7 @@ add_library(eyas STATIC
     src/util/table.cpp
     src/util/units.cpp
     src/sim/executive.cpp
+    src/sim/model.cpp
     src/sim/recorder.cpp)
 add_library(eyas::eyas ALIAS eyas)
 

@@ -16,6 +16,9 @@ void validate(const ExecutiveConfig& c) {
     if (c.step_ns <= 0) {
         throw InitError("executive: step_ns must be positive, got " + std::to_string(c.step_ns));
     }
+    if (!std::isfinite(c.origin_altitude)) {
+        throw InitError("executive: origin altitude must be finite");
+    }
     if (c.max_substeps <= 0) {
         throw InitError("executive: max_substeps must be positive");
     }
@@ -50,6 +53,7 @@ Executive::Executive(const ExecutiveConfig& config,
                      std::vector<std::unique_ptr<ForceModel>> forces)
     : mass_(config.mass),
       mass_matrix_(rigid_body_mass_matrix(config.mass)),
+      origin_altitude_(config.origin_altitude),
       step_ns_(config.step_ns),
       max_substeps_(config.max_substeps),
       components_(std::move(components)),
@@ -85,6 +89,36 @@ void Executive::set_body_state(const BodyState& body) {
     pack_body(b, x_);
 }
 
+bool Executive::reset(const BodyState& body) noexcept {
+    const bool finite = body.pos_n.allFinite() && body.vel_b.allFinite() &&
+                        body.q_nb.coeffs().allFinite() && body.omega_b.allFinite();
+    if (!finite || !(body.q_nb.norm() > 0.0)) {
+        return false;
+    }
+    BodyState b = body;
+    b.q_nb.normalize();
+    for (std::size_t i = 0; i < components_.size(); ++i) {
+        components_[i]->initial_states(std::span<double>(x_).subspan(offsets_[i], sizes_[i]));
+    }
+    pack_body(b, x_);
+    n_steps_ = 0;
+    remainder_ns_ = 0;
+    quat_norm_error_ = 0.0;
+    return true;
+}
+
+bool Executive::restore(std::span<const double> x, std::int64_t n_steps,
+                        std::int64_t remainder_ns) noexcept {
+    if (x.size() != x_.size() || n_steps < 0 || remainder_ns < 0 || remainder_ns >= step_ns_) {
+        return false;
+    }
+    std::copy(x.begin(), x.end(), x_.begin());
+    n_steps_ = n_steps;
+    remainder_ns_ = remainder_ns;
+    quat_norm_error_ = 0.0;
+    return true;
+}
+
 double Executive::sim_time() const noexcept {
     return static_cast<double>(sim_time_ns()) * 1e-9;
 }
@@ -101,6 +135,7 @@ void Executive::derivatives(double t, std::span<const double> x, const Controls&
     ctx.body.q_nb.normalize();
     ctx.controls = controls;
     ctx.env = env;
+    ctx.air = isa_atmosphere(origin_altitude_ - body.pos_n.z(), env.isa_delta_T);  // D-016
     ctx.coupling = &coupling_;
 
     // (M_rb − Σ H) a = bias + Σ load0 + Σ forces   (spec §5, "Coupling")

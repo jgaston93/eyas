@@ -74,3 +74,29 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
 - No tiltrotor aircraft data is available.
 - Data for a specific production tiltrotor is likely controlled or proprietary. If obtained, it must live in the access-controlled data directory, never in this repo (spec §2). If it comes as a reference-model vehicle file, the clean-room rule (§2.1) applies.
 - A public analogue would let us develop and validate tiltrotor features without controlled data, the way GenHel serves for the UH-60. The likely candidate is the XV-15, which NASA has documented publicly. The exact reports are to be identified; none has been verified yet.
+
+## ISA oracle and WGS-84 values — `VERIFIED by human review (2026-10-10)`
+**Context:** D-015. These are test oracles, not aircraft data, but they come from a scan, so the human-review rule applies. File: *U.S. Standard Atmosphere 1976* (NASA-TM-X-74335) in the reference library. PDF page = book page + 16 in Part 1 and + 15 in the Part 4 tables. Table I alternates: odd book pages are by geometric altitude, even pages by geopotential altitude.
+
+**Consistency check already done:** every row below agrees with the USSA equations (Eqs. 18, 33a/b, 42) to within the table's 5-significant-figure rounding (largest deviation 4e-5). A misread digit would almost certainly have shown up, and a person confirmed every value on 2026-10-10.
+
+**1. Table 2 print errors (book p. 2, PDF p. 18).**
+- Read as printed: R* = 8.31432 × 10⁻³ N·m/(kmol·K) and r₀ = 6.356766 × 10⁶ km.
+- Taken instead from the text: R* = 8.31432 × 10³ (book p. 3) and r₀ = 6,356,766 m (book p. 8, below Eq. 17).
+- **Confirmed by human review (2026-10-10):** Table 2 prints 10⁻³ and 10⁶ km; the text reads R* = 8.31432 × 10³ (PDF p. 19) and r₀ = 6,356,766 m (PDF p. 24). Eyas uses the text values.
+
+**2. Table I rows** — **confirmed by human review (2026-10-10)**, all seven rows. Columns: Z [m], H [m′], T [K], P [mb], ρ [kg/m³].
+
+| Table (book p., PDF p.) | Z | H | T | P | ρ |
+|---|---|---|---|---|---|
+| Geometric (53, 68) | 0 | 0 | 288.150 | 1.01325 × 10³ | 1.2250 |
+| Geometric (53, 68) | 1000 | 1000 | 281.651 | 8.9876 × 10² | 1.1117 |
+| Geometric (55, 70) | 5000 | 4996 | 255.676 | 5.4048 × 10² | 7.3643 × 10⁻¹ |
+| Geometric (59, 74) | 11000 | 10981 | 216.774 | 2.2699 × 10² | 3.6480 × 10⁻¹ |
+| Geopotential (52, 67) | 1000 | 1000 | 281.650 | 8.9874 × 10² | 1.1116 |
+| Geopotential (54, 69) | 5004 | 5000 | 255.650 | 5.4019 × 10² | 7.3612 × 10⁻¹ |
+| Geopotential (58, 73) | 11019 | 11000 | 216.650 | 2.2632 × 10² | 3.6392 × 10⁻¹ |
+
+**3. Constants from the text** (typed, clear): M₀ = 28.9644 kg/kmol (p. 9), γ = 1.40 (Table 2, book p. 2), T₀ = 288.15 K, P₀ = 1.013250 × 10⁵ Pa, g₀ = 9.80665 m/s², layer gradients −6.5 and 0.0 K/km′ at H_b = 0 and 11 km′ (Table 4, p. 3).
+
+**WGS-84 (NGA.STND.0036):** typed text layer, values extracted directly: a = 6378137.0 m and 1/f = 298.257223563 (Eq. 3-2, p. 3-2, PDF p. 28); b = 6356752.3142 m and R_p = 6399593.6258 m (Table 3.5, p. 3-9, PDF p. 35). **Confirmed by human review (2026-10-10).**

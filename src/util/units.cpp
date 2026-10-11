@@ -10,7 +10,7 @@ namespace {
 // data needs them; each must be an exact product of the definitions in
 // units.hpp.
 // clang-format off
-constexpr std::array<std::pair<std::string_view, double>, 31> kRegistry{{
+constexpr std::array<std::pair<std::string_view, double>, 32> kRegistry{{
     {"1", 1.0},
     // length
     {"m", 1.0},
@@ -18,6 +18,8 @@ constexpr std::array<std::pair<std::string_view, double>, 31> kRegistry{{
     {"in", kInch},
     // time
     {"s", 1.0},
+    // frequency
+    {"Hz", 1.0},
     // mass
     {"kg", 1.0},
     {"slug", kSlug},
