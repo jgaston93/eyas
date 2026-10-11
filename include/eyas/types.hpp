@@ -13,12 +13,12 @@ namespace eyas {
 using Vec3 = Eigen::Vector3d;
 using Quat = Eigen::Quaterniond;
 
-// Normalized pilot inputs.
+// Normalized pilot inputs (sign conventions per D-024).
 struct Controls {
-    double collective = 0.0;  // [0, 1]
-    double lat_cyclic = 0.0;  // [-1, 1]
-    double lon_cyclic = 0.0;  // [-1, 1]
-    double pedal = 0.0;       // [-1, 1]
+    double collective = 0.0;  // [0, 1]  0 = full down, 1 = full up
+    double lat_cyclic = 0.0;  // [-1, 1] +1 = full right stick
+    double lon_cyclic = 0.0;  // [-1, 1] +1 = full forward stick
+    double pedal = 0.0;       // [-1, 1] +1 = full right pedal
 };
 
 // Atmospheric conditions set by the host (D-016). Eyas evaluates the

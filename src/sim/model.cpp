@@ -7,6 +7,7 @@
 
 #include "core/attitude.hpp"
 #include "env/geodesy.hpp"
+#include "rotor/blade_element_rotor.hpp"
 #include "rotor/ideal_thrust.hpp"
 #include "sim/executive.hpp"
 #include "util/config.hpp"
@@ -81,6 +82,26 @@ std::vector<std::unique_ptr<ForceModel>> read_force_models(const Config& config)
     return forces;
 }
 
+// Components with states or acceleration coupling, in config order (D-003:
+// the order becomes dependency-sorted once components exchange outputs).
+std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& config) {
+    std::vector<std::unique_ptr<DynamicComponent>> components;
+    if (!config.contains("components")) {
+        return components;
+    }
+    const Config list = config.child("components");
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        const Config c = list[i];
+        const std::string type = c.string("type");
+        if (type == "blade_element_rotor") {
+            components.push_back(BladeElementRotor::from_config(c));
+        } else {
+            c.fail("type", "unknown component '" + type + "'");
+        }
+    }
+    return components;
+}
+
 Executive build_executive(const Config& config, double origin_altitude) {
     ExecutiveConfig ec;
     const Config af = config.child("airframe");
@@ -105,14 +126,17 @@ Executive build_executive(const Config& config, double origin_altitude) {
             }
         }
     }
+    auto components = read_components(config);
     auto forces = read_force_models(config);
-    // Step, substeps and origin are checked above, so what the executive can
-    // still reject is the airframe's mass properties.
-    return in_context(config, "airframe", [&] { return Executive(ec, {}, std::move(forces)); });
+    // Step, substeps and origin are checked above, and the components and
+    // force models by their readers, so what the executive can still reject
+    // is the airframe's mass properties.
+    return in_context(config, "airframe",
+                      [&] { return Executive(ec, std::move(components), std::move(forces)); });
 }
 
 std::unique_ptr<Model::Impl> build(const Config& config) {
-    config.allow_keys({"simulation", "geodetic_origin", "airframe", "force_models"});
+    config.allow_keys({"simulation", "geodetic_origin", "airframe", "components", "force_models"});
     FlatEarthMap map = read_origin(config);
     const double origin_altitude = map.origin().altitude;
     return std::make_unique<Model::Impl>(

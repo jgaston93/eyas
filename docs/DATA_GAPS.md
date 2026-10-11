@@ -100,3 +100,17 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
 **3. Constants from the text** (typed, clear): M₀ = 28.9644 kg/kmol (p. 9), γ = 1.40 (Table 2, book p. 2), T₀ = 288.15 K, P₀ = 1.013250 × 10⁵ Pa, g₀ = 9.80665 m/s², layer gradients −6.5 and 0.0 K/km′ at H_b = 0 and 11 km′ (Table 4, p. 3).
 
 **WGS-84 (NGA.STND.0036):** typed text layer, values extracted directly: a = 6378137.0 m and 1/f = 298.257223563 (Eq. 3-2, p. 3-2, PDF p. 28); b = 6356752.3142 m and R_p = 6399593.6258 m (Table 3.5, p. 3-9, PDF p. 35). **Confirmed by human review (2026-10-10).**
+
+## Knight & Hefner (1937) hover data, digitized from Leishman Fig. 3.2 — `VERIFIED by human review (2026-10-11)`
+**Context:** D-007 layer 3 (validation entry, not a gate). Test oracle, not aircraft data.
+**Source:** Leishman, *Principles of Helicopter Aerodynamics*, 2nd ed., Fig. 3.2, p. 121 (DjVu page 159). Rotors with untwisted blades; the theory curves use C_lα = 5.73/rad (p. 120, last paragraph, DjVu page 158; the top line of that sentence is partly cut off in the scan, so the value needs checking too).
+**Method:** read by eye from a 500-dpi render of the plot area, calibrated on the axis ticks (θ₀ = 0, 5, 10° and C_T = 0, 0.005, 0.01). Pitch values are taken as whole degrees, which the marker positions suggest. Expect about ±0.0001 in C_T.
+
+| σ (marker) | θ₀ [deg] : C_T as read |
+|---|---|
+| 0.042 (filled circle) | 0 : 0; 2 : 0.00042; 4 : 0.00119; 6 : 0.00218; 8 : 0.00323; 10 : 0.00421; 12 : 0.00494 |
+| 0.064 (open circle) | 6 : 0.00274; 8 : 0.00417; 10 : 0.00562; 12 : 0.00685 (points below 6° are hidden under other markers) |
+| 0.085 (filled square) | 0 : 0; 1 : 0.00014; 3 : 0.00105; 4 : 0.00169; 5 : 0.00236; 6 : 0.00320; 7 : 0.00396; 8 : 0.00489; 9 : 0.00590; 10 : 0.00688; 11 : 0.00796; 12 : 0.00874 |
+| 0.106 (open square) | 4 : 0.00183; 6 : 0.00351; 8 : 0.00551; 10 : 0.00775; 12 : 0.01000 |
+
+**Review (2026-10-11):** every value was drawn as a cross over the figure (the overlay image is not kept in the repo, since the figure is copyrighted). The human reviewer confirmed that each cross sits on its marker, and confirmed C_lα = 5.73/rad on p. 120. A possible open square (σ = 0.106) hidden near 2° and the stacked markers at the origin were not added. An AI assistant's independent reading of the same plot was rejected: it listed points not on the plot and read some values off the theory curves. The data is in `tests/validation/reference/knight_hefner_1937.csv`.
