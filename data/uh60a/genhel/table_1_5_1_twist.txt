@@ -1,0 +1,10 @@
+# Transcribed by eye from a rendered page image of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 1.5.1, p. 5.1-57 (PDF p. 77). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-11; see docs/DATA_GAPS.md for what was checked
+# TWMRLO (preset blade twist TWSTMR, deg) against XSEGMR = 0..1 step 0.05 (21 values)
+
+0.0  0.0  0.0  0.0  -0.15
+-0.95  -1.8  -2.75  -3.55  -4.4
+-5.3  -6.15  -7.1  -7.9  -8.8
+-9.65  -10.3  -10.75  -12.3  -13.1
+-10.9
