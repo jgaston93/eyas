@@ -49,6 +49,12 @@ struct AdvanceStatus {
     // this call's time was dropped. The same inputs fail the same way again
     // (D-014).
     bool non_finite = false;
+    // The Environment was invalid (D-019: non-finite, or ΔT ≤ −216.65 K);
+    // nothing was done.
+    bool rejected_env = false;
+    // After some sub-step of this call the CG was outside the tabulated
+    // atmosphere, H outside [−5, 20] km' (D-015, D-019); the profile was extended.
+    bool atmosphere_out_of_range = false;
 };
 
 // Rigid-body state of the airframe.

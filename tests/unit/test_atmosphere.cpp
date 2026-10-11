@@ -159,6 +159,35 @@ TEST(Atmosphere, OutOfRangeIsFlaggedButFinite) {
     EXPECT_FALSE(isa_atmosphere(-4000.0, 0.0).out_of_range);
 }
 
+// D-019: ΔT is valid if finite and the coldest point of the profile, the
+// isothermal layer at 216.65 K (USSA Table 4), stays above 0 K.
+TEST(Atmosphere, DeltaTValidity) {
+    EXPECT_TRUE(isa_delta_T_valid(0.0));
+    EXPECT_TRUE(isa_delta_T_valid(-216.0));
+    EXPECT_TRUE(isa_delta_T_valid(1000.0));
+    EXPECT_FALSE(isa_delta_T_valid(-216.65));  // T = 0 K in the stratosphere
+    EXPECT_FALSE(isa_delta_T_valid(-300.0));
+    EXPECT_FALSE(isa_delta_T_valid(std::numeric_limits<double>::quiet_NaN()));
+    EXPECT_FALSE(isa_delta_T_valid(std::numeric_limits<double>::infinity()));
+    // Near the bound, every altitude in and beyond range stays physical.
+    for (const double dT : {-216.6, -216.64999}) {
+        ASSERT_TRUE(isa_delta_T_valid(dT));
+        for (const double h : {-6000.0, 0.0, 11000.0, 25000.0}) {
+            const AirState air = isa_atmosphere(h, dT);
+            EXPECT_GT(air.temperature, 0.0);
+            EXPECT_TRUE(std::isfinite(air.density));
+        }
+    }
+}
+
+// The executive's range check and the AirState flag agree (D-019).
+TEST(Atmosphere, RangeHelperMatchesFlag) {
+    for (const double h : {-6000.0, -5000.0, 0.0, 19999.0, 20100.0, 25000.0}) {
+        EXPECT_EQ(isa_out_of_range(h), isa_atmosphere(h, 0.0).out_of_range) << h;
+    }
+    EXPECT_TRUE(isa_out_of_range(std::numeric_limits<double>::quiet_NaN()));
+}
+
 // No exceptions in the loop (spec §7): a NaN altitude gives NaN, not a throw.
 TEST(Atmosphere, NanAltitudePropagates) {
     const AirState air = isa_atmosphere(std::numeric_limits<double>::quiet_NaN(), 0.0);

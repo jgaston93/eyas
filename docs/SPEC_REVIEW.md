@@ -127,3 +127,8 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 **Spec:** M2.
 **Problem:** "Started at rest with the dummy force exactly equal to weight" at level attitude cancels exactly in floating point: C_bn g_n = (0, 0, g) and F = (0, 0, −mg). The acceleration is exactly 0.0, so position and velocity don't drift at all, and the test can't fail through any frame or sign error that keeps level flight exact. The same holds for "a step gives the expected vertical acceleration": RK4 is exact for constant acceleration.
 **Suggested resolution:** also test at a non-level attitude with a steady translation, using a force fixed in inertial space and rotated into body axes, with a tolerance derived from round-off. See D-018.
+
+## 18. Bad environment inputs and out-of-range altitude can't be seen by the host — `resolved → DECISIONS.md D-019 (2026-10-11)`
+**Spec:** §6.2, §6.10; D-015, D-016.
+**Problem:** `advance()` doesn't check `Environment`. A NaN `isa_delta_T`, or one low enough to make the absolute temperature non-positive (a °C/K mix-up), gives NaN density and speed of sound. Once a model uses `ctx.air`, every step then fails as `non_finite`, with no hint that the input caused it. A NaN `wind_n` would do the same. Separately, D-015's out-of-range flag is set only in `SimContext::air`, which the host can't read, so flight outside the tabulated atmosphere goes unreported. Found in the M2 code review. Neither has an effect yet: nothing reads `ctx.air` before M3.
+**Suggested resolution:** reject an invalid `Environment` the way a negative frame time is rejected, and report out-of-range altitude in `AdvanceStatus`. See D-019.

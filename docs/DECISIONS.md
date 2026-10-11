@@ -228,3 +228,13 @@ Do not restore and continue automatically and silently: an input-driven fault re
 - **Dummy rotor:** a `ForceModel` you can select in config (`type: ideal_thrust`) with thrust T = T_max·collective along −z_b, massless and with no moment. This is test scaffolding until M3, and lets the host team integrate Tier 1 early. The force step is a collective step through `advance()`.
 - **Public API** (`include/eyas/`): an `eyas::Model` class with `init` (from a config file or string, throws `InitError`), `advance(controls, env, dt_ns)`, `outputs() → const AircraftState&`, `reset(body_state)`, `snapshot(Snapshot&)` and `restore(const Snapshot&)`. `make_snapshot()` allocates the buffer at init time, so `snapshot()`/`restore()` don't allocate (spec §7). `trim()` arrives with M7, not as a stub.
 - **`AircraftState` Tier 1:** sim time [s, ns]; lat, lon [rad], alt [m MSL]; q_nb; Euler angles (φ, θ, ψ_h) [rad] in Padfield's yaw–pitch–roll order. They are extracted from C_bn = Γ = ΦΘΨ (Padfield 3rd ed. Eqs. 3A.34–3A.40): θ = −asin Γ₁₃, φ = atan2(Γ₂₃, Γ₃₃), ψ_h = atan2(Γ₁₂, Γ₁₁). ψ_h is in [0, 2π), and θ is clamped to ±π/2 against round-off; plus the `AdvanceStatus` flags.
+
+## D-019 Environment input checks and atmosphere range reporting (SPEC_REVIEW #18) — `Approved (2026-10-11)` — interface change
+**Decision:** two fields are added to `AdvanceStatus` (additive; no existing field changes meaning).
+- **`rejected_env`:** `advance()` checks `Environment` once, before any sub-step. If it is invalid, the call does nothing (no time passes, the remainder is kept) and sets `rejected_env`, exactly like `rejected_dt`. Valid means:
+  - `isa_delta_T` is finite and the absolute temperature stays positive everywhere in the profile. In layers 0 and 1 the coldest point is the isothermal layer at T_std = 216.65 K (USSA Table 4, p. 3: 288.15 K − 6.5 K/km′ × 11 km′), so the test is ΔT > −216.65 K. No other bound is applied, since no public source gives an operational ΔT range.
+  - `wind_n` is finite.
+  - `ground_height` is not checked yet (unused until M6; NaN is its default).
+- **`atmosphere_out_of_range`:** set if the CG's geopotential altitude was outside [−5, 20] km′ (D-015) after any sub-step committed in the call. It is computed from the committed state after each step, not inside RK4 stages, so the derivative function stays a pure function of (t, x, inputs) (D-016). The atmosphere is still evaluated (extended) out of range.
+
+**Rationale:** a rejected call follows the existing `rejected_dt` precedent and never runs physics on inputs the host didn't mean. One check per call costs nothing measurable. Checking the committed state is one division per step, and RK4 stage points lie within one step's travel of it.

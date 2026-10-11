@@ -34,6 +34,15 @@ struct AirState {
     bool out_of_range = false;           // H outside [−5, 20] km' (or NaN): profile extended
 };
 
+// True if geometric altitude Z [m above MSL] is outside the range of layers 0
+// and 1, H in [−5, 20] km' (D-015), or NaN. Same test as AirState::out_of_range.
+bool isa_out_of_range(double altitude) noexcept;
+
+// True if ΔT [K] is finite and keeps the temperature positive everywhere in the
+// profile: the coldest point is the isothermal layer at 216.65 K (USSA Table 4,
+// p. 3), so ΔT > −216.65 K (D-019).
+bool isa_delta_T_valid(double delta_T) noexcept;
+
 // Geopotential altitude H [m'] from geometric altitude Z [m]:
 // H = r0 Z / (r0 + Z) (USSA Eq. 18, Γ = 1 m'/m).
 double geopotential_altitude(double altitude) noexcept;

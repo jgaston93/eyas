@@ -212,6 +212,10 @@ AdvanceStatus Executive::advance(const Controls& controls, const Environment& en
         status.rejected_dt = true;
         return status;
     }
+    if (!isa_delta_T_valid(env.isa_delta_T) || !env.wind_n.allFinite()) {  // D-019
+        status.rejected_env = true;
+        return status;
+    }
     // Split before adding so a huge dt can't overflow the remainder.
     std::int64_t steps = dt_host_ns / step_ns_;
     std::int64_t rem = remainder_ns_ + dt_host_ns % step_ns_;
@@ -230,6 +234,10 @@ AdvanceStatus Executive::advance(const Controls& controls, const Environment& en
             break;
         }
         ++status.substeps;
+        // From the committed state, so derivatives() stays pure (D-019).
+        const double altitude = origin_altitude_ - x_[body_layout::kPos + 2];
+        status.atmosphere_out_of_range =
+            status.atmosphere_out_of_range || isa_out_of_range(altitude);
     }
     return status;
 }
