@@ -8,10 +8,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <yaml-cpp/yaml.h>
 
+#include "util/error.hpp"
 #include "util/units.hpp"
 
 namespace eyas {
@@ -61,6 +63,18 @@ public:
     // Throws InitError "<file>: <full path of key>: <what>". An empty key names
     // this node itself. For checks made by the reader after a value is read.
     [[noreturn]] void fail(std::string_view key, std::string_view what) const;
+
+    // Runs `f`, re-raising any InitError it throws against `key` via fail(),
+    // so errors from a constructor or a data file loaded for `key` still name
+    // the config file and key path (D-021).
+    template <class F>
+    auto in_context(std::string_view key, F&& f) const -> decltype(f()) {
+        try {
+            return std::forward<F>(f)();
+        } catch (const InitError& e) {
+            fail(key, e.what());
+        }
+    }
 
     // Every data gap in the whole document: the full key path of each
     // !placeholder value, then "<path>: <what>" for each note_placeholder().

@@ -85,6 +85,21 @@ TEST(CsvTable, MissingColumnIsAnError) {
     EXPECT_THROW(make_table1d(parse_csv_table(kTable1D, "t"), "x", "z"), InitError);
 }
 
+// A hand-built table whose parallel vectors disagree is an InitError, not an
+// out-of-range read.
+TEST(CsvTable, MismatchedHandBuiltTableIsAnError) {
+    CsvTable csv;
+    csv.origin = "hand";
+    csv.names = {"x", "v"};
+    csv.columns = {{0.0, 1.0}, {2.0, 3.0}};
+    EXPECT_THROW(csv.require_dimension("v", units::Dimension::dimensionless), InitError);
+    EXPECT_THROW((void)csv.column("v"), InitError);
+    csv.dimensions = {units::Dimension::dimensionless, units::Dimension::dimensionless};
+    EXPECT_NO_THROW(csv.require_dimension("v", units::Dimension::dimensionless));
+    csv.columns.pop_back();
+    EXPECT_THROW((void)csv.column("v"), InitError);
+}
+
 constexpr const char* kTable2D =
     "# source: unit test\n"
     "a[1],b[1],v[1]\n"

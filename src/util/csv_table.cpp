@@ -113,27 +113,33 @@ bool CsvTable::is_placeholder() const {
     return it != meta.end() && it->second == "placeholder";
 }
 
-const std::vector<double>& CsvTable::column(std::string_view name) const {
+std::size_t CsvTable::index(std::string_view name) const {
+    // names, columns and dimensions are parallel; a hand-built table may not
+    // keep them so, and must get an error rather than an out-of-range read.
+    if (columns.size() != names.size() || dimensions.size() != names.size()) {
+        throw InitError(origin + ": table has " + std::to_string(names.size()) + " names, " +
+                        std::to_string(columns.size()) + " columns and " +
+                        std::to_string(dimensions.size()) + " dimensions");
+    }
     for (std::size_t i = 0; i < names.size(); ++i) {
         if (names[i] == name) {
-            return columns[i];
+            return i;
         }
     }
     throw InitError(origin + ": no column named '" + std::string(name) + "'");
 }
 
+const std::vector<double>& CsvTable::column(std::string_view name) const {
+    return columns[index(name)];
+}
+
 void CsvTable::require_dimension(std::string_view name, units::Dimension d) const {
-    for (std::size_t i = 0; i < names.size(); ++i) {
-        if (names[i] == name) {
-            if (dimensions[i] != d) {
-                throw InitError(origin + ": column '" + names[i] + "' has dimension " +
-                                std::string(units::dimension_name(dimensions[i])) + "; expected " +
-                                std::string(units::dimension_name(d)));
-            }
-            return;
-        }
+    const std::size_t i = index(name);
+    if (dimensions[i] != d) {
+        throw InitError(origin + ": column '" + names[i] + "' has dimension " +
+                        std::string(units::dimension_name(dimensions[i])) + "; expected " +
+                        std::string(units::dimension_name(d)));
     }
-    throw InitError(origin + ": no column named '" + std::string(name) + "'");
 }
 
 CsvTable parse_csv_table(std::string_view text, std::string_view origin) {

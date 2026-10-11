@@ -145,6 +145,8 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     k.pitch = config_.controls->pitch(ctx.controls);
     k.rho = ctx.air.density;
     k.a = ctx.air.speed_of_sound;
+    k.mu = std::hypot(k.v_hub_h.x(), k.v_hub_h.y()) / tip_speed_;  // Padfield 3rd ed. Eq. 3.140
+    k.mu_z = k.v_hub_h.z() / tip_speed_;
     return k;
 }
 
@@ -218,13 +220,12 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i) const n
     out.ct = out.thrust / q_disk;
     out.cq = out.torque / (q_disk * c.radius);
     out.lambda_i = lambda_i;
-    out.passes = 1;
     return out;
 }
 
 void BladeElementRotor::finish(RotorLoads& loads, const Kinematics& k) const noexcept {
-    loads.mu = std::hypot(k.v_hub_h.x(), k.v_hub_h.y()) / tip_speed_;  // Padfield 3rd ed. Eq. 3.140
-    loads.mu_z = k.v_hub_h.z() / tip_speed_;
+    loads.mu = k.mu;
+    loads.mu_z = k.mu_z;
     loads.body.F = C_bh_ * loads.F_h;
     loads.body.M = C_bh_ * loads.M_h + config_.hub_position_b.cross(loads.body.F);
 }
@@ -233,14 +234,15 @@ RotorLoads BladeElementRotor::evaluate_at_inflow(const SimContext& ctx,
                                                  double lambda_i) const noexcept {
     const Kinematics k = kinematics(ctx);
     RotorLoads loads = pass(k, lambda_i);
+    loads.passes = 1;
     finish(loads, k);
     return loads;
 }
 
 RotorLoads BladeElementRotor::evaluate(const SimContext& ctx) const noexcept {
     const Kinematics k = kinematics(ctx);
-    const double mu = std::hypot(k.v_hub_h.x(), k.v_hub_h.y()) / tip_speed_;
-    const double mu_z = k.v_hub_h.z() / tip_speed_;
+    const double mu = k.mu;
+    const double mu_z = k.mu_z;
     // Uniform momentum inflow, Padfield 3rd ed. Eq. 3.139, multiplied out so
     // it has no singularity at λ_i = 0:
     //   g(λ) = 2λ √(μ² + (λ − μ_z)²) − C_T(λ) = 0,
@@ -395,15 +397,13 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
         const double v = blade.quantity(key, d);
         return linear ? Table1D(Axis({0.0, 1.0}), {0.0, v}) : constant_table(v);
     }
-    try {
+    return blade.in_context(table_key, [&] {
         const CsvTable csv = read_csv_table(blade.path(table_key));
         csv.require_dimension("r", Dimension::dimensionless);
         csv.require_dimension(key, d);
         note_if_placeholder(blade, table_key, csv);
         return make_table1d(csv, "r", key);
-    } catch (const InitError& e) {
-        blade.fail(table_key, e.what());
-    }
+    });
 }
 
 }  // namespace
@@ -445,13 +445,12 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
     c.tip_loss = blade.number("tip_loss");
     c.chord = read_spanwise(blade, "chord", Dimension::length, false);
     c.twist = read_spanwise(blade, "twist", Dimension::angle, true);
-    try {
+    c.airfoil = blade.in_context("airfoil", [&] {
         const CsvTable csv = read_csv_table(blade.path("airfoil"));
-        c.airfoil = std::make_shared<const Airfoil>(Airfoil::from_csv(csv));
+        auto airfoil = std::make_shared<const Airfoil>(Airfoil::from_csv(csv));
         note_if_placeholder(blade, "airfoil", csv);
-    } catch (const InitError& e) {
-        blade.fail("airfoil", e.what());
-    }
+        return airfoil;
+    });
     const std::int64_t elements = blade.integer("elements");
     if (elements < 1 || elements > 1000) {
         blade.fail("elements", "must be between 1 and 1000");
@@ -467,11 +466,7 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
     }
 
     c.controls = LinearControlMap::from_config(node.child("controls"));
-    try {
-        return std::make_unique<BladeElementRotor>(std::move(c));
-    } catch (const InitError& e) {
-        node.fail("", e.what());
-    }
+    return node.in_context("", [&] { return std::make_unique<BladeElementRotor>(std::move(c)); });
 }
 
 }  // namespace eyas

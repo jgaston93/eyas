@@ -28,24 +28,13 @@ using units::Dimension;
 
 constexpr std::int64_t kNsPerSecond = 1'000'000'000;
 
-// Runs `f`, re-raising its InitError against `key` of `node`, so that errors
-// from validation inside a constructor still name the file and key path.
-template <class F>
-auto in_context(const Config& node, std::string_view key, F&& f) -> decltype(f()) {
-    try {
-        return std::forward<F>(f)();
-    } catch (const InitError& e) {
-        node.fail(key, e.what());
-    }
-}
-
 FlatEarthMap read_origin(const Config& config) {
     const Config o = config.child("geodetic_origin");
     o.allow_keys({"latitude", "longitude", "altitude"});
     const GeodeticPosition origin{o.quantity("latitude", Dimension::angle),
                                   o.quantity("longitude", Dimension::angle),
                                   o.quantity("altitude", Dimension::length)};
-    return in_context(config, "geodetic_origin", [&] { return FlatEarthMap(origin); });
+    return config.in_context("geodetic_origin", [&] { return FlatEarthMap(origin); });
 }
 
 // Physics step from `simulation.physics_rate` [Hz]: the rate must be a whole
@@ -75,8 +64,8 @@ std::vector<std::unique_ptr<ForceModel>> read_force_models(const Config& config)
         if (type == "ideal_thrust") {
             f.allow_keys({"type", "max_thrust"});
             const double max_thrust = f.quantity("max_thrust", Dimension::force);
-            forces.push_back(in_context(f, "max_thrust",
-                                        [&] { return std::make_unique<IdealThrust>(max_thrust); }));
+            forces.push_back(f.in_context(
+                "max_thrust", [&] { return std::make_unique<IdealThrust>(max_thrust); }));
         } else {
             f.fail("type", "unknown force model '" + type + "'");
         }
@@ -133,8 +122,8 @@ Executive build_executive(const Config& config, double origin_altitude) {
     // Step, substeps and origin are checked above, and the components and
     // force models by their readers, so what the executive can still reject
     // is the airframe's mass properties.
-    return in_context(config, "airframe",
-                      [&] { return Executive(ec, std::move(components), std::move(forces)); });
+    return config.in_context(
+        "airframe", [&] { return Executive(ec, std::move(components), std::move(forces)); });
 }
 
 std::unique_ptr<Model::Impl> build(const Config& config) {

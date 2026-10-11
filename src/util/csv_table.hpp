@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -36,12 +37,16 @@ struct CsvTable {
     const std::string& source() const { return meta.at("source"); }
     bool is_placeholder() const;
 
-    // Throws InitError if there is no column with this name.
+    // Throws InitError if there is no column with this name, or if names,
+    // columns and dimensions differ in length (a hand-built table).
     const std::vector<double>& column(std::string_view name) const;
 
     // Throws InitError, naming the column and its unit's dimension, unless the
     // column exists and its unit has dimension `d` (D-021).
     void require_dimension(std::string_view name, units::Dimension d) const;
+
+private:
+    std::size_t index(std::string_view name) const;  // checked, as column()
 };
 
 // Throw InitError, naming the origin and line, on any format problem.

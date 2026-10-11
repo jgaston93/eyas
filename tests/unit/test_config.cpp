@@ -149,6 +149,19 @@ TEST(Config, MissingKeyErrorNamesFileAndFullPath) {
     }
 }
 
+// in_context passes a value through, and re-raises an InitError from inside
+// (e.g. a constructor's check) naming the file, key path and original text.
+TEST(Config, InContextNamesTheKeyOfAnInnerError) {
+    const Config rotor = load().child("main_rotor");
+    EXPECT_EQ(rotor.in_context("radius", [] { return 7; }), 7);
+    try {
+        rotor.in_context("radius", []() -> int { throw InitError("must be positive"); });
+        FAIL() << "expected InitError";
+    } catch (const InitError& e) {
+        EXPECT_EQ(std::string(e.what()), "test.yaml: main_rotor.radius: must be positive");
+    }
+}
+
 TEST(Config, LookupDoesNotModifyTheDocument) {
     const Config c = load();
     EXPECT_FALSE(c.contains("main_rotor.chord"));

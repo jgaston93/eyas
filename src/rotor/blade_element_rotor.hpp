@@ -126,8 +126,10 @@ private:
         Vec3 omega_h;  // [rad/s] body angular rate
         double psi;    // [rad] rotor azimuth
         SwashplatePitch pitch;
-        double rho;  // [kg/m³]
-        double a;    // [m/s] speed of sound
+        double rho;   // [kg/m³]
+        double a;     // [m/s] speed of sound
+        double mu;    // μ [-] in-plane hub speed through the air / ΩR
+        double mu_z;  // μ_z [-] hub speed along z_h (down) / ΩR
     };
 
     Kinematics kinematics(const SimContext& ctx) const noexcept;
