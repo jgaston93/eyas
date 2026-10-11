@@ -296,3 +296,44 @@ Do not restore and continue automatically and silently: an input-driven fault re
 - **No failure.** Placeholders still load (D-012). Eyas does no I/O, so the host decides whether to log, display or refuse a model with gaps.
 
 **Rationale:** the UH-60A blade data is transcribed next, and some tables may start as placeholders. Without this, a model running on placeholder data was indistinguishable from a sourced one.
+
+## D-026 M4 rigid flapping blades: model and layered acceptance tests (SPEC_REVIEW #22) — `Approved (2026-10-11)`
+**Model:**
+- **Blade:** rigid and thin (mass on the span line), hinged at e from the hub centre on the blade's radial line. The hinge axis is perpendicular to the span and lies in the hub plane. No lag hinge (M9) and no pitch inertia. Flap β is positive up (toward −z_h).
+- **Mass data (config, per blade):** mass m_b, and S_β and I_β about the hinge. These are GenHel's W_b, M_b and I_b (p. 5.1-49). GenHel gives W_b as a weight in lb, so the config writes it as the same number in lbm (exact under standard gravity). New units: `N*m/rad`, `ft*lbf/rad` (spring) and `N*m*s/rad`, `ft*lbf*s/rad` (damper). Init checks m_b > 0, S_β > 0 and I_β ≥ S_β²/m_b (Cauchy–Schwarz). The blade CG is at the hinge plus S_β/m_b.
+- **Hinge:** optional linear spring K_β about β = 0 and damper C_β. No precone and no flap or droop stops in M4; stops are logged for M6 (ground handling).
+- **States:** [β_k, β̇_k] for each blade k, in the D-024 numbering (ψ_k = ψ − 2π(k−1)/N_b). They start at zero (`initial_states` has no context); trim sets them in M7.
+- **Equation:** exact rigid-body kinematics with no small-angle approximation. Each blade point is at r_hub + e e_r + ρ(cos β e_r − sin β e_z). Its inertial acceleration includes the CG acceleration (v̇_b + ω × v_b), ω̇ × r, ω × (ω × r), rotor rotation at constant Ω relative to the hub, and flap motion. Moments about the hinge give
+  I_β β̈ = M_aero + M_grav − K_β β − C_β β̇ − M_inertial(β, β̇, ω, Ω) − J·a,
+  which is affine in a = [v̇_b; ω̇_b], so G comes directly from J. The span integrals reduce to m_b, S_β and I_β. The hub-frame angular velocity is written as one variable (ω_b today), so a tilting nacelle (D-011) only adds ω_hb terms to it.
+- **Loads on the airframe:** treated as a free body, Σ over blades of ∫(df_aero + g dm − a dm). Spring and damper moments are internal and cancel. With Ω prescribed, the reaction to the drive torque (including Coriolis torque from flapping) passes to the airframe. H comes from the a-dependent part of the blade accelerations.
+- **Aerodynamics on the flapped blade:** element velocity relative to the air is resolved on the flapped blade axes: U_T along e_t, and U_P along the blade normal n = sin β e_r + cos β e_z (positive down, as in D-024). The induced velocity is along z_h and projected onto n. U_R is still ignored (D-024). θ = θ_swash + θ_tw − tan δ₃ · β (spec §6.3). Sign checked against Johnson 2013 §6.18: Δθ = −K_P β with K_P = tan δ₃, so positive δ₃ means flap up, pitch down. The uniform inflow balances the **aerodynamic** thrust only, i.e. the aero force along the shaft.
+- **No flap section in the config = the M3 rotor** (massless, β ≡ 0, no states), so the M3 tests and the D-022 locked-flap case are unchanged.
+- **Outputs:** multiblade β₀, β_0d, β_1c, β_1s (Padfield 3rd ed. Eqs. 3.42–3.45). Tests and outputs use Padfield's β_1c and β_1s. The classical a₁, b₁ notation is not used.
+
+**Acceptance (replaces spec M4; same layering as D-007):**
+1. **Exact-equation reference (gate).** An independent test-side model of each blade as many point masses. Point positions are written as explicit functions of time under a prescribed body motion with constant a, and differentiated numerically (high-order central differences with Richardson extrapolation) to get velocity and acceleration. This doesn't reuse the production vector algebra. From it, hinge-moment balance gives β̈, and the free-body sum gives the airframe load. The aerodynamics reuse the M3 exact reference, fed with these numerically derived element velocities. The production β̈₀, G, load₀ and H must agree, under random states, rates, accelerations, controls, wind and hub tilt, both rotation directions and nonzero e, K_β, C_β and δ₃. This is also the spec's "G and H against finite differences".
+2. **Conservation (gate; exercises the coupled solve through the production executive).** With no air and no gravity, an airframe tumbling with flapping blades conserves the total linear and angular momentum (airframe plus blades, computed independently in the test). With gravity, the system's momentum changes by the total weight × t. These checks catch any G/H inconsistency.
+3. **Literature anchors (gate, with tolerances set from small-angle residual studies and recorded in VALIDATION.md):**
+   - free flap frequency in vacuum with the hub fixed: ν² = 1 + e S_β/I_β + K_β/(I_βΩ²) (Johnson Eq. 6.261); the spec's uniform-blade formula for a uniform fixture; non-rotating √(K_β/I_β) only when K_β > 0 (D-009);
+   - linearized hub-motion flap forcing from p, q, ṗ, q̇ and ẅ, at small β: Johnson Eq. 16.240 (offset hinge) and Padfield Eq. 3.20 (e = 0);
+   - hover coning against θ₀ and λ, and so against C_T, including the weight moment: Johnson Eq. 6.277 (offset hinge, constants integrated over the lifting span) plus §6.9;
+   - β_1c and β_1s against μ: Padfield Eqs. 3.57–3.58 and 3.64 for a centre-spring fixture (e = 0, K_β > 0), and Johnson Eqs. 6.277–6.279 for an offset-hinge fixture. Tight below μ ≈ 0.1, reported up to 0.3 (the closed forms drop the 2/rev flapping);
+   - cyclic step in hover: the steady phase lag matches Johnson Eqs. 6.278–6.279 at μ = 0, i.e. 90° − atan(N*/d₁) with N* = 8(ν² − 1)/γ (Padfield Eq. 3.40 for e = 0). The transient settles with the 16/(γΩ) time constant (Padfield Eq. 3.41), reported only;
+   - δ₃: the effective flap frequency rises as in Johnson §19.6.
+   Fixtures: linear airfoil, constant chord, root cutout at the hinge, B = 1 — the closed forms' assumptions.
+4. **Reference model (validation entries, not gates; D-022 pattern):** coning against thrust, and β_1c, β_1s against μ, on a defined UH-60A isolated-rotor case. These skip without the external data directory.
+- **Real-time rules:** zero allocation, purity and bit-identical runs, as for M3.
+
+**Implementation notes (2026-10-11):**
+- The layer 1 reference is `tests/support/flap_reference.hpp`. It uses second-order forward-mode automatic differentiation (Taylor jets) in time, not numerical differences. That makes it exact to round-off, so the gate is 1e-7 relative on loads and 1e-6 rad/s² on β̈ (the inflow solves agree to ~1e-13). It takes the production element mesh, which the M3 tests verify on their own.
+- The layer 3 tolerances come from measured residuals, which grow with μ as the closed forms drop the 2/rev flapping and O(μ⁴) terms:
+  - flapping: 1.5% of the disc tilt up to μ = 0.1 (measured ≤ 1.1%) and 3% at μ = 0.2 (≤ 2%); μ = 0.3 is reported only;
+  - coning: 1% + 0.002° (measured ≤ 0.53%; the floor covers coning near zero);
+  - phase lag: 0.3° (measured ≤ 0.11°);
+  - amplitude: 1% (measured 0.33%);
+  - δ₃ stiffness: 1%;
+  - hub force tilt: 3% of the disc tilt.
+- Johnson's offset-hinge β is the tip-line angle, β_J = (1 − e/R)·β_hinge, and his γ uses the mode generalized mass, so γ = ρacR²(R − e)²/I_β. The conversion is in `tests/support/flap_closed_forms.hpp`. Johnson's hinge-spring term for e > 0 uses a different normalization, so spring cases are tested only with e = 0.
+
+**Rationale:** the offset-hinge closed forms come from Johnson and the centre-spring ones from Padfield, so each analytic test compares like with like. Layers 1 and 2 test the exact production path, so the closed-form tolerances only have to cover small-angle and harmonic-truncation residuals.

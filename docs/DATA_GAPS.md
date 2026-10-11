@@ -155,3 +155,10 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
 - Lift is looked up on α_trans, a swept-flow angle built from α and the yaw angle γ (p. 5.1-26, PDF p. 46). With cos γ = 1 every branch reduces to α_trans = α, which matches Eyas's omission of the radial velocity (D-024). Drag uses the actual α (p. 5.1-27).
 - The tip-loss factor multiplies lift only, by segment overlap with B·R (p. 5.1-27, PDF p. 47). This agrees with D-024, which keeps drag outboard of B·R.
 - C_d is reduced by a profile-drag correction ΔC_DMR (p. 5.1-27), one of the unreviewed constants on p. 5.1-49.
+
+## UH-60A flap constants (M4) — `VERIFIED by human review (2026-10-11)`; δ₀ meaning open (M9)
+**Source:** GenHel p. 5.1-49 (PDF p. 69), handwritten. **Confirmed by human review (2026-10-11):** K_β = 0 (flapping spring stiffness), K_β̇ = 0 ("Flapping damper rate", nomenclature p. 5.1-47, PDF p. 67), δ₃ = 0, δ₀ = 7 deg.
+**δ₀ (mnemonic LAGOMR, deg): meaning not yet established.** The nomenclature gives units but no description. Clues:
+- The nomenclature (PDF p. 66) lists LAGOMR right after THLDMR, in the group of "input constants defining the geometry of the lag damper kinematics".
+- Figure 1.1.4, "Lag damper kinematic geometry" (p. 5.1-10, PDF p. 30), draws δ₀ at the hinge in the plane of rotation, beside the lag angle δ. It looks like a reference lag angle of the damper geometry, e.g. the blade's lag position at the damper's neutral stroke.
+- Settle it from the lag-damper equations in §5.1.2 (where δ₀ enters the pick-up point positions) and the text on p. 5.1-5 (PDF p. 25) when the lag DOF is implemented (M9). It plays no part in M4 (flap only).

@@ -67,6 +67,11 @@ TEST(Units, Dimensions) {
     EXPECT_EQ(dim("ft*lbf"), Dimension::moment);
     EXPECT_EQ(dim("slug*ft"), Dimension::mass_moment);
     EXPECT_EQ(dim("lbf*in*s^2"), Dimension::inertia);
+    EXPECT_EQ(dim("ft*lbf/rad"), Dimension::rotational_stiffness);
+    EXPECT_EQ(dim("N*m/rad"), Dimension::rotational_stiffness);
+    EXPECT_EQ(dim("ft*lbf*s/rad"), Dimension::rotational_damping);
+    EXPECT_EQ(dim("N*m*s/rad"), Dimension::rotational_damping);
+    EXPECT_EQ(find_unit("ft*lbf/rad")->si_scale, find_unit("ft*lbf")->si_scale);
     EXPECT_EQ(find_unit("ft")->si_scale, kFoot);
     EXPECT_FALSE(find_unit("lb").has_value());
 }

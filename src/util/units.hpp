@@ -36,9 +36,11 @@ enum class Dimension : std::uint8_t {
     angular_rate,
     acceleration,
     density,
-    moment,       // force × length
-    mass_moment,  // first moment, mass × length
-    inertia,      // second moment, mass × length²
+    moment,                // force × length
+    mass_moment,           // first moment, mass × length
+    inertia,               // second moment, mass × length²
+    rotational_stiffness,  // moment per angle, e.g. a hinge spring
+    rotational_damping,    // moment per angular rate, e.g. a hinge damper
 };
 
 // Name used in error messages, e.g. "length".

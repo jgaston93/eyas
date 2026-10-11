@@ -14,11 +14,13 @@
 
 #include "eyas/model.hpp"
 #include "rotor/airfoil.hpp"
+#include "rotor/blade_element_rotor.hpp"
 #include "rotor/controls.hpp"
 #include "support/alloc_counter.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
+#include "util/units.hpp"
 
 namespace eyas {
 namespace {
@@ -215,6 +217,43 @@ TEST(Model, ReportsPlaceholderValuesAndTables) {
     EXPECT_EQ(p[2], "components[0].blade.airfoil: " + airfoil + " (# status: placeholder)");
 }
 
+// D-026: the flap section, in GenHel's units (W_b given as lbm, M_b slug·ft,
+// I_b slug·ft²), through the public Model: the rotor gets 2 states per
+// blade, and advance() still doesn't allocate.
+constexpr const char* kFlap = R"(      flap:
+        hinge_offset: "1.25 ft"
+        mass: "256.9 lbm"
+        first_moment: "86.7 slug*ft"
+        inertia: "1512.6 slug*ft^2"
+        spring: "0 ft*lbf/rad"
+        damper: "0 ft*lbf*s/rad"
+        delta3: "0 deg"
+)";
+
+TEST(Model, FlappingRotorFromConfig) {
+    const std::string blade = std::string("      twist: \"-16 deg\"\n") + kFlap;
+    const Config cfg =
+        Config::from_string(rotor_yaml(kData + "/linear_airfoil.csv", blade), "rotor.yaml");
+    const auto rotor = BladeElementRotor::from_config(cfg.child("components")[0]);
+    ASSERT_TRUE(rotor->config().flap.has_value());
+    const FlapHinge& f = *rotor->config().flap;
+    EXPECT_NEAR(f.offset, 1.25 * units::kFoot, 1e-15);
+    EXPECT_NEAR(f.mass, 256.9 * units::kPoundMass, 1e-12);
+    EXPECT_NEAR(f.first_moment, 86.7 * units::kSlug * units::kFoot, 1e-12);
+    EXPECT_NEAR(f.inertia, 1512.6 * units::kSlug * units::kFoot * units::kFoot, 1e-9);
+    EXPECT_EQ(rotor->num_states(), 8U);
+
+    Model m = Model::from_string(rotor_yaml(kData + "/linear_airfoil.csv", blade), "rotor.yaml");
+    Controls c;
+    c.collective = 0.6;
+    test::AllocationCounter count;
+    for (int i = 0; i < 30; ++i) {
+        const AdvanceStatus st = m.advance(c, Environment{}, 16'666'667);
+        ASSERT_FALSE(st.non_finite);
+    }
+    EXPECT_EQ(count.count(), 0U);
+}
+
 TEST(Model, BladeElementRotorConfigErrors) {
     const std::string af = kData + "/linear_airfoil.csv";
     const auto fails_with = [](const std::string& yaml, const std::string& text) {
@@ -239,6 +278,20 @@ TEST(Model, BladeElementRotorConfigErrors) {
     yaml = rotor_yaml(af);
     yaml.replace(yaml.find("tip_loss: 0.97"), 14, "tip_loss: 1.5");
     fails_with(yaml, "components[0]");
+    // Flap section: wrong dimensions, unknown keys, and an invalid hinge.
+    const std::string tw = "      twist: \"-16 deg\"\n";
+    std::string flap = kFlap;
+    flap.replace(flap.find("0 ft*lbf/rad"), 12, "0 ft*lbf");
+    fails_with(rotor_yaml(af, tw + flap), "components[0].blade.flap.spring");
+    flap = kFlap;
+    flap.replace(flap.find("86.7 slug*ft"), 12, "86.7 slug");
+    fails_with(rotor_yaml(af, tw + flap), "components[0].blade.flap.first_moment");
+    flap = kFlap;
+    flap.replace(flap.find("delta3"), 6, "delta_3");
+    fails_with(rotor_yaml(af, tw + flap), "components[0].blade.flap");
+    flap = kFlap;
+    flap.replace(flap.find("1512.6"), 6, "100.0");  // I_β < S_β²/m_b
+    fails_with(rotor_yaml(af, tw + flap), "inertia must satisfy");
 }
 
 }  // namespace
