@@ -4,6 +4,7 @@
 #include <span>
 
 #include "core/types.hpp"
+#include "env/atmosphere.hpp"
 
 // Interfaces between the executive and the models (spec §6, with D-003 and
 // D-004). Everything here is called from advance(): no allocation, no
@@ -21,6 +22,7 @@ struct SimContext {
     BodyState body;  // q_nb is unit length, even inside RK4 stages (D-014)
     Controls controls;
     Environment env;
+    AirState air;  // atmosphere at the CG altitude, from env (D-016)
     const CouplingOutputs* coupling = nullptr;
 };
 

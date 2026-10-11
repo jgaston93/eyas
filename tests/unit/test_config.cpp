@@ -12,6 +12,8 @@
 namespace eyas {
 namespace {
 
+using D = units::Dimension;
+
 constexpr const char* kYaml = R"(
 name: UH-60A
 main_rotor:
@@ -33,9 +35,9 @@ Config load() {
 
 TEST(Config, QuantitiesConvertToSi) {
     const Config c = load();
-    EXPECT_EQ(c.quantity("main_rotor.radius"), 26.83 * units::kFoot);
-    EXPECT_EQ(c.quantity("main_rotor.omega"), 27.0);
-    EXPECT_EQ(c.quantity("main_rotor.blade_weight"), 256.9 * units::kPoundForce);
+    EXPECT_EQ(c.quantity("main_rotor.radius", D::length), 26.83 * units::kFoot);
+    EXPECT_EQ(c.quantity("main_rotor.omega", D::angular_rate), 27.0);
+    EXPECT_EQ(c.quantity("main_rotor.blade_weight", D::force), 256.9 * units::kPoundForce);
 }
 
 TEST(Config, ScalarsOfOtherTypes) {
@@ -48,7 +50,7 @@ TEST(Config, ScalarsOfOtherTypes) {
 
 TEST(Config, QuantityWithoutUnitIsAnError) {
     const Config c = load();
-    EXPECT_THROW((void)c.quantity("main_rotor.tip_loss"), InitError);
+    EXPECT_THROW((void)c.quantity("main_rotor.tip_loss", D::dimensionless), InitError);
 }
 
 TEST(Config, NumberWithUnitIsAnError) {
@@ -58,8 +60,44 @@ TEST(Config, NumberWithUnitIsAnError) {
 
 TEST(Config, UnknownUnitIsAnError) {
     const Config c = Config::from_string("w: \"3 lb\"\nv: \"3 furlong\"\n");
-    EXPECT_THROW((void)c.quantity("w"), InitError);
-    EXPECT_THROW((void)c.quantity("v"), InitError);
+    EXPECT_THROW((void)c.quantity("w", D::force), InitError);
+    EXPECT_THROW((void)c.quantity("v", D::length), InitError);
+}
+
+// A unit of the wrong kind is an error, with both dimensions named; the
+// value is never converted.
+TEST(Config, QuantityOfWrongDimensionIsAnError) {
+    const Config c =
+        Config::from_string("rate: \"1000 s\"\nlat: \"37 m\"\nw: \"27 Hz\"\n", "dims.yaml");
+    EXPECT_THROW((void)c.quantity("lat", D::angle), InitError);
+    // Hz is a frequency, not an angular rate: they differ by 2π.
+    EXPECT_THROW((void)c.quantity("w", D::angular_rate), InitError);
+    EXPECT_EQ(c.quantity("w", D::frequency), 27.0);
+    try {
+        (void)c.quantity("rate", D::frequency);
+        FAIL() << "expected InitError";
+    } catch (const InitError& e) {
+        const std::string what = e.what();
+        EXPECT_NE(what.find("dims.yaml: rate:"), std::string::npos) << what;
+        EXPECT_NE(what.find("dimension time; expected frequency"), std::string::npos) << what;
+    }
+}
+
+// allow_keys() rejects keys the reader doesn't know, naming the full path.
+TEST(Config, UnknownKeysAreErrors) {
+    const Config c = load();
+    EXPECT_NO_THROW(c.child("main_rotor")
+                        .allow_keys({"radius", "omega", "blades", "tip_loss", "blade_weight",
+                                     "counter_clockwise"}));
+    try {
+        c.child("main_rotor").allow_keys({"radius", "omega", "blades", "tip_loss"});
+        FAIL() << "expected InitError";
+    } catch (const InitError& e) {
+        const std::string what = e.what();
+        EXPECT_NE(what.find("test.yaml: main_rotor.blade_weight: unknown key"), std::string::npos)
+            << what;
+    }
+    EXPECT_THROW(c.child("rotors").allow_keys({"radius"}), InitError);  // not a map
 }
 
 // yaml-cpp accepts duplicate keys and returns the first, so a corrected value
@@ -89,7 +127,7 @@ TEST(Config, NonScalarKeysAreErrors) {
 TEST(Config, NumberWithTwoSignsIsAnError) {
     const Config c = Config::from_string("n: +-5\nq: \"+-5 m\"\n");
     EXPECT_THROW((void)c.number("n"), InitError);
-    EXPECT_THROW((void)c.quantity("q"), InitError);
+    EXPECT_THROW((void)c.quantity("q", D::length), InitError);
 }
 
 TEST(Config, TypeMismatchesAreErrors) {
@@ -102,7 +140,7 @@ TEST(Config, TypeMismatchesAreErrors) {
 TEST(Config, MissingKeyErrorNamesFileAndFullPath) {
     const Config c = load();
     try {
-        (void)c.child("main_rotor").quantity("chord");
+        (void)c.child("main_rotor").quantity("chord", D::length);
         FAIL() << "expected InitError";
     } catch (const InitError& e) {
         const std::string what = e.what();
@@ -114,7 +152,7 @@ TEST(Config, MissingKeyErrorNamesFileAndFullPath) {
 TEST(Config, LookupDoesNotModifyTheDocument) {
     const Config c = load();
     EXPECT_FALSE(c.contains("main_rotor.chord"));
-    EXPECT_THROW((void)c.quantity("main_rotor.chord"), InitError);
+    EXPECT_THROW((void)c.quantity("main_rotor.chord", D::length), InitError);
     EXPECT_FALSE(c.contains("main_rotor.chord"));
     EXPECT_TRUE(c.contains("main_rotor.radius"));
 }
@@ -124,7 +162,7 @@ TEST(Config, ChildAndSequenceAccess) {
     EXPECT_EQ(c.child("main_rotor").integer("blades"), 4);
     const Config rotors = c.child("rotors");
     ASSERT_EQ(rotors.size(), 2U);
-    EXPECT_EQ(rotors[1].quantity("radius"), 5.5 * units::kFoot);
+    EXPECT_EQ(rotors[1].quantity("radius", D::length), 5.5 * units::kFoot);
     EXPECT_THROW((void)rotors[2], InitError);
     EXPECT_THROW((void)c.child("main_rotor").size(), InitError);
 }

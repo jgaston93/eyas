@@ -9,61 +9,97 @@ namespace {
 // Every unit accepted in config and table files. Add entries here as source
 // data needs them; each must be an exact product of the definitions in
 // units.hpp.
+using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, double>, 31> kRegistry{{
-    {"1", 1.0},
-    // length
-    {"m", 1.0},
-    {"ft", kFoot},
-    {"in", kInch},
-    // time
-    {"s", 1.0},
-    // mass
-    {"kg", 1.0},
-    {"slug", kSlug},
-    {"lbm", kPoundMass},
-    // force
-    {"N", 1.0},
-    {"lbf", kPoundForce},
-    // angle
-    {"rad", 1.0},
-    {"deg", kDegree},
-    {"1/rad", 1.0},
-    {"1/deg", 1.0 / kDegree},
-    // speed and rate
-    {"m/s", 1.0},
-    {"ft/s", kFoot},
-    {"kt", kKnot},
-    {"rad/s", 1.0},
-    {"deg/s", kDegree},
-    {"rpm", kRpm},
-    // acceleration
-    {"m/s^2", 1.0},
-    {"ft/s^2", kFoot},
-    // density
-    {"kg/m^3", 1.0},
-    {"slug/ft^3", kSlug / (kFoot * kFoot * kFoot)},
-    // moment and torque
-    {"N*m", 1.0},
-    {"ft*lbf", kFoot * kPoundForce},
-    // first and second mass moments
-    {"slug*ft", kSlug * kFoot},
-    {"kg*m", 1.0},
-    {"kg*m^2", 1.0},
-    {"slug*ft^2", kSlug * kFoot * kFoot},
-    {"lbf*in*s^2", kPoundForce * kInch},
+constexpr std::array<std::pair<std::string_view, Unit>, 32> kRegistry{{
+    {"1",          {1.0, D::dimensionless}},
+    {"m",          {1.0, D::length}},
+    {"ft",         {kFoot, D::length}},
+    {"in",         {kInch, D::length}},
+    {"s",          {1.0, D::time}},
+    {"Hz",         {1.0, D::frequency}},
+    {"kg",         {1.0, D::mass}},
+    {"slug",       {kSlug, D::mass}},
+    {"lbm",        {kPoundMass, D::mass}},
+    {"N",          {1.0, D::force}},
+    {"lbf",        {kPoundForce, D::force}},
+    {"rad",        {1.0, D::angle}},
+    {"deg",        {kDegree, D::angle}},
+    {"1/rad",      {1.0, D::per_angle}},
+    {"1/deg",      {1.0 / kDegree, D::per_angle}},
+    {"m/s",        {1.0, D::speed}},
+    {"ft/s",       {kFoot, D::speed}},
+    {"kt",         {kKnot, D::speed}},
+    {"rad/s",      {1.0, D::angular_rate}},
+    {"deg/s",      {kDegree, D::angular_rate}},
+    {"rpm",        {kRpm, D::angular_rate}},
+    {"m/s^2",      {1.0, D::acceleration}},
+    {"ft/s^2",     {kFoot, D::acceleration}},
+    {"kg/m^3",     {1.0, D::density}},
+    {"slug/ft^3",  {kSlug / (kFoot * kFoot * kFoot), D::density}},
+    {"N*m",        {1.0, D::moment}},
+    {"ft*lbf",     {kFoot * kPoundForce, D::moment}},
+    {"slug*ft",    {kSlug * kFoot, D::mass_moment}},
+    {"kg*m",       {1.0, D::mass_moment}},
+    {"kg*m^2",     {1.0, D::inertia}},
+    {"slug*ft^2",  {kSlug * kFoot * kFoot, D::inertia}},
+    {"lbf*in*s^2", {kPoundForce * kInch, D::inertia}},
 }};
 // clang-format on
 
 }  // namespace
 
-std::optional<double> si_scale(std::string_view unit) noexcept {
-    for (const auto& [name, scale] : kRegistry) {
+std::optional<Unit> find_unit(std::string_view unit) noexcept {
+    for (const auto& [name, u] : kRegistry) {
         if (name == unit) {
-            return scale;
+            return u;
         }
     }
     return std::nullopt;
+}
+
+std::optional<double> si_scale(std::string_view unit) noexcept {
+    const auto u = find_unit(unit);
+    if (!u) {
+        return std::nullopt;
+    }
+    return u->si_scale;
+}
+
+std::string_view dimension_name(Dimension d) noexcept {
+    switch (d) {
+        case Dimension::dimensionless:
+            return "dimensionless";
+        case Dimension::length:
+            return "length";
+        case Dimension::time:
+            return "time";
+        case Dimension::frequency:
+            return "frequency";
+        case Dimension::mass:
+            return "mass";
+        case Dimension::force:
+            return "force";
+        case Dimension::angle:
+            return "angle";
+        case Dimension::per_angle:
+            return "per angle";
+        case Dimension::speed:
+            return "speed";
+        case Dimension::angular_rate:
+            return "angular rate";
+        case Dimension::acceleration:
+            return "acceleration";
+        case Dimension::density:
+            return "density";
+        case Dimension::moment:
+            return "moment";
+        case Dimension::mass_moment:
+            return "mass moment";
+        case Dimension::inertia:
+            return "inertia";
+    }
+    return "unknown";
 }
 
 }  // namespace eyas::units

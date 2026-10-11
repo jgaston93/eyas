@@ -2,6 +2,7 @@
 // function, determinism, integer-nanosecond time keeping (D-006), the
 // sub-step cap, and zero allocation in advance() (spec §7.1).
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -213,6 +214,72 @@ TEST(Executive, NegativeFrameIsRejectedWithoutSideEffects) {
     EXPECT_EQ(st.substeps, 0);
     EXPECT_EQ(ex.n_steps(), 1);
     EXPECT_EQ(ex.remainder_ns(), 500'000);
+}
+
+// D-019: an invalid Environment is rejected like a negative frame time.
+TEST(Executive, InvalidEnvironmentIsRejectedWithoutSideEffects) {
+    Executive ex(test_config());
+    ex.set_body_state(BodyState{});
+    (void)ex.advance(Controls{}, Environment{}, 1'500'000);
+    const std::vector<double> before(ex.state().begin(), ex.state().end());
+
+    std::vector<Environment> bad(4);
+    bad[0].isa_delta_T = std::numeric_limits<double>::quiet_NaN();
+    bad[1].isa_delta_T = -300.0;  // a °C/K mix-up
+    bad[2].wind_n.y() = std::numeric_limits<double>::infinity();
+    bad[3].wind_n.x() = std::numeric_limits<double>::quiet_NaN();
+    for (const Environment& env : bad) {
+        const AdvanceStatus st = ex.advance(Controls{}, env, 5'000'000);
+        EXPECT_TRUE(st.rejected_env);
+        EXPECT_FALSE(st.rejected_dt);
+        EXPECT_EQ(st.substeps, 0);
+    }
+    EXPECT_TRUE(std::equal(before.begin(), before.end(), ex.state().begin()));
+    EXPECT_EQ(ex.n_steps(), 1);
+    EXPECT_EQ(ex.remainder_ns(), 500'000);
+
+    Environment ok;
+    ok.isa_delta_T = -60.0;
+    const AdvanceStatus st = ex.advance(Controls{}, ok, 1'000'000);
+    EXPECT_FALSE(st.rejected_env);
+    EXPECT_EQ(st.substeps, 1);
+}
+
+// D-019: leaving the tabulated atmosphere is reported per call, from the
+// committed state. Origin at 0 m MSL, so altitude = −D.
+TEST(Executive, AtmosphereOutOfRangeIsReported) {
+    Executive ex(test_config());
+    BodyState b;
+    b.pos_n.z() = -19'000.0;
+    ex.set_body_state(b);
+    EXPECT_FALSE(ex.advance(Controls{}, Environment{}, 5'000'000).atmosphere_out_of_range);
+
+    b.pos_n.z() = -25'000.0;
+    ASSERT_TRUE(ex.reset(b));
+    EXPECT_TRUE(ex.advance(Controls{}, Environment{}, 5'000'000).atmosphere_out_of_range);
+    // No sub-step committed: nothing to report.
+    EXPECT_FALSE(ex.advance(Controls{}, Environment{}, 0).atmosphere_out_of_range);
+}
+
+// restore() is the other way to install a whole state, so it applies the same
+// checks as reset(): a non-finite value or a zero quaternion is refused and
+// nothing changes.
+TEST(Executive, RestoreRejectsInvalidStateWithoutSideEffects) {
+    Executive ex(test_config());
+    ex.set_body_state(BodyState{});
+    (void)ex.advance(Controls{}, Environment{}, 1'500'000);
+    const std::vector<double> before(ex.state().begin(), ex.state().end());
+
+    const std::vector<double> zeros(before.size(), 0.0);  // q_nb = 0
+    EXPECT_FALSE(ex.restore(zeros, 0, 0));
+    std::vector<double> nan_state = before;
+    nan_state[0] = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_FALSE(ex.restore(nan_state, 0, 0));
+
+    EXPECT_TRUE(std::equal(before.begin(), before.end(), ex.state().begin()));
+    EXPECT_EQ(ex.n_steps(), 1);
+    EXPECT_EQ(ex.remainder_ns(), 500'000);
+    EXPECT_TRUE(ex.restore(before, 1, 500'000));
 }
 
 // ---- Failure reporting ------------------------------------------------------

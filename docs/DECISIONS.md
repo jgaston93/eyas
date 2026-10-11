@@ -9,7 +9,9 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 - Padfield, *Helicopter Flight Dynamics*, **3rd ed.** (2018);
 - Leishman, *Principles of Helicopter Aerodynamics*, **2nd ed.** (2006);
 - Johnson, *Rotorcraft Aeromechanics* (2013);
-- Howlett, NASA CR-166309 (1981).
+- Howlett, NASA CR-166309 (1981);
+- *U.S. Standard Atmosphere, 1976*, NOAA/NASA/USAF, NASA-TM-X-74335 (added 2026-10-10, M2; D-015). Pages are cited by the printed book page; PDF page = book page + 16 in Part 1 and + 15 in the Part 4 tables (Table I starts on book p. 51 = PDF p. 66);
+- *Department of Defense World Geodetic System 1984*, NGA.STND.0036_1.0.0_WGS84 (2014-07-08), the successor to TR8350.2 (added 2026-10-10, M2; D-017).
 
 **Rationale:** These are the copies available to the project. The spec allows Padfield 2nd or 3rd. Equation numbers differ between editions, so we fix one per book.
 
@@ -176,3 +178,81 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 Do not restore and continue automatically and silently: an input-driven fault recurs at the same point and loops, and a model bug goes unreported. (`snapshot`, `restore` and `reset` arrive with the M2 API; until then a host can only freeze, alert and log.)
 
 **Rationale:** additive only; no existing field changes meaning. Detecting ill-conditioned but finite solves (e.g. with an `rcond` estimate) is left until the rotor components exist and there is a real H to size a threshold against.
+
+## D-015 ISA: U.S. Standard Atmosphere 1976, geopotential altitude, hydrostatic ΔT (SPEC_REVIEW #15) — `Approved (2026-10-10)`
+**Decision:**
+- **Source:** *U.S. Standard Atmosphere, 1976* (USSA). It is identical to the ICAO standard atmosphere up to 32 km (Abstract, p. v).
+- **Constants** (USSA Table 2, p. 2, with the corrections below): g₀ = 9.80665 m/s², P₀ = 101325 Pa, T₀ = 288.15 K, r₀ = 6 356 766 m, R* = 8.31432 × 10³ N·m/(kmol·K), γ = 1.40. M₀ = 28.9644 kg/kmol (p. 9). Layers: H_b = 0 and 11 km′, with L_M,b = −6.5 and 0.0 K/km′ (Table 4, p. 3).
+  - Table 2 *as printed* gives R* = 8.31432 × 10⁻³ and r₀ = 6.356766 × 10⁶ km. Both are print errors. The text gives R* = 8.31432 × 10³ (p. 3) and r₀ = 6,356,766 m (p. 8, below Eq. 17), and the Symbols page (p. xi) gives 6356.766 km. Eyas uses the text values.
+- **Altitude:** geometric altitude Z above mean sea level converts to geopotential H = r₀Z/(r₀ + Z) (USSA Eq. 18, Γ = 1 m′/m).
+- **Equations, ΔT = 0:** T = T_b + L_b(H − H_b); P from Eq. 33a (L_b ≠ 0) or Eq. 33b (L_b = 0); ρ = P M₀/(R* T) (Eq. 42); a = √(γR*T/M₀) (Eq. 50). Below 80 km, T_M = T (p. 9).
+- **Range:** layers 0 and 1, so up to H = 20 km′. Above that, the isothermal layer is extended and an out-of-range flag is set. Below sea level, layer 0 is extended (USSA allows down to −5 km′, p. 12).
+- **ISA + ΔT is hydrostatic:** T(H) = T_std(H) + ΔT, and sea-level pressure stays P₀. Pressure comes from the same hydrostatic integration as Eqs. 33a/b, with T_b replaced by T_b + ΔT in every layer (including the pressure at the 11 km′ boundary). With ΔT = 0 this reduces exactly to the USSA equations.
+- **Tests:** USSA Table I rows at Z = 0, 1000, 5000 and 11000 m (geometric table) and H = 1000, 5000 and 11000 m′ (geopotential table), within the table's rounding. The hydrostatic relation dP/dZ = −ρ g(Z), with g(Z) from Eq. 17, is checked by finite differences for ΔT ≠ 0, so the offset case has an independent check.
+
+**Rationale:** USSA is the public primary definition. The geopotential conversion costs one division. Hydrostatic ΔT is physically consistent with an altitude taken from the state; the performance-chart convention is meant for pressure altitude.
+
+## D-016 Atmosphere computed inside Eyas; `Environment` carries conditions (SPEC_REVIEW #15) — `Approved (2026-10-10)` — interface change
+**Decision:**
+- The `Environment` passed to `advance()` becomes the host's *conditions*:
+  - `isa_delta_T` [K];
+  - `wind_n` [m/s];
+  - `ground_height` [m, above MSL].
+  The ρ, T and a fields are removed.
+- In every derivative evaluation the executive evaluates the atmosphere at the CG's geometric altitude, h = h₀ − D, where h₀ is the geodetic origin's altitude (from config, D-017). It puts the result in `SimContext::air`: ρ, P, T, a, h and the out-of-range flag. The derivative function stays a pure function of (t, x, inputs).
+- Models that need air at another point (a rotor hub, a tail) evaluate it themselves from the same function. The vertical gradient is about 1e-4 per metre in ρ, so the CG value is acceptable for v1.
+
+**Rationale:** density follows the aircraft inside each frame and inside RK4 stages, and the atmosphere is a function of the state, not of when the host sampled it.
+
+## D-017 Tier 1 geodetic position: flat-earth map on WGS-84 (SPEC_REVIEW #16) — `Approved (2026-10-10)`
+**Decision:**
+- **Origin:** config gives a geodetic origin (lat₀, lon₀ in WGS-84; h₀ in metres above MSL) at which NED (0, 0, 0) sits.
+- **Map:**
+  - lat = lat₀ + N/(R_M + h₀);
+  - lon = lon₀ + E/((R_N + h₀) cos lat₀);
+  - alt = h₀ − D.
+  - R_M = a(1 − e²)/(1 − e² sin²lat₀)^{3/2} and R_N = a/√(1 − e² sin²lat₀) are the meridian and prime-vertical radii of curvature at the origin.
+- **Constants:** a = 6378137.0 m and 1/f = 298.257223563 (NGA.STND.0036, Eq. 3-2, p. 3-2), with e² = f(2 − f).
+- **Anchors for the radius expressions:** the NGA document doesn't print them, so they're checked against values it tabulates:
+  - at the pole R_M = R_N = R_p = 6399593.6258 m (Table 3.5, p. 3-9);
+  - at the equator R_N = a and R_M = b²/a, with b = 6356752.3142 m (Table 3.5);
+  - at intermediate latitudes, R_M is checked as the curvature of the meridian ellipse by finite differences of an independently computed meridian.
+- **Longitude** is wrapped to (−180°, 180°]. At |lat₀| > 89°, init is rejected (cos lat₀ → 0).
+- **Datum:** the altitude is MSL height, used for the atmosphere. Geoid–ellipsoid separation is not modelled; a host that needs ellipsoidal height adds it.
+
+**Rationale:** level flight in NED stays level geodetically, which keeps the out-the-window view consistent with the terrain. Horizontal distortion grows slowly with range (the cos lat change over the area), which is acceptable for a flat-earth model; WGS-84 round-earth dynamics remain a later option (spec §4).
+
+## D-018 M2 tests, dummy rotor and the first public API (SPEC_REVIEW #17) — `Approved (2026-10-10)` — interface change
+**Decision:**
+- **Equilibrium:** keep the spec's case, which is exact at level attitude (the test asserts bit-exact zero drift). Add a case at a non-level attitude with a steady velocity and an inertially fixed force, with the tolerance derived from round-off. A constant force gives a neutral equilibrium, so no disturbance-recovery test (spec note).
+- **Dummy rotor:** a `ForceModel` you can select in config (`type: ideal_thrust`) with thrust T = T_max·collective along −z_b, massless and with no moment. This is test scaffolding until M3, and lets the host team integrate Tier 1 early. The force step is a collective step through `advance()`.
+- **Public API** (`include/eyas/`): an `eyas::Model` class with `init` (from a config file or string, throws `InitError`), `advance(controls, env, dt_ns)`, `outputs() → const AircraftState&`, `reset(body_state)`, `snapshot(Snapshot&)` and `restore(const Snapshot&)`. `make_snapshot()` allocates the buffer at init time, so `snapshot()`/`restore()` don't allocate (spec §7). `trim()` arrives with M7, not as a stub.
+- **`AircraftState` Tier 1:** sim time [s, ns]; lat, lon [rad], alt [m MSL]; q_nb; Euler angles (φ, θ, ψ_h) [rad] in Padfield's yaw–pitch–roll order. They are extracted from C_bn = Γ = ΦΘΨ (Padfield 3rd ed. Eqs. 3A.34–3A.40): θ = −asin Γ₁₃, φ = atan2(Γ₂₃, Γ₃₃), ψ_h = atan2(Γ₁₂, Γ₁₁). ψ_h is in [0, 2π), and θ is clamped to ±π/2 against round-off; plus the `AdvanceStatus` flags.
+
+## D-019 Environment input checks and atmosphere range reporting (SPEC_REVIEW #18) — `Approved (2026-10-11)` — interface change
+**Decision:** two fields are added to `AdvanceStatus` (additive; no existing field changes meaning).
+- **`rejected_env`:** `advance()` checks `Environment` once, before any sub-step. If it is invalid, the call does nothing (no time passes, the remainder is kept) and sets `rejected_env`, exactly like `rejected_dt`. Valid means:
+  - `isa_delta_T` is finite and the absolute temperature stays positive everywhere in the profile. In layers 0 and 1 the coldest point is the isothermal layer at T_std = 216.65 K (USSA Table 4, p. 3: 288.15 K − 6.5 K/km′ × 11 km′), so the test is ΔT > −216.65 K. No other bound is applied, since no public source gives an operational ΔT range.
+  - `wind_n` is finite.
+  - `ground_height` is not checked yet (unused until M6; NaN is its default).
+- **`atmosphere_out_of_range`:** set if the CG's geopotential altitude was outside [−5, 20] km′ (D-015) after any sub-step committed in the call. It is computed from the committed state after each step, not inside RK4 stages, so the derivative function stays a pure function of (t, x, inputs) (D-016). The atmosphere is still evaluated (extended) out of range.
+
+**Rationale:** a rejected call follows the existing `rejected_dt` precedent and never runs physics on inputs the host didn't mean. One check per call costs nothing measurable. Checking the committed state is one division per step, and RK4 stage points lie within one step's travel of it.
+
+## D-020 Public API boundary: `include/eyas/` only, implementation behind a pointer — `Approved (2026-10-11)` — interface change
+**Decision:**
+- The library API is exactly the headers in `include/eyas/`: `model.hpp`, `aircraft_state.hpp`, `types.hpp` (`Vec3`, `Quat`, `Controls`, `Environment`, `AdvanceStatus`, `BodyState`) and `error.hpp` (`InitError`). They include nothing from `src/`.
+- `Model` holds its implementation (executive, geodetic map) behind `std::unique_ptr<Impl>`. It is movable, not copyable. `Model(const Config&)` is removed from the API; hosts use `from_file`/`from_string`.
+- In CMake, `src/` is a PRIVATE include path of `eyas` and yaml-cpp a PRIVATE dependency; Eigen stays PUBLIC because the API value types use it. Unit tests and validation generators get the internals through an `eyas_internal` interface target.
+- `eyas_api_tests` is built with only `include/` on the path, so an internal header leaking into the API fails the build.
+- The types keep their names, namespace, fields and meaning: only their header moved (`src/core/types.hpp` and `src/util/error.hpp` include the public ones).
+
+**Rationale:** with `src/` public, a host compiled against Eyas internals, and any internal refactor could break host builds. One pointer indirection per call is negligible against a physics step. Found in the M2 code review.
+
+## D-021 Strict config reading — `Approved (2026-10-11)`
+**Decision:** extends D-012.
+- **Dimensions:** every registered unit has a dimension (length, time, frequency, mass, force, angle, per angle, speed, angular rate, acceleration, density, moment, mass moment, inertia, dimensionless). `Config::quantity(key, dimension)` rejects a unit of any other dimension. Frequency (Hz) and angular rate (rad/s, rpm) are distinct, since they differ by 2π. CSV table columns are converted by scale only for now; their expected dimensions arrive with the table schemas that use them.
+- **Unknown keys:** each config section is checked against the keys its reader knows (`Config::allow_keys`). A misspelled optional key is an error, not a silent default. New sections and keys are added to the allowed lists as the code that reads them lands.
+- **Error messages:** every init error from a config, including checks made later inside a constructor, reads `<file>: <full key path>: <message>`.
+
+**Rationale:** each of these let a wrong config load and run with no diagnostic: `physics_rate: "1000 s"`, `latitude: "37 m"`, or a misspelled `force_models` that silently removes the rotor. Found in the M2 code review.

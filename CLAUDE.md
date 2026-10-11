@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Eyas is a real-time, piloted rotorcraft flight dynamics model (C++20 library), intended to replace an incumbent commercial flight-dynamics package ("the reference model") in a host simulator. Reference vehicle: UH-60A (GenHel, NASA CR-166309).
 
-The design spec is `docs/EYAS_DESIGN.md`. Review findings are in `docs/SPEC_REVIEW.md`, approved departures in `docs/DECISIONS.md`, and data issues in `docs/DATA_GAPS.md`. Implementation status: M0 (scaffolding) and M1 (6-DOF rigid body core) done (see `docs/VALIDATION.md`); next is M2.
+The design spec is `docs/EYAS_DESIGN.md`. Review findings are in `docs/SPEC_REVIEW.md`, approved departures in `docs/DECISIONS.md`, and data issues in `docs/DATA_GAPS.md`. Implementation status: M0 (scaffolding), M1 (6-DOF rigid body core) and M2 (ISA atmosphere, dummy rotor, Tier 1 pose, `eyas::Model` API) done (see `docs/VALIDATION.md`); next is M3.
 
 ## How to treat the spec
 
@@ -33,6 +33,8 @@ The reference documents live outside this repo, in a local reference directory. 
 | Pitt & Peters, 6th ERF Paper 47 (1980), the same paper as *Vertica* 5(1) 1981 | The primary Pitt–Peters source. Weak OCR, so read equations from images. Final L and M matrices are in Table 4, p. 47-13. Open 4× apparent-mass conflict with Johnson (D-001). |
 | Pitt & Peters, 9th ERF Paper 55 (1983) | Supporting only; it covers a different, 5-state model. |
 | Howlett, GenHel UH-60A, NASA CR-166309 (1981) | Public NASA report, scanned with a poor OCR layer. **Read numeric data from rendered page images, never from extracted text.** An OCR misread is invented data. |
+| *U.S. Standard Atmosphere, 1976*, NASA-TM-X-74335 | Public; the ISA source (D-015). Scanned, with a nearly useless OCR layer, so read from images. Table 2 has two misprinted exponents (R*, r₀); use the text values. |
+| WGS-84, NGA.STND.0036_1.0.0 (2014) | Public, with a text layer; ellipsoid constants for the Tier 1 geodetic map (D-017). |
 
 **Reading scans:** poppler isn't installed, so the Read tool can't render PDFs. Use PyMuPDF (`python3 -I`, `import fitz`) to extract text or render a page with `page.get_pixmap(dpi=...)` (use `prerotate(90)` for rotated pages), then Read the PNG. For DjVu: search with `djvutxt --page=N`, render with `ddjvu -format=tiff -page=N`, convert to PNG with PyMuPDF.
 
@@ -75,7 +77,7 @@ ctest --preset debug                 # all tests
 ctest --preset debug -R 'Axis\.'     # tests matching a regex (each GoogleTest case is a ctest test)
 ./build/debug/tests/eyas_unit_tests --gtest_filter='Config.*'   # run the binary directly
 clang-format --dry-run --Werror src/**/*.{cpp,hpp} tests/**/*.{cpp,hpp}
-clang-tidy -p build/debug src/util/*.cpp src/sim/*.cpp
+clang-tidy -p build/debug src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp
 ```
 
 - **Dependencies:** fetched by FetchContent at configure time, pinned by version and SHA-256 in `cmake/EyasDependencies.cmake` (Eigen 3.4.0, yaml-cpp 0.8.0, GoogleTest 1.15.2). Offline machines: `-DFETCHCONTENT_SOURCE_DIR_<NAME>=<path>`.
@@ -84,7 +86,7 @@ clang-tidy -p build/debug src/util/*.cpp src/sim/*.cpp
 - **Target platform:** a Linux server running RHEL 8 or RHEL 9 (D-005). Verified in Rocky Linux containers: RHEL 9's system GCC 11 works; RHEL 8 needs `gcc-toolset-13` (configure rejects GCC < 11 with instructions). CMake there is 3.26–3.31. Pin the compiler per build, since determinism is per build and compiler.
 - **CI:** `.github/workflows/ci.yml` (Ubuntu GCC/Clang/ASan, Rocky 8 and 9 containers, format and tidy). To reproduce a Rocky job locally: `docker run --rm -v "$PWD":/src:ro rockylinux:9 ...`, configuring out-of-tree with `cmake -S /src -B /tmp/build`.
 - **Real-time test hook:** `tests/support/alloc_counter.hpp` (`AllocationCounter`) counts heap allocations in a scope through replaced global `operator new`. Use it to assert zero allocations for anything reachable from `advance()`.
-- **Layout:** `src/util/` holds init-time helpers (units, axis and tables, CSV and YAML loaders); `src/core/` the shared types, the §6 component interfaces, the rigid body and RK4; `src/sim/` the executive and recorder. `include/eyas/` will hold the public API (from M2, with `AircraftState`); `bench/` the timing benchmark; `tools/` offline Python (`tools/requirements.txt`, run from a git-ignored `.venv`); `tests/validation/` generators for VALIDATION.md data.
+- **Layout:** `src/util/` holds init-time helpers (units, axis and tables, CSV and YAML loaders); `src/core/` the shared types, the §6 component interfaces, the rigid body, RK4 and Euler output; `src/env/` the ISA atmosphere (D-015) and the geodetic map (D-017); `src/rotor/` rotor models (so far the M2 `ideal_thrust` dummy); `src/sim/` the executive, `Model` and recorder. `include/eyas/` holds the public API (`Model`, `AircraftState`, the value types and `InitError`; D-018, D-020), which must never include `src/` headers (checked by `eyas_api_tests`, built without `src/` on its include path); `bench/` the timing benchmark; `tools/` offline Python (`tools/requirements.txt`, run from a git-ignored `.venv`); `tests/validation/` generators for VALIDATION.md data.
 
 ## Architecture (intended design per spec §5–6)
 

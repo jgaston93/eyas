@@ -1,5 +1,6 @@
 #include "util/config.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <fstream>
 #include <set>
@@ -87,11 +88,31 @@ Config Config::from_file(const std::filesystem::path& path) {
 }
 
 std::string Config::full_path(std::string_view key) const {
+    if (key.empty()) {
+        return path_.empty() ? std::string("<root>") : path_;
+    }
     return join(path_, key);
 }
 
 void Config::fail(std::string_view key, std::string_view what) const {
     throw InitError(*origin_ + ": " + full_path(key) + ": " + std::string(what));
+}
+
+void Config::allow_keys(std::initializer_list<std::string_view> allowed) const {
+    if (!node_.IsMap()) {
+        fail("", "expected a map");
+    }
+    for (const auto& kv : node_) {
+        const std::string& key = kv.first.Scalar();  // plain names, checked at load
+        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
+            std::string known;
+            for (const std::string_view a : allowed) {
+                known += known.empty() ? "" : ", ";
+                known += a;
+            }
+            fail(key, "unknown key (expected one of: " + known + ")");
+        }
+    }
 }
 
 // Walks the dotted key using const access only, so lookups never insert
@@ -130,7 +151,7 @@ std::string Config::scalar(std::string_view key) const {
     return node->Scalar();
 }
 
-double Config::quantity(std::string_view key) const {
+double Config::quantity(std::string_view key, units::Dimension dimension) const {
     const std::string text = scalar(key);
     const std::string_view s = detail::trim(text);
     const std::size_t space = s.find_first_of(" \t");
@@ -144,12 +165,17 @@ double Config::quantity(std::string_view key) const {
         fail(key, "'" + text + "' does not start with a finite number");
     }
     const std::string_view unit = detail::trim(s.substr(space));
-    const auto scale = units::si_scale(unit);
-    if (!scale) {
+    const auto u = units::find_unit(unit);
+    if (!u) {
         fail(key,
              "unknown unit '" + std::string(unit) + "' (see units.cpp; use lbf or lbm, not lb)");
     }
-    return *value * *scale;
+    if (u->dimension != dimension) {
+        fail(key, "'" + text + "' has dimension " +
+                      std::string(units::dimension_name(u->dimension)) + "; expected " +
+                      std::string(units::dimension_name(dimension)));
+    }
+    return *value * u->si_scale;
 }
 
 double Config::number(std::string_view key) const {

@@ -108,3 +108,27 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 - *Intermediate-axis instability.* Torque-free motion near the intermediate axis is periodic: the body flips and comes back. A check of the state after 60 s can miss the instability entirely. In an offline check (inertias 1, 2, 3; spin 1 rad/s about axis 2; perturbation 1e-3), the state at t = 60 s was back near the initial spin.
 - The energy and angular-momentum drift bounds (1e-8 over 60 s) hold with a large margin (about 1e-14 at 1–2 rad/s). They are fine as written, but they detect coding errors, not integrator accuracy.
 **Suggested resolution:** see D-013.
+
+## 15. ISA model and the `Environment` interface are underspecified — `resolved → DECISIONS.md D-015, D-016 (2026-10-10)`
+**Spec:** §6.2, §6 (`Environment`), M2.
+**Problem:**
+- *No source.* "ISA values match the standard tables" names no table. None of the D-001 references defines the ISA. Leishman 2nd ed. §5.2 (pp. 212–214) is a summary with rounded or off-standard constants: 288.16 K, 101,301 N/m², 6.51 K/km, and "980 mm" Hg for 29.92 inHg. Its Table 5.1 stops at 12,000 ft, so it covers neither 5000 m nor 11000 m.
+- *Geometric or geopotential altitude.* ISA tables are given in geopotential altitude H. Eyas's altitude comes from NED and is geometric, Z. At 11 km, Z − H ≈ 19 m, which changes ρ by ≈ 0.2%.
+- *"Temperature offset" is ambiguous.* It can mean the performance-chart convention (standard pressure at a pressure altitude, temperature shifted; Leishman Eq. 5.11), or a hydrostatic atmosphere with the temperature profile shifted. At a given geometric altitude the two give different ρ.
+- *Who computes the atmosphere.* §6.2 puts the atmosphere inside Eyas, but the §6 `Environment` passes ρ, T and a from the host, constant over a whole host frame. That makes density lag the aircraft's altitude, and it makes the atmosphere an input rather than a function of the state.
+**Suggested resolution:** use the U.S. Standard Atmosphere 1976 (identical to the ICAO ISA up to 32 km; p. v) as the primary source. Evaluate it on geopotential altitude, converted from geometric (USSA Eq. 18). Give ΔT a hydrostatic meaning. Have Eyas compute the atmosphere from the state in every derivative evaluation, with the host passing conditions only.
+
+## 16. Tier 1 NED-to-geodetic conversion is underspecified — `resolved → DECISIONS.md D-017 (2026-10-10)`
+**Spec:** §6.10 (`AircraftState` Tier 1), M2.
+**Problem:** "NED-to-geodetic conversion matches a reference calculation" doesn't say which conversion. Treating NED as a plane tangent at the origin (exact geometry) and mapping it onto the ellipsoid by arc length (flat-earth map) differ by about d²/2R in altitude: ≈ 8 m at 10 km from the origin and ≈ 200 m at 50 km. The tangent-plane version makes level flight in NED climb away from the terrain in the out-the-window view. No ellipsoid source is named either.
+**Suggested resolution:** use the flat-earth map, with WGS-84 radii of curvature at the origin (NGA.STND.0036). See D-017.
+
+## 17. The M2 equilibrium criterion is met trivially — `resolved → DECISIONS.md D-018 (2026-10-10)`
+**Spec:** M2.
+**Problem:** "Started at rest with the dummy force exactly equal to weight" at level attitude cancels exactly in floating point: C_bn g_n = (0, 0, g) and F = (0, 0, −mg). The acceleration is exactly 0.0, so position and velocity don't drift at all, and the test can't fail through any frame or sign error that keeps level flight exact. The same holds for "a step gives the expected vertical acceleration": RK4 is exact for constant acceleration.
+**Suggested resolution:** also test at a non-level attitude with a steady translation, using a force fixed in inertial space and rotated into body axes, with a tolerance derived from round-off. See D-018.
+
+## 18. Bad environment inputs and out-of-range altitude can't be seen by the host — `resolved → DECISIONS.md D-019 (2026-10-11)`
+**Spec:** §6.2, §6.10; D-015, D-016.
+**Problem:** `advance()` doesn't check `Environment`. A NaN `isa_delta_T`, or one low enough to make the absolute temperature non-positive (a °C/K mix-up), gives NaN density and speed of sound. Once a model uses `ctx.air`, every step then fails as `non_finite`, with no hint that the input caused it. A NaN `wind_n` would do the same. Separately, D-015's out-of-range flag is set only in `SimContext::air`, which the host can't read, so flight outside the tabulated atmosphere goes unreported. Found in the M2 code review. Neither has an effect yet: nothing reads `ctx.air` before M3.
+**Suggested resolution:** reject an invalid `Environment` the way a negative frame time is rejected, and report out-of-range altitude in `AdvanceStatus`. See D-019.

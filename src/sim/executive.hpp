@@ -19,18 +19,9 @@ namespace eyas {
 
 struct ExecutiveConfig {
     MassProperties mass;               // airframe only, about its CG (D-002)
+    double origin_altitude = 0.0;      // [m] MSL height of the NED origin (D-016, D-017)
     std::int64_t step_ns = 1'000'000;  // [ns] physics step (1 kHz)
     std::int64_t max_substeps = 100;   // per advance() call
-};
-
-struct AdvanceStatus {
-    std::int64_t substeps = 0;  // physics steps run by this call
-    bool capped = false;        // hit max_substeps; the excess time was dropped
-    bool rejected_dt = false;   // dt_host_ns < 0; nothing was done
-    // A sub-step produced a non-finite state (e.g. a singular coupled solve).
-    // That step was discarded, the state is the last good one, and the rest of
-    // this call's time was dropped. The same inputs fail the same way again.
-    bool non_finite = false;
 };
 
 class Executive {
@@ -43,6 +34,17 @@ public:
 
     // Init-time: sets the airframe state (the quaternion is normalized).
     void set_body_state(const BodyState& body);
+
+    // Starts the run again from `body` at t = 0: components return to their
+    // initial states, the step count and remainder are zeroed. Returns false,
+    // changing nothing, if the state is not finite or the quaternion is zero.
+    bool reset(const BodyState& body) noexcept;
+
+    // Sets the full state, step count and remainder, e.g. from a snapshot.
+    // Returns false, changing nothing, on a size mismatch, invalid time, a
+    // non-finite state or a zero quaternion.
+    bool restore(std::span<const double> x, std::int64_t n_steps,
+                 std::int64_t remainder_ns) noexcept;
 
     // Advances by one host frame: runs floor((remainder + dt) / step) fixed
     // sub-steps, at most max_substeps, and carries the remainder. [ns]
@@ -75,6 +77,7 @@ private:
 
     MassProperties mass_;
     Mat66 mass_matrix_;
+    double origin_altitude_;
     std::int64_t step_ns_;
     std::int64_t max_substeps_;
 
