@@ -104,6 +104,7 @@ bool Executive::reset(const BodyState& body) noexcept {
     n_steps_ = 0;
     remainder_ns_ = 0;
     quat_norm_error_ = 0.0;
+    unconverged_evaluations_ = 0;
     return true;
 }
 
@@ -122,6 +123,7 @@ bool Executive::restore(std::span<const double> x, std::int64_t n_steps,
     n_steps_ = n_steps;
     remainder_ns_ = remainder_ns;
     quat_norm_error_ = 0.0;
+    unconverged_evaluations_ = 0;
     return true;
 }
 
@@ -129,7 +131,7 @@ double Executive::sim_time() const noexcept {
     return static_cast<double>(sim_time_ns()) * 1e-9;
 }
 
-void Executive::derivatives(double t, std::span<const double> x, const Controls& controls,
+bool Executive::derivatives(double t, std::span<const double> x, const Controls& controls,
                             const Environment& env, std::span<double> xdot) const noexcept {
     // Inside RK4 stages the stored quaternion is off unit length. Components
     // get the unit one, since they use it to rotate vectors; q̇ uses the
@@ -154,6 +156,7 @@ void Executive::derivatives(double t, std::span<const double> x, const Controls&
     }
     std::fill(xdot0_.begin(), xdot0_.end(), 0.0);
     std::fill(G_.begin(), G_.end(), 0.0);
+    bool converged = true;
     for (std::size_t i = 0; i < components_.size(); ++i) {
         const std::size_t n = sizes_[i];
         const std::size_t local = offsets_[i] - body_layout::kSize;
@@ -163,6 +166,7 @@ void Executive::derivatives(double t, std::span<const double> x, const Controls&
         rhs.head<3>() += d.load0_b.F;
         rhs.tail<3>() += d.load0_b.M;
         A -= d.H;
+        converged = converged && d.converged;
     }
     const Vec6 a = A.partialPivLu().solve(rhs);
 
@@ -175,15 +179,20 @@ void Executive::derivatives(double t, std::span<const double> x, const Controls&
         }
         xdot[body_layout::kSize + j] = v;
     }
+    return converged;
 }
 
 bool Executive::step(const Controls& controls, const Environment& env) noexcept {
     const double h = static_cast<double>(step_ns_) * 1e-9;
     const double t = sim_time();
     std::copy(x_.begin(), x_.end(), x_prev_.begin());
-    rk4_.step([&](double ts, std::span<const double> xs,
-                  std::span<double> xd) { derivatives(ts, xs, controls, env, xd); },
-              t, h, x_);
+    rk4_.step(
+        [&](double ts, std::span<const double> xs, std::span<double> xd) {
+            if (!derivatives(ts, xs, controls, env, xd)) {
+                ++unconverged_evaluations_;
+            }
+        },
+        t, h, x_);
 
     // A singular coupled solve or a component returning NaN/Inf poisons the
     // whole state. Keep the last good state instead of committing the step.
@@ -228,6 +237,7 @@ AdvanceStatus Executive::advance(const Controls& controls, const Environment& en
     remainder_ns_ = rem;
 
     quat_norm_error_ = 0.0;
+    unconverged_evaluations_ = 0;
     for (std::int64_t i = 0; i < steps; ++i) {
         if (!step(controls, env)) {
             status.non_finite = true;

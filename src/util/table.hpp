@@ -63,8 +63,8 @@ public:
     const Axis& x_axis() const noexcept { return x_; }
     const Axis& y_axis() const noexcept { return y_; }
 
-private:
-    double at(std::size_t i, std::size_t j) const noexcept { return v_[i * y_.size() + j]; }
+    // Value at positions already located on this table's axes, so several
+    // tables on the same axes can share one search (e.g. airfoil C_l and C_d).
     double eval(AxisPosition px, AxisPosition py) const noexcept {
         const std::size_t i = px.index;
         const std::size_t j = py.index;
@@ -72,6 +72,9 @@ private:
         const double v1 = detail::lerp(at(i + 1, j), at(i + 1, j + 1), py.t);
         return detail::lerp(v0, v1, px.t);
     }
+
+private:
+    double at(std::size_t i, std::size_t j) const noexcept { return v_[i * y_.size() + j]; }
 
     Axis x_;
     Axis y_;

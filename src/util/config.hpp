@@ -43,6 +43,9 @@ public:
     std::int64_t integer(std::string_view key) const;
     bool boolean(std::string_view key) const;
     std::string string(std::string_view key) const;
+    // A file path. A relative path is taken relative to the directory of the
+    // config file (from_file) or to the current directory (from_string).
+    std::filesystem::path path(std::string_view key) const;
 
     bool contains(std::string_view key) const;
     // Throws unless this node is a map whose keys are all in `allowed`.
@@ -62,7 +65,8 @@ public:
 
 private:
     Config(const YAML::Node& node, std::shared_ptr<const std::string> origin, std::string path,
-           std::shared_ptr<const std::vector<std::string>> placeholders);
+           std::shared_ptr<const std::vector<std::string>> placeholders,
+           std::shared_ptr<const std::filesystem::path> base_dir);
 
     std::optional<YAML::Node> find(std::string_view key) const;
     std::string scalar(std::string_view key) const;
@@ -72,6 +76,7 @@ private:
     std::shared_ptr<const std::string> origin_;
     std::string path_;
     std::shared_ptr<const std::vector<std::string>> placeholders_;
+    std::shared_ptr<const std::filesystem::path> base_dir_;  // for relative paths
 };
 
 }  // namespace eyas

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "util/table.hpp"
+#include "util/units.hpp"
 
 // Table files in "long" CSV form, one row per grid point, loaded at init time:
 //
@@ -30,12 +31,17 @@ struct CsvTable {
     std::map<std::string, std::string> meta;   // "# key: value" lines
     std::vector<std::string> names;            // column names, without units
     std::vector<std::vector<double>> columns;  // SI values, one vector per column
+    std::vector<units::Dimension> dimensions;  // of each column's unit
 
     const std::string& source() const { return meta.at("source"); }
     bool is_placeholder() const;
 
     // Throws InitError if there is no column with this name.
     const std::vector<double>& column(std::string_view name) const;
+
+    // Throws InitError, naming the column and its unit's dimension, unless the
+    // column exists and its unit has dimension `d` (D-021).
+    void require_dimension(std::string_view name, units::Dimension d) const;
 };
 
 // Throw InitError, naming the origin and line, on any format problem.
