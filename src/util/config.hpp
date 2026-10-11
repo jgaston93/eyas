@@ -33,6 +33,8 @@ namespace eyas {
 // - A value tagged !placeholder marks a data gap (DATA_GAPS.md). It still
 //   loads; placeholders() lists every one so init can report them.
 //       blade_weight: !placeholder "256.9 lbf"
+//   A reader that loads a data file marked as a placeholder (a CSV table
+//   with "# status: placeholder") adds it with note_placeholder() (D-025).
 class Config {
 public:
     static Config from_file(const std::filesystem::path& path);
@@ -60,12 +62,17 @@ public:
     // this node itself. For checks made by the reader after a value is read.
     [[noreturn]] void fail(std::string_view key, std::string_view what) const;
 
-    // Full key paths of every !placeholder value in the whole document.
+    // Every data gap in the whole document: the full key path of each
+    // !placeholder value, then "<path>: <what>" for each note_placeholder().
     const std::vector<std::string>& placeholders() const { return *placeholders_; }
+    // Records a data gap found by the reader of `key`, e.g. a placeholder
+    // table in the file `key` names. The list is shared by every node of the
+    // document, so placeholders() on any of them includes it.
+    void note_placeholder(std::string_view key, std::string_view what) const;
 
 private:
     Config(const YAML::Node& node, std::shared_ptr<const std::string> origin, std::string path,
-           std::shared_ptr<const std::vector<std::string>> placeholders,
+           std::shared_ptr<std::vector<std::string>> placeholders,
            std::shared_ptr<const std::filesystem::path> base_dir);
 
     std::optional<YAML::Node> find(std::string_view key) const;
@@ -75,8 +82,8 @@ private:
     YAML::Node node_;
     std::shared_ptr<const std::string> origin_;
     std::string path_;
-    std::shared_ptr<const std::vector<std::string>> placeholders_;
-    std::shared_ptr<const std::filesystem::path> base_dir_;  // for relative paths
+    std::shared_ptr<std::vector<std::string>> placeholders_;  // shared, appendable
+    std::shared_ptr<const std::filesystem::path> base_dir_;   // for relative paths
 };
 
 }  // namespace eyas

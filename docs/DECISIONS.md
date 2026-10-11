@@ -143,7 +143,7 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
   - A non-empty `# source:` comment is **mandatory**, so no table enters the model without provenance.
   - `# status: placeholder` marks a whole table as a data gap.
 - **Config quantities** are YAML strings with an explicit unit, e.g. `radius: "26.83 ft"`. A quantity without a unit is an error, so a missing unit can never be silently read as SI. Dimensionless values are plain numbers.
-- **Placeholders:** a config value is marked with the YAML tag `!placeholder`, e.g. `blade_weight: !placeholder "256.9 lbf"`. *Departure from spec §0 rule 3*, which says to use a `# PLACEHOLDER — needs source` comment: a YAML parser cannot see comments, so the comment form can't be detected or reported. With the tag, `Config::placeholders()` lists every gap and init can report them.
+- **Placeholders:** a config value is marked with the YAML tag `!placeholder`, e.g. `blade_weight: !placeholder "256.9 lbf"`. *Departure from spec §0 rule 3*, which says to use a `# PLACEHOLDER — needs source` comment: a YAML parser cannot see comments, so the comment form can't be detected or reported. With the tag, `Config::placeholders()` lists every gap and init can report them. The host sees them through `Model::placeholders()` (D-025).
 - **Units:** `lb` is rejected as ambiguous; write `lbf` (force) or `lbm` (mass). GenHel uses "LB" for both weights and forces, so every transcription must state which it means.
 - **Table lookups clamp** at the edges (no extrapolation). A NaN query returns NaN rather than an error, so it shows up in diagnostics.
 - **Init-time errors** throw `eyas::InitError`, naming the file, line or key path. Nothing reachable from `advance()` throws (spec §7 rule 2); the loaders are init-only.
@@ -288,3 +288,11 @@ Do not restore and continue automatically and silently: an input-driven fault re
 - **Controls (spec §6.3, D-011).** Each rotor owns a linear map from `Controls` to (θ₀, θ_1s, θ_1c): offset + gains, from config. Mechanical mixing is a nonzero cross gain. It sits behind an interface, so a nonlinear or mode-dependent mixer can replace it. Sign conventions of `Controls` (documented in `include/eyas/types.hpp`): collective 0 = full down; lon_cyclic +1 = full forward stick; lat_cyclic +1 = full right stick; pedal +1 = full right pedal. Actuator dynamics are not modeled (optional in v1).
 
 **Rationale:** each item settles an ambiguity in SPEC_REVIEW #20 in the way that keeps the M3 oracle (D-007) and the M4 derivations aligned with their references.
+
+## D-025 Report data gaps through the public API — `Approved (2026-10-11)` — interface change (public API)
+**Decision:** extends D-012, which said init "can report" placeholders but gave the host no way to see them.
+- **One list per config document.** `Config::placeholders()` lists the full key path of every `!placeholder` value, as before. A reader that loads a CSV table marked `# status: placeholder` adds it with `Config::note_placeholder(key, what)`, as `"<key path>: <file> (# status: placeholder)"`. In M3 these are the blade's `chord_table`, `twist_table` and `airfoil`.
+- **Public API:** `const std::vector<std::string>& Model::placeholders() const noexcept`, init-time. It lists every data gap the model was built with, and is empty when every value and table is sourced.
+- **No failure.** Placeholders still load (D-012). Eyas does no I/O, so the host decides whether to log, display or refuse a model with gaps.
+
+**Rationale:** the UH-60A blade data is transcribed next, and some tables may start as placeholders. Without this, a model running on placeholder data was indistinguishable from a sourced one.

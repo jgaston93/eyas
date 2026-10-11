@@ -59,7 +59,7 @@ void check_and_collect(const YAML::Node& node, const std::string& origin, const 
 }  // namespace
 
 Config::Config(const YAML::Node& node, std::shared_ptr<const std::string> origin, std::string path,
-               std::shared_ptr<const std::vector<std::string>> placeholders,
+               std::shared_ptr<std::vector<std::string>> placeholders,
                std::shared_ptr<const std::filesystem::path> base_dir)
     : node_(node),
       origin_(std::move(origin)),
@@ -78,6 +78,10 @@ Config Config::from_string(std::string_view yaml, std::string_view origin) {
     check_and_collect(root, std::string(origin), "", *placeholders);
     return Config(root, std::make_shared<const std::string>(origin), "", std::move(placeholders),
                   std::make_shared<const std::filesystem::path>());
+}
+
+void Config::note_placeholder(std::string_view key, std::string_view what) const {
+    placeholders_->push_back(full_path(key) + ": " + std::string(what));
 }
 
 Config Config::from_file(const std::filesystem::path& path) {

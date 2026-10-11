@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -70,6 +71,14 @@ public:
     // holds a non-finite state or a zero quaternion.
     bool snapshot(Snapshot& out) const noexcept;
     bool restore(const Snapshot& in) noexcept;
+
+    // Init-time: every data gap the aircraft was built with (D-012, D-025),
+    // one entry per gap, naming the config file's key path:
+    //   "components[0].blade.mass"   (a value tagged !placeholder)
+    //   "components[0].blade.twist_table: <csv file> (# status: placeholder)"
+    // Empty when every value and table is sourced. Eyas does no I/O, so the
+    // host decides whether to log, display or refuse a model with gaps.
+    const std::vector<std::string>& placeholders() const noexcept;
 
     // Engineering access to the full state (body states first; spec §5).
     BodyState body_state() const noexcept;

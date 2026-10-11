@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <numbers>
+#include <sstream>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -179,6 +180,39 @@ TEST(Model, BladeElementRotorFromConfig) {
     }
     EXPECT_EQ(count.count(), 0U);
     EXPECT_LT(m.body_state().vel_b.z(), 0.0);  // climbing: thrust exceeds 7000 kg weight
+}
+
+// D-025: placeholder YAML values and placeholder CSV tables are all reported
+// through the public Model, with the key path that loaded them.
+TEST(Model, ReportsPlaceholderValuesAndTables) {
+    const std::string sourced_twist = "      twist_table: " + kData + "/twist_table.csv\n";
+    const Model sourced =
+        Model::from_string(rotor_yaml(kData + "/linear_airfoil.csv", sourced_twist), "rotor.yaml");
+    EXPECT_TRUE(sourced.placeholders().empty());
+
+    // Copies of the test tables, marked as placeholders.
+    const auto dir = std::filesystem::temp_directory_path() / "eyas_placeholder_test";
+    std::filesystem::create_directories(dir);
+    const auto mark = [&](const std::string& name) {
+        std::ifstream in(kData + "/" + name);
+        std::ostringstream text;
+        text << "# status: placeholder\n" << in.rdbuf();
+        const auto out = dir / name;
+        std::ofstream(out) << text.str();
+        return out.string();
+    };
+    const std::string twist = mark("twist_table.csv");
+    const std::string airfoil = mark("linear_airfoil.csv");
+    std::string yaml = rotor_yaml(airfoil, "      twist_table: " + twist + "\n");
+    yaml.replace(yaml.find("chord: \"0.53 m\""), 15, "chord: !placeholder \"0.53 m\"");
+    const Model m = Model::from_string(yaml, "rotor.yaml");
+    std::filesystem::remove_all(dir);
+
+    const auto& p = m.placeholders();
+    ASSERT_EQ(p.size(), 3U);
+    EXPECT_EQ(p[0], "components[0].blade.chord");
+    EXPECT_EQ(p[1], "components[0].blade.twist_table: " + twist + " (# status: placeholder)");
+    EXPECT_EQ(p[2], "components[0].blade.airfoil: " + airfoil + " (# status: placeholder)");
 }
 
 TEST(Model, BladeElementRotorConfigErrors) {

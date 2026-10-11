@@ -56,8 +56,12 @@ public:
     // Reads the map from config, e.g.
     //   theta0:  {offset: "1 deg", collective: "16 deg"}
     //   theta1s: {lon_cyclic: "-10 deg"}
-    //   theta1c: {lat_cyclic: "8 deg"}
-    // Every row and every gain is optional and defaults to zero; all are
+    //   theta1c: {lat_cyclic: "-8 deg"}
+    // Signs: in hover β1c ≈ −θ1s (disc tilt forward) and β1s ≈ θ1c (disc tilt
+    // to port) (Padfield 3rd ed. Eqs. 2.26–2.27, S_β = 0). So forward stick
+    // needs θ1s < 0 and, for a counter-clockwise rotor, right stick needs
+    // θ1c < 0. For a clockwise rotor ψ = 90° is on the left, so the θ1c gain
+    // flips sign. Every row and every gain is optional and defaults to zero; all are
     // angles. Throws InitError naming the key.
     static std::unique_ptr<LinearControlMap> from_config(const Config& node);
 

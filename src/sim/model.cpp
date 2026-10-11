@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "core/attitude.hpp"
 #include "env/geodesy.hpp"
@@ -18,6 +19,7 @@ namespace eyas {
 struct Model::Impl {
     FlatEarthMap map;  // declared before executive, which is built from its origin
     Executive executive;
+    std::vector<std::string> placeholders;  // data gaps, from Config (D-025)
 };
 
 namespace {
@@ -139,8 +141,11 @@ std::unique_ptr<Model::Impl> build(const Config& config) {
     config.allow_keys({"simulation", "geodetic_origin", "airframe", "components", "force_models"});
     FlatEarthMap map = read_origin(config);
     const double origin_altitude = map.origin().altitude;
+    Executive executive = build_executive(config, origin_altitude);
+    // Read after the build, so that placeholder data files noted by the
+    // component readers are included.
     return std::make_unique<Model::Impl>(
-        Model::Impl{map, build_executive(config, origin_altitude)});
+        Model::Impl{map, std::move(executive), config.placeholders()});
 }
 
 }  // namespace
@@ -159,6 +164,10 @@ Model Model::from_file(const std::filesystem::path& path) {
 
 Model Model::from_string(std::string_view yaml, std::string_view origin) {
     return Model(build(Config::from_string(yaml, origin)));
+}
+
+const std::vector<std::string>& Model::placeholders() const noexcept {
+    return impl_->placeholders;
 }
 
 AdvanceStatus Model::advance(const Controls& controls, const Environment& env,

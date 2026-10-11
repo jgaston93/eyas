@@ -5,6 +5,7 @@
 #include <limits>
 #include <numbers>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "util/config.hpp"
@@ -373,6 +374,13 @@ Table1D constant_table(double v) {
     return Table1D(Axis({0.0, 1.0}), {v, v});
 }
 
+// Reports a CSV table marked "# status: placeholder" as a data gap (D-025).
+void note_if_placeholder(const Config& node, std::string_view key, const CsvTable& csv) {
+    if (csv.is_placeholder()) {
+        node.note_placeholder(key, csv.origin + " (# status: placeholder)");
+    }
+}
+
 // Reads `key` (a constant, or for twist a linear θ_tw) or `key_table` (a CSV
 // with columns r [1] and `column`).
 Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, bool linear) {
@@ -390,6 +398,7 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
         const CsvTable csv = read_csv_table(blade.path(table_key));
         csv.require_dimension("r", Dimension::dimensionless);
         csv.require_dimension(key, d);
+        note_if_placeholder(blade, table_key, csv);
         return make_table1d(csv, "r", key);
     } catch (const InitError& e) {
         blade.fail(table_key, e.what());
@@ -436,8 +445,9 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
     c.chord = read_spanwise(blade, "chord", Dimension::length, false);
     c.twist = read_spanwise(blade, "twist", Dimension::angle, true);
     try {
-        c.airfoil = std::make_shared<const Airfoil>(
-            Airfoil::from_csv(read_csv_table(blade.path("airfoil"))));
+        const CsvTable csv = read_csv_table(blade.path("airfoil"));
+        c.airfoil = std::make_shared<const Airfoil>(Airfoil::from_csv(csv));
+        note_if_placeholder(blade, "airfoil", csv);
     } catch (const InitError& e) {
         blade.fail("airfoil", e.what());
     }

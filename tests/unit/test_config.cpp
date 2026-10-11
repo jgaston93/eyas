@@ -176,6 +176,15 @@ TEST(Config, ListsPlaceholdersWithFullPaths) {
     EXPECT_EQ(c.child("rotors").placeholders().size(), 2U);
 }
 
+TEST(Config, NotedPlaceholdersAreSharedByTheWholeDocument) {
+    const Config c = load();
+    c.child("rotors")[0].note_placeholder("table", "t.csv (# status: placeholder)");
+    const auto& p = c.placeholders();
+    ASSERT_EQ(p.size(), 3U);
+    EXPECT_EQ(p[2], "rotors[0].table: t.csv (# status: placeholder)");
+    EXPECT_EQ(c.child("main_rotor").placeholders().size(), 3U);
+}
+
 TEST(Config, SyntaxErrorsAndMissingFilesAreInitErrors) {
     EXPECT_THROW(Config::from_string("a: [1, 2\n"), InitError);
     EXPECT_THROW(Config::from_file("/nonexistent/eyas.yaml"), InitError);
