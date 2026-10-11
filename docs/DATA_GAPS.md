@@ -26,7 +26,7 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
 - **Digits confirmed by human review:** every value in the table below, plus FS_MR/WL_MR/BL_MR = 341.2/315.0/0 in, WEIGHT = 16638.0 lb, and FSCG/WLCG/BLCG = 355.9/248.2/0 in.
 - **Definitions confirmed from the GenHel nomenclature:**
   - M_b is slug·ft and I_b is slug·ft², both about the hinge (p. 5.1-47, PDF p. 67).
-  - e′ (SPRLMR, ft) is the "Spar length exposed" (p. 5.1-39, PDF p. 59). The reference point it is measured from is not stated. Do **not** assume it is the aerodynamic root cutout from hub center without checking the main-rotor equations.
+  - e′ (SPRLMR, ft) is the "Spar length exposed" (p. 5.1-39, PDF p. 59), measured **from the hinge to the blade cuff**, where the lifting blade and its first segment begin. Source: the blade-geometry sketch on p. 5.1-12 (PDF p. 32; read by the human reviewer, 2026-10-11) and the first-segment formula below it, which is the equal-area midpoint of an annulus starting at (ξ + ξ′)R. **Aerodynamic root cutout = (e + e′)/R = (1.25 + 3.83)/26.83 = 0.189 R** (5.08 ft from the center of rotation). The same page gives ξ = e/R and ξ′ = e′/R, and 5 equal-annulus-area segments (NSS = 5, p. 5.1-49).
   - θ_GEOMR (THLDMR, deg) is a lag-damper kinematics geometry constant (p. 5.1-46, PDF p. 66). It is **not** a blade pitch reference; the geometric blade pitch is T_HOAMR on p. 5.1-44.
   - WEIGHT is "Total helicopter weight" (p. 5.1-39), so it includes the blades.
 - **Still open:**
@@ -114,3 +114,44 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
 | 0.106 (open square) | 4 : 0.00183; 6 : 0.00351; 8 : 0.00551; 10 : 0.00775; 12 : 0.01000 |
 
 **Review (2026-10-11):** every value was drawn as a cross over the figure (the overlay image is not kept in the repo, since the figure is copyrighted). The human reviewer confirmed that each cross sits on its marker, and confirmed C_lα = 5.73/rad on p. 120. A possible open square (σ = 0.106) hidden near 2° and the stacked markers at the origin were not added. An AI assistant's independent reading of the same plot was rejected: it listed points not on the plot and read some values off the theory curves. The data is in `tests/validation/reference/knight_hefner_1937.csv`.
+
+## UH-60A blade twist and SC1095 airfoil tables — `ACCEPTED by human review (2026-10-11); primary maps checked cursorily`
+**Source:** GenHel CR-166309 §5.1.5, dot-matrix printouts with slashed zeros (the OCR layer reads 0 as 8, # or _, so it is unusable). Read by eye from 250–600 dpi renders.
+- Table 1.5.1, preset twist, p. 5.1-57 (PDF p. 77): 21 values.
+- Table 1.5.2, C_l: primary map pp. 5.1-58 to 5.1-59 (PDF pp. 78–79), 33 α × 11 Mach; high-angle map p. 5.1-60 (PDF p. 80), 181 values.
+- Table 1.5.3, C_d: primary map pp. 5.1-61 to 5.1-62 (PDF pp. 81–82); high-angle map p. 5.1-63 (PDF p. 83).
+
+**Files:** the transcriptions, laid out row for row as printed, are in `data/uh60a/genhel/`. `tools/build_uh60a_blade.py` turns them into `data/uh60a/sc1095.csv` and `data/uh60a/twist.csv`, which carried `# status: placeholder` until the review was accepted (D-025).
+
+**Checks already done** (they catch misreads in the high-angle maps, not in the primary maps):
+- Outside ±32°, the C_d high-angle map is symmetric in α and the C_l map antisymmetric, value for value (about 300 values).
+- Inside ±32°, both high-angle maps repeat the Mach 0 primary map, value for value, with one exception (item 3 below).
+- Every Mach row of both primary maps has the same values at ±30° and ±32° (C_l ∓1.0 and ∓0.9675; C_d 0.63 and 0.6975).
+- The twist table agrees with its plot (Figure 1.5.1, p. 5.1-50, PDF p. 70), including the shape near the tip. The primary-map curves agree in shape with Figures 1.5.2(b) and 1.5.3(b) (PDF pp. 72, 74). The plots are too coarse to check digits.
+
+**Human check requested:**
+1. Compare every number in `data/uh60a/genhel/table_1_5_2_cl_low.txt` and `table_1_5_3_cd_low.txt` (726 values) and `table_1_5_1_twist.txt` against the PDF pages above. These have no internal redundancy, so a misread digit would go unnoticed.
+2. Smudged in the scan:
+   - C_d, Mach 0.9, α = −2° (PDF p. 82): read as 0.056 (the second digit is unclear); **reviewer reads 0.066** (see below).
+   - C_d, Mach 0.4, α = 6° (PDF p. 81, 4th row of the block): read as 0.011 (middle digit unclear). The Mach 0.5 value there is 0.011.
+3. C_l high-angle map at α = −24° (PDF p. 80, row 16, 4th value) reads −.998, where the Mach 0 primary map has −0.988. Source typo or misread? It has no effect: the primary map is used there.
+4. Values that look irregular but were read as printed:
+   - twist −10.75° at r/R = 0.85, between −10.3° and −12.3° (the plot shows the same kink);
+   - C_l at Mach 0.5, α = 8…16°: 0.96, 1.01, 0.96, 1.08, 1.06;
+   - C_l at Mach 0.4, α = −28°: −0.955, in a row otherwise spaced 0.002 apart (−0.96, −0.962, …).
+
+**Review so far (2026-10-11):**
+- Table 1.5.1 (twist): confirmed by the human reviewer.
+- Smudged digits (item 2): the reviewer reads **0.066** for C_d at Mach 0.9, α = −2° (my 0.056 was wrong; corrected in the transcription) and confirms 0.011 for Mach 0.4, α = 6°.
+- Item 4: C_l −0.955 at Mach 0.4, α = −28° confirmed as printed, and the Mach 0.5 row too.
+- Also confirmed as printed: C_l Mach 0.5 at α = −22° (−0.925), α = −8° at Mach 0.4 (−0.30) and Mach 0.9 (−0.665); C_d Mach 0.3 at α = −8°, −6° (0.0082, 0.0079) and Mach 0.5 at α = −6° (0.01).
+- The rest of the primary maps (item 1) had a **cursory check only**, and looked right.
+- Item 3: the page reads −.998, as transcribed (a source inconsistency with the primary map; no effect).
+- **Accepted (2026-10-11)** by the reviewer on that basis; the placeholder status was removed. **Revisit if** Eyas's hover power, thrust against collective or forward-flight trim looks wrong: a digit-by-digit check of the primary maps comes first, starting with C_d lines 3–4 and C_l lines 4–5 of the Mach 0.0–0.7 blocks (α ≈ −12° to +16°, the range the blades fly in), where one misread digit matters most.
+
+**Interpretation (from the equations, §5.1.2):**
+- The twist argument XSEGMR = y₂ + ξ (p. 5.1-25, PDF p. 45). p. 5.1-12 (PDF p. 32) defines ξ = e/R_T and ξ′ = e′/R_T, "normalized by R_T", and y₂ as the normalized distance from the hinge to the segment midpoint, so XSEGMR is r/R from the center of rotation, which is how `twist.csv` is written. (The nomenclature, p. 5.1-39, says only "ND".)
+- The twist is added to θ_CUFF, the pitch at the blade cuff (p. 5.1-24), so in Eyas θ₀ is the cuff pitch.
+- Lift is looked up on α_trans, a swept-flow angle built from α and the yaw angle γ (p. 5.1-26, PDF p. 46). With cos γ = 1 every branch reduces to α_trans = α, which matches Eyas's omission of the radial velocity (D-024). Drag uses the actual α (p. 5.1-27).
+- The tip-loss factor multiplies lift only, by segment overlap with B·R (p. 5.1-27, PDF p. 47). This agrees with D-024, which keeps drag outboard of B·R.
+- C_d is reduced by a profile-drag correction ΔC_DMR (p. 5.1-27), one of the unreviewed constants on p. 5.1-49.

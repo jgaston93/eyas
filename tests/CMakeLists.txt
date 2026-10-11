@@ -18,10 +18,12 @@ add_executable(eyas_unit_tests
     unit/test_rotor_inputs.cpp
     unit/test_rigid_body.cpp
     unit/test_table.cpp
-    unit/test_units.cpp)
+    unit/test_units.cpp
+    unit/test_uh60a_data.cpp)
 target_include_directories(eyas_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_unit_tests PRIVATE eyas_internal GTest::gtest_main)
-target_compile_definitions(eyas_unit_tests PRIVATE EYAS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+target_compile_definitions(eyas_unit_tests PRIVATE EYAS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_unit_tests)
 
 gtest_discover_tests(eyas_unit_tests DISCOVERY_MODE PRE_TEST)

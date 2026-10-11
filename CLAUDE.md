@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Eyas is a real-time, piloted rotorcraft flight dynamics model (C++20 library), intended to replace an incumbent commercial flight-dynamics package ("the reference model") in a host simulator. Reference vehicle: UH-60A (GenHel, NASA CR-166309).
 
-The design spec is `docs/EYAS_DESIGN.md`. Review findings are in `docs/SPEC_REVIEW.md`, approved departures in `docs/DECISIONS.md`, and data issues in `docs/DATA_GAPS.md`. Implementation status: M0 (scaffolding), M1 (6-DOF rigid body core) and M2 (ISA atmosphere, dummy rotor, Tier 1 pose, `eyas::Model` API) done; M3 (blade-element rotor, uniform inflow) done (see `docs/VALIDATION.md`). Next: transcribe the UH-60A blade data (twist, SC1095 tables), then M4.
+The design spec is `docs/EYAS_DESIGN.md`. Review findings are in `docs/SPEC_REVIEW.md`, approved departures in `docs/DECISIONS.md`, and data issues in `docs/DATA_GAPS.md`. Implementation status: M0 (scaffolding), M1 (6-DOF rigid body core) and M2 (ISA atmosphere, dummy rotor, Tier 1 pose, `eyas::Model` API) done; M3 (blade-element rotor, uniform inflow) done (see `docs/VALIDATION.md`). UH-60A blade twist and SC1095 tables transcribed into `data/uh60a/` (accepted; primary maps checked cursorily, DATA_GAPS.md). Next: M4.
 
 ## How to treat the spec
 
