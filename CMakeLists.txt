@@ -34,14 +34,23 @@ add_library(eyas STATIC
     src/sim/recorder.cpp)
 add_library(eyas::eyas ALIAS eyas)
 
+# Only include/ is public (D-020). src/ is internal: tests that exercise
+# internals add it themselves (eyas_internal below).
 target_include_directories(eyas
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(eyas
     PUBLIC
         eyas_eigen
+    PRIVATE
         yaml-cpp::yaml-cpp)
+
+# Internal headers, for the unit tests and validation generators only.
+add_library(eyas_internal INTERFACE)
+target_include_directories(eyas_internal INTERFACE ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(eyas_internal INTERFACE eyas yaml-cpp::yaml-cpp)
 eyas_target_defaults(eyas)
 
 if(EYAS_BUILD_TESTS)

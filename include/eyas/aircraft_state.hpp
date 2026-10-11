@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-#include "core/types.hpp"
+#include "eyas/types.hpp"
 
 // The output record of the Eyas library (spec §6.10). It grows in tiers;
 // existing fields never change meaning, units or frame.

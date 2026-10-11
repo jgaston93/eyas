@@ -333,6 +333,50 @@ TEST(Model, ConfigErrorsAreInitErrors) {
     EXPECT_THROW((void)Model::from_string(replaced("airframe:", "airframes:")), InitError);
 }
 
+// Every config error names the file and the full key path (D-021), including
+// values that read fine but fail a check made later in a constructor, keys
+// that are misspelled, and quantities in a unit of the wrong dimension.
+TEST(Model, ConfigErrorsNameFileAndKey) {
+    const std::string good = test_yaml();
+    auto replaced = [&](const std::string& from, const std::string& to) {
+        std::string s = good;
+        s.replace(s.find(from), from.size(), to);
+        return s;
+    };
+    struct Case {
+        std::string yaml;
+        std::string expected;  // must appear in the message
+    };
+    const std::vector<Case> cases{
+        // checks made after reading (#8)
+        {replaced("37.41 deg", "89.5 deg"), "cfg.yaml: geodetic_origin: "},
+        {replaced("1000 Hz", "7 Hz"), "cfg.yaml: simulation.physics_rate: "},
+        {replaced("max_substeps: 100", "max_substeps: 0"), "cfg.yaml: simulation.max_substeps: "},
+        {replaced("ideal_thrust", "warp_drive"), "cfg.yaml: force_models[0].type: "},
+        {replaced("max_thrust: \"", "max_thrust: \"-"), "cfg.yaml: force_models[0].max_thrust: "},
+        {replaced("ixx: \"6000", "ixx: \"-6000"), "cfg.yaml: airframe: "},
+        // misspelled keys (#7)
+        {replaced("physics_rate", "phyics_rate"), "cfg.yaml: simulation.phyics_rate: unknown key"},
+        {replaced("force_models", "force_model"), "cfg.yaml: force_model: unknown key"},
+        {replaced("ixz", "ixy"), "cfg.yaml: airframe.inertia.ixy: unknown key"},
+        {replaced("  max_thrust", "  thrust_max"),
+         "cfg.yaml: force_models[0].thrust_max: unknown key"},
+        // wrong dimension (#6)
+        {replaced("1000 Hz", "1000 s"), "cfg.yaml: simulation.physics_rate: "},
+        {replaced("37.41 deg", "37.41 m"), "cfg.yaml: geodetic_origin.latitude: "},
+        {replaced("8000 kg", "8000 lbf"), "cfg.yaml: airframe.mass: "},
+    };
+    for (const Case& c : cases) {
+        try {
+            (void)Model::from_string(c.yaml, "cfg.yaml");
+            ADD_FAILURE() << "no error; expected: " << c.expected;
+        } catch (const InitError& e) {
+            const std::string what = e.what();
+            EXPECT_NE(what.find(c.expected), std::string::npos) << what;
+        }
+    }
+}
+
 // The simulation section is optional: 1000 Hz and 100 sub-steps by default.
 TEST(Model, SimulationSectionDefaults) {
     std::string s = test_yaml();

@@ -46,6 +46,31 @@ TEST(Units, InertiaUnitsAgree) {
     EXPECT_NEAR(12.0 * lbf_in_s2, slug_ft2, 1e-15);
 }
 
+// Every unit carries the dimension its name says; the pairs that only differ
+// by dimension (Hz vs rad/s, rad vs 1, N*m vs kg*m) must not collapse.
+TEST(Units, Dimensions) {
+    const auto dim = [](std::string_view u) { return find_unit(u)->dimension; };
+    EXPECT_EQ(dim("1"), Dimension::dimensionless);
+    EXPECT_EQ(dim("ft"), Dimension::length);
+    EXPECT_EQ(dim("s"), Dimension::time);
+    EXPECT_EQ(dim("Hz"), Dimension::frequency);
+    EXPECT_EQ(dim("rpm"), Dimension::angular_rate);
+    EXPECT_EQ(dim("rad/s"), Dimension::angular_rate);
+    EXPECT_EQ(dim("deg"), Dimension::angle);
+    EXPECT_EQ(dim("1/deg"), Dimension::per_angle);
+    EXPECT_EQ(dim("lbm"), Dimension::mass);
+    EXPECT_EQ(dim("slug"), Dimension::mass);
+    EXPECT_EQ(dim("lbf"), Dimension::force);
+    EXPECT_EQ(dim("kt"), Dimension::speed);
+    EXPECT_EQ(dim("ft/s^2"), Dimension::acceleration);
+    EXPECT_EQ(dim("slug/ft^3"), Dimension::density);
+    EXPECT_EQ(dim("ft*lbf"), Dimension::moment);
+    EXPECT_EQ(dim("slug*ft"), Dimension::mass_moment);
+    EXPECT_EQ(dim("lbf*in*s^2"), Dimension::inertia);
+    EXPECT_EQ(find_unit("ft")->si_scale, kFoot);
+    EXPECT_FALSE(find_unit("lb").has_value());
+}
+
 TEST(Units, RejectsUnknownAndAmbiguous) {
     EXPECT_FALSE(si_scale("lb").has_value());
     EXPECT_FALSE(si_scale("furlong").has_value());

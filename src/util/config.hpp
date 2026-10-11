@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <initializer_list>
 #include <memory>
 #include <optional>
 #include <string>
@@ -11,18 +12,24 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include "util/units.hpp"
+
 namespace eyas {
 
 // Read-only view of a YAML configuration document, used at init time only.
 // Every accessor throws InitError naming the file and the full key path.
 //
 // - Physical quantities are strings with an explicit unit and are returned
-//   in SI:   radius: "26.83 ft"   ->  quantity("radius") == 8.178...
+//   in SI:   radius: "26.83 ft"   ->  quantity("radius", length) == 8.178...
+//   The caller names the dimension the value must have; a unit of another
+//   dimension is an error.
 // - Dimensionless values are plain YAML numbers, read with number(). A
 //   quantity without a unit is an error, so a missing unit can never be
 //   silently taken as SI.
 // - A map key given twice is an error at load.
-// - Keys are dotted paths: quantity("main_rotor.radius").
+// - Keys are dotted paths: quantity("main_rotor.radius", Dimension::length).
+// - allow_keys() rejects keys the reader doesn't know, so a misspelled
+//   optional key is an error rather than silently ignored.
 // - A value tagged !placeholder marks a data gap (DATA_GAPS.md). It still
 //   loads; placeholders() lists every one so init can report them.
 //       blade_weight: !placeholder "256.9 lbf"
@@ -31,18 +38,24 @@ public:
     static Config from_file(const std::filesystem::path& path);
     static Config from_string(std::string_view yaml, std::string_view origin = "<string>");
 
-    double quantity(std::string_view key) const;
+    double quantity(std::string_view key, units::Dimension dimension) const;
     double number(std::string_view key) const;
     std::int64_t integer(std::string_view key) const;
     bool boolean(std::string_view key) const;
     std::string string(std::string_view key) const;
 
     bool contains(std::string_view key) const;
+    // Throws unless this node is a map whose keys are all in `allowed`.
+    void allow_keys(std::initializer_list<std::string_view> allowed) const;
     Config child(std::string_view key) const;
 
     // For a sequence node: element count, and element access.
     std::size_t size() const;
     Config operator[](std::size_t index) const;
+
+    // Throws InitError "<file>: <full path of key>: <what>". An empty key names
+    // this node itself. For checks made by the reader after a value is read.
+    [[noreturn]] void fail(std::string_view key, std::string_view what) const;
 
     // Full key paths of every !placeholder value in the whole document.
     const std::vector<std::string>& placeholders() const { return *placeholders_; }
@@ -54,7 +67,6 @@ private:
     std::optional<YAML::Node> find(std::string_view key) const;
     std::string scalar(std::string_view key) const;
     std::string full_path(std::string_view key) const;
-    [[noreturn]] void fail(std::string_view key, std::string_view what) const;
 
     YAML::Node node_;
     std::shared_ptr<const std::string> origin_;
