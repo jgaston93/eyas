@@ -568,8 +568,8 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         {"type", "blades", "radius", "rotor_speed", "direction", "hub", "blade", "controls"});
     BladeElementRotorConfig c;
     const std::int64_t blades = node.integer("blades");
-    if (blades < 1 || blades > 64) {
-        node.fail("blades", "must be between 1 and 64");
+    if (blades < 1 || blades > kMaxBlades) {
+        node.fail("blades", "must be between 1 and " + std::to_string(kMaxBlades));
     }
     c.num_blades = static_cast<int>(blades);
     c.radius = node.quantity("radius", Dimension::length);
