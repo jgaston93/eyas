@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 #include "util/axis.hpp"
@@ -24,6 +25,9 @@ namespace detail {
 inline double lerp(double v0, double v1, double t) noexcept {
     return (1.0 - t) * v0 + t * v1;
 }
+
+// Throws InitError unless `values` has `expected` entries, all finite.
+void check_table_values(const std::vector<double>& values, std::size_t expected, const char* kind);
 
 }  // namespace detail
 
@@ -64,7 +68,6 @@ public:
     const Axis& y_axis() const noexcept { return y_; }
 
 private:
-    double at(std::size_t i, std::size_t j) const noexcept { return v_[i * y_.size() + j]; }
     double eval(AxisPosition px, AxisPosition py) const noexcept {
         const std::size_t i = px.index;
         const std::size_t j = py.index;
@@ -72,10 +75,64 @@ private:
         const double v1 = detail::lerp(at(i + 1, j), at(i + 1, j + 1), py.t);
         return detail::lerp(v0, v1, px.t);
     }
+    double at(std::size_t i, std::size_t j) const noexcept { return v_[i * y_.size() + j]; }
 
     Axis x_;
     Axis y_;
     std::vector<double> v_;
+};
+
+// N quantities tabulated on one (x, y) grid, e.g. airfoil C_l and C_d. One
+// lookup locates both axes once and interpolates every quantity, so they
+// can't be looked up on mismatched axes. Each result equals what a Table2D of
+// that quantity alone would return, bit for bit.
+template <std::size_t N>
+class MultiTable2D {
+public:
+    // values[k] is quantity k, row-major: values[k][i * ny + j] = f_k(x_i, y_j).
+    // Throws InitError on a size mismatch or non-finite value.
+    MultiTable2D(Axis x, Axis y, const std::array<std::vector<double>, N>& values)
+        : x_(std::move(x)), y_(std::move(y)), v_(x_.size() * y_.size() * N) {
+        const std::size_t n = x_.size() * y_.size();
+        for (std::size_t k = 0; k < N; ++k) {
+            detail::check_table_values(values[k], n, "MultiTable2D");
+            for (std::size_t p = 0; p < n; ++p) {
+                v_[p * N + k] = values[k][p];  // interleaved: one grid point's N values together
+            }
+        }
+    }
+
+    std::array<double, N> operator()(double x, double y) const noexcept {
+        return eval(x_.locate(x), y_.locate(y));
+    }
+    std::array<double, N> operator()(double x, double y, TableCursor<2>& cursor) const noexcept {
+        return eval(x_.locate(x, cursor.hint[0]), y_.locate(y, cursor.hint[1]));
+    }
+
+    const Axis& x_axis() const noexcept { return x_; }
+    const Axis& y_axis() const noexcept { return y_; }
+
+private:
+    std::array<double, N> eval(AxisPosition px, AxisPosition py) const noexcept {
+        const double* v00 = at(px.index, py.index);
+        const double* v01 = at(px.index, py.index + 1);
+        const double* v10 = at(px.index + 1, py.index);
+        const double* v11 = at(px.index + 1, py.index + 1);
+        std::array<double, N> out{};
+        for (std::size_t k = 0; k < N; ++k) {  // same operation order as Table2D::eval
+            const double v0 = detail::lerp(v00[k], v01[k], py.t);
+            const double v1 = detail::lerp(v10[k], v11[k], py.t);
+            out[k] = detail::lerp(v0, v1, px.t);
+        }
+        return out;
+    }
+    const double* at(std::size_t i, std::size_t j) const noexcept {
+        return v_.data() + (i * y_.size() + j) * N;
+    }
+
+    Axis x_;
+    Axis y_;
+    std::vector<double> v_;  // interleaved, (i * ny + j) * N + k
 };
 
 class Table3D {

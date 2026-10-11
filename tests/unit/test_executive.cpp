@@ -356,6 +356,51 @@ TEST(Executive, NanMidFrameKeepsLastGoodStep) {
     EXPECT_EQ(ex.n_steps(), 10);
 }
 
+// ---- Convergence diagnostic (D-023) ------------------------------------------
+
+// A stateless component whose bounded iteration "fails" when collective > 0.5.
+class ConvergesBelowHalfCollective : public DynamicComponent {
+public:
+    std::size_t num_states() const override { return 0; }
+    void initial_states(std::span<double> /*x*/) const override {}
+    void derivatives(const SimContext& ctx, std::span<const double> /*x*/,
+                     ComponentDerivs& out) const override {
+        out.converged = ctx.controls.collective <= 0.5;
+    }
+};
+
+// Counts evaluations in which any component failed to converge, four per RK4
+// step, and starts again from zero at each advance(), reset() and restore().
+// A converged component listed after the failing one must not mask it.
+TEST(Executive, UnconvergedEvaluationsAreCountedPerAdvance) {
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(std::make_unique<ConvergesBelowHalfCollective>());
+    comps.push_back(std::make_unique<LagOnAccel>());  // always converged
+    Executive ex(test_config(), std::move(comps));
+    Controls fails;
+    fails.collective = 1.0;
+    const Controls converges{};
+    constexpr std::int64_t kThreeSteps = 3'000'000;  // 3 × 1 ms
+
+    std::vector<double> xdot(ex.num_states());
+    EXPECT_FALSE(ex.derivatives(0.0, ex.state(), fails, Environment{}, xdot));
+    EXPECT_TRUE(ex.derivatives(0.0, ex.state(), converges, Environment{}, xdot));
+
+    ex.advance(fails, Environment{}, kThreeSteps);
+    EXPECT_EQ(ex.unconverged_evaluations(), 12);
+    ex.advance(converges, Environment{}, kThreeSteps);
+    EXPECT_EQ(ex.unconverged_evaluations(), 0);
+
+    ex.advance(fails, Environment{}, kThreeSteps);
+    const std::vector<double> x(ex.state().begin(), ex.state().end());
+    ASSERT_TRUE(ex.reset(BodyState{}));
+    EXPECT_EQ(ex.unconverged_evaluations(), 0);
+
+    ex.advance(fails, Environment{}, kThreeSteps);
+    ASSERT_TRUE(ex.restore(x, 3, 0));
+    EXPECT_EQ(ex.unconverged_evaluations(), 0);
+}
+
 // ---- Real-time rules ----------------------------------------------------------
 
 // Spec §7.1: advance() never allocates, with components and force models in.

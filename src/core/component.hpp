@@ -39,6 +39,9 @@ struct ComponentDerivs {
     std::span<double> G;      // n_c × 6, row-major
     Wrench load0_b;           // body axes, about the airframe CG
     Mat66 H;                  // ∂[F_b; M_b]/∂a
+    // False if a bounded iteration in this evaluation hit its limit (spec §7
+    // rule 3, D-023). The results are still used; the executive counts it.
+    bool converged = true;
 };
 
 // A model with states: blades, inflow, gear, ... (spec §6; D-004).

@@ -59,11 +59,13 @@ void check_and_collect(const YAML::Node& node, const std::string& origin, const 
 }  // namespace
 
 Config::Config(const YAML::Node& node, std::shared_ptr<const std::string> origin, std::string path,
-               std::shared_ptr<const std::vector<std::string>> placeholders)
+               std::shared_ptr<std::vector<std::string>> placeholders,
+               std::shared_ptr<const std::filesystem::path> base_dir)
     : node_(node),
       origin_(std::move(origin)),
       path_(std::move(path)),
-      placeholders_(std::move(placeholders)) {}
+      placeholders_(std::move(placeholders)),
+      base_dir_(std::move(base_dir)) {}
 
 Config Config::from_string(std::string_view yaml, std::string_view origin) {
     YAML::Node root;
@@ -74,7 +76,12 @@ Config Config::from_string(std::string_view yaml, std::string_view origin) {
     }
     auto placeholders = std::make_shared<std::vector<std::string>>();
     check_and_collect(root, std::string(origin), "", *placeholders);
-    return Config(root, std::make_shared<const std::string>(origin), "", std::move(placeholders));
+    return Config(root, std::make_shared<const std::string>(origin), "", std::move(placeholders),
+                  std::make_shared<const std::filesystem::path>());
+}
+
+void Config::note_placeholder(std::string_view key, std::string_view what) const {
+    placeholders_->push_back(full_path(key) + ": " + std::string(what));
 }
 
 Config Config::from_file(const std::filesystem::path& path) {
@@ -84,7 +91,17 @@ Config Config::from_file(const std::filesystem::path& path) {
     }
     std::ostringstream text;
     text << in.rdbuf();
-    return from_string(text.str(), path.string());
+    Config c = from_string(text.str(), path.string());
+    c.base_dir_ = std::make_shared<const std::filesystem::path>(path.parent_path());
+    return c;
+}
+
+std::filesystem::path Config::path(std::string_view key) const {
+    const std::filesystem::path p(string(key));
+    if (p.empty()) {
+        fail(key, "empty path");
+    }
+    return p.is_absolute() ? p : *base_dir_ / p;
 }
 
 std::string Config::full_path(std::string_view key) const {
@@ -225,7 +242,7 @@ Config Config::child(std::string_view key) const {
     if (!node) {
         fail(key, "missing");
     }
-    return Config(*node, origin_, full_path(key), placeholders_);
+    return Config(*node, origin_, full_path(key), placeholders_, base_dir_);
 }
 
 std::size_t Config::size() const {
@@ -243,7 +260,7 @@ Config Config::operator[](std::size_t index) const {
                         ")");
     }
     const YAML::Node& seq = node_;
-    return Config(seq[index], origin_, path, placeholders_);
+    return Config(seq[index], origin_, path, placeholders_, base_dir_);
 }
 
 }  // namespace eyas

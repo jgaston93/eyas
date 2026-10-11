@@ -1,0 +1,5 @@
+# source: synthetic test twist, linear -16 deg over the span (tests only)
+r[1],twist[deg]
+0,0
+0.5,-8
+1,-16

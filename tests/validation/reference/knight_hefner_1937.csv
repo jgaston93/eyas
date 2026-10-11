@@ -1,0 +1,30 @@
+# source: Knight & Hefner (1937) hover data as plotted in Leishman, Principles of Helicopter Aerodynamics, 2nd ed., Fig. 3.2, p. 121; digitized by eye from a 500-dpi render, about +/-0.0001 in C_T
+# status: verified by human review 2026-10-11 (overlay of the readings on the figure; DATA_GAPS.md)
+# Untwisted rotors; validation entry for D-007 layer 3 (test oracle, not aircraft data).
+sigma[1],theta0[deg],ct[1]
+0.042,2,0.00042
+0.042,4,0.00119
+0.042,6,0.00218
+0.042,8,0.00323
+0.042,10,0.00421
+0.042,12,0.00494
+0.064,6,0.00274
+0.064,8,0.00417
+0.064,10,0.00562
+0.064,12,0.00685
+0.085,1,0.00014
+0.085,3,0.00105
+0.085,4,0.00169
+0.085,5,0.00236
+0.085,6,0.00320
+0.085,7,0.00396
+0.085,8,0.00489
+0.085,9,0.00590
+0.085,10,0.00688
+0.085,11,0.00796
+0.085,12,0.00874
+0.106,4,0.00183
+0.106,6,0.00351
+0.106,8,0.00551
+0.106,10,0.00775
+0.106,12,0.01000

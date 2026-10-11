@@ -85,6 +85,21 @@ TEST(CsvTable, MissingColumnIsAnError) {
     EXPECT_THROW(make_table1d(parse_csv_table(kTable1D, "t"), "x", "z"), InitError);
 }
 
+// A hand-built table whose parallel vectors disagree is an InitError, not an
+// out-of-range read.
+TEST(CsvTable, MismatchedHandBuiltTableIsAnError) {
+    CsvTable csv;
+    csv.origin = "hand";
+    csv.names = {"x", "v"};
+    csv.columns = {{0.0, 1.0}, {2.0, 3.0}};
+    EXPECT_THROW(csv.require_dimension("v", units::Dimension::dimensionless), InitError);
+    EXPECT_THROW((void)csv.column("v"), InitError);
+    csv.dimensions = {units::Dimension::dimensionless, units::Dimension::dimensionless};
+    EXPECT_NO_THROW(csv.require_dimension("v", units::Dimension::dimensionless));
+    csv.columns.pop_back();
+    EXPECT_THROW((void)csv.column("v"), InitError);
+}
+
 constexpr const char* kTable2D =
     "# source: unit test\n"
     "a[1],b[1],v[1]\n"
@@ -101,6 +116,21 @@ TEST(CsvTable, BuildsTable2DFromUnorderedRows) {
     EXPECT_EQ(t.y_axis().size(), 2U);
     EXPECT_EQ(t(1.0, 20.0), 120.0);
     EXPECT_DOUBLE_EQ(t(1.5, 15.0), 165.0);
+}
+
+TEST(CsvTable, BuildsMultiTable2DFromUnorderedRows) {
+    const std::string text =
+        "# source: unit test\na[1],b[1],v[1],w[1]\n"
+        "1,10,110,-1\n0,10,10,0\n0,20,20,0\n1,20,120,-1\n2,10,210,-2\n"
+        "2,20,220,-2\n";
+    const CsvTable csv = parse_csv_table(text, "t2");
+    const MultiTable2D<2> m = make_multi_table2d<2>(csv, "a", "b", {"v", "w"});
+    const Table2D v = make_table2d(csv, "a", "b", "v");
+    EXPECT_EQ(m.x_axis().size(), 3U);
+    EXPECT_EQ(m.y_axis().size(), 2U);
+    EXPECT_EQ(m(1.5, 15.0)[0], v(1.5, 15.0));
+    EXPECT_DOUBLE_EQ(m(1.5, 15.0)[1], -1.5);
+    EXPECT_THROW(make_multi_table2d<2>(csv, "a", "b", {"v", "nope"}), InitError);
 }
 
 TEST(CsvTable, GridMustBeCompleteAndUnique) {

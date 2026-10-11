@@ -132,3 +132,29 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 **Spec:** §6.2, §6.10; D-015, D-016.
 **Problem:** `advance()` doesn't check `Environment`. A NaN `isa_delta_T`, or one low enough to make the absolute temperature non-positive (a °C/K mix-up), gives NaN density and speed of sound. Once a model uses `ctx.air`, every step then fails as `non_finite`, with no hint that the input caused it. A NaN `wind_n` would do the same. Separately, D-015's out-of-range flag is set only in `SimContext::air`, which the host can't read, so flight outside the tabulated atmosphere goes unreported. Found in the M2 code review. Neither has an effect yet: nothing reads `ctx.air` before M3.
 **Suggested resolution:** reject an invalid `Environment` the way a negative frame time is rejected, and report out-of-range altitude in `AdvanceStatus`. See D-019.
+
+## 19. The M3 reference-model criterion is underspecified and can't gate — `resolved → DECISIONS.md D-022 (2026-10-11)`
+**Spec:** M3 ("thrust coefficient against collective matches the reference model within 3%").
+**Problem:**
+- The reference model's inflow, tip-loss, root-cutout, element and airfoil-table choices can't be inspected (clean-room rule, §2.1), so a 3% difference can't be attributed to an Eyas bug, and a match can hide one.
+- The case isn't defined: flight condition, rotor speed, density, collective range and inflow model are not stated.
+- A pure percentage blows up near zero thrust.
+- The data depends on a licensed run by someone else (and on SPEC_REVIEW #12), so most of the time the test would skip and couldn't block anything.
+**Suggested resolution:** keep the comparison as a validation entry ("how close are we"), not a gate, with a defined case and a tolerance with an absolute floor. See D-022.
+
+## 20. M3 blade-element details are underspecified — `resolved → DECISIONS.md D-024 (2026-10-11)`
+**Spec:** §6.3, §6.4, §6.5, M3.
+**Problem:**
+- Whether the M3 rotor has blade mass. §6.4 puts blade inertial loads with the flap DOF (M4), but D-002 removes the blades from the airframe mass.
+- "Sign convention per Padfield" for φ, while the M3 oracle (D-007) is Leishman §3.2. Padfield 3rd ed. Eq. 3.25 takes U_P positive *up* through the disc; Leishman 2nd ed. Eq. 3.2 takes it positive *down* (inflow).
+- Blade numbering: §6.4 has ψ_k = ψ + 2π(k−1)/N_b, Padfield 3rd ed. Eq. 3.49 has ψ_i = ψ − 2π(i−1)/N_b (blade i trails blade 1). This matters for the M4 multiblade transform.
+- What "tip loss B" removes (lift only, or lift and drag), and where the element boundary falls relative to B·R.
+- Which thrust the uniform inflow balances (instantaneous or revolution-averaged), and how the iteration is bounded and flagged (§7 rule 3).
+- The control-input sign conventions (`Controls` says only [−1, 1]).
+**Suggested resolution:** see D-024.
+
+## 21. Uniform momentum inflow has no physical solution in the vortex-ring state — `open`
+**Spec:** §6.5 (uniform inflow, M3; Pitt–Peters, M5).
+**Problem:** in axial descent between roughly 0 and 2× the hover induced velocity, momentum theory doesn't apply (Padfield 3rd ed. §3.2.1, pp. 102–103: the vertical-descent solutions in Fig. 3.15 are "nonphysical", and "recourse to empiricism is required"). Eq. 3.139 then has up to three roots. The M3 solve (D-024) returns one deterministically: in the test rotor it stays on the normal-working-state branch up to a descent of about 3 v_h, then jumps to the windmill-brake branch (`docs/validation/m3/m3_inflow.png`). The thrust jumps with it. Pitt–Peters (M5) uses the same mass-flow parameter and inherits the problem.
+**Why it matters:** a piloted steep approach or a vertical descent can enter this region. The model gives a thrust discontinuity there instead of the loss of control power and roughness pilots expect.
+**Suggested resolution:** before M8 piloted evaluation, add an empirical vortex-ring correction to the induced-velocity solution, e.g. a fitted curve of induced velocity against descent rate between the normal and windmill branches, with the source chosen from the D-001 references (Johnson 2013 and Leishman 2nd ed. both discuss empirical curves; verify which before use). Until then, the region is a known limitation.

@@ -4,9 +4,11 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "core/attitude.hpp"
 #include "env/geodesy.hpp"
+#include "rotor/blade_element_rotor.hpp"
 #include "rotor/ideal_thrust.hpp"
 #include "sim/executive.hpp"
 #include "util/config.hpp"
@@ -17,6 +19,7 @@ namespace eyas {
 struct Model::Impl {
     FlatEarthMap map;  // declared before executive, which is built from its origin
     Executive executive;
+    std::vector<std::string> placeholders;  // data gaps, from Config (D-025)
 };
 
 namespace {
@@ -25,24 +28,13 @@ using units::Dimension;
 
 constexpr std::int64_t kNsPerSecond = 1'000'000'000;
 
-// Runs `f`, re-raising its InitError against `key` of `node`, so that errors
-// from validation inside a constructor still name the file and key path.
-template <class F>
-auto in_context(const Config& node, std::string_view key, F&& f) -> decltype(f()) {
-    try {
-        return std::forward<F>(f)();
-    } catch (const InitError& e) {
-        node.fail(key, e.what());
-    }
-}
-
 FlatEarthMap read_origin(const Config& config) {
     const Config o = config.child("geodetic_origin");
     o.allow_keys({"latitude", "longitude", "altitude"});
     const GeodeticPosition origin{o.quantity("latitude", Dimension::angle),
                                   o.quantity("longitude", Dimension::angle),
                                   o.quantity("altitude", Dimension::length)};
-    return in_context(config, "geodetic_origin", [&] { return FlatEarthMap(origin); });
+    return config.in_context("geodetic_origin", [&] { return FlatEarthMap(origin); });
 }
 
 // Physics step from `simulation.physics_rate` [Hz]: the rate must be a whole
@@ -72,13 +64,33 @@ std::vector<std::unique_ptr<ForceModel>> read_force_models(const Config& config)
         if (type == "ideal_thrust") {
             f.allow_keys({"type", "max_thrust"});
             const double max_thrust = f.quantity("max_thrust", Dimension::force);
-            forces.push_back(in_context(f, "max_thrust",
-                                        [&] { return std::make_unique<IdealThrust>(max_thrust); }));
+            forces.push_back(f.in_context(
+                "max_thrust", [&] { return std::make_unique<IdealThrust>(max_thrust); }));
         } else {
             f.fail("type", "unknown force model '" + type + "'");
         }
     }
     return forces;
+}
+
+// Components with states or acceleration coupling, in config order (D-003:
+// the order becomes dependency-sorted once components exchange outputs).
+std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& config) {
+    std::vector<std::unique_ptr<DynamicComponent>> components;
+    if (!config.contains("components")) {
+        return components;
+    }
+    const Config list = config.child("components");
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        const Config c = list[i];
+        const std::string type = c.string("type");
+        if (type == "blade_element_rotor") {
+            components.push_back(BladeElementRotor::from_config(c));
+        } else {
+            c.fail("type", "unknown component '" + type + "'");
+        }
+    }
+    return components;
 }
 
 Executive build_executive(const Config& config, double origin_altitude) {
@@ -105,18 +117,24 @@ Executive build_executive(const Config& config, double origin_altitude) {
             }
         }
     }
+    auto components = read_components(config);
     auto forces = read_force_models(config);
-    // Step, substeps and origin are checked above, so what the executive can
-    // still reject is the airframe's mass properties.
-    return in_context(config, "airframe", [&] { return Executive(ec, {}, std::move(forces)); });
+    // Step, substeps and origin are checked above, and the components and
+    // force models by their readers, so what the executive can still reject
+    // is the airframe's mass properties.
+    return config.in_context(
+        "airframe", [&] { return Executive(ec, std::move(components), std::move(forces)); });
 }
 
 std::unique_ptr<Model::Impl> build(const Config& config) {
-    config.allow_keys({"simulation", "geodetic_origin", "airframe", "force_models"});
+    config.allow_keys({"simulation", "geodetic_origin", "airframe", "components", "force_models"});
     FlatEarthMap map = read_origin(config);
     const double origin_altitude = map.origin().altitude;
+    Executive executive = build_executive(config, origin_altitude);
+    // Read after the build, so that placeholder data files noted by the
+    // component readers are included.
     return std::make_unique<Model::Impl>(
-        Model::Impl{map, build_executive(config, origin_altitude)});
+        Model::Impl{map, std::move(executive), config.placeholders()});
 }
 
 }  // namespace
@@ -135,6 +153,10 @@ Model Model::from_file(const std::filesystem::path& path) {
 
 Model Model::from_string(std::string_view yaml, std::string_view origin) {
     return Model(build(Config::from_string(yaml, origin)));
+}
+
+const std::vector<std::string>& Model::placeholders() const noexcept {
+    return impl_->placeholders;
 }
 
 AdvanceStatus Model::advance(const Controls& controls, const Environment& env,

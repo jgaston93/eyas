@@ -149,6 +149,19 @@ TEST(Config, MissingKeyErrorNamesFileAndFullPath) {
     }
 }
 
+// in_context passes a value through, and re-raises an InitError from inside
+// (e.g. a constructor's check) naming the file, key path and original text.
+TEST(Config, InContextNamesTheKeyOfAnInnerError) {
+    const Config rotor = load().child("main_rotor");
+    EXPECT_EQ(rotor.in_context("radius", [] { return 7; }), 7);
+    try {
+        rotor.in_context("radius", []() -> int { throw InitError("must be positive"); });
+        FAIL() << "expected InitError";
+    } catch (const InitError& e) {
+        EXPECT_EQ(std::string(e.what()), "test.yaml: main_rotor.radius: must be positive");
+    }
+}
+
 TEST(Config, LookupDoesNotModifyTheDocument) {
     const Config c = load();
     EXPECT_FALSE(c.contains("main_rotor.chord"));
@@ -174,6 +187,15 @@ TEST(Config, ListsPlaceholdersWithFullPaths) {
     EXPECT_EQ(p[0], "main_rotor.blade_weight");
     EXPECT_EQ(p[1], "rotors[1].hub_offset");
     EXPECT_EQ(c.child("rotors").placeholders().size(), 2U);
+}
+
+TEST(Config, NotedPlaceholdersAreSharedByTheWholeDocument) {
+    const Config c = load();
+    c.child("rotors")[0].note_placeholder("table", "t.csv (# status: placeholder)");
+    const auto& p = c.placeholders();
+    ASSERT_EQ(p.size(), 3U);
+    EXPECT_EQ(p[2], "rotors[0].table: t.csv (# status: placeholder)");
+    EXPECT_EQ(c.child("main_rotor").placeholders().size(), 3U);
 }
 
 TEST(Config, SyntaxErrorsAndMissingFilesAreInitErrors) {

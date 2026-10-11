@@ -53,8 +53,9 @@ public:
 
     // The full derivative function ẋ = f(t, x, controls, env). Pure: the
     // result depends only on its arguments (spec §5). Writes into internal
-    // scratch buffers, which never affect results. [s]
-    void derivatives(double t, std::span<const double> x, const Controls& controls,
+    // scratch buffers, which never affect results. Returns false if some
+    // component's bounded iteration did not converge (D-023). [s]
+    bool derivatives(double t, std::span<const double> x, const Controls& controls,
                      const Environment& env, std::span<double> xdot) const noexcept;
 
     std::size_t num_states() const noexcept { return x_.size(); }
@@ -69,6 +70,10 @@ public:
 
     // Largest |‖q‖ − 1| before renormalization over the last advance() (spec §6.1).
     double quat_norm_error() const noexcept { return quat_norm_error_; }
+
+    // Derivative evaluations in the last advance() in which some component's
+    // bounded iteration did not converge (D-023). Engineering diagnostic only.
+    std::int64_t unconverged_evaluations() const noexcept { return unconverged_evaluations_; }
 
 private:
     // One RK4 step. Returns false, leaving the state unchanged, if the result
@@ -98,6 +103,7 @@ private:
     std::int64_t n_steps_ = 0;
     std::int64_t remainder_ns_ = 0;
     double quat_norm_error_ = 0.0;
+    std::int64_t unconverged_evaluations_ = 0;
 };
 
 }  // namespace eyas

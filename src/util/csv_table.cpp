@@ -49,12 +49,9 @@ std::vector<double> unique_sorted(std::vector<double> v) {
     return v;
 }
 
-// Builds the axes and row-major value grid for any number of axis columns.
-// Rows may come in any order; each grid point must appear exactly once.
-struct Grid {
-    std::vector<Axis> axes;
-    std::vector<double> values;
-};
+}  // namespace
+
+namespace detail {
 
 Grid build_grid(const CsvTable& csv, const std::vector<std::string_view>& axis_names,
                 std::string_view value_name) {
@@ -106,20 +103,42 @@ Grid build_grid(const CsvTable& csv, const std::vector<std::string_view>& axis_n
     return grid;
 }
 
-}  // namespace
+}  // namespace detail
+
+namespace {}  // namespace
 
 bool CsvTable::is_placeholder() const {
     const auto it = meta.find("status");
     return it != meta.end() && it->second == "placeholder";
 }
 
-const std::vector<double>& CsvTable::column(std::string_view name) const {
+std::size_t CsvTable::index(std::string_view name) const {
+    // names, columns and dimensions are parallel; a hand-built table may not
+    // keep them so, and must get an error rather than an out-of-range read.
+    if (columns.size() != names.size() || dimensions.size() != names.size()) {
+        throw InitError(origin + ": table has " + std::to_string(names.size()) + " names, " +
+                        std::to_string(columns.size()) + " columns and " +
+                        std::to_string(dimensions.size()) + " dimensions");
+    }
     for (std::size_t i = 0; i < names.size(); ++i) {
         if (names[i] == name) {
-            return columns[i];
+            return i;
         }
     }
     throw InitError(origin + ": no column named '" + std::string(name) + "'");
+}
+
+const std::vector<double>& CsvTable::column(std::string_view name) const {
+    return columns[index(name)];
+}
+
+void CsvTable::require_dimension(std::string_view name, units::Dimension d) const {
+    const std::size_t i = index(name);
+    if (dimensions[i] != d) {
+        throw InitError(origin + ": column '" + names[i] + "' has dimension " +
+                        std::string(units::dimension_name(dimensions[i])) + "; expected " +
+                        std::string(units::dimension_name(d)));
+    }
 }
 
 CsvTable parse_csv_table(std::string_view text, std::string_view origin) {
@@ -168,11 +187,11 @@ CsvTable parse_csv_table(std::string_view text, std::string_view origin) {
                 }
                 const std::string name(detail::trim(cell.substr(0, open)));
                 const std::string_view unit = cell.substr(open + 1, cell.size() - open - 2);
-                const auto scale = units::si_scale(unit);
+                const auto u = units::find_unit(unit);
                 if (name.empty()) {
                     fail(origin, line_no, "empty column name in '" + std::string(cell) + "'");
                 }
-                if (!scale) {
+                if (!u) {
                     fail(origin, line_no,
                          "unknown unit '" + std::string(unit) + "' in column '" + name +
                              "' (use lbf or lbm, not lb)");
@@ -181,7 +200,8 @@ CsvTable parse_csv_table(std::string_view text, std::string_view origin) {
                     fail(origin, line_no, "duplicate column '" + name + "'");
                 }
                 csv.names.push_back(name);
-                scales.push_back(*scale);
+                csv.dimensions.push_back(u->dimension);
+                scales.push_back(u->si_scale);
             }
             csv.columns.resize(csv.names.size());
             continue;
@@ -228,19 +248,19 @@ CsvTable read_csv_table(const std::filesystem::path& path) {
 }
 
 Table1D make_table1d(const CsvTable& csv, std::string_view x, std::string_view value) {
-    Grid g = build_grid(csv, {x}, value);
+    detail::Grid g = detail::build_grid(csv, {x}, value);
     return Table1D(std::move(g.axes[0]), std::move(g.values));
 }
 
 Table2D make_table2d(const CsvTable& csv, std::string_view x, std::string_view y,
                      std::string_view value) {
-    Grid g = build_grid(csv, {x, y}, value);
+    detail::Grid g = detail::build_grid(csv, {x, y}, value);
     return Table2D(std::move(g.axes[0]), std::move(g.axes[1]), std::move(g.values));
 }
 
 Table3D make_table3d(const CsvTable& csv, std::string_view x, std::string_view y,
                      std::string_view z, std::string_view value) {
-    Grid g = build_grid(csv, {x, y, z}, value);
+    detail::Grid g = detail::build_grid(csv, {x, y, z}, value);
     return Table3D(std::move(g.axes[0]), std::move(g.axes[1]), std::move(g.axes[2]),
                    std::move(g.values));
 }

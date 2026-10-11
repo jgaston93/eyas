@@ -1,0 +1,6 @@
+# source: synthetic test airfoil, C_l = 5.73*alpha, C_d = 0.01 (tests only, not aircraft data)
+alpha[deg],mach[1],cl[1],cd[1]
+-180,0,-18.001325905069518,0.01
+180,0,18.001325905069518,0.01
+-180,1,-18.001325905069518,0.01
+180,1,18.001325905069518,0.01

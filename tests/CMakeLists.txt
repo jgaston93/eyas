@@ -6,6 +6,7 @@ add_executable(eyas_unit_tests
     unit/test_atmosphere.cpp
     unit/test_attitude.cpp
     unit/test_axis.cpp
+    unit/test_blade_element_rotor.cpp
     unit/test_config.cpp
     unit/test_coupled_solve.cpp
     unit/test_csv_table.cpp
@@ -14,11 +15,13 @@ add_executable(eyas_unit_tests
     unit/test_geodesy.cpp
     unit/test_model.cpp
     unit/test_recorder.cpp
+    unit/test_rotor_inputs.cpp
     unit/test_rigid_body.cpp
     unit/test_table.cpp
     unit/test_units.cpp)
 target_include_directories(eyas_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_unit_tests PRIVATE eyas_internal GTest::gtest_main)
+target_compile_definitions(eyas_unit_tests PRIVATE EYAS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_unit_tests)
 
 gtest_discover_tests(eyas_unit_tests DISCOVERY_MODE PRE_TEST)
@@ -42,3 +45,9 @@ add_executable(eyas_m2_cases validation/m2_cases.cpp)
 target_include_directories(eyas_m2_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m2_cases PRIVATE eyas_internal)
 eyas_target_defaults(eyas_m2_cases)
+
+# Writes the M3 validation data (VALIDATION.md; tools/plot_m3.py).
+add_executable(eyas_m3_cases validation/m3_cases.cpp)
+target_include_directories(eyas_m3_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m3_cases PRIVATE eyas_internal)
+eyas_target_defaults(eyas_m3_cases)

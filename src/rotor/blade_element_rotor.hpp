@@ -1,0 +1,151 @@
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <span>
+#include <vector>
+
+#include "core/component.hpp"
+#include "rotor/airfoil.hpp"
+#include "rotor/controls.hpp"
+#include "util/table.hpp"
+
+namespace eyas {
+class Config;
+}
+
+// Blade-element rotor with rigid blades and uniform momentum inflow (spec
+// §6.4, §6.5, M3; D-024). Flapping is held at zero and the blades are
+// massless until M4, so the rotor contributes aerodynamic loads only
+// (G = H = 0).
+//
+// Frames (D-024): hub frame h has its origin at the hub center, z_h down
+// along the shaft, x_h forward and y_h right; with zero hub angles it is
+// parallel to body axes. Blade k points along e_r = (−cos ψ_k, s sin ψ_k, 0)
+// in hub axes, where s = +1 for a rotor turning counter-clockwise viewed from
+// above and −1 for clockwise, so ψ_k = 0 points aft and ψ_k increases with
+// rotation (spec §4).
+namespace eyas {
+
+enum class RotationDirection : std::uint8_t {
+    counter_clockwise,  // viewed from above (UH-60, spec §4)
+    clockwise,
+};
+
+enum class ElementSpacing : std::uint8_t {
+    uniform,     // equal widths
+    equal_area,  // annuli of equal area (spec §6.4)
+};
+
+struct BladeElementRotorConfig {
+    int num_blades = 0;        // N_b
+    double radius = 0.0;       // R [m]
+    double rotor_speed = 0.0;  // Ω [rad/s], positive
+    RotationDirection direction = RotationDirection::counter_clockwise;
+    Vec3 hub_position_b = Vec3::Zero();  // [m] hub center from the airframe CG, body axes
+    double hub_pitch = 0.0;              // [rad] hub-frame Euler angles relative to body
+    double hub_roll = 0.0;               //       (a forward shaft tilt is a negative pitch)
+    double root_cutout = 0.0;            // [m] from the hub center; no loads inboard
+    double tip_loss = 1.0;               // B [-] in (0, 1]; no lift outboard of B·R
+    // Against r/R [-]. Chord [m]; twist θ_tw(r) [rad], added to θ0, which is
+    // the pitch at the hub center (Leishman 2nd ed. Eq. 3.25 convention).
+    Table1D chord{Axis({0.0, 1.0}), {0.0, 0.0}};
+    Table1D twist{Axis({0.0, 1.0}), {0.0, 0.0}};
+    int num_elements = 20;  // N, spanwise, total (spec §6.4)
+    ElementSpacing spacing = ElementSpacing::equal_area;
+    std::shared_ptr<const Airfoil> airfoil;
+    std::shared_ptr<const PitchSchedule> controls;
+};
+
+// Rotor loads from one evaluation.
+struct RotorLoads {
+    Vec3 F_h = Vec3::Zero();  // [N]   aerodynamic force on the rotor, hub axes
+    Vec3 M_h = Vec3::Zero();  // [N·m] about the hub center, hub axes
+    Wrench body;              // the same, body axes, about the airframe CG
+    double thrust = 0.0;      // T [N] = −F_h,z (along the shaft, upward)
+    double torque = 0.0;      // Q [N·m] shaft torque needed to hold Ω (positive)
+    double power = 0.0;       // P [W] = Q Ω
+    double ct = 0.0;          // C_T = T / (ρ π R² (ΩR)²)
+    double cq = 0.0;          // C_Q = C_P = Q / (ρ π R² (ΩR)² R)
+    double lambda_i = 0.0;    // λ_i [-] uniform induced inflow / ΩR, positive down
+    double mu = 0.0;          // μ [-] in-plane hub speed through the air / ΩR
+    double mu_z = 0.0;        // μ_z [-] hub speed along z_h (down) / ΩR
+    int passes = 0;           // blade-element passes used by the inflow solve
+    bool converged = true;    // inflow solve met its tolerance (D-023)
+};
+
+// One spanwise element, midpoint rule.
+struct BladeElement {
+    double r = 0.0;      // [m] radius of the element center from the hub center
+    double dr = 0.0;     // [m] width
+    double chord = 0.0;  // [m]
+    double twist = 0.0;  // [rad] θ_tw(r)
+    double lift = 1.0;   // 1 inboard of B·R, 0 outboard (tip loss)
+};
+
+class BladeElementRotor : public DynamicComponent {
+public:
+    // Throws InitError on an invalid configuration.
+    explicit BladeElementRotor(BladeElementRotorConfig config);
+
+    // Reads a `type: blade_element_rotor` config node (see data docs in
+    // DECISIONS D-024). Table files are resolved by Config::path.
+    static std::unique_ptr<BladeElementRotor> from_config(const Config& node);
+
+    std::size_t num_states() const override { return 0; }
+    void initial_states(std::span<double> /*x*/) const override {}
+    void derivatives(const SimContext& ctx, std::span<const double> x,
+                     ComponentDerivs& out) const override;
+
+    // Loads with the uniform inflow solved for this evaluation (D-024).
+    RotorLoads evaluate(const SimContext& ctx) const noexcept;
+    // Loads for a given induced inflow λ_i [-] (one blade-element pass, no
+    // inflow solve). converged and passes describe that single pass.
+    RotorLoads evaluate_at_inflow(const SimContext& ctx, double lambda_i) const noexcept;
+
+    // Rotor azimuth ψ [rad] in [0, 2π) at time t [s]: ψ = Ω t (D-024).
+    double azimuth(double t) const noexcept;
+    // Azimuth of blade k = 0…N_b−1: ψ − 2π k / N_b (Padfield 3rd ed. Eq. 3.49).
+    double blade_azimuth(double psi, int k) const noexcept;
+
+    const BladeElementRotorConfig& config() const noexcept { return config_; }
+    std::span<const BladeElement> elements() const noexcept { return elements_; }
+    double disk_area() const noexcept { return area_; }       // π R² [m²]
+    double tip_speed() const noexcept { return tip_speed_; }  // ΩR [m/s]
+    const Mat3& C_hb() const noexcept { return C_hb_; }
+
+    // Iteration limit and tolerance of the inflow solve.
+    static constexpr int kMaxPasses = 30;
+    static constexpr double kInflowTolerance = 1e-13;  // on λ_i [-]
+
+private:
+    // Per-evaluation inputs to a blade-element pass, in hub axes.
+    struct Kinematics {
+        Vec3 v_hub_h;  // [m/s] hub velocity relative to the air
+        Vec3 omega_h;  // [rad/s] body angular rate
+        double psi;    // [rad] rotor azimuth
+        SwashplatePitch pitch;
+        double rho;   // [kg/m³]
+        double a;     // [m/s] speed of sound
+        double mu;    // μ [-] in-plane hub speed through the air / ΩR
+        double mu_z;  // μ_z [-] hub speed along z_h (down) / ΩR
+    };
+
+    Kinematics kinematics(const SimContext& ctx) const noexcept;
+    RotorLoads pass(const Kinematics& k, double lambda_i) const noexcept;
+    void finish(RotorLoads& loads, const Kinematics& k) const noexcept;
+
+    BladeElementRotorConfig config_;
+    std::vector<BladeElement> elements_;
+    double s_;          // +1 counter-clockwise, −1 clockwise
+    double area_;       // [m²]
+    double tip_speed_;  // [m/s]
+    Mat3 C_hb_;         // body → hub
+    Mat3 C_bh_;
+    // Hunt-search hints, one per (blade, element). They change only the
+    // search time, never the result, so derivatives() stays pure (spec §6).
+    mutable std::vector<TableCursor<2>> cursors_;
+};
+
+}  // namespace eyas

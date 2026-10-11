@@ -8,10 +8,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <yaml-cpp/yaml.h>
 
+#include "util/error.hpp"
 #include "util/units.hpp"
 
 namespace eyas {
@@ -33,6 +35,8 @@ namespace eyas {
 // - A value tagged !placeholder marks a data gap (DATA_GAPS.md). It still
 //   loads; placeholders() lists every one so init can report them.
 //       blade_weight: !placeholder "256.9 lbf"
+//   A reader that loads a data file marked as a placeholder (a CSV table
+//   with "# status: placeholder") adds it with note_placeholder() (D-025).
 class Config {
 public:
     static Config from_file(const std::filesystem::path& path);
@@ -43,6 +47,9 @@ public:
     std::int64_t integer(std::string_view key) const;
     bool boolean(std::string_view key) const;
     std::string string(std::string_view key) const;
+    // A file path. A relative path is taken relative to the directory of the
+    // config file (from_file) or to the current directory (from_string).
+    std::filesystem::path path(std::string_view key) const;
 
     bool contains(std::string_view key) const;
     // Throws unless this node is a map whose keys are all in `allowed`.
@@ -57,12 +64,30 @@ public:
     // this node itself. For checks made by the reader after a value is read.
     [[noreturn]] void fail(std::string_view key, std::string_view what) const;
 
-    // Full key paths of every !placeholder value in the whole document.
+    // Runs `f`, re-raising any InitError it throws against `key` via fail(),
+    // so errors from a constructor or a data file loaded for `key` still name
+    // the config file and key path (D-021).
+    template <class F>
+    auto in_context(std::string_view key, F&& f) const -> decltype(f()) {
+        try {
+            return std::forward<F>(f)();
+        } catch (const InitError& e) {
+            fail(key, e.what());
+        }
+    }
+
+    // Every data gap in the whole document: the full key path of each
+    // !placeholder value, then "<path>: <what>" for each note_placeholder().
     const std::vector<std::string>& placeholders() const { return *placeholders_; }
+    // Records a data gap found by the reader of `key`, e.g. a placeholder
+    // table in the file `key` names. The list is shared by every node of the
+    // document, so placeholders() on any of them includes it.
+    void note_placeholder(std::string_view key, std::string_view what) const;
 
 private:
     Config(const YAML::Node& node, std::shared_ptr<const std::string> origin, std::string path,
-           std::shared_ptr<const std::vector<std::string>> placeholders);
+           std::shared_ptr<std::vector<std::string>> placeholders,
+           std::shared_ptr<const std::filesystem::path> base_dir);
 
     std::optional<YAML::Node> find(std::string_view key) const;
     std::string scalar(std::string_view key) const;
@@ -71,7 +96,8 @@ private:
     YAML::Node node_;
     std::shared_ptr<const std::string> origin_;
     std::string path_;
-    std::shared_ptr<const std::vector<std::string>> placeholders_;
+    std::shared_ptr<std::vector<std::string>> placeholders_;  // shared, appendable
+    std::shared_ptr<const std::filesystem::path> base_dir_;   // for relative paths
 };
 
 }  // namespace eyas
