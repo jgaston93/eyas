@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 
 #include "util/csv_table.hpp"
@@ -28,19 +29,17 @@ public:
     // changes the result.
     AirfoilCoefficients operator()(double alpha, double mach,
                                    TableCursor<2>& cursor) const noexcept {
-        const AxisPosition pa = cl_.x_axis().locate(alpha, cursor.hint[0]);
-        const AxisPosition pm = cl_.y_axis().locate(mach, cursor.hint[1]);
-        return {cl_.eval(pa, pm), cd_.eval(pa, pm)};
+        const std::array<double, 2> v = coefficients_(alpha, mach, cursor);
+        return {v[0], v[1]};
     }
 
     const std::string& source() const noexcept { return source_; }
     bool is_placeholder() const noexcept { return placeholder_; }
 
 private:
-    Airfoil(Table2D cl, Table2D cd, std::string source, bool placeholder);
+    Airfoil(MultiTable2D<2> coefficients, std::string source, bool placeholder);
 
-    Table2D cl_;  // axes (α [rad], M [-]); cd_ has identical axes
-    Table2D cd_;
+    MultiTable2D<2> coefficients_;  // (C_l, C_d) on axes (α [rad], M [-])
     std::string source_;
     bool placeholder_;
 };

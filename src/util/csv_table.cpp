@@ -49,12 +49,9 @@ std::vector<double> unique_sorted(std::vector<double> v) {
     return v;
 }
 
-// Builds the axes and row-major value grid for any number of axis columns.
-// Rows may come in any order; each grid point must appear exactly once.
-struct Grid {
-    std::vector<Axis> axes;
-    std::vector<double> values;
-};
+}  // namespace
+
+namespace detail {
 
 Grid build_grid(const CsvTable& csv, const std::vector<std::string_view>& axis_names,
                 std::string_view value_name) {
@@ -106,7 +103,9 @@ Grid build_grid(const CsvTable& csv, const std::vector<std::string_view>& axis_n
     return grid;
 }
 
-}  // namespace
+}  // namespace detail
+
+namespace {}  // namespace
 
 bool CsvTable::is_placeholder() const {
     const auto it = meta.find("status");
@@ -249,19 +248,19 @@ CsvTable read_csv_table(const std::filesystem::path& path) {
 }
 
 Table1D make_table1d(const CsvTable& csv, std::string_view x, std::string_view value) {
-    Grid g = build_grid(csv, {x}, value);
+    detail::Grid g = detail::build_grid(csv, {x}, value);
     return Table1D(std::move(g.axes[0]), std::move(g.values));
 }
 
 Table2D make_table2d(const CsvTable& csv, std::string_view x, std::string_view y,
                      std::string_view value) {
-    Grid g = build_grid(csv, {x, y}, value);
+    detail::Grid g = detail::build_grid(csv, {x, y}, value);
     return Table2D(std::move(g.axes[0]), std::move(g.axes[1]), std::move(g.values));
 }
 
 Table3D make_table3d(const CsvTable& csv, std::string_view x, std::string_view y,
                      std::string_view z, std::string_view value) {
-    Grid g = build_grid(csv, {x, y, z}, value);
+    detail::Grid g = detail::build_grid(csv, {x, y, z}, value);
     return Table3D(std::move(g.axes[0]), std::move(g.axes[1]), std::move(g.axes[2]),
                    std::move(g.values));
 }

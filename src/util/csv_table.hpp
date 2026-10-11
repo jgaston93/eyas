@@ -1,10 +1,12 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "util/table.hpp"
@@ -58,5 +60,33 @@ Table2D make_table2d(const CsvTable& csv, std::string_view x, std::string_view y
                      std::string_view value);
 Table3D make_table3d(const CsvTable& csv, std::string_view x, std::string_view y,
                      std::string_view z, std::string_view value);
+
+namespace detail {
+
+// The axes and row-major value grid for any number of axis columns. Rows may
+// come in any order; each grid point must appear exactly once.
+struct Grid {
+    std::vector<Axis> axes;
+    std::vector<double> values;
+};
+Grid build_grid(const CsvTable& csv, const std::vector<std::string_view>& axis_names,
+                std::string_view value_name);
+
+}  // namespace detail
+
+// Several value columns on one (x, y) grid, e.g. airfoil C_l and C_d.
+template <std::size_t N>
+MultiTable2D<N> make_multi_table2d(const CsvTable& csv, std::string_view x, std::string_view y,
+                                   const std::array<std::string_view, N>& values) {
+    static_assert(N > 0);
+    std::array<std::vector<double>, N> v;
+    detail::Grid g = detail::build_grid(csv, {x, y}, values[0]);
+    v[0] = std::move(g.values);
+    for (std::size_t k = 1; k < N; ++k) {
+        // Same axis columns, so the same axes as values[0].
+        v[k] = detail::build_grid(csv, {x, y}, values[k]).values;
+    }
+    return MultiTable2D<N>(std::move(g.axes[0]), std::move(g.axes[1]), v);
+}
 
 }  // namespace eyas
