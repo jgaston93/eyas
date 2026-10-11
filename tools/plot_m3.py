@@ -62,7 +62,7 @@ def closed_form(src, out):
         k = th > 0.4
         a2.plot(th[k], 100 * (d["ct"][m][k] / d["ct_cf"][m][k] - 1), color=f"C{i}", label=f"C_T, σ = {s:g}")
         a2.plot(th[k], 100 * (d["cp"][m][k] / d["cp_cf"][m][k] - 1), ":", color=f"C{i}", label=f"C_P, σ = {s:g}")
-    a1.set(xlabel="θ0 [deg]", ylabel="C_T", title="Hover C_T: Eyas vs Leishman Eqs. 3.25, 3.32 (dashed)")
+    a1.set(xlabel="θ0 [deg]", ylabel="C_T", title="Hover C_T: Eyas vs Leishman 2nd ed. Eqs. 3.25, 3.32 (dashed)")
     a1.legend(fontsize=8)
     a2.set(xlabel="θ0 [deg]", ylabel="Eyas / closed form − 1 [%]",
            title="Residual (small-angle approximations)")

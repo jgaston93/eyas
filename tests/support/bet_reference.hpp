@@ -153,7 +153,7 @@ inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& co
             cond.pitch.theta0 + cond.pitch.theta1c * cp + cond.pitch.theta1s * sp;
 
         // Per unit span: F_h (3), M_h (3); plus thrust and torque tallies
-        // (Leishman Eq. 3.6) carried in separate integrals below.
+        // (Leishman 2nd ed. Eq. 3.6) carried in separate integrals below.
         const auto section = [&](double r, bool lifting, double& f_up, double& f_x) {
             // In-plane and normal velocities from the rotating-frame scalar
             // derivation (D-024 conventions): U_T = u sin ψ + s v cos ψ +
@@ -167,9 +167,10 @@ inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& co
             TableCursor<2> cur;
             const AirfoilCoefficients c = (*rotor.airfoil)(alpha, std::sqrt(u2) / cond.a, cur);
             const double cl = lifting ? c.cl : 0.0;
-            const double dl = 0.5 * cond.rho * u2 * rotor.chord(r / R) * cl;  // Leishman Eq. 3.4
+            // Leishman 2nd ed. Eq. 3.4
+            const double dl = 0.5 * cond.rho * u2 * rotor.chord(r / R) * cl;
             const double dd = 0.5 * cond.rho * u2 * rotor.chord(r / R) * c.cd;
-            f_up = dl * std::cos(phi) - dd * std::sin(phi);  // Leishman Eq. 3.5
+            f_up = dl * std::cos(phi) - dd * std::sin(phi);  // Leishman 2nd ed. Eq. 3.5
             f_x = dl * std::sin(phi) + dd * std::cos(phi);
         };
         const auto load = [&](bool lifting) {

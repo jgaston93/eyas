@@ -283,7 +283,7 @@ TEST(BladeElementRotor, HoverMatchesLeishmanClosedForm) {
 // as they become exact. With C_d0 = 0 and no twist, expanding the exact lift
 // integrand a r √(r² + λ²)(θ − atan(λ/r)) for r ≫ λ gives
 // a(θr² − λr + θλ²/2 − λ³/(6r) + …): at fixed λ, C_T rises by a relative
-// (3/2)λ² over Leishman Eq. 3.22. Solving the inflow with the thrust scales
+// (3/2)λ² over Leishman 2nd ed. Eq. 3.22. Solving the inflow with the thrust scales
 // that by 4λ/(4λ + σa/4) < 1, so |ε| < (3/2)λ² up to O(λ³ ln λ).
 TEST(BladeElementRotor, ClosedFormResidualVanishesWithInflowAngle) {
     const double a = 5.73;

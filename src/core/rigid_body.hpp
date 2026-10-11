@@ -18,7 +18,7 @@ struct MassProperties {
 
 // Builds the tensor from Padfield's moments and product of inertia (3rd ed.
 // Eqs. 3A.29–3A.32: Ixz = ∫ x z dm). With that definition the off-diagonal
-// entries are −Ixz, which reproduces Padfield Eq. 3A.33. Ixy = Iyz = 0
+// entries are −Ixz, which reproduces Padfield 3rd ed. Eq. 3A.33. Ixy = Iyz = 0
 // (lateral symmetry). [kg], [kg·m²]
 MassProperties make_mass_properties(double mass, double Ixx, double Iyy, double Izz, double Ixz);
 

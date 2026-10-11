@@ -184,9 +184,10 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i) const n
             const BladeElement& e = elements_[j];
             const double u_t = a_T + b_T * e.r;
             const double u_p = a_P + b_P * e.r;
-            const double u = std::sqrt(u_t * u_t + u_p * u_p);  // Leishman Eq. 3.1
-            const double phi = std::atan2(u_p, u_t);            // Leishman Eq. 3.2, all quadrants
-            double alpha = theta + e.twist - phi;               // Leishman Eq. 3.3
+            // Leishman 2nd ed. Eqs. 3.1–3.3; φ in all quadrants.
+            const double u = std::sqrt(u_t * u_t + u_p * u_p);
+            const double phi = std::atan2(u_p, u_t);
+            double alpha = theta + e.twist - phi;
             if (alpha >= std::numbers::pi) {
                 alpha -= kTwoPi;
             } else if (alpha < -std::numbers::pi) {
@@ -194,7 +195,7 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i) const n
             }
             const AirfoilCoefficients coef = (*c.airfoil)(alpha, u / k.a, cursor[j]);
             const double cl = e.lift * coef.cl;
-            // Lift ⟂ and drag ∥ to the relative wind (Leishman Eqs. 3.4–3.5),
+            // Lift ⟂ and drag ∥ to the relative wind (Leishman 2nd ed. Eqs. 3.4–3.5),
             // in vector form: with the relative wind d = (−U_T e_t + U_P e_z)/U
             // and lift direction l = (−U_P e_t − U_T e_z)/U,
             //   dF = ½ρU²c dr (C_l l + C_d d).
@@ -222,7 +223,7 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i) const n
 }
 
 void BladeElementRotor::finish(RotorLoads& loads, const Kinematics& k) const noexcept {
-    loads.mu = std::hypot(k.v_hub_h.x(), k.v_hub_h.y()) / tip_speed_;  // Padfield Eq. 3.140
+    loads.mu = std::hypot(k.v_hub_h.x(), k.v_hub_h.y()) / tip_speed_;  // Padfield 3rd ed. Eq. 3.140
     loads.mu_z = k.v_hub_h.z() / tip_speed_;
     loads.body.F = C_bh_ * loads.F_h;
     loads.body.M = C_bh_ * loads.M_h + config_.hub_position_b.cross(loads.body.F);

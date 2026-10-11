@@ -46,8 +46,9 @@ Vec6 rigid_body_bias(const MassProperties& mp, const BodyState& b) noexcept {
     const Quat q = b.q_nb.normalized();
     const Vec3 g_b = q.conjugate() * gravity_n();
     Vec6 rhs;
-    rhs.head<3>() = mp.mass * g_b - mp.mass * b.omega_b.cross(b.vel_b);  // Padfield Eq. 3A.24
-    rhs.tail<3>() = -b.omega_b.cross(mp.inertia_b * b.omega_b);          // Padfield Eq. 3A.33
+    // Padfield 3rd ed. Eqs. 3A.24 (force) and 3A.33 (moment).
+    rhs.head<3>() = mp.mass * g_b - mp.mass * b.omega_b.cross(b.vel_b);
+    rhs.tail<3>() = -b.omega_b.cross(mp.inertia_b * b.omega_b);
     return rhs;
 }
 
