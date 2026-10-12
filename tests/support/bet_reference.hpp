@@ -56,6 +56,11 @@ struct RefLoads {
     double ct = 0.0;
     double cq = 0.0;
     double lambda_i = 0.0;
+    // Pitt & Peters 1980 eqs. 5b–5c, in standard coefficients (D-027): the
+    // integrals of the force normal to the disc (up) weighted by −(r/R) sin ψ
+    // and −(r/R) cos ψ, over ρπR²(ΩR)²R.
+    double c_l_pp = 0.0;
+    double c_m_pp = 0.0;
 };
 
 namespace detail {
@@ -123,9 +128,10 @@ void adaptive(const F& f, double a, double b, double tol, int depth, Vec6r& sum)
 
 }  // namespace detail
 
-// Loads at a given uniform induced inflow λ_i [-].
-inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& cond,
-                                   double lambda_i) {
+// Loads at a given induced inflow λ(r, ψ) = λ_i + (r/R)(λ_1s sin ψ + λ_1c cos ψ)
+// [-] (uniform by default; the linear form is Pitt & Peters 1980 eq. 1).
+inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& cond, double lambda_i,
+                                   double lambda_1s = 0.0, double lambda_1c = 0.0) {
     using detail::Vec6r;
     const double R = rotor.radius;
     const double W = rotor.omega;
@@ -141,6 +147,8 @@ inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& co
     RefLoads out;
     double thrust = 0.0;
     double torque = 0.0;
+    double c_l = 0.0;
+    double c_m = 0.0;
     for (int k = 0; k < rotor.num_blades; ++k) {
         const double psi =
             cond.psi - 2.0 * std::numbers::pi * k / static_cast<double>(rotor.num_blades);
@@ -157,9 +165,11 @@ inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& co
         const auto section = [&](double r, bool lifting, double& f_up, double& f_x) {
             // In-plane and normal velocities from the rotating-frame scalar
             // derivation (D-024 conventions): U_T = u sin ψ + s v cos ψ +
-            // (Ω − s r_b) r and U_P = −w + v_i − r (s p sin ψ + q cos ψ).
+            // (Ω − s r_b) r and U_P = −w + v_i + ΩR (r/R)(λ_1s sin ψ + λ_1c cos ψ)
+            // − r (s p sin ψ + q cos ψ).
             const double u_t = u * sp + s * v * cp + (W - s * r_rate) * r;
-            const double u_p = -w + v_i - r * (s * p * sp + q * cp);
+            const double u_p =
+                -w + v_i + W * r * (lambda_1s * sp + lambda_1c * cp) - r * (s * p * sp + q * cp);
             const double phi = std::atan2(u_p, u_t);
             const double alpha =
                 std::remainder(theta_c + rotor.twist(r / R) - phi, 2.0 * std::numbers::pi);
@@ -188,7 +198,7 @@ inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& co
                 double f_up = 0.0;
                 double f_x = 0.0;
                 section(r, lifting, f_up, f_x);
-                return Vec6r{f_up, r * f_x, 0.0, 0.0, 0.0, 0.0};
+                return Vec6r{f_up, r * f_x, -f_up * r * sp, -f_up * r * cp, 0.0, 0.0};
             };
         };
         const double tol = 1e-12 * cond.rho * std::pow(W * R, 2) * R * R;
@@ -205,6 +215,8 @@ inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& co
         out.M_h += Vec3(fm[3], fm[4], fm[5]);
         thrust += tt[0];
         torque += tt[1];
+        c_l += tt[2];
+        c_m += tt[3];
     }
     const double q_disk = cond.rho * std::numbers::pi * R * R * std::pow(W * R, 2);
     out.thrust = thrust;
@@ -212,6 +224,8 @@ inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& co
     out.ct = thrust / q_disk;
     out.cq = torque / (q_disk * R);
     out.lambda_i = lambda_i;
+    out.c_l_pp = c_l / (q_disk * R);
+    out.c_m_pp = c_m / (q_disk * R);
     return out;
 }
 

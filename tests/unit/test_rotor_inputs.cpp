@@ -154,6 +154,7 @@ components:
     radius: "8 m"
     rotor_speed: "27 rad/s"
     direction: counter_clockwise
+    inflow: uniform
     hub:
       position: {x: "0 m", y: "0 m", z: "-2 m"}
       pitch: "-3 deg"
@@ -254,6 +255,29 @@ TEST(Model, FlappingRotorFromConfig) {
     EXPECT_EQ(count.count(), 0U);
 }
 
+// D-027: Pitt–Peters inflow adds three states after the flap states, and
+// advance() still doesn't allocate.
+TEST(Model, PittPetersRotorFromConfig) {
+    std::string yaml = rotor_yaml(kData + "/linear_airfoil.csv",
+                                  std::string("      twist: \"-16 deg\"\n") + kFlap);
+    yaml.replace(yaml.find("inflow: uniform"), 15, "inflow: pitt_peters");
+    const Config cfg = Config::from_string(yaml, "rotor.yaml");
+    const auto rotor = BladeElementRotor::from_config(cfg.child("components")[0]);
+    EXPECT_EQ(rotor->config().inflow, InflowModel::pitt_peters);
+    EXPECT_EQ(rotor->num_states(), 11U);
+    EXPECT_EQ(rotor->inflow_offset(), 8U);
+
+    Model m = Model::from_string(yaml, "rotor.yaml");
+    Controls c;
+    c.collective = 0.6;
+    test::AllocationCounter count;
+    for (int i = 0; i < 30; ++i) {
+        const AdvanceStatus st = m.advance(c, Environment{}, 16'666'667);
+        ASSERT_FALSE(st.non_finite);
+    }
+    EXPECT_EQ(count.count(), 0U);
+}
+
 TEST(Model, BladeElementRotorConfigErrors) {
     const std::string af = kData + "/linear_airfoil.csv";
     const auto fails_with = [](const std::string& yaml, const std::string& text) {
@@ -272,6 +296,13 @@ TEST(Model, BladeElementRotorConfigErrors) {
     std::string yaml = rotor_yaml(af);
     yaml.replace(yaml.find("counter_clockwise"), 17, "anticlockwise");
     fails_with(yaml, "components[0].direction");
+    // The inflow model is required (D-027).
+    yaml = rotor_yaml(af);
+    yaml.replace(yaml.find("    inflow: uniform\n"), 20, "");
+    fails_with(yaml, "components[0].inflow");
+    yaml = rotor_yaml(af);
+    yaml.replace(yaml.find("inflow: uniform"), 15, "inflow: peters_he");
+    fails_with(yaml, "components[0].inflow");
     yaml = rotor_yaml(af);
     yaml.replace(yaml.find("blade_element_rotor"), 19, "teetering_rotor");
     fails_with(yaml, "components[0].type");

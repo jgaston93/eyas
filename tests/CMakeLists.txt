@@ -16,6 +16,7 @@ add_executable(eyas_unit_tests
     unit/test_flapping_rotor.cpp
     unit/test_geodesy.cpp
     unit/test_model.cpp
+    unit/test_pitt_peters.cpp
     unit/test_recorder.cpp
     unit/test_rotor_inputs.cpp
     unit/test_rigid_body.cpp

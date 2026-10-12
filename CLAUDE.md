@@ -35,6 +35,8 @@ The reference documents live outside this repo, in a local reference directory. 
 | Howlett, GenHel UH-60A, NASA CR-166309 (1981) | Public NASA report, scanned with a poor OCR layer. **Read numeric data from rendered page images, never from extracted text.** An OCR misread is invented data. |
 | *U.S. Standard Atmosphere, 1976*, NASA-TM-X-74335 | Public; the ISA source (D-015). Scanned, with a nearly useless OCR layer, so read from images. Table 2 has two misprinted exponents (R*, r₀); use the text values. |
 | WGS-84, NGA.STND.0036_1.0.0 (2014) | Public, with a text layer; ellipsoid constants for the Tier 1 geodetic map (D-017). |
+| Carpenter & Fridovich, NACA TN 3044 (1953) | Public NACA report, scanned with a rough OCR layer, so read from images. Rapid collective-pitch increase on a full-scale rotor on the Langley helicopter tower: measured thrust, flapping, inflow build-up. M5 validation. |
+| Carpenter, NACA TN 1698 (1948) | Public NACA report, scanned. TN 3044's reference 1; rotor data table (rotors A and B) on p. 5. |
 
 **Reading scans:** poppler isn't installed, so the Read tool can't render PDFs. Use PyMuPDF (`python3 -I`, `import fitz`) to extract text or render a page with `page.get_pixmap(dpi=...)` (use `prerotate(90)` for rotated pages), then Read the PNG. For DjVu: search with `djvutxt --page=N`, render with `ddjvu -format=tiff -page=N`, convert to PNG with PyMuPDF.
 

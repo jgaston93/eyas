@@ -17,8 +17,10 @@ namespace eyas {
 class Config;
 }
 
-// Blade-element rotor with rigid blades and uniform momentum inflow (spec
-// §6.4, §6.5; D-024, D-026). Two forms, chosen by config:
+// Blade-element rotor with rigid blades (spec §6.4, §6.5; D-024, D-026,
+// D-027). The induced inflow is uniform momentum inflow, solved in every
+// evaluation (D-024), or Pitt–Peters dynamic inflow with three states
+// (D-027), chosen by config. Two blade forms, also chosen by config:
 // - no flap hinge (M3): massless blades with flapping held at zero; no
 //   states, aerodynamic loads only (G = H = 0);
 // - flap hinge (M4, D-026): rigid blades with mass, hinged at an offset e,
@@ -37,6 +39,20 @@ namespace eyas {
 enum class RotationDirection : std::uint8_t {
     counter_clockwise,  // viewed from above (UH-60, spec §4)
     clockwise,
+};
+
+enum class InflowModel : std::uint8_t {
+    uniform,      // momentum, solved each evaluation, no states (D-024)
+    pitt_peters,  // dynamic, states (λ0, λ1s, λ1c) (D-027)
+};
+
+// Linear induced inflow λ(r, ψ) = l0 + (r/R)(l1s sin ψ + l1c cos ψ) [-],
+// positive down along the shaft, ψ the blade azimuth, r the radius in the
+// hub plane (Pitt & Peters 1980 eq. 1; D-027).
+struct LinearInflow {
+    double l0 = 0.0;
+    double l1s = 0.0;
+    double l1c = 0.0;
 };
 
 enum class ElementSpacing : std::uint8_t {
@@ -78,6 +94,7 @@ struct BladeElementRotorConfig {
     std::shared_ptr<const Airfoil> airfoil;
     std::shared_ptr<const PitchSchedule> controls;
     std::optional<FlapHinge> flap;  // none: M3 rotor, flapping held at zero
+    InflowModel inflow = InflowModel::uniform;
 };
 
 inline constexpr int kMaxBlades = 64;
@@ -94,11 +111,17 @@ struct RotorLoads {
     double power = 0.0;       // P [W] = Q Ω
     double ct = 0.0;          // C_T = T / (ρ π R² (ΩR)²)
     double cq = 0.0;          // C_Q = C_P = Q / (ρ π R² (ΩR)² R)
-    double lambda_i = 0.0;    // λ_i [-] uniform induced inflow / ΩR, positive down
-    double mu = 0.0;          // μ [-] in-plane hub speed through the air / ΩR
-    double mu_z = 0.0;        // μ_z [-] hub speed along z_h (down) / ΩR
-    int passes = 0;           // blade-element passes used by the inflow solve
-    bool converged = true;    // inflow solve met its tolerance (D-023)
+    double lambda_i = 0.0;    // λ_i [-] uniform induced inflow (λ0) / ΩR, positive down
+    double lambda_1s = 0.0;   // first-harmonic inflow [-] (D-027; 0 for uniform inflow)
+    double lambda_1c = 0.0;
+    // Azimuth-weighted moments of the aerodynamic force normal to the hub
+    // plane, Σ dF_up (r/R)(sin ψ, cos ψ) / (ρA(ΩR)²) (D-027).
+    double c1s = 0.0;
+    double c1c = 0.0;
+    double mu = 0.0;        // μ [-] in-plane hub speed through the air / ΩR
+    double mu_z = 0.0;      // μ_z [-] hub speed along z_h (down) / ΩR
+    int passes = 0;         // blade-element passes used by the inflow solve
+    bool converged = true;  // inflow solve met its tolerance (D-023)
     // Aerodynamic moment about each blade's flap hinge [N·m], positive flap
     // up; zero without a flap hinge.
     std::array<double, kMaxBlades> flap_moment{};
@@ -122,21 +145,33 @@ public:
     // DECISIONS D-024). Table files are resolved by Config::path.
     static std::unique_ptr<BladeElementRotor> from_config(const Config& node);
 
-    // States (with a flap hinge): x[2k] = β_k [rad], x[2k+1] = β̇_k [rad/s]
-    // for blade k = 0…N_b−1, numbered as in blade_azimuth(). They start at
-    // zero (D-026).
+    // States: with a flap hinge, x[2k] = β_k [rad], x[2k+1] = β̇_k [rad/s]
+    // for blade k = 0…N_b−1, numbered as in blade_azimuth() (D-026); then,
+    // with Pitt–Peters inflow, (λ0, λ1s, λ1c) [-] from inflow_offset()
+    // (D-027). All start at zero.
     std::size_t num_states() const override;
     void initial_states(std::span<double> x) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
 
-    // Aerodynamic loads with the uniform inflow solved for this evaluation
-    // (D-024), at blade states x (empty: all blades at β = β̇ = 0).
+    // Aerodynamic loads at rotor states x (empty: every state zero), with the
+    // configured inflow: uniform inflow solved for this evaluation (D-024),
+    // or the Pitt–Peters states in x (D-027).
     RotorLoads evaluate(const SimContext& ctx, std::span<const double> x = {}) const noexcept;
-    // The same for a given induced inflow λ_i [-] (one blade-element pass, no
-    // inflow solve). converged and passes describe that single pass.
+    // Loads with the uniform momentum inflow solved (D-024), whatever the
+    // configured model: the steady Pitt–Peters inflow in hover, and a start
+    // for its states. Flap states are read from x as in evaluate().
+    RotorLoads evaluate_uniform(const SimContext& ctx,
+                                std::span<const double> x = {}) const noexcept;
+    // Loads at a given induced inflow (one blade-element pass, no inflow
+    // solve). converged and passes describe that single pass.
     RotorLoads evaluate_at_inflow(const SimContext& ctx, double lambda_i,
                                   std::span<const double> x = {}) const noexcept;
+    RotorLoads evaluate_at_inflow(const SimContext& ctx, const LinearInflow& lambda,
+                                  std::span<const double> x = {}) const noexcept;
+
+    // Index of λ0 in the states (Pitt–Peters only): 2 N_b with a flap hinge, else 0.
+    std::size_t inflow_offset() const noexcept;
 
     // Rotor azimuth ψ [rad] in [0, 2π) at time t [s]: ψ = Ω t (D-024).
     double azimuth(double t) const noexcept;
@@ -163,14 +198,18 @@ private:
         Vec3 omega_h;  // [rad/s] body angular rate
         double psi;    // [rad] rotor azimuth
         SwashplatePitch pitch;
-        double rho;   // [kg/m³]
-        double a;     // [m/s] speed of sound
-        double mu;    // μ [-] in-plane hub speed through the air / ΩR
-        double mu_z;  // μ_z [-] hub speed along z_h (down) / ΩR
+        double rho;    // [kg/m³]
+        double a;      // [m/s] speed of sound
+        double mu;     // μ [-] in-plane hub speed through the air / ΩR
+        double mu_z;   // μ_z [-] hub speed along z_h (down) / ΩR
+        double cos_w;  // downwind azimuth ψ_w (D-027): cos ψ_w = v_x/|v_xy|,
+        double sin_w;  //   sin ψ_w = −s v_y/|v_xy|; (1, 0) at |v_xy| = 0
     };
 
     Kinematics kinematics(const SimContext& ctx) const noexcept;
-    RotorLoads pass(const Kinematics& k, double lambda_i, std::span<const double> x) const noexcept;
+    RotorLoads pass(const Kinematics& k, const LinearInflow& lambda,
+                    std::span<const double> x) const noexcept;
+    RotorLoads solve_uniform(const Kinematics& k, std::span<const double> x) const noexcept;
     void finish(RotorLoads& loads, const Kinematics& k) const noexcept;
 
     BladeElementRotorConfig config_;

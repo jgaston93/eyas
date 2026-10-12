@@ -26,6 +26,7 @@ add_library(eyas STATIC
     src/rotor/blade_element_rotor.cpp
     src/rotor/controls.cpp
     src/rotor/ideal_thrust.cpp
+    src/rotor/pitt_peters.cpp
     src/util/axis.cpp
     src/util/config.cpp
     src/util/csv_table.cpp
