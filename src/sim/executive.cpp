@@ -46,6 +46,66 @@ std::size_t total_states(const std::vector<std::unique_ptr<DynamicComponent>>& c
     return n;
 }
 
+std::string label(const DynamicComponent& c, std::size_t i) {
+    const std::string_view name = c.name();
+    return name.empty() ? "component #" + std::to_string(i) : std::string(name);
+}
+
+// Builds the coupling registry and returns the evaluation order: a
+// topological sort of producer → consumer edges, ties broken by config order
+// so the order is deterministic (D-003). Then binds every component.
+std::vector<std::size_t> order_and_bind(
+    const std::vector<std::unique_ptr<DynamicComponent>>& components, CouplingRegistry& registry) {
+    const std::size_t n = components.size();
+    std::vector<std::size_t> producer_of;  // per registry slot: its producer's index
+    for (std::size_t i = 0; i < n; ++i) {
+        for (const std::string& name : components[i]->produces()) {
+            registry.add(name, label(*components[i], i));
+            producer_of.push_back(i);
+        }
+    }
+    // needs[c] = producers that c depends on.
+    std::vector<std::vector<std::size_t>> needs(n);
+    for (std::size_t i = 0; i < n; ++i) {
+        for (const std::string& name : components[i]->consumes()) {
+            const CouplingSlot slot = registry.find(name, label(*components[i], i));  // throws
+            needs[i].push_back(producer_of[slot.index]);
+        }
+    }
+    std::vector<std::size_t> order;
+    std::vector<bool> done(n, false);
+    while (order.size() < n) {
+        bool progressed = false;
+        for (std::size_t i = 0; i < n; ++i) {
+            if (done[i]) {
+                continue;
+            }
+            const bool ready = std::all_of(needs[i].begin(), needs[i].end(),
+                                           [&](std::size_t j) { return done[j]; });
+            if (ready) {
+                order.push_back(i);
+                done[i] = true;
+                progressed = true;
+                break;  // restart from the first index: ties go by config order
+            }
+        }
+        if (!progressed) {
+            std::string cycle;
+            for (std::size_t i = 0; i < n; ++i) {
+                if (!done[i]) {
+                    cycle += (cycle.empty() ? "" : ", ") + label(*components[i], i);
+                }
+            }
+            throw InitError("executive: coupling outputs form a dependency cycle; unresolved: " +
+                            cycle);
+        }
+    }
+    for (const auto& c : components) {
+        c->bind(registry);
+    }
+    return order;
+}
+
 }  // namespace
 
 Executive::Executive(const ExecutiveConfig& config,
@@ -77,6 +137,9 @@ Executive::Executive(const ExecutiveConfig& config,
             throw InitError("executive: null force model");
         }
     }
+    CouplingRegistry registry;
+    order_ = order_and_bind(components_, registry);
+    coupling_ = CouplingOutputs(registry.size());
     pack_body(BodyState{}, x_);
 }
 
@@ -144,7 +207,6 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     ctx.controls = controls;
     ctx.env = env;
     ctx.air = isa_atmosphere(origin_altitude_ - body.pos_n.z(), env.isa_delta_T);  // D-016
-    ctx.coupling = &coupling_;
 
     // (M_rb − Σ H) a = bias + Σ load0 + Σ forces   (spec §5, "Coupling")
     Mat66 A = mass_matrix_;
@@ -156,12 +218,20 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     }
     std::fill(xdot0_.begin(), xdot0_.end(), 0.0);
     std::fill(G_.begin(), G_.end(), 0.0);
+    // Force models run before every component and can't consume (D-003), so
+    // they get no store; components get it once it is reset for this evaluation.
+    coupling_.begin_evaluation();
+    ctx.coupling = &coupling_;
     bool converged = true;
-    for (std::size_t i = 0; i < components_.size(); ++i) {
+    for (const std::size_t i : order_) {
         const std::size_t n = sizes_[i];
         const std::size_t local = offsets_[i] - body_layout::kSize;
         ComponentDerivs d{std::span<double>(xdot0_).subspan(local, n),
-                          std::span<double>(G_).subspan(local * 6, n * 6), Wrench{}, Mat66::Zero()};
+                          std::span<double>(G_).subspan(local * 6, n * 6),
+                          Wrench{},
+                          Mat66::Zero(),
+                          true,
+                          &coupling_};
         components_[i]->derivatives(ctx, x.subspan(offsets_[i], n), d);
         rhs.head<3>() += d.load0_b.F;
         rhs.tail<3>() += d.load0_b.M;

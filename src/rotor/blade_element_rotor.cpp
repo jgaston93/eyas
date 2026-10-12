@@ -10,6 +10,8 @@
 #include <utility>
 
 #include "core/rigid_body.hpp"
+#include "rotor/hub_frame.hpp"
+#include "rotor/multiblade.hpp"
 #include "rotor/pitt_peters.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
@@ -19,21 +21,6 @@ namespace eyas {
 namespace {
 
 constexpr double kTwoPi = 2.0 * std::numbers::pi;
-
-// Hub-frame Euler angles (pitch θ_h, roll φ_h; no yaw) to C_hb = Φ Θ, the
-// same rotation sequence as the body attitude (Padfield 3rd ed. Eq. 3A.37
-// with ψ = 0).
-Mat3 hub_rotation(double pitch, double roll) {
-    const double cp = std::cos(pitch);
-    const double sp = std::sin(pitch);
-    const double cr = std::cos(roll);
-    const double sr = std::sin(roll);
-    Mat3 theta;
-    theta << cp, 0.0, -sp, 0.0, 1.0, 0.0, sp, 0.0, cp;
-    Mat3 phi;
-    phi << 1.0, 0.0, 0.0, 0.0, cr, sr, 0.0, -sr, cr;
-    return phi * theta;
-}
 
 // Element edges on [a, b]: n elements, uniform or equal-area.
 void add_mesh(double a, double b, int n, ElementSpacing spacing, std::vector<double>& edges) {
@@ -477,12 +464,43 @@ void BladeElementRotor::initial_states(std::span<double> x) const {
     std::fill(x.begin(), x.end(), 0.0);
 }
 
+std::vector<std::string> BladeElementRotor::produces() const {
+    if (config_.name.empty()) {
+        return {};
+    }
+    const std::string& n = config_.name;
+    return {n + ".lambda0", n + ".mu_x", n + ".mu_z", n + ".beta_1c", n + ".tip_speed"};
+}
+
+void BladeElementRotor::bind(const CouplingRegistry& registry) {
+    if (config_.name.empty()) {
+        return;
+    }
+    const std::string& n = config_.name;
+    slots_.lambda0 = registry.find(n + ".lambda0", n);
+    slots_.mu_x = registry.find(n + ".mu_x", n);
+    slots_.mu_z = registry.find(n + ".mu_z", n);
+    slots_.beta_1c = registry.find(n + ".beta_1c", n);
+    slots_.tip_speed = registry.find(n + ".tip_speed", n);
+}
+
 void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const double> x,
                                     ComponentDerivs& out) const {
     const Kinematics kin = kinematics(ctx);
     const RotorLoads loads = evaluate_at(kin, x);
     out.load0_b = loads.body;
     out.converged = loads.converged;
+    if (out.coupling != nullptr && slots_.lambda0.valid()) {
+        const double lambda0 =
+            config_.inflow == InflowModel::pitt_peters ? x[inflow_offset()] : loads.lambda_i;
+        const double beta_1c =
+            config_.flap ? multiblade_flap(x, kin.psi, config_.num_blades).beta1c : 0.0;
+        out.coupling->set(slots_.lambda0, lambda0);
+        out.coupling->set(slots_.mu_x, kin.v_hub_h.x() / tip_speed_);
+        out.coupling->set(slots_.mu_z, kin.mu_z);
+        out.coupling->set(slots_.beta_1c, beta_1c);
+        out.coupling->set(slots_.tip_speed, tip_speed_);
+    }
     if (config_.inflow == InflowModel::pitt_peters) {
         // Pitt–Peters inflow (D-027), forced by the loads of the same pass.
         // Independent of the body acceleration: the G rows stay zero.
@@ -636,9 +654,15 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
 }  // namespace
 
 std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& node) {
-    node.allow_keys({"type", "blades", "radius", "rotor_speed", "direction", "inflow", "hub",
-                     "blade", "controls"});
+    node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "direction", "inflow",
+                     "hub", "blade", "controls"});
     BladeElementRotorConfig c;
+    if (node.contains("name")) {
+        c.name = node.string("name");
+        if (c.name.empty()) {
+            node.fail("name", "must not be empty");
+        }
+    }
     const std::int64_t blades = node.integer("blades");
     if (blades < 1 || blades > kMaxBlades) {
         node.fail("blades", "must be between 1 and " + std::to_string(kMaxBlades));

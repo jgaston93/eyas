@@ -8,6 +8,7 @@
 
 #include "core/attitude.hpp"
 #include "env/geodesy.hpp"
+#include "rotor/bailey_rotor.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/ideal_thrust.hpp"
 #include "sim/executive.hpp"
@@ -73,8 +74,8 @@ std::vector<std::unique_ptr<ForceModel>> read_force_models(const Config& config)
     return forces;
 }
 
-// Components with states or acceleration coupling, in config order (D-003:
-// the order becomes dependency-sorted once components exchange outputs).
+// Components with states or acceleration coupling, in config order. The
+// executive evaluates them producers first (D-003).
 std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& config) {
     std::vector<std::unique_ptr<DynamicComponent>> components;
     if (!config.contains("components")) {
@@ -84,7 +85,9 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
     for (std::size_t i = 0; i < list.size(); ++i) {
         const Config c = list[i];
         const std::string type = c.string("type");
-        if (type == "blade_element_rotor") {
+        if (type == "bailey_rotor") {
+            components.push_back(BaileyRotor::from_config(c));
+        } else if (type == "blade_element_rotor") {
             components.push_back(BladeElementRotor::from_config(c));
         } else {
             c.fail("type", "unknown component '" + type + "'");

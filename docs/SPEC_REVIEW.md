@@ -188,3 +188,28 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 - *"The step-collective thrust overshoot … compared against the reference model."* This has the same problems as SPEC_REVIEW #19: the reference model's internals can't be inspected, no case is defined, and the comparison depends on the license check (#12). The overshoot also has a closed form for a small step on a rigid-blade rotor: the thrust jumps by (σa/6)δθ₀ and decays to C′ times that, with C′ = 1/(1 + σa/(16λ₀)).
 - *"Reduces to uniform momentum inflow in hover."* This is right, but only in hover: in forward flight the Pitt–Peters λ₀ also depends on the pitch moment through L₁₃, so it no longer equals the momentum solution.
 **Suggested resolution:** see D-027.
+
+## 24. M6 is underspecified, and GenHel's airframe models carry hidden state — `resolved → DECISIONS.md D-028 (2026-10-12)`
+**Spec:** §6.6, §6.7, M6.
+**Problem:**
+- *Hidden state in the GenHel models.* GenHel (CR-166309) is the data source for M6, but several of its equations use values from the previous frame or from history, which Eyas's pure derivative function can't (spec §5; D-004):
+  - tail-rotor inflow: the mass-flow term uses λ_TR from the previous pass (p. 5.4-7, PDF p. 168), so the inflow lag depends on the frame rate;
+  - tail-rotor δ₃: the pitch correction uses the previous-pass thrust T_TR(t−1) (same page);
+  - fuselage downwash and sidewash at the stabilator, fin and tail rotor are "delayed by (FS − FSCG)/(12·V_xb) sec" (pp. 5.3-6, 5.3-10, 5.4-5), a transport delay;
+  - landing gear: the retained tire contact point, a discrete stick/slip switch and strut preload-mode logic (pp. 5.7-2 to 5.7-4, PDF pp. 240–242).
+- *The stabilator isn't a schedule.* §6.7 asks for "a table-driven scheduler" of airspeed, collective and pitch rate. GenHel's stabilator (Fig. 5.5.1.7, p. 5.5-18, PDF p. 194) is an analog control law: a 3.98 s lag on airspeed, collective, pitch-rate and lateral-acceleration feedback, a second-order servo, a ±7°/s rate limit and −8°…39° travel. The lateral-acceleration term would make an algebraic loop through the coupled solve without the servo dynamics.
+- *Tail-rotor torque.* §6.6 says "thrust and torque"; GenHel's tail rotor computes thrust only (p. 5.4-2) and gives no blade profile-drag data.
+- *Acceptance criteria.*
+  - "Hover pedal position and tail-rotor thrust balance main-rotor torque": a yaw-moment balance is enforced by the equations of motion, so the check is nearly tautological. What it can catch is sign and arm errors. A pedal *position* also needs the UH-60A control rigging (§5.5.1.6), and there is no published hover pedal value in the reference library to compare with.
+  - "Fuselage and empennage forces match GenHel table values at the test points": no test points are named, and a lookup compared with the same table tests only the lookup.
+  - "Sits stably on the ground with gear loads equal to weight": sound, but the rotor's own thrust, the load split between gears and creep on a slope aren't mentioned.
+- *Ordering.* The D-003 coupling store is still an empty struct; M6 is its first user.
+**Why it matters:** implementing the previous-frame and delay terms literally would break purity, `snapshot()`/`restore()` and the finite-difference Jacobians of M7. Dropping them silently would lose the tail-rotor inflow lag and the downwash-lag pitch damping.
+**Suggested resolution:** see D-028.
+
+## 25. No milestone covers the AFCS — `resolved → DECISIONS.md D-029 (2026-10-12)`
+**Spec:** §9 (all milestones), §1 Goals.
+**Problem:** the UH-60A's automatic flight control system (SAS, pitch bias actuator, flight-path stabilization, stabilator; GenHel §5.5) appears in no milestone. Two parts matter before M8:
+- *Trim (M7).* The pitch bias actuator (±15% authority, a function of airspeed among other inputs, PDF p. 179) and the stabilator schedule change the trimmed longitudinal cyclic and pitch attitude, so a flight-test trim comparison without them compares different aircraft.
+- *Piloted evaluation (M8).* The UH-60A's handling qualities with SAS off are not representative of the aircraft pilots know.
+**Suggested resolution:** add the static (steady-state) parts of the stabilator and pitch bias actuator before the M7 trim comparison, and the dynamic AFCS (SAS, FPS attitude hold, stabilator servo and feedback) before M8, as its own milestone or as part of M8. GenHel §5.5 has the block diagrams and gains. To decide with the spec owner.

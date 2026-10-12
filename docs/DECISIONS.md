@@ -41,7 +41,7 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 - **Declared dependencies:** each component instance declares the coupling outputs it *produces* and *consumes*, e.g. `rotor[0].wake_skew`, `rotor[0].torque`.
 - **Order computed once:** at `init()` the executive sorts components topologically so producers run before consumers. Ties break by config order, so the result is deterministic. The order is then fixed for the run. A dependency cycle is an `init()` error that names the cycle. The UH-60 order this produces is main rotor → tail rotor → airframe → engine.
 - **Coupling outputs:** shared per-evaluation results go in a pre-allocated `CouplingOutputs` store, with fields **grouped by producer instance** (not a singleton "main rotor"). It is sized at `init()` and rebuilt on every derivative evaluation, so no state is kept between evaluations and purity is preserved. Consumers see it read-only through `SimContext`.
-- **Read-before-write check:** in debug builds every field is reset to NaN at the start of each evaluation, and a consumer reading an unwritten field asserts.
+- **Read-before-write check:** in debug builds every field is marked unwritten at the start of each evaluation, and a consumer reading an unwritten field asserts. (M6a review: a per-field flag, not a NaN fill, because a producer may legitimately write NaN from a diverging RK4 stage, which the executive must be able to reject in debug as in release.)
 - **Field discipline:** a field is added only when some component consumes it. Fields never change meaning, units or frame. Unit tests populate only the fields their component reads.
 
 **Rationale:**
@@ -51,6 +51,12 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 **Known limits and notes:**
 - **One-way flow per evaluation.** Two-way interactions within one evaluation (airframe upwash on the rotor, tiltrotor wing–rotor interference) must either depend only on states and inputs already in `SimContext` (GenHel's airframe upwash on the main rotor appears to; confirm when implementing), or be handled by an explicit, documented choice: bounded fixed-point iteration, a deliberate simplification, or a lag. Record each case here.
 - **Coupled solve.** Airframe force models consume rotor *outputs* that don't depend on body acceleration `a`, so they add no H terms. If a consumed output depends on `a`, its consumer can't take it from the coupling store and must take part in the coupled solve. **Known M9 case:** rotor shaft torque includes blade inertial terms that depend on body yaw acceleration, so the drivetrain and rotor-speed DOF must be in the coupled solve, not a plain consumer of `torque`.
+
+**Implementation notes (2026-10-12, M6a):**
+- `DynamicComponent` gained `name()`, `produces()`, `consumes()` and `bind()`, all with empty defaults, so existing components are unchanged. Names are scalar fields, `"<instance>.<field>"`; `CouplingRegistry` maps them to `CouplingSlot`s at init and each component resolves its slots in `bind()`.
+- The store is `CouplingOutputs`, one `std::vector<double>` sized at init. Producers write through `ComponentDerivs::coupling`; consumers read through `SimContext::coupling`. Both are null when a component is evaluated on its own, as in unit tests.
+- Force models take no part: they are evaluated before every component and can't consume outputs, so their `SimContext::coupling` is null. None needs to yet (the M6 airframe aerodynamics is a `DynamicComponent`, D-028).
+- The state layout stays in config order; only the evaluation order is sorted (`Executive::evaluation_order()`).
 
 ## D-004 Stateful gear and stabilator; const `ForceModel` (SPEC_REVIEW #4) — `Approved (2026-10-10)` — interface change
 **Decision:**
@@ -379,3 +385,69 @@ Do not restore and continue automatically and silently: an input-driven fault re
 - *Wake-skew direction (our extension; no source).* Choice: the skew terms are applied in wind axes aligned with the in-plane hub velocity and rotated back to hub axes. Alternative: the published form, which assumes the free stream comes from ψ = 180° whatever the flight direction. Why: with the published form, sideways and rearward flight put the fore–aft inflow gradient on the wrong axis, giving wrong flapping and hub moments in hover-taxi, crosswind and sideward-flight tasks. The rotation is the published model applied in a frame where its assumption holds. It changes nothing in pure forward flight (ψ_w = 0) or at μ = 0 (isotropic), so it can't affect the forward-flight validation. Not verified against data: check sideward-flight trim (lateral cyclic and pedal against lateral speed) against flight data in M7 if available, and treat any disagreement as a possible cause.
 
 **Rationale:** the 1980 paper and Johnson p. 437 agree on the apparent masses, and the two L matrices agree once the load signs are reconciled, so the model rests on two consistent readings. One V for all columns in the total-state form gives momentum theory in the steady state and the published hover time constant on linearization. The closed-form gates use the same rigid-blade, linear-airfoil fixtures as M3 and M4, so their tolerances only cover the small-angle residuals.
+
+## D-028 M6 tail rotor, airframe aerodynamics and landing gear (SPEC_REVIEW #24) — `Approved (2026-10-12)`
+**Sources:** GenHel CR-166309 is primary for the model structure and the UH-60A data: §5.2 fuselage (PDF pp. 86–122), §5.3 empennage (pp. 123–161), §5.4 tail rotor (pp. 162–176), Fig. 5.5.1.7 stabilator (p. 194), §5.7 landing interface (pp. 239–292). Every equation is re-derived or checked against Padfield 3rd ed., Johnson (2013) or Leishman 2nd ed. where they cover it, and cited in code.
+
+**Rule for purity replacements.** Where a GenHel equation uses remembered values (a previous pass, a time delay, mode logic), the replacement must match or beat GenHel against the literature: the same steady state, and dynamics with a published or derivable form. Its error against GenHel's form is measured by a test, not argued, and reported in VALIDATION.md. A replacement that loses fidelity in a way that matters is not accepted because of the purity rule. The alternative is then a declared discrete state, proposed as an interface change.
+
+**Staging.** M6 is split into four steps, each its own PR with its own gate tests:
+- **M6a** — the coupling store (D-003, first use) and the tail rotor;
+- **M6b** — fuselage, empennage and stabilator incidence;
+- **M6c** — landing gear;
+- **M6d** — the UH-60A aircraft config (main rotor, tail rotor, airframe, gear) and the whole-aircraft checks.
+
+**Coupling store (D-003).** First fields, per rotor instance: λ₀ (the uniform part of the induced inflow: the Pitt–Peters state, or the uniform solve), wake skew χ, longitudinal flapping (GenHel's a₁; its relation to Padfield's β_1c, expected a₁ = −β_1c, is to be confirmed from GenHel §5.1.2), Ω and R. Per fuselage: α_WF and ψ_WF (GenHel's wind-tunnel angles, consumed by the empennage and tail-rotor maps). None depends on the body acceleration, so the consumers add no H terms (D-003, "Coupled solve").
+
+**Tail rotor (GenHel §5.4.2: Bailey closed form, thrust only).**
+- *Thrust:* C_T = (aσ/2)(λ t₃₁ + θ t₃₂ + θ_tw t₃₃) with Bailey's coefficients including tip loss B (p. 5.4-7), λ = μ_z − λ_i. To be checked against Padfield 3rd ed. Eq. 3.62 (B = 1) when implemented.
+- *Inflow lag (replaces GenHel's previous-pass λ):* one inflow state per tail rotor, (128/75π) dλ_i/dτ = C_T − 2λ_i√(μ² + λ²), the Pitt–Peters thrust row of D-027. Its steady state is exactly GenHel's algebraic inflow, and its time constant has a published source instead of depending on the frame rate. Hover estimate for the UH-60A tail rotor: about 7 ms with the lift-deficiency feedback, so h|s| ≈ 0.15 at 1 kHz (RK4-stable). *Alternative considered:* an algebraic solve in every evaluation (D-024 style), which has no lag at all; rejected, since it drops a real effect and costs an iteration.
+- *δ₃ (replaces GenHel's T(t−1)):* θ = (θ_cmd + BIAS) − (∂a₀/∂T)·T·tan δ₃ (p. 5.4-7), with T from the same evaluation. For a given λ_i, T is linear in θ, so this is a closed-form solve, with no iteration.
+- *δ₃ sign (M6a review):* the solve divides by 1 + (aσ/2)·t₃₂·k, with k = (∂a₀/∂T)·tan δ₃·K_BLK·ρπR²(ΩR)². With δ₃ < 0, k < 0 and the denominator falls as ρ and μ² grow, with no bound that can be checked at init; for the UH-60A tail rotor at sea level it reaches zero near δ₃ = −73° in hover. `init()` therefore rejects δ₃ < 0 when ∂a₀/∂T > 0. A rotor with negative δ₃ would need a different treatment.
+- *Interference:* main-rotor wash from the same maps as the stabilator (GenHel: "same as horizontal tail for Black Hawk"), fuselage sidewash and dynamic-pressure ratio from the fin maps, with the delay below. Fin blockage K_BLK against airspeed as GenHel (p. 5.4-8).
+- *Ω_TR/Ω_MR* is 1 until the rotor-speed DOF (M9).
+- *Torque:* none, as in GenHel. GenHel gives no tail-rotor profile-drag data, and estimating it would be inventing data. Logged in DATA_GAPS.md; revisit with the M7 power comparison and the M9 drivetrain.
+
+**Fuselage (GenHel §5.2.2).** Six wind-axis coefficients (in ft² and ft³) from 1-D tables in α_WF and ψ_WF (Tables 2.5.3–2.5.11), at the tunnel mounting point, transformed to body axes at the CG (p. 5.2-9). Rotor wash is added as GenHel does (uniform downwash × maps of χ and a₁, Tables 2.5.1–2.5.2). As in GenHel, body-rate velocities at the mounting point are ignored, and the low-speed filter is not used (p. 5.2-10: "not being executed on PDP10"; its hover parameters aren't given).
+
+**Empennage (GenHel §5.3.2).** One stabilator panel and one fin panel, with local velocities including body rates, rotor wash maps, fuselage downwash/sidewash and dynamic-pressure ratios, and lift/drag tables (Tables 3.5.1–3.5.10).
+- *Transport delay (replaces GenHel's delay):* each delayed quantity ε (stabilator downwash, fin sidewash, tail-rotor downwash and sidewash: 4 states) gets a first-order lag written as dε_d/dt = (|u|/l)(ε − ε_d), with l the distance aft of the CG. This matches the pure delay to first order in frequency (e^{−sτ} ≈ 1/(1 + sτ)), so the downwash-lag pitch damping is kept. At u → 0 the state freezes, which is harmless because the wash velocity is proportional to u. The airframe aerodynamics is therefore a `DynamicComponent` with G = H = 0 (D-004).
+  - *Known error:* the lag departs from the delay as ωτ grows. With the stabilator arm (≈ 28.7 ft), τ ≈ 0.17 s at 100 kt and ≈ 0.42 s at 40 kt. At 3 rad/s that is −27° against −29° of phase (amplitude 0.89) at 100 kt, and −52° against −73° (amplitude 0.62) at 40 kt. The error grows at low speed, where the delayed fuselage wash is itself small (proportional to u) and the undelayed rotor wash dominates.
+  - *Why not an exact delay:* a history buffer would need a declared discrete state outside the state vector. It would also be invisible to the M7 finite-difference Jacobians, so the linear models would lose the downwash-lag damping (M_ẇ) entirely; the lag keeps it.
+  - *Check (M6b):* a test compares the lag with the exact delay on UH-60A geometry from 20 to 150 kt and 0.5 to 10 rad/s (gain and phase of the delayed wash, and of the resulting stabilator lift), and VALIDATION.md reports it. If the error is significant in the piloted band (about 1–5 rad/s), the time simulation switches to an exact delay buffer (a declared discrete state, proposed then as an interface change), and linearization keeps the lag.
+- *Stabilator incidence:* the steady-state part of GenHel's stabilator law (Fig. 5.5.1.7: the airspeed and collective branches, with the servo at unit gain and the −8°…39° travel limit), plus a fixed-incidence override from config (GenHel's STBSET). The airspeed lag, servo, rate limit and the pitch-rate and lateral-acceleration feedback come with the AFCS (SPEC_REVIEW #25). In trim (q = 0, a_y = 0, steady airspeed) this equals the full law.
+
+**Landing gear (GenHel §5.7, three gears).** GenHel's structure: per gear, a tire (vertical load–deflection table, in-plane stiffness) in series with a strut (polytropic air spring with preload, velocity-squared damper with two regimes, unsprung-mass DOF). Changes for purity (D-004):
+- *States per gear:* strut stroke and stroke rate (GenHel's unsprung-mass DOF) and the two in-plane tire deflections, which replace GenHel's retained contact point.
+- *Friction:* GenHel's discrete stick/slip switch becomes a continuous elasto-plastic law: the tire deflection follows the contact-point ground velocity while the tire force is below μN and saturates at μN. The specific law (e.g. Dahl's) needs a source added to the reference library; decided in M6c.
+- *No velocity resets.* The strut top stop and the preload mode are decided in M6c once the §5.7.2 equations (pp. 247–265) are read; any stop force needs a source or is logged as a gap.
+- Stiffness check against RK4 (D-004 note): the main-tire vertical stiffness near zero deflection is about 38 000 lbf/in (Table 7.5.3) on a 2.67 slug unsprung mass, ω ≈ 410 rad/s, so h·ω ≈ 0.41 at 1 kHz: stable, and accurate enough to be checked in M6c.
+
+**Acceptance (replaces spec M6; same layering as D-007, D-026, D-027):**
+1. **Exact-equation references (gate).** Independent test-side transcriptions of GenHel §5.4.2, §5.2.2 and §5.3.2 in GenHel's own notation and sign conventions (inches, buttlines positive to port, wind-tunnel angles), sharing only the tables with production. Production loads and state derivatives must agree with them under random velocities, rates, controls, wind and rotor outputs. These replace "forces match GenHel table values at the test points".
+2. **Closed-form and independent anchors (gate):**
+   - tail rotor: the Bailey thrust against the production blade-element rotor (M3/M4 code) configured as the tail rotor (linear airfoil, C_d = 0, B, flapping free), with the tolerance from a residual study (the closed form drops O(μ³)); the hover inflow time constant (D-027 form); the δ₃ thrust reduction;
+   - airframe: the symmetries the tables imply (side force, roll and yaw odd in sideslip; drag, lift and pitch even), and the lag-against-delay phase at low frequency;
+   - gear: the static load split, which is statically determinate for three contact points (closed form from the CG and gear positions), summing to weight minus rotor thrust; energy conservation with damping and friction off; no creep on a slope below atan μ with brakes on, and sliding at μ_slide·N above it.
+3. **Whole aircraft (M6d):**
+   - *spec "sits stably on the ground":* dropped from a small height, it settles with the gear-load sum equal to weight (rotor thrust subtracted), and stays in place;
+   - *spec "pedal balances torque", made into a sign and arm check:* in hover, the pedal found by a yaw-moment root search in the test gives tail-rotor thrust × arm (about the CG, with cant and the BL convention) equal to main-rotor torque minus the other yaw moments, to round-off. The hover pedal position itself is a validation entry (needs the §5.5 control rigging; there is no published value in the library yet).
+4. **Data (human review).** Every transcribed table and constant is reviewed against the scan before use (DATA_GAPS.md).
+- **Real-time rules:** zero allocation, purity and bit-identical runs, as for M3–M5.
+
+**Rationale:** each replacement keeps GenHel's steady-state behaviour exactly and gives the dynamics a published or derivable form, so the models stay pure functions of (t, x, inputs). The staging keeps each PR reviewable and lets the data review run alongside the code.
+
+**Implementation notes (2026-10-12, M6a; VALIDATION.md):**
+- *Coupling fields of a rotor:* λ₀, μ_x (signed, along x_h), μ_z, β_1c and ΩR. GenHel's wake skew and flapping are computed by the consumer from these: χ = atan(μ_x/|λ|) + a₁ (p. 5.1-37, PDF p. 57), with a₁ = −(2/b) Σ β cos ψ (p. 5.1-18, PDF p. 38), i.e. a₁ = −β_1c if GenHel's azimuth is zero aft, as Eyas's is (to confirm, DATA_GAPS.md).
+- *Hub frame:* GenHel's tail-rotor shaft axes (p. 5.4-6) are the D-024 hub frame with roll = Γ_TR = 70°, so the tail rotor reuses `hub_rotation()`.
+- *Bailey coefficients:* GenHel's t₃₁, t₃₂, t₃₃ are the exact small-angle integrals for lift carried to B·R, with reverse flow kept on the inflow term only (tested by quadrature). They equal Johnson (2013) Eq. 6.219 at B = 1. Against an exact blade-element integral, GenHel's thrust is about 1% low in hover and up to 9% high at the tail rotor's μ ≈ 0.37 at 150 kt. That is GenHel's model, reproduced; the blade-element tail rotor (spec §6.6, "later") would remove it.
+- *Previous-pass scheme measured:* in a pedal step, GenHel's scheme oscillates from pass to pass (±12% thrust) with the same sequence per pass whatever the frame length, so at 60 Hz it lasts more than 0.1 s. The inflow state settles to the same thrust smoothly. This is the error the purity rule's replacement removes, measured as required above.
+- *Drag:* production uses −½ρS v|v|, so the drag reverses in rearward flight; GenHel's −½ρS v² doesn't. The UH-60A value is S = 0, so it has no effect.
+
+## D-029 AFCS placement (SPEC_REVIEW #25) — `Approved (2026-10-12)` — scope
+**Decision:**
+- **Before the M7 trim comparison:** the steady-state parts of the UH-60A stabilator law and pitch bias actuator (GenHel §5.5), i.e. their outputs with the filters and servos settled and the rate feedbacks at zero. The stabilator part is already in M6b (D-028).
+- **Before the M8 piloted evaluation:** the dynamic AFCS (SAS, FPS attitude hold, pitch bias actuator dynamics, stabilator servo, rate limit and feedbacks), as its own milestone or as part of M8; to be scheduled when M7 is done.
+- The AFCS components are `DynamicComponent`s whose states are the filter and servo states, so the lateral-acceleration feedback loop closes through the servo dynamics, as in GenHel, and not through an algebraic loop.
+
+**Rationale:** the pitch bias actuator and stabilator change trimmed longitudinal cyclic and pitch attitude, so a trim comparison against flight test without them compares a different aircraft. Pilots know the UH-60A with its AFCS on, so M8 pilot comments need it.

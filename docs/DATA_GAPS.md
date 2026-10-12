@@ -65,9 +65,15 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
 - The geometry sketch on p. 5.4-4 (PDF p. 165) is a hand-drawn rear view. Its 70° arc appears to run from the horizontal body Y axis to the edge-on rotor disk. That means the disk is 20° off vertical and the thrust points about 20° upward, consistent with the spec's "≈ 20° cant".
 - The human reviewer agrees with this reading, but the sketch is rough. **Revisit if** hover pedal or roll trim, or tail-rotor lift, disagrees with reference data. Also cross-check against the tail-rotor force and moment equations when implementing.
 
-### B_LTR sign — `open`, settle from the equations
+### B_LTR sign — buttlines positive to port: `VERIFIED by human review (2026-10-12)`
 - The UH-60 tail rotor is on the starboard side and body Y is positive to starboard. GenHel's arm is B_TR = (BLTR − BLCGB)/12 (p. 5.4-4). With B_LTR = −14.0 that puts the rotor about 1.2 ft to port, unless Sikorsky buttlines are positive to port.
-- The reviewer doesn't know the Sikorsky buttline convention. **Settle it from the tail-rotor force and moment equations (§5.4.2) when implementing the tail rotor**, and check it for consistency with other buttline data (e.g. BLCG = 0, and the main-rotor and empennage buttlines).
+- **Finding (2026-10-12, M6 survey):** the moment equations of three modules all match r × F only if buttlines are positive to **port** (and fuselage stations positive aft, waterlines positive up):
+  - tail rotor, p. 5.4-8 (PDF p. 169): L_TR = Y_TR·W_TR − Z_TR·B_TR, N_TR = X_TR·B_TR − Y_TR·F_TR, with F, W, B = (station − CG)/12. With the arm (x, y, z) = (−F, −B, −W) in body axes, r × F gives exactly these;
+  - horizontal tail, p. 5.3-8 (PDF p. 130): L = Y·W − Z·B, M = −X·W + Z·F, N = −Y·F + X·B, same arms, same result;
+  - fuselage, p. 5.2-9 (PDF p. 94): arms defined the other way round (CG − station), L = −Y·W + Z·B etc., same result;
+  - the tail-rotor sketch on p. 5.4-4 (PDF p. 165) draws the BLTR and BLCGB arrows pointing to the left in a rear view with +Y to the right.
+- So B_LTR = −14.0 in puts the tail rotor 14 in to **starboard**, which matches the aircraft. The tail-rotor thrust Y_TR = T sin Γ > 0 (p. 5.4-8) then gives a nose-left yaw moment, as needed against a counter-clockwise main rotor.
+- **Confirmed by human review (2026-10-12):** every sign of the three moment equations as read above, against the scan crops. M6a's `HoverThrustDirectionsMatchTheAircraft` test checks the resulting directions.
 
 ## Tiltrotor data — `missing` (not needed for v1)
 **Context:** DECISIONS D-011.
@@ -176,3 +182,23 @@ Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/re
 - The nomenclature (PDF p. 66) lists LAGOMR right after THLDMR, in the group of "input constants defining the geometry of the lag damper kinematics".
 - Figure 1.1.4, "Lag damper kinematic geometry" (p. 5.1-10, PDF p. 30), draws δ₀ at the hinge in the plane of rotation, beside the lag angle δ. It looks like a reference lag angle of the damper geometry, e.g. the blade's lag position at the damper's neutral stroke.
 - Settle it from the lag-damper equations in §5.1.2 (where δ₀ enters the pick-up point positions) and the text on p. 5.1-5 (PDF p. 25) when the lag DOF is implemented (M9). It plays no part in M4 (flap only).
+
+## UH-60A airframe, tail-rotor interference, stabilator and gear data (M6) — `to transcribe`
+**Context:** D-028 (proposed). Located during the M6 survey (2026-10-12); nothing transcribed yet. Every value goes through human review before use, as for the blade tables.
+- Fuselage (§5.2.5, PDF pp. 100–104): FSWF = 345.5 in, WLWF = 234.0 in, BLWF = 0.0 in, I_WF = 0.0 (handwritten, p. 5.2-15); Tables 2.5.1–2.5.2 (rotor wash on the fuselage against χ = 0…100° and a₁ = −6, 0, 6°), Tables 2.5.3–2.5.11 (six coefficients against α_WF or ψ_WF; dot-matrix, slashed zeros).
+- Empennage (§5.3.5, PDF pp. 141–145): FSH1 = 700.1 in, WLH1 = 244.0 in, BLH1 = 0, SAH1 = 45.0 ft²; FSV1 = 695.0 in, WLV1 = 273.0 in, BLV1 = 0.0, SAV1 = 32.3 ft², IV1 = 0.0 (handwritten, p. 5.3-19); Tables 3.5.1–3.5.10.
+- Stabilator law (Fig. 5.5.1.7, PDF p. 194, handwritten, page rotated): biases, limits and gains (e.g. 42, −30 kt, −80 kt, 50, 70, 0.16, −0.0433, −0.1119, 0.67, 0.003286, −8°…39°, ±7°/s). Read as above at 110 dpi only; several digits need a closer look. The units of the collective input XCPC need §5.5.
+- Landing gear (§5.7.5, PDF pp. 278–286): main gear constants and Tables 7.5.1–7.5.6.
+- Control rigging (§5.5.1.6, collective and pedal to blade pitch): needed for M6d.
+
+**Inconsistencies in the source, to resolve before use (human check requested):**
+1. *Main-rotor downwash sign at the fin.* V_ZMRH1 = −DWSHMR·Ω·R·EKZH1 at the stabilator (p. 5.3-5) and V_ZMRTR = −DWSHMR·Ω·R·EKZTR at the tail rotor (p. 5.4-5), but V_ZMRV1 = **+**DWSHMR·Ω·R·EKZV1 at the fin (p. 5.3-9, PDF p. 131). With GenHel's velocities being the aircraft's velocity relative to the air, the minus sign is physical (downwash lowers the stabilator angle of attack). The fin's + looks like a transcription slip; it affects only the fin's dynamic pressure and α_V1.
+2. *Map arguments.* The equations look up the stabilator dynamic-pressure ratio and fuselage downwash on α_WF (p. 5.3-6), but the table headers say ALFWF for the input and ALFHH1 in the range comment (Tables 3.5.3–3.5.4, PDF p. 143).
+3. *Table 3.5.10 (fin drag) high-angle map:* the comment reads "−90 to 90, DELTA=5" but holds 19 values, i.e. a 10° spacing (PDF p. 145).
+4. *DLQD, DMQD, DNQD* are added to the fuselage lift, pitch and yaw coefficients (p. 5.2-7, PDF p. 92) but aren't defined in the notation (pp. 5.2-12 to 5.2-14) or the input data. Presumably zero (stores or configuration increments); to confirm.
+5. *C_DTR* is "ft²" in the notation (p. 5.4-12) and "−" on the data page (p. 5.4-14). The value is 0, so it has no effect.
+6. *GenHel's azimuth origin, a₁ and wake skew* — `VERIFIED by human review (2026-10-12)`. Figure 1.1.2 (p. 5.1-8, PDF p. 28): the ψ_R = 0 line points aft and ψ_R opens toward +Y_s (counter-clockwise from above), as in Eyas. A1FMR = −2·57.3/b Σ β cos ψ [deg] (p. 5.1-18, PDF p. 38) and CHIPMR = tan⁻¹(μ_xs/|λ|) + AA1FMR (p. 5.1-37, PDF p. 57) as read. So GenHel's a₁ = −β_1c, as Eyas assumes (D-028).
+7. *A1FMR against AA1FMR* — `open`. The flapping equation defines A1FMR (p. 5.1-18); the wake-skew equation and every wash map use AA1FMR (p. 5.1-37; Tables 2.5.1–2.5.2, 3.5.1–3.5.2). No definition of AA1FMR has been found. Eyas treats them as the same quantity. GenHel filters some rotor outputs before passing them on (p. 5.1-36, PDF p. 56), so AA1FMR may be a filtered copy; if a definition turns up, check whether it adds a lag.
+
+## UH-60A tail-rotor torque — `missing` (M6, M7)
+GenHel's tail rotor computes thrust only (p. 5.4-2) and gives no blade profile-drag coefficient, so Eyas's tail rotor has no torque in M6 (D-028). Its power is a sizable part of hover power, which matters for the M7 power comparison and the M9 drivetrain. Check whether GenHel's engine module (§5.6) accounts for tail-rotor power, and look for a public tail-rotor blade section or profile-drag value before M7.

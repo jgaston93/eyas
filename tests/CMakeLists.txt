@@ -4,11 +4,13 @@ add_executable(eyas_unit_tests
     support/alloc_counter.cpp
     unit/test_alloc_counter.cpp
     unit/test_atmosphere.cpp
+    unit/test_bailey_rotor.cpp
     unit/test_attitude.cpp
     unit/test_axis.cpp
     unit/test_blade_element_rotor.cpp
     unit/test_config.cpp
     unit/test_coupled_solve.cpp
+    unit/test_coupling.cpp
     unit/test_csv_table.cpp
     unit/test_eigen_smoke.cpp
     unit/test_executive.cpp
@@ -68,3 +70,9 @@ add_executable(eyas_m5_cases validation/m5_cases.cpp)
 target_include_directories(eyas_m5_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m5_cases PRIVATE eyas_internal)
 eyas_target_defaults(eyas_m5_cases)
+
+# Writes the M6 validation data (VALIDATION.md; tools/plot_m6.py).
+add_executable(eyas_m6_cases validation/m6_cases.cpp)
+target_include_directories(eyas_m6_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m6_cases PRIVATE eyas_internal)
+eyas_target_defaults(eyas_m6_cases)

@@ -2,7 +2,11 @@
 
 #include <cstddef>
 #include <span>
+#include <string>
+#include <string_view>
+#include <vector>
 
+#include "core/coupling.hpp"
 #include "core/types.hpp"
 #include "env/atmosphere.hpp"
 
@@ -11,11 +15,6 @@
 // exceptions, no I/O (spec §7).
 namespace eyas {
 
-// Per-evaluation results shared between components (D-003), grouped by
-// producer instance. Fields are added only when a consumer needs them; there
-// are none yet in M1.
-struct CouplingOutputs {};
-
 // Read-only inputs to one derivative evaluation.
 struct SimContext {
     double t = 0.0;  // [s] sim time of this evaluation (RK4 stage time)
@@ -23,6 +22,8 @@ struct SimContext {
     Controls controls;
     Environment env;
     AirState air;  // atmosphere at the CG altitude, from env (D-016)
+    // Outputs of the components evaluated before this one (D-003); read
+    // only the slots returned by bind().
     const CouplingOutputs* coupling = nullptr;
 };
 
@@ -42,6 +43,9 @@ struct ComponentDerivs {
     // False if a bounded iteration in this evaluation hit its limit (spec §7
     // rule 3, D-023). The results are still used; the executive counts it.
     bool converged = true;
+    // Where a producer writes its coupling outputs (D-003); null when the
+    // component is evaluated on its own, e.g. in a unit test.
+    CouplingOutputs* coupling = nullptr;
 };
 
 // A model with states: blades, inflow, gear, ... (spec §6; D-004).
@@ -54,6 +58,16 @@ public:
 
     virtual std::size_t num_states() const = 0;
     virtual void initial_states(std::span<double> x) const = 0;
+
+    // Data path between components (D-003). Names are "<instance>.<field>".
+    // The executive evaluates producers before consumers and calls bind()
+    // once, at init, after every component has declared its names; a
+    // component resolves its slots there (CouplingRegistry::find throws
+    // InitError for a name nobody produces). The defaults declare nothing.
+    virtual std::string_view name() const noexcept { return {}; }
+    virtual std::vector<std::string> produces() const { return {}; }
+    virtual std::vector<std::string> consumes() const { return {}; }
+    virtual void bind(const CouplingRegistry& /*registry*/) {}
 
     // Pure function of (ctx, x). A cached table-search hint is the only hidden
     // state allowed, because it can change the search time but not the result.

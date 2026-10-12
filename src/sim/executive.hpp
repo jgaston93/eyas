@@ -12,9 +12,11 @@
 
 // Simulation executive (spec §6.10). Owns the global state vector, with the
 // airframe body states first (body_layout) and each component's states after
-// them in config order. Solves the coupled body/component accelerations in
-// every derivative evaluation (spec §5, "Coupling") and advances everything
-// with RK4 in fixed integer-nanosecond steps (D-006).
+// them in config order. Evaluates the components in an order fixed at init,
+// producers of coupling outputs before their consumers (D-003). Solves the
+// coupled body/component accelerations in every derivative evaluation (spec
+// §5, "Coupling") and advances everything with RK4 in fixed
+// integer-nanosecond steps (D-006).
 namespace eyas {
 
 struct ExecutiveConfig {
@@ -26,8 +28,9 @@ struct ExecutiveConfig {
 
 class Executive {
 public:
-    // Throws InitError on an invalid configuration. Allocates every buffer
-    // used by advance().
+    // Throws InitError on an invalid configuration, including a coupling
+    // output consumed but not produced, produced twice, or a dependency
+    // cycle (D-003). Allocates every buffer used by advance().
     explicit Executive(const ExecutiveConfig& config,
                        std::vector<std::unique_ptr<DynamicComponent>> components = {},
                        std::vector<std::unique_ptr<ForceModel>> forces = {});
@@ -75,6 +78,9 @@ public:
     // bounded iteration did not converge (D-023). Engineering diagnostic only.
     std::int64_t unconverged_evaluations() const noexcept { return unconverged_evaluations_; }
 
+    // Component indices (config order) in evaluation order (D-003).
+    std::span<const std::size_t> evaluation_order() const noexcept { return order_; }
+
 private:
     // One RK4 step. Returns false, leaving the state unchanged, if the result
     // is not finite.
@@ -90,6 +96,7 @@ private:
     std::vector<std::unique_ptr<ForceModel>> forces_;
     std::vector<std::size_t> offsets_;  // each component's first state index
     std::vector<std::size_t> sizes_;    // each component's state count, fixed at init
+    std::vector<std::size_t> order_;    // evaluation order, producers first (D-003)
 
     std::vector<double> x_;
     std::vector<double> x_prev_;  // state before the current step
@@ -98,7 +105,7 @@ private:
     // Per-evaluation scratch (sized at init, contents never carried over).
     mutable std::vector<double> xdot0_;  // all components' xdot0, in state order
     mutable std::vector<double> G_;      // all components' G, n × 6 row-major
-    CouplingOutputs coupling_;
+    mutable CouplingOutputs coupling_;   // rebuilt in every evaluation (D-003)
 
     std::int64_t n_steps_ = 0;
     std::int64_t remainder_ns_ = 0;
