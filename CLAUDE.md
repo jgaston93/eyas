@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Eyas is a real-time, piloted rotorcraft flight dynamics model (C++20 library), intended to replace an incumbent commercial flight-dynamics package ("the reference model") in a host simulator. Reference vehicle: UH-60A (GenHel, NASA CR-166309).
 
-The design spec is `docs/EYAS_DESIGN.md`. Review findings are in `docs/SPEC_REVIEW.md`, approved departures in `docs/DECISIONS.md`, and data issues in `docs/DATA_GAPS.md`. Implementation status: M0 (scaffolding), M1 (6-DOF rigid body core) and M2 (ISA atmosphere, dummy rotor, Tier 1 pose, `eyas::Model` API) done; M3 (blade-element rotor, uniform inflow), M4 (rigid flapping blades on an offset hinge, D-026) and M5 (Pitt–Peters dynamic inflow, D-027) done (see `docs/VALIDATION.md`). UH-60A blade twist and SC1095 tables transcribed into `data/uh60a/` (accepted; primary maps checked cursorily, DATA_GAPS.md). Next: M6.
+The design spec is `docs/EYAS_DESIGN.md`. Review findings are in `docs/SPEC_REVIEW.md`, approved departures in `docs/DECISIONS.md`, and data issues in `docs/DATA_GAPS.md`. Implementation status: M0 (scaffolding), M1 (6-DOF rigid body core) and M2 (ISA atmosphere, dummy rotor, Tier 1 pose, `eyas::Model` API) done; M3 (blade-element rotor, uniform inflow), M4 (rigid flapping blades on an offset hinge, D-026) and M5 (Pitt–Peters dynamic inflow, D-027) done (see `docs/VALIDATION.md`). UH-60A blade twist and SC1095 tables transcribed into `data/uh60a/` (accepted; primary maps checked cursorily, DATA_GAPS.md). M6 (tail rotor, fuselage, empennage, gear; D-028) in progress, staged M6a–M6d.
 
 ## How to treat the spec
 
