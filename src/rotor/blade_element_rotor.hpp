@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -16,9 +18,13 @@ class Config;
 }
 
 // Blade-element rotor with rigid blades and uniform momentum inflow (spec
-// §6.4, §6.5, M3; D-024). Flapping is held at zero and the blades are
-// massless until M4, so the rotor contributes aerodynamic loads only
-// (G = H = 0).
+// §6.4, §6.5; D-024, D-026). Two forms, chosen by config:
+// - no flap hinge (M3): massless blades with flapping held at zero; no
+//   states, aerodynamic loads only (G = H = 0);
+// - flap hinge (M4, D-026): rigid blades with mass, hinged at an offset e,
+//   with states [β_k, β̇_k] per blade. The flap equation and the hub loads
+//   are exact rigid-body mechanics, affine in the body acceleration
+//   a = [v̇_b; ω̇_b], and returned as values at a = 0 plus G and H.
 //
 // Frames (D-024): hub frame h has its origin at the hub center, z_h down
 // along the shaft, x_h forward and y_h right; with zero hub angles it is
@@ -36,6 +42,21 @@ enum class RotationDirection : std::uint8_t {
 enum class ElementSpacing : std::uint8_t {
     uniform,     // equal widths
     equal_area,  // annuli of equal area (spec §6.4)
+};
+
+// Rigid flapping blade on an offset hinge (D-026). The blade is a line of
+// mass along its span, so its inertia is fully described by the mass and its
+// first and second moments about the hinge (Johnson 2013 §6.15: ν² = 1 +
+// e S_β/I_β + K_β/(I_β Ω²), Eq. 6.261 in dimensional form). The hinge axis is
+// perpendicular to the span, in the hub plane; β is positive up (toward −z_h).
+struct FlapHinge {
+    double offset = 0.0;        // e [m] hinge distance from the hub center
+    double mass = 0.0;          // m_b [kg] outboard of the hinge
+    double first_moment = 0.0;  // S_β [kg·m] about the hinge
+    double inertia = 0.0;       // I_β [kg·m²] about the hinge
+    double spring = 0.0;        // K_β [N·m/rad] about β = 0
+    double damper = 0.0;        // C_β [N·m·s/rad]
+    double delta3 = 0.0;  // δ₃ [rad]: pitch change −tan δ₃ · β (Johnson 2013 §6.18)
 };
 
 struct BladeElementRotorConfig {
@@ -56,10 +77,15 @@ struct BladeElementRotorConfig {
     ElementSpacing spacing = ElementSpacing::equal_area;
     std::shared_ptr<const Airfoil> airfoil;
     std::shared_ptr<const PitchSchedule> controls;
+    std::optional<FlapHinge> flap;  // none: M3 rotor, flapping held at zero
 };
+
+inline constexpr int kMaxBlades = 64;
 
 // Rotor loads from one evaluation.
 struct RotorLoads {
+    // Aerodynamic loads only. The blade inertia and weight of a flapping
+    // rotor are added by derivatives().
     Vec3 F_h = Vec3::Zero();  // [N]   aerodynamic force on the rotor, hub axes
     Vec3 M_h = Vec3::Zero();  // [N·m] about the hub center, hub axes
     Wrench body;              // the same, body axes, about the airframe CG
@@ -73,11 +99,14 @@ struct RotorLoads {
     double mu_z = 0.0;        // μ_z [-] hub speed along z_h (down) / ΩR
     int passes = 0;           // blade-element passes used by the inflow solve
     bool converged = true;    // inflow solve met its tolerance (D-023)
+    // Aerodynamic moment about each blade's flap hinge [N·m], positive flap
+    // up; zero without a flap hinge.
+    std::array<double, kMaxBlades> flap_moment{};
 };
 
 // One spanwise element, midpoint rule.
 struct BladeElement {
-    double r = 0.0;      // [m] radius of the element center from the hub center
+    double r = 0.0;      // [m] span position of the element center from the hub center
     double dr = 0.0;     // [m] width
     double chord = 0.0;  // [m]
     double twist = 0.0;  // [rad] θ_tw(r)
@@ -93,16 +122,21 @@ public:
     // DECISIONS D-024). Table files are resolved by Config::path.
     static std::unique_ptr<BladeElementRotor> from_config(const Config& node);
 
-    std::size_t num_states() const override { return 0; }
-    void initial_states(std::span<double> /*x*/) const override {}
+    // States (with a flap hinge): x[2k] = β_k [rad], x[2k+1] = β̇_k [rad/s]
+    // for blade k = 0…N_b−1, numbered as in blade_azimuth(). They start at
+    // zero (D-026).
+    std::size_t num_states() const override;
+    void initial_states(std::span<double> x) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
 
-    // Loads with the uniform inflow solved for this evaluation (D-024).
-    RotorLoads evaluate(const SimContext& ctx) const noexcept;
-    // Loads for a given induced inflow λ_i [-] (one blade-element pass, no
+    // Aerodynamic loads with the uniform inflow solved for this evaluation
+    // (D-024), at blade states x (empty: all blades at β = β̇ = 0).
+    RotorLoads evaluate(const SimContext& ctx, std::span<const double> x = {}) const noexcept;
+    // The same for a given induced inflow λ_i [-] (one blade-element pass, no
     // inflow solve). converged and passes describe that single pass.
-    RotorLoads evaluate_at_inflow(const SimContext& ctx, double lambda_i) const noexcept;
+    RotorLoads evaluate_at_inflow(const SimContext& ctx, double lambda_i,
+                                  std::span<const double> x = {}) const noexcept;
 
     // Rotor azimuth ψ [rad] in [0, 2π) at time t [s]: ψ = Ω t (D-024).
     double azimuth(double t) const noexcept;
@@ -120,6 +154,9 @@ public:
     static constexpr double kInflowTolerance = 1e-13;  // on λ_i [-]
 
 private:
+    // Hinge offset e [m]; 0 without a flap hinge.
+    double hinge_offset() const noexcept { return config_.flap ? config_.flap->offset : 0.0; }
+
     // Per-evaluation inputs to a blade-element pass, in hub axes.
     struct Kinematics {
         Vec3 v_hub_h;  // [m/s] hub velocity relative to the air
@@ -133,7 +170,7 @@ private:
     };
 
     Kinematics kinematics(const SimContext& ctx) const noexcept;
-    RotorLoads pass(const Kinematics& k, double lambda_i) const noexcept;
+    RotorLoads pass(const Kinematics& k, double lambda_i, std::span<const double> x) const noexcept;
     void finish(RotorLoads& loads, const Kinematics& k) const noexcept;
 
     BladeElementRotorConfig config_;

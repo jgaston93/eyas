@@ -8,6 +8,7 @@
 #include <string_view>
 #include <utility>
 
+#include "core/rigid_body.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
@@ -47,8 +48,8 @@ void validate(const BladeElementRotorConfig& c) {
     const auto fail = [](const std::string& what) {
         throw InitError("blade_element_rotor: " + what);
     };
-    if (c.num_blades < 1) {
-        fail("blades must be at least 1");
+    if (c.num_blades < 1 || c.num_blades > kMaxBlades) {
+        fail("blades must be between 1 and " + std::to_string(kMaxBlades));
     }
     if (!(c.radius > 0.0) || !std::isfinite(c.radius)) {
         fail("radius must be positive and finite");
@@ -74,6 +75,32 @@ void validate(const BladeElementRotorConfig& c) {
     }
     if (!c.controls) {
         fail("no control map");
+    }
+    if (c.flap) {
+        const FlapHinge& f = *c.flap;
+        if (!(f.offset >= 0.0) || !(f.offset <= c.root_cutout)) {
+            fail(
+                "flap hinge offset must be in [0, root_cutout]: no lifting span inboard of the "
+                "hinge");
+        }
+        if (!(f.mass > 0.0) || !std::isfinite(f.mass)) {
+            fail("flap: blade mass must be positive and finite");
+        }
+        if (!(f.first_moment > 0.0) || !std::isfinite(f.first_moment) ||
+            !(f.first_moment < f.mass * (c.radius - f.offset))) {
+            fail("flap: first moment must be positive, with the blade CG between hinge and tip");
+        }
+        // Cauchy–Schwarz: (∫ρ dm)² ≤ ∫dm ∫ρ² dm for any mass distribution.
+        if (!std::isfinite(f.inertia) || !(f.inertia * f.mass >= f.first_moment * f.first_moment)) {
+            fail("flap: inertia must satisfy I_β ≥ S_β²/m_b (no real blade has less)");
+        }
+        if (!(f.spring >= 0.0) || !std::isfinite(f.spring) || !(f.damper >= 0.0) ||
+            !std::isfinite(f.damper)) {
+            fail("flap: spring and damper must be non-negative and finite");
+        }
+        if (!(std::abs(f.delta3) < 0.5 * std::numbers::pi)) {
+            fail("flap: delta3 must be within ±90°");
+        }
     }
 }
 
@@ -150,67 +177,89 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     return k;
 }
 
-RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i) const noexcept {
+RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i,
+                                   std::span<const double> x) const noexcept {
     const BladeElementRotorConfig& c = config_;
     const double omega = c.rotor_speed;
     const double v_i = lambda_i * tip_speed_;  // [m/s] induced, down along z_h
     const Vec3 e_z(0.0, 0.0, 1.0);
     const std::size_t n_el = elements_.size();
+    const double e = hinge_offset();
+    const double tan_d3 = c.flap ? std::tan(c.flap->delta3) : 0.0;
 
     RotorLoads out;
     for (int blade = 0; blade < c.num_blades; ++blade) {
         const double psi = blade_azimuth(k.psi, blade);
         const double cp = std::cos(psi);
         const double sp = std::sin(psi);
-        const Vec3 e_r(-cp, s_ * sp, 0.0);  // spanwise, outward
-        const Vec3 e_t(sp, s_ * cp, 0.0);   // direction of blade motion
-        // Element velocity relative to the air, hub axes:
-        //   v = v_hub + ω × (r e_r) + Ω r e_t
-        // U_T = v·e_t (in-plane, along rotation); U_P = −v·e_z + v_i (through
-        // the disc, positive down; Leishman 2nd ed. Eq. 3.2 convention, D-024).
-        // Both are affine in r: U = a + b r.
-        const Vec3 w_er = k.omega_h.cross(e_r);
-        const double a_T = k.v_hub_h.dot(e_t);
-        const double b_T = omega + w_er.dot(e_t);
-        const double a_P = -k.v_hub_h.dot(e_z) + v_i;
-        const double b_P = -w_er.dot(e_z);
-        // Padfield 3rd ed. Eq. 3.59; twist is added per element (spec §6.3).
-        const double theta = k.pitch.theta0 + k.pitch.theta1c * cp + k.pitch.theta1s * sp;
+        const std::size_t ib = 2 * static_cast<std::size_t>(blade);
+        const double beta = x.empty() ? 0.0 : x[ib];
+        const double beta_dot = x.empty() ? 0.0 : x[ib + 1];
+        const double cb = std::cos(beta);
+        const double sb = std::sin(beta);
+        const Vec3 e_r(-cp, s_ * sp, 0.0);     // radial, in the hub plane
+        const Vec3 e_t(sp, s_ * cp, 0.0);      // direction of blade motion
+        const Vec3 e_s = cb * e_r - sb * e_z;  // span, flapped up by β (D-026)
+        const Vec3 n = sb * e_r + cb * e_z;    // blade normal, positive down
+        // A point at distance ρ outboard of the hinge is at e e_r + ρ e_s from
+        // the hub center. Its velocity relative to the air, hub axes, is
+        // affine in ρ:
+        //   v = v_hub + ω × (e e_r) + Ω e e_t
+        //     + ρ (ω × e_s + Ω cos β e_t − β̇ n)
+        // U_T = v·e_t (along rotation); U_P = −v·n + v_i (e_z·n) (through the
+        // blade, positive down; Leishman 2nd ed. Eq. 3.2 convention, D-024,
+        // with the flapped normal, D-026). With β = 0 and e = 0 this is the
+        // M3 geometry.
+        const Vec3 v0 = k.v_hub_h + k.omega_h.cross(e * e_r) + (omega * e) * e_t;
+        const Vec3 v1 = k.omega_h.cross(e_s) + (omega * cb) * e_t - beta_dot * n;
+        const double a_T = v0.dot(e_t);
+        const double b_T = v1.dot(e_t);
+        const double a_P = -v0.dot(n) + v_i * cb;
+        const double b_P = -v1.dot(n);
+        // Padfield 3rd ed. Eq. 3.59, with pitch–flap coupling −tan δ₃ β
+        // (Johnson 2013 §6.18); twist is added per element (spec §6.3).
+        const double theta =
+            k.pitch.theta0 + k.pitch.theta1c * cp + k.pitch.theta1s * sp - tan_d3 * beta;
 
         double f_t = 0.0;   // Σ force along e_t [N]
-        double f_z = 0.0;   // Σ force along e_z [N]
-        double rf_t = 0.0;  // Σ r × force along e_t [N·m]
-        double rf_z = 0.0;  // Σ r × force along e_z [N·m]
+        double f_n = 0.0;   // Σ force along n [N]
+        double rf_t = 0.0;  // Σ ρ × force along e_t [N·m]
+        double rf_n = 0.0;  // Σ ρ × force along n [N·m]
         TableCursor<2>* cursor = cursors_.data() + static_cast<std::size_t>(blade) * n_el;
         for (std::size_t j = 0; j < n_el; ++j) {
-            const BladeElement& e = elements_[j];
-            const double u_t = a_T + b_T * e.r;
-            const double u_p = a_P + b_P * e.r;
+            const BladeElement& el = elements_[j];
+            const double rho_j = el.r - e;  // [m] outboard of the hinge
+            const double u_t = a_T + b_T * rho_j;
+            const double u_p = a_P + b_P * rho_j;
             // Leishman 2nd ed. Eqs. 3.1–3.3; φ in all quadrants.
             const double u = std::sqrt(u_t * u_t + u_p * u_p);
             const double phi = std::atan2(u_p, u_t);
-            double alpha = theta + e.twist - phi;
+            double alpha = theta + el.twist - phi;
             if (alpha >= std::numbers::pi) {
                 alpha -= kTwoPi;
             } else if (alpha < -std::numbers::pi) {
                 alpha += kTwoPi;
             }
             const AirfoilCoefficients coef = (*c.airfoil)(alpha, u / k.a, cursor[j]);
-            const double cl = e.lift * coef.cl;
+            const double cl = el.lift * coef.cl;
             // Lift ⟂ and drag ∥ to the relative wind (Leishman 2nd ed. Eqs. 3.4–3.5),
-            // in vector form: with the relative wind d = (−U_T e_t + U_P e_z)/U
-            // and lift direction l = (−U_P e_t − U_T e_z)/U,
+            // in vector form: with the relative wind d = (−U_T e_t + U_P n)/U
+            // and lift direction l = (−U_P e_t − U_T n)/U,
             //   dF = ½ρU²c dr (C_l l + C_d d).
-            const double q = 0.5 * k.rho * e.chord * e.dr * u;
+            const double q = 0.5 * k.rho * el.chord * el.dr * u;
             const double dft = q * (-cl * u_p - coef.cd * u_t);
-            const double dfz = q * (-cl * u_t + coef.cd * u_p);
+            const double dfn = q * (-cl * u_t + coef.cd * u_p);
             f_t += dft;
-            f_z += dfz;
-            rf_t += e.r * dft;
-            rf_z += e.r * dfz;
+            f_n += dfn;
+            rf_t += rho_j * dft;
+            rf_n += rho_j * dfn;
         }
-        out.F_h += f_t * e_t + f_z * e_z;
-        out.M_h += rf_t * e_r.cross(e_t) + rf_z * e_r.cross(e_z);
+        const Vec3 F = f_t * e_t + f_n * n;
+        out.F_h += F;
+        // About the hub center: Σ (e e_r + ρ e_s) × dF.
+        out.M_h += (e * e_r).cross(F) + e_s.cross(rf_t * e_t + rf_n * n);
+        // About the hinge, positive flap up: −Σ ρ n·dF (D-026).
+        out.flap_moment[static_cast<std::size_t>(blade)] = -rf_n;
     }
 
     const double q_disk = k.rho * area_ * tip_speed_ * tip_speed_;  // ρA(ΩR)² [N]
@@ -230,16 +279,17 @@ void BladeElementRotor::finish(RotorLoads& loads, const Kinematics& k) const noe
     loads.body.M = C_bh_ * loads.M_h + config_.hub_position_b.cross(loads.body.F);
 }
 
-RotorLoads BladeElementRotor::evaluate_at_inflow(const SimContext& ctx,
-                                                 double lambda_i) const noexcept {
+RotorLoads BladeElementRotor::evaluate_at_inflow(const SimContext& ctx, double lambda_i,
+                                                 std::span<const double> x) const noexcept {
     const Kinematics k = kinematics(ctx);
-    RotorLoads loads = pass(k, lambda_i);
+    RotorLoads loads = pass(k, lambda_i, x);
     loads.passes = 1;
     finish(loads, k);
     return loads;
 }
 
-RotorLoads BladeElementRotor::evaluate(const SimContext& ctx) const noexcept {
+RotorLoads BladeElementRotor::evaluate(const SimContext& ctx,
+                                       std::span<const double> x) const noexcept {
     const Kinematics k = kinematics(ctx);
     const double mu = k.mu;
     const double mu_z = k.mu_z;
@@ -250,7 +300,7 @@ RotorLoads BladeElementRotor::evaluate(const SimContext& ctx) const noexcept {
     // as λ → ±∞ while C_T stays bounded.
     int passes = 0;
     const auto eval = [&](double lambda, RotorLoads& l) {
-        l = pass(k, lambda);
+        l = pass(k, lambda, x);
         ++passes;
         const double d = lambda - mu_z;
         return 2.0 * lambda * std::sqrt(mu * mu + d * d) - l.ct;
@@ -359,11 +409,116 @@ RotorLoads BladeElementRotor::evaluate(const SimContext& ctx) const noexcept {
     return out;
 }
 
-void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const double> /*x*/,
+std::size_t BladeElementRotor::num_states() const {
+    return config_.flap ? 2 * static_cast<std::size_t>(config_.num_blades) : 0;
+}
+
+void BladeElementRotor::initial_states(std::span<double> x) const {
+    std::fill(x.begin(), x.end(), 0.0);
+}
+
+void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const double> x,
                                     ComponentDerivs& out) const {
-    const RotorLoads loads = evaluate(ctx);
+    const RotorLoads loads = evaluate(ctx, x);
     out.load0_b = loads.body;
     out.converged = loads.converged;
+    if (!config_.flap) {
+        return;
+    }
+
+    // Rigid flapping blades (D-026). A blade point at distance ρ outboard of
+    // the hinge is at p = p0 + ρ e_s from the airframe CG (hub axes), with
+    // p0 = r_hub + e e_r. Hub axes are fixed in the body, so its inertial
+    // acceleration is (transport theorem)
+    //   a_p = a_cg + ω̇ × p + ω × (ω × p) + 2 ω × ṗ_rel + p̈_rel,
+    // a_cg = v̇_b + ω × v_b. Relative to the hub, e_r turns at Ω about −s e_z
+    // (ė_r = Ω e_t, ė_t = −Ω e_r) and the blade flaps about the hinge:
+    //   ṗ_rel = Ω e e_t + ρ (Ω cos β e_t − β̇ n)
+    //   p̈_rel = −Ω² e e_r + ρ (−Ω² cos β e_r − 2Ω β̇ sin β e_t − β̇² e_s − β̈ n).
+    // Everything is affine in ρ, a_p = c0 + ρ c1 − ρ β̈ n, so the span
+    // integrals need only m = ∫dm, S = ∫ρ dm and I = ∫ρ² dm. The flap
+    // equation is the virtual work for δp = −ρ n δβ (moments about the hinge):
+    //   I β̈ = n·(S c0 + I c1) + M_aero − S n·g − K_β β − C_β β̇,
+    // and the load on the airframe is the blade's free-body balance,
+    // Σ (dF_aero + g dm − a_p dm) and its moment about the CG; the hinge
+    // spring and damper are internal and cancel. The terms in ω̇ and v̇ give
+    // G and H (spec §5, "Coupling"). Linearized at β = 0 this reduces to
+    // Johnson (2013) Eqs. 16.240 and 6.261; tests check both.
+    const FlapHinge& f = *config_.flap;
+    const double W = config_.rotor_speed;
+    const double e = f.offset;
+    const double m = f.mass;
+    const double S = f.first_moment;
+    const double I = f.inertia;
+    const BodyState& b = ctx.body;
+    const Vec3 e_z(0.0, 0.0, 1.0);
+    const Vec3 w = C_hb_ * b.omega_b;  // hub-frame angular velocity (D-011: + ω_hb later)
+    const Vec3 a_cg0 = C_hb_ * b.omega_b.cross(b.vel_b);
+    const Vec3 g = C_hb_ * (b.q_nb.conjugate() * gravity_n());
+    const Vec3 r_hub = C_hb_ * config_.hub_position_b;
+    const double psi0 = azimuth(ctx.t);
+
+    using Mat36 = Eigen::Matrix<double, 3, 6>;
+    const auto skew = [](const Vec3& v) {
+        Mat3 k;
+        k << 0.0, -v.z(), v.y(), v.z(), 0.0, -v.x(), -v.y(), v.x(), 0.0;
+        return k;
+    };
+    Vec3 F = Vec3::Zero();  // hub axes, about the airframe CG, at a = 0
+    Vec3 M = Vec3::Zero();
+    Mat36 FA = Mat36::Zero();  // ∂F/∂a, ∂M/∂a (hub axes)
+    Mat36 MA = Mat36::Zero();
+    for (int blade = 0; blade < config_.num_blades; ++blade) {
+        const std::size_t ib = 2 * static_cast<std::size_t>(blade);
+        const double beta = x[ib];
+        const double bd = x[ib + 1];
+        const double psi = blade_azimuth(psi0, blade);
+        const double cp = std::cos(psi);
+        const double sp = std::sin(psi);
+        const double cb = std::cos(beta);
+        const double sb = std::sin(beta);
+        const Vec3 e_r(-cp, s_ * sp, 0.0);
+        const Vec3 e_t(sp, s_ * cp, 0.0);
+        const Vec3 e_s = cb * e_r - sb * e_z;
+        const Vec3 n = sb * e_r + cb * e_z;
+        const Vec3 p0 = r_hub + e * e_r;
+
+        const Vec3 v_rel1 = (W * cb) * e_t - bd * n;
+        const Vec3 c0 =
+            a_cg0 + w.cross(w.cross(p0)) + (2.0 * W * e) * w.cross(e_t) - (W * W * e) * e_r;
+        const Vec3 c1 = w.cross(w.cross(e_s)) + 2.0 * w.cross(v_rel1) - (W * W * cb) * e_r -
+                        (2.0 * W * sb * bd) * e_t - (bd * bd) * e_s;
+        Mat36 C0a;
+        C0a << C_hb_, -skew(p0) * C_hb_;
+        Mat36 C1a;
+        C1a << Mat3::Zero(), -skew(e_s) * C_hb_;
+
+        const Vec3 K0 = S * c0 + I * c1;
+        const Mat36 KA = S * C0a + I * C1a;
+        const double bdd0 = (n.dot(K0) + loads.flap_moment[static_cast<std::size_t>(blade)] -
+                             S * n.dot(g) - f.spring * beta - f.damper * bd) /
+                            I;
+        const Eigen::Matrix<double, 1, 6> Gb = n.transpose() * KA / I;
+        out.xdot0[ib] = bd;
+        out.xdot0[ib + 1] = bdd0;
+        for (std::size_t j = 0; j < 6; ++j) {
+            out.G[(ib + 1) * 6 + j] = Gb(0, static_cast<Eigen::Index>(j));
+        }
+
+        // ∫ a_p dm and ∫ ρ a_p dm, split into a = 0 values and sensitivities.
+        const Vec3 Fi0 = m * c0 + S * c1 - (S * bdd0) * n;
+        const Mat36 FiA = m * C0a + S * C1a - S * n * Gb;
+        const Vec3 Ki0 = K0 - (I * bdd0) * n;
+        const Mat36 KiA = KA - I * n * Gb;
+        F += m * g - Fi0;
+        M += (m * p0 + S * e_s).cross(g) - p0.cross(Fi0) - e_s.cross(Ki0);
+        FA -= FiA;
+        MA -= skew(p0) * FiA + skew(e_s) * KiA;
+    }
+    out.load0_b.F += C_bh_ * F;
+    out.load0_b.M += C_bh_ * M;
+    out.H.topRows<3>() = C_bh_ * FA;
+    out.H.bottomRows<3>() = C_bh_ * MA;
 }
 
 // ---- Config ------------------------------------------------------------------
@@ -413,8 +568,8 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         {"type", "blades", "radius", "rotor_speed", "direction", "hub", "blade", "controls"});
     BladeElementRotorConfig c;
     const std::int64_t blades = node.integer("blades");
-    if (blades < 1 || blades > 64) {
-        node.fail("blades", "must be between 1 and 64");
+    if (blades < 1 || blades > kMaxBlades) {
+        node.fail("blades", "must be between 1 and " + std::to_string(kMaxBlades));
     }
     c.num_blades = static_cast<int>(blades);
     c.radius = node.quantity("radius", Dimension::length);
@@ -440,7 +595,7 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
 
     const Config blade = node.child("blade");
     blade.allow_keys({"root_cutout", "tip_loss", "chord", "chord_table", "twist", "twist_table",
-                      "airfoil", "elements", "spacing"});
+                      "airfoil", "elements", "spacing", "flap"});
     c.root_cutout = blade.quantity("root_cutout", Dimension::length);
     c.tip_loss = blade.number("tip_loss");
     c.chord = read_spanwise(blade, "chord", Dimension::length, false);
@@ -463,6 +618,26 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         c.spacing = ElementSpacing::uniform;
     } else {
         blade.fail("spacing", "must be equal_area or uniform");
+    }
+    if (blade.contains("flap")) {
+        // Rigid flapping blade (D-026). Mass, first and second moments are
+        // about the hinge, outboard of it (GenHel W_b, M_b, I_b; a weight in
+        // lbf is written as the same number in lbm).
+        const Config flap = blade.child("flap");
+        flap.allow_keys(
+            {"hinge_offset", "mass", "first_moment", "inertia", "spring", "damper", "delta3"});
+        FlapHinge h;
+        h.offset = flap.quantity("hinge_offset", Dimension::length);
+        h.mass = flap.quantity("mass", Dimension::mass);
+        h.first_moment = flap.quantity("first_moment", Dimension::mass_moment);
+        h.inertia = flap.quantity("inertia", Dimension::inertia);
+        h.spring = flap.contains("spring")
+                       ? flap.quantity("spring", Dimension::rotational_stiffness)
+                       : 0.0;
+        h.damper =
+            flap.contains("damper") ? flap.quantity("damper", Dimension::rotational_damping) : 0.0;
+        h.delta3 = flap.contains("delta3") ? flap.quantity("delta3", Dimension::angle) : 0.0;
+        c.flap = h;
     }
 
     c.controls = LinearControlMap::from_config(node.child("controls"));

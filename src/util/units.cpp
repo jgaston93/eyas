@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 32> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 36> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -44,6 +44,10 @@ constexpr std::array<std::pair<std::string_view, Unit>, 32> kRegistry{{
     {"kg*m^2",     {1.0, D::inertia}},
     {"slug*ft^2",  {kSlug * kFoot * kFoot, D::inertia}},
     {"lbf*in*s^2", {kPoundForce * kInch, D::inertia}},
+    {"N*m/rad",      {1.0, D::rotational_stiffness}},
+    {"ft*lbf/rad",   {kFoot * kPoundForce, D::rotational_stiffness}},
+    {"N*m*s/rad",    {1.0, D::rotational_damping}},
+    {"ft*lbf*s/rad", {kFoot * kPoundForce, D::rotational_damping}},
 }};
 // clang-format on
 
@@ -98,6 +102,10 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "mass moment";
         case Dimension::inertia:
             return "inertia";
+        case Dimension::rotational_stiffness:
+            return "rotational stiffness";
+        case Dimension::rotational_damping:
+            return "rotational damping";
     }
     return "unknown";
 }

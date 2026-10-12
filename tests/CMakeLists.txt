@@ -12,6 +12,8 @@ add_executable(eyas_unit_tests
     unit/test_csv_table.cpp
     unit/test_eigen_smoke.cpp
     unit/test_executive.cpp
+    unit/test_flap_anchors.cpp
+    unit/test_flapping_rotor.cpp
     unit/test_geodesy.cpp
     unit/test_model.cpp
     unit/test_recorder.cpp
@@ -53,3 +55,9 @@ add_executable(eyas_m3_cases validation/m3_cases.cpp)
 target_include_directories(eyas_m3_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m3_cases PRIVATE eyas_internal)
 eyas_target_defaults(eyas_m3_cases)
+
+# Writes the M4 validation data (VALIDATION.md; tools/plot_m4.py).
+add_executable(eyas_m4_cases validation/m4_cases.cpp)
+target_include_directories(eyas_m4_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m4_cases PRIVATE eyas_internal)
+eyas_target_defaults(eyas_m4_cases)
