@@ -42,7 +42,7 @@ public:
 
 private:
     std::vector<double> values_;
-    [[maybe_unused]] std::vector<unsigned char> written_;  // debug builds only
+    std::vector<unsigned char> written_;  // debug builds only
 };
 
 // Name → slot table, built by the executive at init and passed to each
