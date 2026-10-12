@@ -62,3 +62,9 @@ add_executable(eyas_m4_cases validation/m4_cases.cpp)
 target_include_directories(eyas_m4_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m4_cases PRIVATE eyas_internal)
 eyas_target_defaults(eyas_m4_cases)
+
+# Writes the M5 validation data (VALIDATION.md; tools/plot_m5.py).
+add_executable(eyas_m5_cases validation/m5_cases.cpp)
+target_include_directories(eyas_m5_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m5_cases PRIVATE eyas_internal)
+eyas_target_defaults(eyas_m5_cases)

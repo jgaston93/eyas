@@ -115,6 +115,20 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
 
 **Review (2026-10-11):** every value was drawn as a cross over the figure (the overlay image is not kept in the repo, since the figure is copyrighted). The human reviewer confirmed that each cross sits on its marker, and confirmed C_lα = 5.73/rad on p. 120. A possible open square (σ = 0.106) hidden near 2° and the stacked markers at the origin were not added. An AI assistant's independent reading of the same plot was rejected: it listed points not on the plot and read some values off the theory curves. The data is in `tests/validation/reference/knight_hefner_1937.csv`.
 
+## M5 validation rotor (NACA TN 3044 / TN 1698 rotor B) — readings `VERIFIED by human review (2026-10-12)`; rotor data incomplete
+Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/reference/carpenter_fridovich_1953.csv`.
+
+**Verified by human review (2026-10-12)** (each reading shown beside its cropped scan):
+- NACA 23015 section lift slope, NACA Report 824 p. 147 (PDF p. 149, page rotated): c_l = 0 at α ≈ −1.2°, ≈ 0.11 at 0°, ≈ 0.98 at 8°, ≈ −0.72 at −8°, so a₀ ≈ 0.105–0.110 per deg; linear from about −10° to +10° (R = 2.6–8.9 × 10⁶).
+- Rotor B, NACA TN 1698 p. 5 (PDF p. 7): R = 19 ft, σ = 0.042, three-blade area 46.3 sq ft, modified NACA 23015, 60 lbf per blade, plywood.
+- NACA TN 3044 Fig. 3(b)–(d), pp. 20–22 (PDF pp. 21–23): pitch ramps, initial rotor speeds, peak and steady C_T, v/v_s points and the time at v/v_s = 0.9, as in the CSV.
+
+**Gaps and conflicts:**
+1. **Twist conflict.** TN 1698 lists rotor B with −8° linear washout; TN 3044 p. 4 (PDF p. 5) calls its NACA 23015 plywood blades "untwisted". Unresolved: either a different blade set or an error in one report. The validation runs both, and for the twisted blade it assumes the pitch is referenced at 0.75R (the reference station isn't given).
+2. **Flap inertia and blade CG not published.** TN 3044 uses I₁ and m_b·l (eqs. 19–20) but prints no values; TN 1698 gives only the weight. The fast ramp (Fig. 3(a)) is excluded for that reason. Don't estimate them from the weight: that would mean inventing a mass distribution.
+3. **Chord distribution and root cutout not given.** The blade tapers (TN 3044 Fig. 1, TN 1698 Fig. 5, photos only). The validation uses a constant chord from σ = 0.042 (0.836 ft) and no root cutout. The blade area gives σ = 46.3/(π·19²) = 0.041, 3% less.
+4. **The lift slope used by TN 3044 is not printed** (an "adjusted value", p. 4). Report 824's section value is used instead.
+
 ## UH-60A blade twist and SC1095 airfoil tables — `ACCEPTED by human review (2026-10-11); primary maps checked cursorily`
 **Source:** GenHel CR-166309 §5.1.5, dot-matrix printouts with slashed zeros (the OCR layer reads 0 as 8, # or _, so it is unusable). Read by eye from 250–600 dpi renders.
 - Table 1.5.1, preset twist, p. 5.1-57 (PDF p. 77): 21 values.
