@@ -41,7 +41,7 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 - **Declared dependencies:** each component instance declares the coupling outputs it *produces* and *consumes*, e.g. `rotor[0].wake_skew`, `rotor[0].torque`.
 - **Order computed once:** at `init()` the executive sorts components topologically so producers run before consumers. Ties break by config order, so the result is deterministic. The order is then fixed for the run. A dependency cycle is an `init()` error that names the cycle. The UH-60 order this produces is main rotor → tail rotor → airframe → engine.
 - **Coupling outputs:** shared per-evaluation results go in a pre-allocated `CouplingOutputs` store, with fields **grouped by producer instance** (not a singleton "main rotor"). It is sized at `init()` and rebuilt on every derivative evaluation, so no state is kept between evaluations and purity is preserved. Consumers see it read-only through `SimContext`.
-- **Read-before-write check:** in debug builds every field is reset to NaN at the start of each evaluation, and a consumer reading an unwritten field asserts.
+- **Read-before-write check:** in debug builds every field is marked unwritten at the start of each evaluation, and a consumer reading an unwritten field asserts. (M6a review: a per-field flag, not a NaN fill, because a producer may legitimately write NaN from a diverging RK4 stage, which the executive must be able to reject in debug as in release.)
 - **Field discipline:** a field is added only when some component consumes it. Fields never change meaning, units or frame. Unit tests populate only the fields their component reads.
 
 **Rationale:**
@@ -55,7 +55,7 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 **Implementation notes (2026-10-12, M6a):**
 - `DynamicComponent` gained `name()`, `produces()`, `consumes()` and `bind()`, all with empty defaults, so existing components are unchanged. Names are scalar fields, `"<instance>.<field>"`; `CouplingRegistry` maps them to `CouplingSlot`s at init and each component resolves its slots in `bind()`.
 - The store is `CouplingOutputs`, one `std::vector<double>` sized at init. Producers write through `ComponentDerivs::coupling`; consumers read through `SimContext::coupling`. Both are null when a component is evaluated on its own, as in unit tests.
-- Force models take no part: they are evaluated before every component and can't consume outputs. None needs to yet (the M6 airframe aerodynamics is a `DynamicComponent`, D-028).
+- Force models take no part: they are evaluated before every component and can't consume outputs, so their `SimContext::coupling` is null. None needs to yet (the M6 airframe aerodynamics is a `DynamicComponent`, D-028).
 - The state layout stays in config order; only the evaluation order is sorted (`Executive::evaluation_order()`).
 
 ## D-004 Stateful gear and stabilator; const `ForceModel` (SPEC_REVIEW #4) — `Approved (2026-10-10)` — interface change
@@ -403,6 +403,7 @@ Do not restore and continue automatically and silently: an input-driven fault re
 - *Thrust:* C_T = (aσ/2)(λ t₃₁ + θ t₃₂ + θ_tw t₃₃) with Bailey's coefficients including tip loss B (p. 5.4-7), λ = μ_z − λ_i. To be checked against Padfield 3rd ed. Eq. 3.62 (B = 1) when implemented.
 - *Inflow lag (replaces GenHel's previous-pass λ):* one inflow state per tail rotor, (128/75π) dλ_i/dτ = C_T − 2λ_i√(μ² + λ²), the Pitt–Peters thrust row of D-027. Its steady state is exactly GenHel's algebraic inflow, and its time constant has a published source instead of depending on the frame rate. Hover estimate for the UH-60A tail rotor: about 7 ms with the lift-deficiency feedback, so h|s| ≈ 0.15 at 1 kHz (RK4-stable). *Alternative considered:* an algebraic solve in every evaluation (D-024 style), which has no lag at all; rejected, since it drops a real effect and costs an iteration.
 - *δ₃ (replaces GenHel's T(t−1)):* θ = (θ_cmd + BIAS) − (∂a₀/∂T)·T·tan δ₃ (p. 5.4-7), with T from the same evaluation. For a given λ_i, T is linear in θ, so this is a closed-form solve, with no iteration.
+- *δ₃ sign (M6a review):* the solve divides by 1 + (aσ/2)·t₃₂·k, with k = (∂a₀/∂T)·tan δ₃·K_BLK·ρπR²(ΩR)². With δ₃ < 0, k < 0 and the denominator falls as ρ and μ² grow, with no bound that can be checked at init; for the UH-60A tail rotor at sea level it reaches zero near δ₃ = −73° in hover. `init()` therefore rejects δ₃ < 0 when ∂a₀/∂T > 0. A rotor with negative δ₃ would need a different treatment.
 - *Interference:* main-rotor wash from the same maps as the stabilator (GenHel: "same as horizontal tail for Black Hawk"), fuselage sidewash and dynamic-pressure ratio from the fin maps, with the delay below. Fin blockage K_BLK against airspeed as GenHel (p. 5.4-8).
 - *Ω_TR/Ω_MR* is 1 until the rotor-speed DOF (M9).
 - *Torque:* none, as in GenHel. GenHel gives no tail-rotor profile-drag data, and estimating it would be inventing data. Logged in DATA_GAPS.md; revisit with the M7 power comparison and the M9 drivetrain.

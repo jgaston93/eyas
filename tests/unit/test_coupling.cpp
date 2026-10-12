@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -170,6 +171,43 @@ TEST(Coupling, DerivativesStayPure) {
     EXPECT_NE(junk[body_layout::kSize], a[body_layout::kSize]);
 }
 
+// A diverging RK4 stage makes a producer write NaN. The read must not abort
+// a debug build: the executive rejects the non-finite step, as in release.
+TEST(Coupling, ProducedNaNReachesTheConsumer) {
+    Executive ex(config(),
+                 list(std::make_unique<Consumer>("c", "p"), std::make_unique<Producer>("p")));
+    std::vector<double> x(ex.state().begin(), ex.state().end());
+    x[body_layout::kSize + 1] = std::numeric_limits<double>::quiet_NaN();  // producer state
+    std::vector<double> xdot(ex.num_states());
+    ex.derivatives(0.0, x, Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(std::isnan(xdot[body_layout::kSize]));
+}
+
+// Force models run before the store is filled, so they get none (D-003).
+class StoreProbe : public ForceModel {
+public:
+    explicit StoreProbe(bool* saw_store) : saw_store_(saw_store) {}
+    Wrench compute(const SimContext& ctx) const override {
+        *saw_store_ = *saw_store_ || ctx.coupling != nullptr;
+        return Wrench{};
+    }
+
+private:
+    bool* saw_store_;
+};
+
+TEST(Coupling, ForceModelsGetNoStore) {
+    bool saw_store = false;
+    std::vector<std::unique_ptr<ForceModel>> forces;
+    forces.push_back(std::make_unique<StoreProbe>(&saw_store));
+    Executive ex(config(),
+                 list(std::make_unique<Consumer>("c", "p"), std::make_unique<Producer>("p")),
+                 std::move(forces));
+    std::vector<double> xdot(ex.num_states());
+    ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot);
+    EXPECT_FALSE(saw_store);
+}
+
 TEST(Coupling, AdvanceDoesNotAllocate) {
     Executive ex(config(),
                  list(std::make_unique<Consumer>("c", "p"), std::make_unique<Producer>("p")));
@@ -181,7 +219,7 @@ TEST(Coupling, AdvanceDoesNotAllocate) {
 
 #ifndef NDEBUG
 // A component that reads a slot it never declared isn't ordered after the
-// producer; the debug NaN fill catches the read before the write (D-003).
+// producer; the debug written flag catches the read before the write (D-003).
 TEST(CouplingDeathTest, UndeclaredReadAssertsInDebug) {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
     Executive ex(config(), list(std::make_unique<Consumer>("c", "p", /*declare=*/false),

@@ -3,7 +3,7 @@
 // Exact-equation reference for the M6a tail rotor (D-028, layer 1).
 //
 // A literal transcription of GenHel CR-166309 §5.4.2 (pp. 5.4-4 to 5.4-8),
-// in GenHel's notation, units and conventions: inches and feet, lb, slug/ft³,
+// in GenHel's notation, units and conventions: inches and feet, lbf, slug/ft³,
 // degrees; stations FS positive aft, WL positive up, BL positive to port
 // (DATA_GAPS.md, "B_LTR sign"); velocities are the aircraft's relative to the
 // air, in body axes. Nothing is shared with the production code.
@@ -37,7 +37,7 @@ struct GenHelTailRotorInput {
     double TWSTTR = 0.0;  // [deg/R]
     double GAMTR = 0.0;   // cant Γ [deg]
     double DEL3TR = 0.0;  // [deg]
-    double DELTTR = 0.0;  // ∂a₀/∂T [deg/lb]
+    double DELTTR = 0.0;  // ∂a₀/∂T [deg/lbf]
     double BIASTR = 0.0;  // [deg]
     double CDTR = 0.0;    // [ft²]
     double KBVTTR = 1.0;  // blockage factor
@@ -53,9 +53,9 @@ struct GenHelTailRotorInput {
 };
 
 struct GenHelTailRotorOutput {
-    double XTR = 0.0, YTR = 0.0, ZTR = 0.0;  // [lb]
-    double LTR = 0.0, MTR = 0.0, NTR = 0.0;  // [ft·lb]
-    double TTR = 0.0;                        // [lb]
+    double XTR = 0.0, YTR = 0.0, ZTR = 0.0;  // [lbf]
+    double LTR = 0.0, MTR = 0.0, NTR = 0.0;  // [ft·lbf]
+    double TTR = 0.0;                        // [lbf]
     double DWSHTR = 0.0;                     // uniform downwash [-]
     double THETA = 0.0;                      // actual blade pitch [rad]
     double MUZTR = 0.0, MUTR = 0.0;

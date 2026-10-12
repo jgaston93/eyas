@@ -207,7 +207,6 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     ctx.controls = controls;
     ctx.env = env;
     ctx.air = isa_atmosphere(origin_altitude_ - body.pos_n.z(), env.isa_delta_T);  // D-016
-    ctx.coupling = &coupling_;
 
     // (M_rb − Σ H) a = bias + Σ load0 + Σ forces   (spec §5, "Coupling")
     Mat66 A = mass_matrix_;
@@ -219,7 +218,10 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     }
     std::fill(xdot0_.begin(), xdot0_.end(), 0.0);
     std::fill(G_.begin(), G_.end(), 0.0);
+    // Force models run before every component and can't consume (D-003), so
+    // they get no store; components get it once it is reset for this evaluation.
     coupling_.begin_evaluation();
+    ctx.coupling = &coupling_;
     bool converged = true;
     for (const std::size_t i : order_) {
         const std::size_t n = sizes_[i];

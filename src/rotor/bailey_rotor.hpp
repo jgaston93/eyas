@@ -53,7 +53,7 @@ struct BaileyRotorConfig {
     double lift_slope = 0.0;         // a [1/rad]
     double tip_loss = 1.0;           // B [-] in (0, 1]
     double twist = 0.0;              // θ_tw [rad]: linear, root (r = 0) to tip
-    double delta3 = 0.0;             // δ₃ [rad]
+    double delta3 = 0.0;             // δ₃ [rad], not negative when coning_per_thrust > 0
     double coning_per_thrust = 0.0;  // ∂a₀/∂T [rad/N]
     double pitch_bias = 0.0;         // [rad] added to the commanded θ (GenHel BIASTR)
     double drag_area = 0.0;          // S [m²] (GenHel C_DTR)
@@ -99,8 +99,9 @@ public:
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
 
-    // Loads at inflow state λ_i. With main-rotor wash configured, ctx.coupling
-    // must hold the rotor's outputs; `wash` overrides them (tests).
+    // Loads at inflow state λ_i. With main-rotor wash configured, the wash
+    // comes from ctx.coupling, or is zero when that is null (the component
+    // evaluated on its own, D-003); `wash` overrides it (tests).
     BaileyRotorLoads evaluate(const SimContext& ctx, double lambda_i) const noexcept;
     BaileyRotorLoads evaluate(const SimContext& ctx, double lambda_i,
                               const Vec3& wash_b) const noexcept;
@@ -115,6 +116,8 @@ private:
     double solidity_;
     double area_;
     double tip_speed_;
+    double lift_factor_;   // G = aσ/2
+    double coning_pitch_;  // (∂a₀/∂T) tan δ₃ [rad/N]
     Mat3 C_hb_;
     Mat3 C_bh_;
 };

@@ -27,10 +27,12 @@ struct CouplingSlot {
 class CouplingOutputs {
 public:
     CouplingOutputs() = default;
-    explicit CouplingOutputs(std::size_t size) : values_(size, 0.0) {}
+    explicit CouplingOutputs(std::size_t size) : values_(size, 0.0), written_(size, 0) {}
 
-    // Debug builds set every value to NaN at the start of an evaluation, so
-    // a read before the producer's write asserts (D-003). Release: no-op.
+    // Debug builds clear a written flag per slot at the start of an
+    // evaluation, so a read before the producer's write asserts (D-003).
+    // A flag, not a NaN fill: a producer may legitimately write NaN from a
+    // diverging RK4 stage, which the executive then rejects. Release: no-op.
     void begin_evaluation() noexcept;
 
     double get(CouplingSlot s) const noexcept;
@@ -40,6 +42,7 @@ public:
 
 private:
     std::vector<double> values_;
+    [[maybe_unused]] std::vector<unsigned char> written_;  // debug builds only
 };
 
 // Name → slot table, built by the executive at init and passed to each

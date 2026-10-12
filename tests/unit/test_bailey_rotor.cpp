@@ -370,5 +370,17 @@ controls: {}
     EXPECT_THROW((void)BaileyRotor::from_config(bad), InitError);
 }
 
+// δ₃ < 0 with coning lets the closed-form δ₃ denominator reach zero in
+// flight (for the UH-60A tail rotor at sea level, near −73° in hover and
+// −64° at μ = 0.4 unblocked), so init refuses it. Without coning, δ₃ has
+// no effect and any sign is accepted.
+TEST(BaileyRotor, RejectsNegativeDelta3WithConing) {
+    BaileyRotorConfig c = test::bailey_from_genhel(test::genhel_uh60a_tail_rotor());
+    c.delta3 = -35.0 * kDegree;
+    EXPECT_THROW(BaileyRotor{c}, InitError);
+    c.coning_per_thrust = 0.0;
+    EXPECT_NO_THROW(BaileyRotor{c});
+}
+
 }  // namespace
 }  // namespace eyas

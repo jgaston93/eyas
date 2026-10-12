@@ -35,6 +35,12 @@ void validate(const BaileyRotorConfig& c) {
     if (!(c.coning_per_thrust >= 0.0) || !std::isfinite(c.coning_per_thrust)) {
         throw InitError("bailey rotor: coning per thrust must be finite and not negative");
     }
+    // With δ₃ < 0, coning raises pitch: the closed-form denominator
+    // 1 + (aσ/2) t₃₂ k falls with ρ and μ and has no bound that holds at
+    // init, so it could reach zero in flight (D-028).
+    if (c.coning_per_thrust > 0.0 && c.delta3 < 0.0) {
+        throw InitError("bailey rotor: delta3 must not be negative");
+    }
     if (!(c.drag_area >= 0.0) || !std::isfinite(c.drag_area)) {
         throw InitError("bailey rotor: drag area must be finite and not negative");
     }
@@ -61,6 +67,8 @@ BaileyRotor::BaileyRotor(BaileyRotorConfig config) : config_(std::move(config)) 
                 (std::numbers::pi * config_.radius);
     area_ = std::numbers::pi * config_.radius * config_.radius;
     tip_speed_ = config_.rotor_speed * config_.radius;
+    lift_factor_ = config_.lift_slope * solidity_ / 2.0;
+    coning_pitch_ = config_.coning_per_thrust * std::tan(config_.delta3);
     C_hb_ = hub_rotation(config_.hub_pitch, config_.hub_roll);
     C_bh_ = C_hb_.transpose();
 }
@@ -109,7 +117,7 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i,
     const double t31 = B * B / 2.0 + mu2 / 4.0;
     const double t32 = B * B * B / 3.0 + B * mu2 / 2.0;
     const double t33 = B * B * B * B / 4.0 + B * B * mu2 / 4.0;
-    const double G = c.lift_slope * solidity_ / 2.0;
+    const double G = lift_factor_;
     const double lambda = out.mu_z - lambda_i;
 
     // Fin blockage on the airspeed (p. 5.4-8).
@@ -125,7 +133,7 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i,
     const double rho = ctx.air.density;
     const double q_area = rho * area_ * tip_speed_ * tip_speed_;
     const double theta_c = c.controls->pitch(ctx.controls).theta0 + c.pitch_bias;
-    const double k = c.coning_per_thrust * std::tan(c.delta3) * out.blockage * q_area;
+    const double k = coning_pitch_ * out.blockage * q_area;
     out.ct = G * (lambda * t31 + theta_c * t32 + c.twist * t33) / (1.0 + G * t32 * k);
     out.pitch = theta_c - k * out.ct;
     out.thrust = out.blockage * q_area * out.ct;

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 
 #include "util/error.hpp"
 
@@ -10,21 +9,23 @@ namespace eyas {
 
 void CouplingOutputs::begin_evaluation() noexcept {
 #ifndef NDEBUG
-    std::fill(values_.begin(), values_.end(), std::numeric_limits<double>::quiet_NaN());
+    std::fill(written_.begin(), written_.end(), 0);
 #endif
 }
 
 double CouplingOutputs::get(CouplingSlot s) const noexcept {
     assert(s.index < values_.size());
-    const double v = values_[s.index];
     // Read before the producer wrote it this evaluation (D-003).
-    assert(!std::isnan(v));
-    return v;
+    assert(written_[s.index] != 0);
+    return values_[s.index];
 }
 
 void CouplingOutputs::set(CouplingSlot s, double v) noexcept {
     assert(s.index < values_.size());
     values_[s.index] = v;
+#ifndef NDEBUG
+    written_[s.index] = 1;
+#endif
 }
 
 CouplingSlot CouplingRegistry::add(const std::string& name, std::string_view producer) {
