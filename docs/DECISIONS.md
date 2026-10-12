@@ -52,6 +52,12 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 - **One-way flow per evaluation.** Two-way interactions within one evaluation (airframe upwash on the rotor, tiltrotor wing–rotor interference) must either depend only on states and inputs already in `SimContext` (GenHel's airframe upwash on the main rotor appears to; confirm when implementing), or be handled by an explicit, documented choice: bounded fixed-point iteration, a deliberate simplification, or a lag. Record each case here.
 - **Coupled solve.** Airframe force models consume rotor *outputs* that don't depend on body acceleration `a`, so they add no H terms. If a consumed output depends on `a`, its consumer can't take it from the coupling store and must take part in the coupled solve. **Known M9 case:** rotor shaft torque includes blade inertial terms that depend on body yaw acceleration, so the drivetrain and rotor-speed DOF must be in the coupled solve, not a plain consumer of `torque`.
 
+**Implementation notes (2026-10-12, M6a):**
+- `DynamicComponent` gained `name()`, `produces()`, `consumes()` and `bind()`, all with empty defaults, so existing components are unchanged. Names are scalar fields, `"<instance>.<field>"`; `CouplingRegistry` maps them to `CouplingSlot`s at init and each component resolves its slots in `bind()`.
+- The store is `CouplingOutputs`, one `std::vector<double>` sized at init. Producers write through `ComponentDerivs::coupling`; consumers read through `SimContext::coupling`. Both are null when a component is evaluated on its own, as in unit tests.
+- Force models take no part: they are evaluated before every component and can't consume outputs. None needs to yet (the M6 airframe aerodynamics is a `DynamicComponent`, D-028).
+- The state layout stays in config order; only the evaluation order is sorted (`Executive::evaluation_order()`).
+
 ## D-004 Stateful gear and stabilator; const `ForceModel` (SPEC_REVIEW #4) — `Approved (2026-10-10)` — interface change
 **Decision:**
 - `ForceModel::compute` becomes `const`.
@@ -429,6 +435,13 @@ Do not restore and continue automatically and silently: an input-driven fault re
 - **Real-time rules:** zero allocation, purity and bit-identical runs, as for M3–M5.
 
 **Rationale:** each replacement keeps GenHel's steady-state behaviour exactly and gives the dynamics a published or derivable form, so the models stay pure functions of (t, x, inputs). The staging keeps each PR reviewable and lets the data review run alongside the code.
+
+**Implementation notes (2026-10-12, M6a; VALIDATION.md):**
+- *Coupling fields of a rotor:* λ₀, μ_x (signed, along x_h), μ_z, β_1c and ΩR. GenHel's wake skew and flapping are computed by the consumer from these: χ = atan(μ_x/|λ|) + a₁ (p. 5.1-37, PDF p. 57), with a₁ = −(2/b) Σ β cos ψ (p. 5.1-18, PDF p. 38), i.e. a₁ = −β_1c if GenHel's azimuth is zero aft, as Eyas's is (to confirm, DATA_GAPS.md).
+- *Hub frame:* GenHel's tail-rotor shaft axes (p. 5.4-6) are the D-024 hub frame with roll = Γ_TR = 70°, so the tail rotor reuses `hub_rotation()`.
+- *Bailey coefficients:* GenHel's t₃₁, t₃₂, t₃₃ are the exact small-angle integrals for lift carried to B·R, with reverse flow kept on the inflow term only (tested by quadrature). They equal Johnson (2013) Eq. 6.219 at B = 1. Against an exact blade-element integral, GenHel's thrust is about 1% low in hover and up to 9% high at the tail rotor's μ ≈ 0.37 at 150 kt. That is GenHel's model, reproduced; the blade-element tail rotor (spec §6.6, "later") would remove it.
+- *Previous-pass scheme measured:* in a pedal step, GenHel's scheme oscillates from pass to pass (±12% thrust) with the same sequence per pass whatever the frame length, so at 60 Hz it lasts more than 0.1 s. The inflow state settles to the same thrust smoothly. This is the error the purity rule's replacement removes, measured as required above.
+- *Drag:* production uses −½ρS v|v|, so the drag reverses in rearward flight; GenHel's −½ρS v² doesn't. The UH-60A value is S = 0, so it has no effect.
 
 ## D-029 AFCS placement (SPEC_REVIEW #25) — `Approved (2026-10-12)` — scope
 **Decision:**

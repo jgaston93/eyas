@@ -19,14 +19,17 @@ include(EyasDependencies)
 
 add_library(eyas STATIC
     src/core/attitude.cpp
+    src/core/coupling.cpp
     src/core/rigid_body.cpp
     src/env/atmosphere.cpp
     src/env/geodesy.cpp
     src/rotor/airfoil.cpp
+    src/rotor/bailey_rotor.cpp
     src/rotor/blade_element_rotor.cpp
     src/rotor/controls.cpp
     src/rotor/ideal_thrust.cpp
     src/rotor/pitt_peters.cpp
+    src/rotor/rotor_wash.cpp
     src/util/axis.cpp
     src/util/config.cpp
     src/util/csv_table.cpp

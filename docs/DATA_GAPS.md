@@ -196,6 +196,7 @@ Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/re
 3. *Table 3.5.10 (fin drag) high-angle map:* the comment reads "−90 to 90, DELTA=5" but holds 19 values, i.e. a 10° spacing (PDF p. 145).
 4. *DLQD, DMQD, DNQD* are added to the fuselage lift, pitch and yaw coefficients (p. 5.2-7, PDF p. 92) but aren't defined in the notation (pp. 5.2-12 to 5.2-14) or the input data. Presumably zero (stores or configuration increments); to confirm.
 5. *C_DTR* is "ft²" in the notation (p. 5.4-12) and "−" on the data page (p. 5.4-14). The value is 0, so it has no effect.
+6. *GenHel's azimuth origin.* The wash maps are indexed on GenHel's a₁ = −(2/b) Σ β cos ψ (p. 5.1-18, PDF p. 38) and wake skew χ = atan(μ_xs/|λ|) + a₁ (p. 5.1-37, PDF p. 57), read during M6a. Eyas sets a₁ = −β_1c, which holds if GenHel's ψ is zero with the blade aft, as Eyas's is (the shaft-to-blade transformation figure, p. 5.1-8, PDF p. 28, should show it). **Human check requested:** both equations as read, and the azimuth origin.
 
 ## UH-60A tail-rotor torque — `missing` (M6, M7)
 GenHel's tail rotor computes thrust only (p. 5.4-2) and gives no blade profile-drag coefficient, so Eyas's tail rotor has no torque in M6 (D-028). Its power is a sizable part of hover power, which matters for the M7 power comparison and the M9 drivetrain. Check whether GenHel's engine module (§5.6) accounts for tail-rotor power, and look for a public tail-rotor blade section or profile-drag value before M7.

@@ -4,8 +4,8 @@
 #include <numbers>
 #include <span>
 
-// Multiblade (disc) coordinates of the flap states (D-026), for outputs and
-// tests. Not used inside advance().
+// Multiblade (disc) coordinates of the flap states (D-026), for outputs,
+// tests and the rotor's coupling outputs (D-028). No allocation.
 namespace eyas {
 
 struct MultibladeFlap {
@@ -18,7 +18,8 @@ struct MultibladeFlap {
 // From rotor states x (x[2k] = β_k, as BladeElementRotor) at rotor azimuth
 // ψ [rad], with blade k at ψ − 2π k/N_b (D-024). Padfield 3rd ed.
 // Eqs. 3.42–3.45 (blade i = k + 1, (−1)^i).
-inline MultibladeFlap multiblade_flap(std::span<const double> x, double psi, int num_blades) {
+inline MultibladeFlap multiblade_flap(std::span<const double> x, double psi,
+                                      int num_blades) noexcept {
     MultibladeFlap m;
     const double n = num_blades;
     for (int k = 0; k < num_blades; ++k) {

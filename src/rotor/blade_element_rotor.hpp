@@ -6,6 +6,8 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/component.hpp"
@@ -76,6 +78,8 @@ struct FlapHinge {
 };
 
 struct BladeElementRotorConfig {
+    // Instance name for the coupling outputs (D-003); empty: produces none.
+    std::string name;
     int num_blades = 0;        // N_b
     double radius = 0.0;       // R [m]
     double rotor_speed = 0.0;  // Ω [rad/s], positive
@@ -154,6 +158,19 @@ public:
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
 
+    // Coupling outputs (D-003, D-028), "<name>.<field>", all independent of
+    // the body acceleration:
+    //   lambda0    λ0 [-]: uniform induced inflow / ΩR, positive down (the
+    //              Pitt–Peters state, or the uniform solve);
+    //   mu_x, mu_z [-]: hub velocity relative to the air along x_h and z_h
+    //              (z_h down the shaft) / ΩR;
+    //   beta_1c    β_1c [rad]: longitudinal flapping (Padfield 3rd ed.
+    //              Eq. 3.44; 0 without a flap hinge);
+    //   tip_speed  ΩR [m/s].
+    std::string_view name() const noexcept override { return config_.name; }
+    std::vector<std::string> produces() const override;
+    void bind(const CouplingRegistry& registry) override;
+
     // Aerodynamic loads at rotor states x (empty: every state zero; otherwise
     // num_states() long), with the configured inflow: uniform inflow solved
     // for this evaluation (D-024), or the Pitt–Peters states in x (D-027).
@@ -221,6 +238,14 @@ private:
     double tip_speed_;  // [m/s]
     Mat3 C_hb_;         // body → hub
     Mat3 C_bh_;
+    struct Slots {
+        CouplingSlot lambda0;
+        CouplingSlot mu_x;
+        CouplingSlot mu_z;
+        CouplingSlot beta_1c;
+        CouplingSlot tip_speed;
+    };
+    Slots slots_;
     // Hunt-search hints, one per (blade, element). They change only the
     // search time, never the result, so derivatives() stays pure (spec §6).
     mutable std::vector<TableCursor<2>> cursors_;
