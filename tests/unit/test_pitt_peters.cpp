@@ -156,7 +156,39 @@ BladeElementRotorConfig pp_rotor(std::shared_ptr<const Airfoil> airfoil, Swashpl
     return c;
 }
 
-// The downwind azimuth from the hub velocity (D-027), and the PP inputs.
+// The downwind azimuth ψ_w (D-027), found from the blade kinematics rather
+// than from production's closed form: the downwind blade lies along the
+// in-plane free stream, so the free-stream part of its tangential velocity,
+// u sin ψ + s v cos ψ (the U_T of bet_reference.hpp), is zero there and
+// rising (the advancing side follows, ψ_w + 90°). Bracketed on a coarse grid,
+// then bisected to machine precision.
+double downwind_azimuth(double u, double v, double s) {
+    const auto f = [&](double psi) { return u * std::sin(psi) + s * v * std::cos(psi); };
+    if (std::hypot(u, v) == 0.0) {
+        return 0.0;  // isotropic (D-027)
+    }
+    constexpr int kGrid = 16;
+    const double step = 2.0 * std::numbers::pi / kGrid;
+    for (int i = 0; i < kGrid; ++i) {
+        double a = -std::numbers::pi + i * step;
+        double b = a + step;
+        if (f(a) >= 0.0 || f(b) < 0.0) {
+            continue;
+        }
+        for (int it = 0; it < 200; ++it) {
+            const double m = 0.5 * (a + b);
+            if (m <= a || m >= b) {
+                break;
+            }
+            (f(m) < 0.0 ? a : b) = m;
+        }
+        return b;
+    }
+    ADD_FAILURE() << "no downwind azimuth for u = " << u << ", v = " << v;
+    return 0.0;
+}
+
+// The PP inputs at a given linear inflow.
 PPInputs inputs_for(const BladeElementRotor& rotor, const SimContext& ctx, const LinearInflow& l) {
     const test::RefCondition k = test::reference_condition(rotor, ctx);
     const double vr = rotor.tip_speed();
@@ -167,7 +199,7 @@ PPInputs inputs_for(const BladeElementRotor& rotor, const SimContext& ctx, const
     in.l1c = l.l1c;
     in.mu = std::hypot(k.v_hub_h.x(), k.v_hub_h.y()) / vr;
     in.mu_z = k.v_hub_h.z() / vr;
-    in.psi_w = std::atan2(-s * k.v_hub_h.y(), k.v_hub_h.x());
+    in.psi_w = downwind_azimuth(k.v_hub_h.x(), k.v_hub_h.y(), s);
     in.omega = rotor.config().rotor_speed;
     return in;
 }

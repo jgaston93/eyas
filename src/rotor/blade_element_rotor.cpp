@@ -1,6 +1,7 @@
 #include "rotor/blade_element_rotor.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -173,11 +174,11 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     k.pitch = config_.controls->pitch(ctx.controls);
     k.rho = ctx.air.density;
     k.a = ctx.air.speed_of_sound;
-    k.mu = std::hypot(k.v_hub_h.x(), k.v_hub_h.y()) / tip_speed_;  // Padfield 3rd ed. Eq. 3.140
+    const double v_xy = std::hypot(k.v_hub_h.x(), k.v_hub_h.y());
+    k.mu = v_xy / tip_speed_;  // Padfield 3rd ed. Eq. 3.140
     k.mu_z = k.v_hub_h.z() / tip_speed_;
     // Downwind azimuth (D-027): the blade at ψ_w points along the in-plane
     // free stream relative to the hub, e_r(ψ_w) ∥ −v_xy.
-    const double v_xy = std::hypot(k.v_hub_h.x(), k.v_hub_h.y());
     k.cos_w = v_xy > 0.0 ? k.v_hub_h.x() / v_xy : 1.0;
     k.sin_w = v_xy > 0.0 ? -s_ * k.v_hub_h.y() / v_xy : 0.0;
     return k;
@@ -314,6 +315,13 @@ RotorLoads BladeElementRotor::evaluate_at_inflow(const SimContext& ctx, const Li
 
 RotorLoads BladeElementRotor::evaluate(const SimContext& ctx,
                                        std::span<const double> x) const noexcept {
+    return evaluate_at(kinematics(ctx), x);
+}
+
+RotorLoads BladeElementRotor::evaluate_at(const Kinematics& k,
+                                          std::span<const double> x) const noexcept {
+    assert(x.empty() || x.size() == num_states());
+    RotorLoads out;
     if (config_.inflow == InflowModel::pitt_peters) {
         // One pass at the inflow states (D-027); nothing to iterate.
         LinearInflow lambda;
@@ -321,9 +329,13 @@ RotorLoads BladeElementRotor::evaluate(const SimContext& ctx,
             const std::size_t i = inflow_offset();
             lambda = {x[i], x[i + 1], x[i + 2]};
         }
-        return evaluate_at_inflow(ctx, lambda, x);
+        out = pass(k, lambda, x);
+        out.passes = 1;
+    } else {
+        out = solve_uniform(k, x);
     }
-    return evaluate_uniform(ctx, x);
+    finish(out, k);
+    return out;
 }
 
 RotorLoads BladeElementRotor::evaluate_uniform(const SimContext& ctx,
@@ -467,22 +479,20 @@ void BladeElementRotor::initial_states(std::span<double> x) const {
 
 void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const double> x,
                                     ComponentDerivs& out) const {
-    const RotorLoads loads = evaluate(ctx, x);
+    const Kinematics kin = kinematics(ctx);
+    const RotorLoads loads = evaluate_at(kin, x);
     out.load0_b = loads.body;
     out.converged = loads.converged;
     if (config_.inflow == InflowModel::pitt_peters) {
         // Pitt–Peters inflow (D-027), forced by the loads of the same pass.
-        // Independent of the body acceleration: G = 0 for these rows.
-        const Kinematics k = kinematics(ctx);
+        // Independent of the body acceleration: the G rows stay zero.
         const std::size_t i = inflow_offset();
         const Vec3 rates =
             pitt_peters_rates(Vec3(x[i], x[i + 1], x[i + 2]), Vec3(loads.ct, loads.c1s, loads.c1c),
-                              k.mu, k.mu_z, k.cos_w, k.sin_w, config_.rotor_speed);
+                              kin.mu, kin.mu_z, kin.cos_w, kin.sin_w, config_.rotor_speed);
         out.xdot0[i] = rates.x();
         out.xdot0[i + 1] = rates.y();
         out.xdot0[i + 2] = rates.z();
-        std::fill(out.G.begin() + static_cast<std::ptrdiff_t>(6 * i),
-                  out.G.begin() + static_cast<std::ptrdiff_t>(6 * (i + 3)), 0.0);
     }
     if (!config_.flap) {
         return;

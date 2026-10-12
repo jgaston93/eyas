@@ -28,7 +28,8 @@ struct PittPetersMass {
 // Mass-flow speed and wake skew for a total flow λ = λ0 − μ_z down through
 // the disc and an in-plane speed μ (both / ΩR):
 //   V = √(μ² + λ²),  X = tan(χ/2) = μ / (V + |λ|)   (Johnson 2013 Eq. 11.132),
-// with X = 0 when V = 0.
+// with X = 0 when V = 0. |λ| keeps X in [0, 1] when the flow is up through
+// the disc (D-027, "Upflow").
 struct WakeSkew {
     double V = 0.0;  // [-]
     double X = 0.0;  // [-] in [0, 1]

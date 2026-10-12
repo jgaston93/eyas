@@ -36,15 +36,15 @@ Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double 
     const Vec3 cw = to_wind(loads);
     // V L̂⁻¹ λ_w, with L̂ inverted in closed form: a 2×2 block coupling
     // (λ0, λ1c) and a scalar for λ1s. det > 0 for X in [0, 1].
-    const double X = w.X;
-    const double a = 0.5;
-    const double b = -kSkew * X;
-    const double c = kSkew * X;
-    const double d = 2.0 * (1.0 - X * X);
+    const Mat3 L = pitt_peters_gain(w.X);
+    const double a = L(0, 0);
+    const double b = L(0, 2);
+    const double c = L(2, 0);
+    const double d = L(2, 2);
     const double det = a * d - b * c;
     const double r0 = w.V * (d * lw.x() - b * lw.z()) / det;
     const double rc = w.V * (-c * lw.x() + a * lw.z()) / det;
-    const double rs = w.V * lw.y() / (2.0 * (1.0 + X * X));
+    const double rs = w.V * lw.y() / L(1, 1);
     // M̃ dλ_w/dτ = C_w − V L̂⁻¹ λ_w, τ = Ω t.
     const double d0 = omega * (cw.x() - r0) / PittPetersMass::m0;
     const double ds = omega * (cw.y() - rs) / PittPetersMass::m1;

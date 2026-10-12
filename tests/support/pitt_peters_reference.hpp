@@ -44,7 +44,10 @@ struct PPRates {
 //            [(15π/64)√((1−sin α)/(1+sin α)), 0, −4 sin α/(1+sin α)]],
 // M = diag(128/75π, −16/45π, −16/45π).
 // C_L, C_M: eqs. 5b–5c (−r sin ψ, −r cos ψ weightings). α is the disc angle
-// of attack, tan α = (λ̄ + ν̄)/μ (eq. 23c), i.e. sin α = |λ|/V.
+// of attack, tan α = (λ̄ + ν̄)/μ (eq. 23c). Eq. 23c is signed, but the paper
+// derives L only for 0° ≤ α ≤ 90° (p. 47-10); like production, this uses
+// sin α = |λ|/V (Johnson 2013 Eq. 11.132), so it doesn't test that choice
+// (D-027, "Upflow").
 inline PPRates pitt_peters_1980(const PPInputs& in, double c_t, double c_l, double c_m) {
     const double pi = std::numbers::pi;
     const double lam = in.l0 - in.mu_z;

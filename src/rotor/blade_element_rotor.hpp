@@ -154,9 +154,9 @@ public:
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
 
-    // Aerodynamic loads at rotor states x (empty: every state zero), with the
-    // configured inflow: uniform inflow solved for this evaluation (D-024),
-    // or the Pitt–Peters states in x (D-027).
+    // Aerodynamic loads at rotor states x (empty: every state zero; otherwise
+    // num_states() long), with the configured inflow: uniform inflow solved
+    // for this evaluation (D-024), or the Pitt–Peters states in x (D-027).
     RotorLoads evaluate(const SimContext& ctx, std::span<const double> x = {}) const noexcept;
     // Loads with the uniform momentum inflow solved (D-024), whatever the
     // configured model: the steady Pitt–Peters inflow in hover, and a start
@@ -207,6 +207,8 @@ private:
     };
 
     Kinematics kinematics(const SimContext& ctx) const noexcept;
+    // evaluate() at precomputed kinematics.
+    RotorLoads evaluate_at(const Kinematics& k, std::span<const double> x) const noexcept;
     RotorLoads pass(const Kinematics& k, const LinearInflow& lambda,
                     std::span<const double> x) const noexcept;
     RotorLoads solve_uniform(const Kinematics& k, std::span<const double> x) const noexcept;
