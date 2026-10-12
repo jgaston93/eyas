@@ -71,7 +71,7 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 **Problem:** "The non-rotating and rotating flap natural frequencies match ν_β." For an articulated blade without a hinge spring, the non-rotating flap frequency is zero. The ν_β formula given is the rotating, non-dimensional (per-rev) frequency.
 **Suggested resolution:** Test the non-rotating frequency only when K_β > 0 (ω = sqrt(K_β / I_β)). Test the rotating frequency against ν_β.
 
-## 10. Pitt–Peters and azimuth practicalities — `open`
+## 10. Pitt–Peters and azimuth practicalities — `resolved → DECISIONS.md D-027 (2026-10-12)`
 **Spec:** §6.4, §6.5.
 **Problem:**
 - Sign conventions for the C_L and C_M forcing terms and the λ1s/λ1c ordering differ between sources. The spec says "as published" without fixing one.
@@ -83,6 +83,15 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 - The 1980 paper uses (λ0, λs, λc) with loads (C_T, C_L, C_M), where C_L and C_M carry −r sinψ and −r cosψ weightings, ψ is CCW, and ψ = 180° points forward (p. 47-3). Johnson uses (λ0, λc, λs) with loads (C_T, −C_My, C_Mx).
 
 **Suggested resolution:** Pick one primary reference for the Pitt–Peters form and conventions, and cite it in code. Initialize inflow from the momentum solution. Derive ψ from `n_steps` while Ω is constant, and wrap only between steps once Ω becomes a state.
+
+**Findings (2026-10-12, M5):**
+- *The 4× conflict is resolved in favour of 16/45π.* The 1980 paper gives 16/45π in both Table 3 (with the decimal −.1132, which confirms the fraction) and Table 4 (p. 47-13). Johnson (2013) p. 437 (§11.3, history) quotes Peters (1974) for the same impermeable-disc apparent masses (Tuckerman 1925): K_m = 8/3π and K_I = 16/45π, with τ = 2K_I/v, "agreeing with the identified τ value of Crews, Hohenemser, and Ormiston (1973)". Johnson's own Eqs. 11.140 and 11.146 (64/45π) disagree with his p. 437 and with the primary source. Both sources use standard coefficients, i.e. normalized by ρπR²(ΩR)²(R): the 1980 M₁₁ = 8/3π (uncorrected) is the impermeable-disc apparent mass (8/3)ρR³ only in that normalization.
+- *Conventions.* Written with azimuth-weighted loads C_1s = −C_L and C_1c = −C_M (1980 eq. 5), the 1980 Table 4 L and Johnson's Eq. 11.143 (whose C_Mx and −C_My are defined by +sin ψ and +cos ψ weightings, Eqs. 11.150–11.151) are the same matrix, so the conventions are reconciled.
+- *Mass-flow parameter.* The 1980 paper's L₂₂ = 2/v in hover (eq. 20) is "identical to … simple momentum theory" with v the flow speed (eq. 23a); eq. 23b is offered as a suggested extension, not derived. Johnson recommends V = √(μ²+λ²) for the moment columns (pp. 431–433). In the nonlinear total-state form the thrust row needs V = √(μ²+λ²) for the steady state to equal momentum theory, and its linearization then gives Johnson's Eq. 11.144 automatically. V multiplies λ (the equation uses L⁻¹ = V L̂⁻¹), so the singularity at V = 0 doesn't arise.
+- *Wake skew direction.* Both sources assume the free stream comes from ψ = 180°. Sideways and rearward flight need the skew terms rotated to the in-plane wind direction; neither source says so.
+- The ψ question is settled by D-024 (ψ from time while Ω is constant).
+- *"Three real, stable roots" (1980 p. 47-9) doesn't hold for Table 4 as printed.* Computed from the Table 4 L and M (transcription checked against the scan and confirmed by the user, 2026-10-12), the (λ0, λ1c) roots are complex for α < 74.6° (wake skew χ > 15.4°), with damping ratio ≥ 0.744; all roots are stable and L is invertible, as the paper says. The cause is the antisymmetric effective coupling: L13 = L31 > 0 while M22, M33 < 0. The M5 test asserts stability, invertibility and ζ ≥ 0.7, not real roots.
+- **Status: `resolved → DECISIONS.md D-027 (2026-10-12)`.**
 
 ## 11. Build and determinism details — `resolved → DECISIONS.md D-010 (2026-10-10)`
 **Spec:** §3, §7 rule 4, M0.
@@ -155,7 +164,7 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 
 ## 21. Uniform momentum inflow has no physical solution in the vortex-ring state — `open`
 **Spec:** §6.5 (uniform inflow, M3; Pitt–Peters, M5).
-**Problem:** in axial descent between roughly 0 and 2× the hover induced velocity, momentum theory doesn't apply (Padfield 3rd ed. §3.2.1, pp. 102–103: the vertical-descent solutions in Fig. 3.15 are "nonphysical", and "recourse to empiricism is required"). Eq. 3.139 then has up to three roots. The M3 solve (D-024) returns one deterministically: in the test rotor it stays on the normal-working-state branch up to a descent of about 3 v_h, then jumps to the windmill-brake branch (`docs/validation/m3/m3_inflow.png`). The thrust jumps with it. Pitt–Peters (M5) uses the same mass-flow parameter and inherits the problem.
+**Problem:** in axial descent between roughly 0 and 2× the hover induced velocity, momentum theory doesn't apply (Padfield 3rd ed. §3.2.1, pp. 102–103: the vertical-descent solutions in Fig. 3.15 are "nonphysical", and "recourse to empiricism is required"). Eq. 3.139 then has up to three roots. The M3 solve (D-024) returns one deterministically: in the test rotor it stays on the normal-working-state branch up to a descent of about 3 v_h, then jumps to the windmill-brake branch (`docs/validation/m3/m3_inflow.png`). The thrust jumps with it. Pitt–Peters (M5) uses the same mass-flow parameter and inherits the problem. It also treats upflow through the disc with |λ| in the wake skew (D-027, "Upflow"), a choice no source validates there.
 **Why it matters:** a piloted steep approach or a vertical descent can enter this region. The model gives a thrust discontinuity there instead of the loss of control power and roughness pilots expect.
 **Suggested resolution:** before M8 piloted evaluation, add an empirical vortex-ring correction to the induced-velocity solution, e.g. a fitted curve of induced velocity against descent rate between the normal and windmill branches, with the source chosen from the D-001 references (Johnson 2013 and Leishman 2nd ed. both discuss empirical curves; verify which before use). Until then, the region is a known limitation.
 
@@ -171,3 +180,11 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 - *Not mentioned:* hinge damping (named in §6.4 but not defined), precone, flap and droop stops, initial blade states.
 **Why it matters:** testing an offset-hinge rotor against Padfield's centre-spring closed forms would mix a modeling difference into the tolerance, as in SPEC_REVIEW #7.
 **Suggested resolution:** see D-026.
+
+## 23. M5 acceptance criteria are underspecified — `resolved → DECISIONS.md D-027 (2026-10-12)`
+**Spec:** M5.
+**Problem:**
+- *"The inflow time constant in hover matches the published value."* No value or source is named, and "the" time constant is ambiguous. The inflow equation alone (loading held fixed) has τ = M₁₁/(4λ₀Ω) (Padfield 3rd ed. Eq. 3.179 for the Carpenter–Fridovich mass 8/3π; Eqs. 5.76 and 5.80 for the Pitt–Peters value 128/75π). Coupled to a blade-element rotor at fixed pitch, the load feedback δC_T = −(σa/4)δλ₀ shortens it by the lift-deficiency factor (Johnson 2013 Eqs. 11.148–11.149). The moment states have their own time constants.
+- *"The step-collective thrust overshoot … compared against the reference model."* This has the same problems as SPEC_REVIEW #19: the reference model's internals can't be inspected, no case is defined, and the comparison depends on the license check (#12). The overshoot also has a closed form for a small step on a rigid-blade rotor: the thrust jumps by (σa/6)δθ₀ and decays to C′ times that, with C′ = 1/(1 + σa/(16λ₀)).
+- *"Reduces to uniform momentum inflow in hover."* This is right, but only in hover: in forward flight the Pitt–Peters λ₀ also depends on the pitch moment through L₁₃, so it no longer equals the momentum solution.
+**Suggested resolution:** see D-027.

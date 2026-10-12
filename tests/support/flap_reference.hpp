@@ -183,10 +183,24 @@ public:
         return X + p_n;
     }
 
+    // Induced inflow λ(r, ψ) = l0 + (r/R)(l1s sin ψ + l1c cos ψ) [-], with r
+    // the distance from the hub centre in the hub plane (D-027).
+    struct Inflow {
+        double l0 = 0.0;
+        double l1s = 0.0;
+        double l1c = 0.0;
+    };
+
     struct Result {
         std::vector<double> beta_ddot;  // per blade [rad/s²]
         Wrench load_b;                  // on the airframe, body axes, about the CG
         double lambda_i = 0.0;
+        // Aerodynamic loads in standard coefficients, ρπR²(ΩR)²(R): thrust,
+        // and Pitt & Peters 1980 eqs. 5b–5c (force normal to the hub plane,
+        // up, weighted by −(r/R) sin ψ and −(r/R) cos ψ).
+        double ct = 0.0;
+        double c_l_pp = 0.0;
+        double c_m_pp = 0.0;
     };
 
     // ctx: the evaluation context (t, body state, controls, env, air);
@@ -194,9 +208,22 @@ public:
     Result evaluate(const SimContext& ctx, std::span<const double> x, const Vec6& a) const {
         Motion mo{ctx.body, a};
         mo.body.pos_n = Vec3::Zero();  // moments about the CG
-        const double lambda = solve_inflow(ctx, x, mo);
+        return evaluate_at(ctx, x, mo, Inflow{solve_inflow(ctx, x, mo), 0.0, 0.0});
+    }
+
+    // The same at a given inflow (no inflow solve).
+    Result evaluate_at_inflow(const SimContext& ctx, std::span<const double> x, const Vec6& a,
+                              Inflow lambda) const {
+        Motion mo{ctx.body, a};
+        mo.body.pos_n = Vec3::Zero();
+        return evaluate_at(ctx, x, mo, lambda);
+    }
+
+private:
+    Result evaluate_at(const SimContext& ctx, std::span<const double> x, const Motion& mo,
+                       Inflow lambda) const {
         Result out;
-        out.lambda_i = lambda;
+        out.lambda_i = lambda.l0;
         const int nb = c_.num_blades;
         for (int k = 0; k < nb; ++k) {
             // Residual of d'Alembert's principle at two trial β̈; affine in β̈.
@@ -207,19 +234,28 @@ public:
             out.beta_ddot.push_back(bdd);
             out.load_b.F += sb.F_n;
             out.load_b.M += sb.M_n;
+            out.ct += sb.thrust;
+            out.c_l_pp += sb.c_l;
+            out.c_m_pp += sb.c_m;
         }
+        const double vr = c_.rotor_speed * c_.radius;
+        const double q = ctx.air.density * std::numbers::pi * c_.radius * c_.radius * vr * vr;
+        out.ct /= q;
+        out.c_l_pp /= q * c_.radius;
+        out.c_m_pp /= q * c_.radius;
         const Mat3 C_bn = ctx.body.q_nb.toRotationMatrix().transpose();
         out.load_b.F = C_bn * out.load_b.F;
         out.load_b.M = C_bn * out.load_b.M;
         return out;
     }
 
-private:
     struct BladeSum {
         double residual = 0.0;    // generalized force on β including inertia [N·m]
         Vec3 F_n = Vec3::Zero();  // load on the airframe, NED
         Vec3 M_n = Vec3::Zero();  // about the CG, NED
         double thrust = 0.0;      // aerodynamic force along −z_h [N]
+        double c_l = 0.0;         // Σ (force along −z_h)(−r sin ψ) [N·m]
+        double c_m = 0.0;         // Σ (force along −z_h)(−r cos ψ) [N·m]
     };
 
     double azimuth(const SimContext& ctx, int k) const {
@@ -251,7 +287,7 @@ private:
     }
 
     BladeSum blade(const SimContext& ctx, std::span<const double> x, const Motion& mo,
-                   double lambda, int k, double bdd) const {
+                   Inflow lambda, int k, double bdd) const {
         const std::size_t ib = 2 * static_cast<std::size_t>(k);
         const Vec3 g_n = gravity_n();
         BladeSum out;
@@ -266,16 +302,26 @@ private:
         // Aerodynamics on the production elements.
         const Mat3 C_nh = ctx.body.q_nb.toRotationMatrix() * C_bh_;
         const Vec3 shaft_n = C_nh * Vec3(0.0, 0.0, 1.0);  // z_h, down the shaft
-        const double v_i = lambda * c_.rotor_speed * c_.radius;
+        const double vr = c_.rotor_speed * c_.radius;
         const SwashplatePitch pitch = c_.controls->pitch(ctx.controls);
         const double psi = azimuth(ctx, k);
         const double beta = x[ib];
+        // The hub centre: ρ = −e on this blade at β = 0 lands on it.
+        const Vec3 hub_n =
+            value(point(mo, constant(0.0), constant(psi), constant(0.0), constant(-f_.offset)));
         for (const BladeElement& el : rotor_.elements()) {
             const double rho = el.r - f_.offset;
             const JVec P = point_t(ctx, x, mo, k, bdd, rho);
             const Vec3 v = d1(P) - ctx.env.wind_n;  // element velocity relative to the air
             const Vec3 e_t = dP_dpsi(ctx, x, mo, k, rho).normalized();
             const Vec3 n = -dP_dbeta(ctx, x, mo, k, rho) / rho;
+            // Distance from the hub centre in the hub plane, from the point
+            // positions (not e + ρ cos β).
+            const Vec3 d = value(P) - hub_n;
+            const double r_h = (d - d.dot(shaft_n) * shaft_n).norm();
+            const double v_i =
+                vr * (lambda.l0 +
+                      r_h / c_.radius * (lambda.l1s * std::sin(psi) + lambda.l1c * std::cos(psi)));
             const double u_t = v.dot(e_t);
             const double u_p = -v.dot(n) + v_i * shaft_n.dot(n);
             const double phi = std::atan2(u_p, u_t);
@@ -296,6 +342,8 @@ private:
             out.F_n += F;
             out.M_n += value(P).cross(F);
             out.thrust -= F.dot(shaft_n);
+            out.c_l += F.dot(shaft_n) * r_h * std::sin(psi);
+            out.c_m += F.dot(shaft_n) * r_h * std::cos(psi);
         }
         out.residual -= f_.spring * x[ib] + f_.damper * x[ib + 1];
         return out;
@@ -305,7 +353,7 @@ private:
                   double lambda) const {
         double t = 0.0;
         for (int k = 0; k < c_.num_blades; ++k) {
-            t += blade(ctx, x, mo, lambda, k, 0.0).thrust;
+            t += blade(ctx, x, mo, Inflow{lambda, 0.0, 0.0}, k, 0.0).thrust;
         }
         return t;
     }

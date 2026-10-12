@@ -1,6 +1,7 @@
 #include "rotor/blade_element_rotor.hpp"
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -9,6 +10,7 @@
 #include <utility>
 
 #include "core/rigid_body.hpp"
+#include "rotor/pitt_peters.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
@@ -172,16 +174,21 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     k.pitch = config_.controls->pitch(ctx.controls);
     k.rho = ctx.air.density;
     k.a = ctx.air.speed_of_sound;
-    k.mu = std::hypot(k.v_hub_h.x(), k.v_hub_h.y()) / tip_speed_;  // Padfield 3rd ed. Eq. 3.140
+    const double v_xy = std::hypot(k.v_hub_h.x(), k.v_hub_h.y());
+    k.mu = v_xy / tip_speed_;  // Padfield 3rd ed. Eq. 3.140
     k.mu_z = k.v_hub_h.z() / tip_speed_;
+    // Downwind azimuth (D-027): the blade at ψ_w points along the in-plane
+    // free stream relative to the hub, e_r(ψ_w) ∥ −v_xy.
+    k.cos_w = v_xy > 0.0 ? k.v_hub_h.x() / v_xy : 1.0;
+    k.sin_w = v_xy > 0.0 ? -s_ * k.v_hub_h.y() / v_xy : 0.0;
     return k;
 }
 
-RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i,
+RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lambda,
                                    std::span<const double> x) const noexcept {
     const BladeElementRotorConfig& c = config_;
     const double omega = c.rotor_speed;
-    const double v_i = lambda_i * tip_speed_;  // [m/s] induced, down along z_h
+    const bool flapping = c.flap.has_value() && !x.empty();
     const Vec3 e_z(0.0, 0.0, 1.0);
     const std::size_t n_el = elements_.size();
     const double e = hinge_offset();
@@ -193,8 +200,8 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i,
         const double cp = std::cos(psi);
         const double sp = std::sin(psi);
         const std::size_t ib = 2 * static_cast<std::size_t>(blade);
-        const double beta = x.empty() ? 0.0 : x[ib];
-        const double beta_dot = x.empty() ? 0.0 : x[ib + 1];
+        const double beta = flapping ? x[ib] : 0.0;
+        const double beta_dot = flapping ? x[ib + 1] : 0.0;
         const double cb = std::cos(beta);
         const double sb = std::sin(beta);
         const Vec3 e_r(-cp, s_ * sp, 0.0);     // radial, in the hub plane
@@ -209,13 +216,17 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i,
         // U_T = v·e_t (along rotation); U_P = −v·n + v_i (e_z·n) (through the
         // blade, positive down; Leishman 2nd ed. Eq. 3.2 convention, D-024,
         // with the flapped normal, D-026). With β = 0 and e = 0 this is the
-        // M3 geometry.
+        // M3 geometry. The induced velocity is linear in the hub-plane radius
+        // r = e + ρ cos β (Pitt & Peters 1980 eq. 1; D-027):
+        //   v_i = ΩR (λ0 + (r/R) λ_h),  λ_h = λ1s sin ψ + λ1c cos ψ,
+        // so U_P stays affine in ρ.
         const Vec3 v0 = k.v_hub_h + k.omega_h.cross(e * e_r) + (omega * e) * e_t;
         const Vec3 v1 = k.omega_h.cross(e_s) + (omega * cb) * e_t - beta_dot * n;
         const double a_T = v0.dot(e_t);
         const double b_T = v1.dot(e_t);
-        const double a_P = -v0.dot(n) + v_i * cb;
-        const double b_P = -v1.dot(n);
+        const double lambda_h = lambda.l1s * sp + lambda.l1c * cp;
+        const double a_P = -v0.dot(n) + tip_speed_ * cb * (lambda.l0 + e / c.radius * lambda_h);
+        const double b_P = -v1.dot(n) + omega * cb * cb * lambda_h;
         // Padfield 3rd ed. Eq. 3.59, with pitch–flap coupling −tan δ₃ β
         // (Johnson 2013 §6.18); twist is added per element (spec §6.3).
         const double theta =
@@ -260,6 +271,11 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i,
         out.M_h += (e * e_r).cross(F) + e_s.cross(rf_t * e_t + rf_n * n);
         // About the hinge, positive flap up: −Σ ρ n·dF (D-026).
         out.flap_moment[static_cast<std::size_t>(blade)] = -rf_n;
+        // Σ dF_up r for the Pitt–Peters loads (D-027): dF_up = −cos β dF·n
+        // (e_t is in the hub plane), r = e + ρ cos β.
+        const double fr_up = -cb * (e * f_n + cb * rf_n);
+        out.c1s += fr_up * sp;
+        out.c1c += fr_up * cp;
     }
 
     const double q_disk = k.rho * area_ * tip_speed_ * tip_speed_;  // ρA(ΩR)² [N]
@@ -268,7 +284,11 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, double lambda_i,
     out.power = out.torque * omega;
     out.ct = out.thrust / q_disk;
     out.cq = out.torque / (q_disk * c.radius);
-    out.lambda_i = lambda_i;
+    out.c1s /= q_disk * c.radius;
+    out.c1c /= q_disk * c.radius;
+    out.lambda_i = lambda.l0;
+    out.lambda_1s = lambda.l1s;
+    out.lambda_1c = lambda.l1c;
     return out;
 }
 
@@ -281,8 +301,13 @@ void BladeElementRotor::finish(RotorLoads& loads, const Kinematics& k) const noe
 
 RotorLoads BladeElementRotor::evaluate_at_inflow(const SimContext& ctx, double lambda_i,
                                                  std::span<const double> x) const noexcept {
+    return evaluate_at_inflow(ctx, LinearInflow{lambda_i, 0.0, 0.0}, x);
+}
+
+RotorLoads BladeElementRotor::evaluate_at_inflow(const SimContext& ctx, const LinearInflow& lambda,
+                                                 std::span<const double> x) const noexcept {
     const Kinematics k = kinematics(ctx);
-    RotorLoads loads = pass(k, lambda_i, x);
+    RotorLoads loads = pass(k, lambda, x);
     loads.passes = 1;
     finish(loads, k);
     return loads;
@@ -290,7 +315,39 @@ RotorLoads BladeElementRotor::evaluate_at_inflow(const SimContext& ctx, double l
 
 RotorLoads BladeElementRotor::evaluate(const SimContext& ctx,
                                        std::span<const double> x) const noexcept {
+    return evaluate_at(kinematics(ctx), x);
+}
+
+RotorLoads BladeElementRotor::evaluate_at(const Kinematics& k,
+                                          std::span<const double> x) const noexcept {
+    assert(x.empty() || x.size() == num_states());
+    RotorLoads out;
+    if (config_.inflow == InflowModel::pitt_peters) {
+        // One pass at the inflow states (D-027); nothing to iterate.
+        LinearInflow lambda;
+        if (!x.empty()) {
+            const std::size_t i = inflow_offset();
+            lambda = {x[i], x[i + 1], x[i + 2]};
+        }
+        out = pass(k, lambda, x);
+        out.passes = 1;
+    } else {
+        out = solve_uniform(k, x);
+    }
+    finish(out, k);
+    return out;
+}
+
+RotorLoads BladeElementRotor::evaluate_uniform(const SimContext& ctx,
+                                               std::span<const double> x) const noexcept {
     const Kinematics k = kinematics(ctx);
+    RotorLoads out = solve_uniform(k, x);
+    finish(out, k);
+    return out;
+}
+
+RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
+                                            std::span<const double> x) const noexcept {
     const double mu = k.mu;
     const double mu_z = k.mu_z;
     // Uniform momentum inflow, Padfield 3rd ed. Eq. 3.139, multiplied out so
@@ -300,7 +357,7 @@ RotorLoads BladeElementRotor::evaluate(const SimContext& ctx,
     // as λ → ±∞ while C_T stays bounded.
     int passes = 0;
     const auto eval = [&](double lambda, RotorLoads& l) {
-        l = pass(k, lambda, x);
+        l = pass(k, LinearInflow{lambda, 0.0, 0.0}, x);
         ++passes;
         const double d = lambda - mu_z;
         return 2.0 * lambda * std::sqrt(mu * mu + d * d) - l.ct;
@@ -405,12 +462,15 @@ RotorLoads BladeElementRotor::evaluate(const SimContext& ctx,
     RotorLoads out = *result;
     out.passes = passes;
     out.converged = converged;
-    finish(out, k);
     return out;
 }
 
-std::size_t BladeElementRotor::num_states() const {
+std::size_t BladeElementRotor::inflow_offset() const noexcept {
     return config_.flap ? 2 * static_cast<std::size_t>(config_.num_blades) : 0;
+}
+
+std::size_t BladeElementRotor::num_states() const {
+    return inflow_offset() + (config_.inflow == InflowModel::pitt_peters ? 3 : 0);
 }
 
 void BladeElementRotor::initial_states(std::span<double> x) const {
@@ -419,9 +479,21 @@ void BladeElementRotor::initial_states(std::span<double> x) const {
 
 void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const double> x,
                                     ComponentDerivs& out) const {
-    const RotorLoads loads = evaluate(ctx, x);
+    const Kinematics kin = kinematics(ctx);
+    const RotorLoads loads = evaluate_at(kin, x);
     out.load0_b = loads.body;
     out.converged = loads.converged;
+    if (config_.inflow == InflowModel::pitt_peters) {
+        // Pitt–Peters inflow (D-027), forced by the loads of the same pass.
+        // Independent of the body acceleration: the G rows stay zero.
+        const std::size_t i = inflow_offset();
+        const Vec3 rates =
+            pitt_peters_rates(Vec3(x[i], x[i + 1], x[i + 2]), Vec3(loads.ct, loads.c1s, loads.c1c),
+                              kin.mu, kin.mu_z, kin.cos_w, kin.sin_w, config_.rotor_speed);
+        out.xdot0[i] = rates.x();
+        out.xdot0[i + 1] = rates.y();
+        out.xdot0[i + 2] = rates.z();
+    }
     if (!config_.flap) {
         return;
     }
@@ -564,8 +636,8 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
 }  // namespace
 
 std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& node) {
-    node.allow_keys(
-        {"type", "blades", "radius", "rotor_speed", "direction", "hub", "blade", "controls"});
+    node.allow_keys({"type", "blades", "radius", "rotor_speed", "direction", "inflow", "hub",
+                     "blade", "controls"});
     BladeElementRotorConfig c;
     const std::int64_t blades = node.integer("blades");
     if (blades < 1 || blades > kMaxBlades) {
@@ -581,6 +653,15 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         c.direction = RotationDirection::clockwise;
     } else {
         node.fail("direction", "must be counter_clockwise or clockwise (viewed from above)");
+    }
+    // Required, no default (D-021, D-027).
+    const std::string inflow = node.string("inflow");
+    if (inflow == "uniform") {
+        c.inflow = InflowModel::uniform;
+    } else if (inflow == "pitt_peters") {
+        c.inflow = InflowModel::pitt_peters;
+    } else {
+        node.fail("inflow", "must be uniform or pitt_peters");
     }
 
     const Config hub = node.child("hub");

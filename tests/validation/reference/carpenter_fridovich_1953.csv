@@ -1,0 +1,46 @@
+# source: Carpenter & Fridovich, NACA TN 3044 (1953), Fig. 3(b)-(d), pp. 20-22 (PDF pp. 21-23), experimental curves only; read by eye from 170-dpi renders
+# status: verified by human review 2026-10-12 (each reading shown beside its scan; DATA_GAPS.md)
+# Rotor B of NACA TN 1698 on the Langley helicopter tower, hover, collective ramp from 0 to 12 deg. Validation entry for D-027 (test oracle, not aircraft data).
+# quantity: theta = blade pitch from the zero-lift line [deg]; rpm = rotor speed [rpm]; v_ratio = v/v_s, induced velocity over its steady value [1]
+# ct_peak, ct_steady, t90 (time at which v/v_s = 0.9) are summary readings; t is the time of the peak for ct_peak and blank otherwise
+case,quantity,t[s],value
+b,theta,0,0
+b,theta,0.1,5
+b,theta,0.2,9.5
+b,theta,0.25,12
+b,rpm,0,220
+b,rpm,0.2,220
+b,rpm,0.4,218
+b,v_ratio,0.2,0.27
+b,v_ratio,0.3,0.45
+b,v_ratio,0.4,0.58
+b,v_ratio,0.5,0.75
+b,v_ratio,0.6,0.86
+b,v_ratio,0.7,0.94
+b,v_ratio,0.8,1.0
+b,ct_peak,0.30,0.0059
+b,ct_steady,,0.0045
+b,t90,,0.65
+c,theta,0,0
+c,theta,0.6,12
+c,rpm,0,217
+c,rpm,0.6,213
+c,v_ratio,0.1,0.15
+c,v_ratio,0.2,0.25
+c,v_ratio,0.3,0.35
+c,v_ratio,0.4,0.47
+c,v_ratio,0.5,0.61
+c,v_ratio,0.6,0.76
+c,v_ratio,0.7,0.84
+c,v_ratio,0.8,0.95
+c,v_ratio,0.9,1.0
+c,ct_peak,0.6,0.0053
+c,ct_steady,,0.0045
+c,t90,,0.76
+d,theta,0,0
+d,theta,2.05,12
+d,rpm,0,230
+d,rpm,1.2,227
+d,ct_peak,1.9,0.00455
+d,ct_steady,,0.0044
+d,t90,,1.75
