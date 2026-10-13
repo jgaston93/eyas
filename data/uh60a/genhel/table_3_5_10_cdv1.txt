@@ -1,0 +1,14 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 3.5.10, p. 5.3-23 (PDF p. 145). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# CDV1MP: vertical tail drag coefficient against BETVV1; low map -30..30 deg step 5, high map -90..90 deg step 10 (the comment says DELTA=5; the limits line, the 19 values and Figure 3.5.10(a), p. 5.3-38, say 10)
+
+; low
+.36  .265  .174  .118  .066
+.033  .018  .021  .044  .092
+.162  .248  .355
+; high
+1.1  1.025  .965  .875  .745
+.575  .36  .174  .066  .018
+.044  .162  .355  .58  .75
+.875  .965  1.02  1.08

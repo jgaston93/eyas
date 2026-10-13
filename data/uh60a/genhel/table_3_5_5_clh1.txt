@@ -1,0 +1,11 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 3.5.5, p. 5.3-21 (PDF p. 143). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# CLH1MP: horizontal tail lift coefficient against ALFHH1; S = 45 ft^2, AR = 4.6, 0014 airfoil; low map 0..30 deg step 5, high map 30..90 deg step 10; CL(ALF) = -CL(-ALF)
+
+; low
+0.0  .356  .71  1.03  .95
+.795  .745
+; high
+.745  .847  .847  .745  .558
+.294  0.0

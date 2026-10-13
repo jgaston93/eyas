@@ -1,0 +1,17 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 3.5.2, p. 5.3-20 (PDF p. 142). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# EZH1MP: EKZH1 (main-rotor downwash at the horizontal tail; also the fin and tail rotor) against CHIPMR = 0..100 deg step 10, one block per AA1FMR = -6, 0, 6 deg
+
+; AA1FMR = -6
+-.13  .8  1.8  1.82  1.86
+1.88  1.91  1.94  1.69  1.42
+1.14
+; AA1FMR = 0
+.4  .94  1.84  1.91  1.98
+2.04  2.08  2.14  1.89  1.62
+1.35
+; AA1FMR = 6
+.78  1.36  1.91  1.98  2.06
+2.14  2.21  2.28  2.16  1.96
+1.56

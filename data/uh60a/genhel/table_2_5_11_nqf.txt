@@ -1,0 +1,14 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 2.5.11, p. 5.2-19 (PDF p. 104). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# NQFMP: fuselage yawing moment N/q [ft^3] against PSIWF; low map -30..30 deg step 5, high map -90..90 deg step 10
+
+; low
+-140.0  -190.0  -240.0  -220.0  -180.0
+-100.0  0.0  100.0  180.0  220.0
+240.0  190.0  140.0
+; high
+440.0  392.0  332.0  259.0  160.0
+40.0  -140.0  -240.0  -180.0  0.0
+180.0  240.0  140.0  59.0  -30.0
+-125.0  -220.0  -320.0  -420.0

@@ -1,0 +1,10 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 3.5.8, p. 5.3-22 (PDF p. 144). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# SGV1MP: SIGV1 (fuselage sidewash angle at the vertical tail; also the tail rotor) [deg] against PSIWF; low map 0..30 deg step 5, high map 0..90 deg step 30; map type UVSUVS (odd in PSIWF, as Tables 2.5.5 and 2.5.8)
+
+; low
+0.0  -.4  -.6  .8  1.4
+.6  .2
+; high
+0.0  .2  0.0  0.0

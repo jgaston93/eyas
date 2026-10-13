@@ -1,0 +1,17 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 2.5.1, p. 5.2-16 (PDF p. 101). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# EXWFMP: EKXWF (in-plane rotor wash on the fuselage) against CHIPMR = 0..100 deg step 10, one block per AA1FMR = -6, 0, 6 deg
+
+; AA1FMR = -6
+.08  .18  .3  .43  .55
+.66  .79  .9  1.03  .55
+0.0
+; AA1FMR = 0
+0.0  .1  .21  .32  .42
+.54  .66  .8  .94  .5
+0.0
+; AA1FMR = 6
+-.12  .02  .08  .18  .28
+.4  .53  .67  .82  .4
+0.0

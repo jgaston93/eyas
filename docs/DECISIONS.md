@@ -444,6 +444,16 @@ Do not restore and continue automatically and silently: an input-driven fault re
 - *Previous-pass scheme measured:* in a pedal step, GenHel's scheme oscillates from pass to pass (±12% thrust) with the same sequence per pass whatever the frame length, so at 60 Hz it lasts more than 0.1 s. The inflow state settles to the same thrust smoothly. This is the error the purity rule's replacement removes, measured as required above.
 - *Drag:* production uses −½ρS v|v|, so the drag reverses in rearward flight; GenHel's −½ρS v² doesn't. The UH-60A value is S = 0, so it has no effect.
 
+**Data rulings (2026-10-13, M6b; DATA_GAPS.md "UH-60A airframe tables" and M6 items 1–7).** Two source conflicts were settled from the source itself (the map arguments of Tables 3.5.3–3.5.4 and the spacing of Table 3.5.10, both from the printed figures). Three are assumptions that fill a gap. The reviewer adopted them, on the condition that each is backed by a check wherever one is possible:
+- *Fin downwash sign:* Eyas uses V_ZMRV1 = −DWSHMR·Ω·R·EKZV1, as at the stabilator and tail rotor; the fin page prints no sign (p. 5.3-9). Checks:
+  - *gate:* for the same map value, the main-rotor wash velocity at the stabilator, fin and tail rotor points the same way in body axes, and downward (+z_b) when the rotor thrust is upward;
+  - *gate:* the test-side GenHel reference applies the same sign, as a named and commented departure from the printed equation, so that it is visible rather than hidden;
+  - *sensitivity:* VALIDATION.md reports the change in fin side force and yaw moment between the two signs across 20–150 kt level flight, which shows how much the choice can matter;
+  - *validation (M7):* directional trim (pedal, sideslip) against published UH-60A data, when available.
+- *DLQD, DMQD, DNQD = 0:* undefined in the source. Zero can't be tested directly, since there is nothing to compare it with. It is covered by the M7 trim comparison: a pitch-attitude or pitching-moment residual against published trim data would reopen it.
+- *AA1FMR = A1FMR, with no lag:* AA1FMR is undefined (DATA_GAPS.md M6 item 7). Check (sensitivity, M6b): pass a₁ through a first-order lag of time constant τ before the wash maps and report, in VALIDATION.md, the gain and phase change of the stabilator angle of attack and lift over 0.5–10 rad/s against τ. The result is the largest τ that stays within 5% gain and 5° phase in the piloted band (1–5 rad/s). The sweep is a sensitivity bound, not a model parameter. If a definition turns up (T_FILMR on p. 5.1-49 is the candidate), the bound shows at once whether it matters.
+- *Fuselage data configuration ("TAIL OFF IRS OFF"):* accepted as is. The fuselage drag excludes the infrared suppressors; M7 and validation comparisons against flight data with suppressors fitted must note it.
+
 ## D-029 AFCS placement (SPEC_REVIEW #25) — `Approved (2026-10-12)` — scope
 **Decision:**
 - **Before the M7 trim comparison:** the steady-state parts of the UH-60A stabilator law and pitch bias actuator (GenHel §5.5), i.e. their outputs with the filters and servos settled and the rate feedbacks at zero. The stabilator part is already in M6b (D-028).

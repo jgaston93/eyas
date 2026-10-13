@@ -1,0 +1,14 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 2.5.3, p. 5.2-17 (PDF p. 102). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# DQFMP: fuselage drag D/q [ft^2] against ALFWF; low map -30..30 deg step 5, high map -90..90 deg step 10
+
+; low
+45.08  37.38  31.68  27.48  25.06
+23.58  23.58  25.08  27.58  31.28
+36.58  43.08  51.08
+; high
+150.0  145.0  133.0  114.0  88.0
+61.0  45.08  31.68  25.06  23.58
+27.58  36.58  51.08  66.0  84.0
+110.0  132.0  145.0  150.0

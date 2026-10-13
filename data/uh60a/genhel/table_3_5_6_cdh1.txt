@@ -1,0 +1,11 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 3.5.6, p. 5.3-22 (PDF p. 144). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# CDH1MP: horizontal tail drag coefficient against |ALFHH1|; low map 0..30 deg step 5, high map 30..90 deg step 10; CD(ALF) = CD(-ALF)
+
+; low
+.01  .022  .04  .19  .36
+.37  .43
+; high
+.43  .531  .782  .888  1.05
+1.161  1.2
