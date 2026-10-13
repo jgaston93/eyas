@@ -42,7 +42,32 @@ class Config;
 //             (D-028). Its steady state is GenHel's algebraic inflow.
 // Loads: thrust along −z_h and GenHel's drag −½ρ S v_x|v_x| along x_b, at
 // the hub, moved to the CG. G = H = 0.
+//
+// Fuselage wake (optional, p. 5.4-5; M6b): the airframe's tunnel angles
+// α_WF, ψ_WF from the coupling store give a dynamic-pressure ratio K² (on
+// |ψ_WF|) that scales the body velocity, and a sidewash σ(ψ_WF) and downwash
+// ε(α_WF) entering as −u σ_d K along y_b and −u ε_d K along z_b, u the body x
+// velocity relative to the air. σ_d, ε_d lag σ, ε with GenHel's transport
+// delay l/u replaced by dσ_d/dt = (|u|/l)(σ − σ_d), l the hub's distance aft
+// of the CG (D-028); two more states.
 namespace eyas {
+
+// The airframe's wake at the tail rotor (GenHel p. 5.4-5), from the fin's
+// tables: GenHel Tables 3.5.7, 3.5.8 and the stabilator's 3.5.4.
+struct FuselageWake {
+    std::string airframe;  // instance producing <airframe>.alpha_wf and .psi_wf
+    Table1D q_ratio{Axis({0.0, 1.0}), {1.0, 1.0}};   // K² [-] against ψ_WF [rad]
+    Table1D sidewash{Axis({0.0, 1.0}), {0.0, 0.0}};  // σ [rad] against ψ_WF [rad]
+    Table1D downwash{Axis({0.0, 1.0}), {0.0, 0.0}};  // ε [rad] against α_WF [rad]
+};
+
+// The airframe's outputs and the wake lag states, for one evaluation.
+struct FuselageWakeInput {
+    double alpha_wf = 0.0;  // [rad]
+    double psi_wf = 0.0;    // [rad]
+    double sidewash = 0.0;  // σ_d [rad], lagged
+    double downwash = 0.0;  // ε_d [rad], lagged
+};
 
 struct BaileyRotorConfig {
     std::string name;                // instance name (D-003); may be empty
@@ -66,6 +91,7 @@ struct BaileyRotorConfig {
     double hub_roll = 0.0;               // [rad]
     std::shared_ptr<const PitchSchedule> controls;  // θ_cmd = theta0
     std::optional<RotorWash> wash;                  // main-rotor wash at the hub
+    std::optional<FuselageWake> fuselage_wake;      // airframe wake at the hub (M6b)
 };
 
 struct BaileyRotorLoads {
@@ -79,6 +105,12 @@ struct BaileyRotorLoads {
     double lambda_i = 0.0;       // λ_i [-] induced inflow / ΩR, along +z_h (opposite the thrust)
     double lambda_dot = 0.0;     // dλ_i/dt [1/s]
     Vec3 wash_b = Vec3::Zero();  // [m/s] main-rotor wash velocity used
+    // Fuselage wake (zero/one without it).
+    double q_factor = 1.0;       // K [-]
+    double sidewash = 0.0;       // σ [rad], undelayed
+    double downwash = 0.0;       // ε [rad], undelayed
+    double sidewash_rate = 0.0;  // dσ_d/dt [rad/s]
+    double downwash_rate = 0.0;  // dε_d/dt [rad/s]
 };
 
 class BaileyRotor : public DynamicComponent {
@@ -89,8 +121,9 @@ public:
     // Reads a `type: bailey_rotor` config node.
     static std::unique_ptr<BaileyRotor> from_config(const Config& node);
 
-    // State: x[0] = λ_i [-], starting at zero.
-    std::size_t num_states() const override { return 1; }
+    // States: x[0] = λ_i [-]; with a fuselage wake also x[1] = σ_d and
+    // x[2] = ε_d [rad]. All start at zero.
+    std::size_t num_states() const override { return config_.fuselage_wake ? 3 : 1; }
     void initial_states(std::span<double> x) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
@@ -99,12 +132,14 @@ public:
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
 
-    // Loads at inflow state λ_i. With main-rotor wash configured, the wash
-    // comes from ctx.coupling, or is zero when that is null (the component
-    // evaluated on its own, D-003); `wash` overrides it (tests).
-    BaileyRotorLoads evaluate(const SimContext& ctx, double lambda_i) const noexcept;
-    BaileyRotorLoads evaluate(const SimContext& ctx, double lambda_i,
-                              const Vec3& wash_b) const noexcept;
+    // Loads at states x. The main-rotor wash and the airframe's tunnel
+    // angles come from ctx.coupling, or are zero when that is null (the
+    // component evaluated on its own, D-003). The second form takes them
+    // given (tests).
+    BaileyRotorLoads evaluate(const SimContext& ctx, std::span<const double> x) const noexcept;
+    // `wake` null: no fuselage wake (K = 1).
+    BaileyRotorLoads evaluate(const SimContext& ctx, double lambda_i, const Vec3& wash_b,
+                              const FuselageWakeInput* wake = nullptr) const noexcept;
 
     const BaileyRotorConfig& config() const noexcept { return config_; }
     double solidity() const noexcept { return solidity_; }  // σ = bc/(πR)
@@ -120,6 +155,8 @@ private:
     double coning_pitch_;  // (∂a₀/∂T) tan δ₃ [rad/N]
     Mat3 C_hb_;
     Mat3 C_bh_;
+    CouplingSlot alpha_wf_;
+    CouplingSlot psi_wf_;
 };
 
 }  // namespace eyas

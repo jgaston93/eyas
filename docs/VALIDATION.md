@@ -352,9 +352,11 @@ This is the effect D-028 removes. GenHel's transient is a property of its integr
 
 M6b adds the fuselage, stabilator and fin (`type: airframe_aero`, `src/airframe/airframe_aero.{hpp,cpp}`): GenHel CR-166309 §5.2.2 and §5.3.2 with the UH-60A tables (`data/uh60a/airframe/`, built by `tools/build_uh60a_airframe.py` from the transcriptions accepted on 2026-10-13). The delayed fuselage downwash and sidewash at the tail are two lag states (D-028). The wind-to-body rotation follows the flow's actual direction, so drag opposes the flow in rearward flight too (D-030). The tunnel angles α_WF and ψ_WF go to the coupling store for the tail rotor.
 
-Still to come in M6b: the tail rotor's fuselage wake (sidewash, downwash and dynamic-pressure ratio, GenHel p. 5.4-5), the stabilator schedule (Fig. 5.5.1.7, still to transcribe), and the two reports D-028 promises (the lag against an exact delay, and the sensitivity to a lag on a₁).
+The tail rotor now takes the airframe's wake too (GenHel p. 5.4-5): the fuselage's dynamic-pressure factor on its body velocity, and the delayed sidewash and downwash as two more lag states (`fuselage_wake` in a `bailey_rotor` config).
 
-Tests: `tests/unit/test_airframe_aero.cpp`; the GenHel transcription is in `tests/support/genhel_airframe.hpp`.
+Still to come in M6b: the stabilator schedule (Fig. 5.5.1.7, transcribed 2026-10-13) and the two reports D-028 promises (the lag against an exact delay, and the sensitivity to a lag on a₁).
+
+Tests: `tests/unit/test_airframe_aero.cpp`, `tests/unit/test_tail_rotor_wake.cpp`; the GenHel transcriptions are in `tests/support/genhel_airframe.hpp` and `genhel_tail_rotor.hpp` (now with K_QTR).
 
 | Acceptance criterion | Status | Evidence |
 |---|---|---|
@@ -365,8 +367,12 @@ Tests: `tests/unit/test_airframe_aero.cpp`; the GenHel transcription is in `test
 | **Ruling A:** fin downwash sign | ✅ | `MainRotorDownwashSameAtStabilatorFinAndTailRotor`: in hover the main-rotor downwash at the stabilator and fin is equal, downward, and equal to what the tail rotor adds (M6a). |
 | Coupling, purity, real time | ✅ | `WritesTunnelAnglesToTheStore`; `ThroughTheExecutive`: with a Pitt–Peters flapping main rotor listed after it, the airframe is evaluated second, derivatives are repeatable and `advance()` makes no allocations. |
 | Config | ✅ | `ReadsConfig`: the UH-60A CSVs through the config reader give the same loads as the fixture; no placeholders. |
+| **Tail rotor in the airframe's wake:** against GenHel | ✅ | `TailRotorWake.MatchesGenHel`: the M6a transcription with K_QTR and the wake velocities from GenHel's maps (Tables 3.5.4, 3.5.7, 3.5.8 on ALFWF and PSIWF), 300 random cases, forward and rearward, half at the steady state and half with delayed wake: loads and thrust to 1e-10 relative, K_QTR, σ and ε to 1e-14, and the lag rates. `NoWakeIsM6a`: with unit tables it is the M6a rotor. |
+| Tail rotor, end to end | ✅ | `TailRotorWake.ThroughTheExecutive`: tail rotor, airframe and main rotor listed in that order are evaluated main, airframe, tail; the tail rotor's three state rates equal ones computed from the other two components independently of the store; repeatable; no allocation. `ReadsConfig`. |
 
 **The tests can fail:** 10 deliberate bugs were planted and each was caught: the fin wake sign; GenHel's α for the wind axes (D-030); ψ_WF = +β_WF; the moment arm reversed; K_Q missing on the wake term; K_Q missing on the body velocity; the incidence subtracted; u instead of \|u\| in the lag; no coupling write (debug: the read-before-write assert); the pitching-moment sign.
 
-**Builds:** all 227 tests pass with GCC 13.3 (Debug) and Clang 18.1 (Debug); the M6b tests pass under ASan+UBSan. clang-format and clang-tidy are clean, and the generated tables match their transcriptions.
+For the tail-rotor wake, 7 more planted bugs were each caught: the sidewash sign; K_QTR missing on the wake term; K_QTR missing on the body velocity; downwash looked up on ψ_WF; u instead of \|u\| in the lag; the wake state rates not written; the two wake states swapped.
+
+**Builds:** all 231 tests pass with GCC 13.3 (Debug) and Clang 18.1 (Debug); the M6 tests pass under ASan+UBSan. clang-format and clang-tidy are clean, and the generated tables match their transcriptions.
 

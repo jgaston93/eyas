@@ -98,7 +98,7 @@ inline std::string synthetic_wash_csv() {
 }
 
 // δ₃ = 0, no blockage, no drag: the bare Bailey rotor used by the anchors.
-BaileyRotorConfig bare(double tip_loss, double twist) {
+inline BaileyRotorConfig bare(double tip_loss, double twist) {
     GenHelTailRotorInput in = genhel_uh60a_tail_rotor();
     BaileyRotorConfig c = bailey_from_genhel(in);
     c.tip_loss = tip_loss;
@@ -118,7 +118,7 @@ BaileyRotorConfig bare(double tip_loss, double twist) {
 // lift direction flips with the wind (D-024), so this gives lift
 // ∝ U_T|U_T| θ − |U_T| U_P, the small-angle reverse-flow lift Bailey's
 // coefficients integrate (Johnson 2013 §6.21, Eq. 6.219).
-std::string thin_plate_csv(double a) {
+inline std::string thin_plate_csv(double a) {
     const double e = 1e-6;
     const double d = std::numbers::pi / 180.0;
     std::string s =
@@ -136,7 +136,8 @@ std::string thin_plate_csv(double a) {
 
 // The production blade-element rotor with the same geometry, flapping held at
 // zero (M3), at a uniform inflow; thrust averaged over 1/N_b rev.
-double blade_element_ct(const BaileyRotorConfig& b, double theta0, double lambda_i, double mu) {
+inline double blade_element_ct(const BaileyRotorConfig& b, double theta0, double lambda_i,
+                               double mu) {
     BladeElementRotorConfig c;
     c.num_blades = b.num_blades;
     c.radius = b.radius;
@@ -163,7 +164,7 @@ double blade_element_ct(const BaileyRotorConfig& b, double theta0, double lambda
     return sum / n;
 }
 
-double bailey_ct(const BaileyRotorConfig& b, double theta0, double lambda_i, double mu) {
+inline double bailey_ct(const BaileyRotorConfig& b, double theta0, double lambda_i, double mu) {
     const BaileyRotor rotor(b);
     SimContext ctx;
     ctx.air.density = 1.2;
@@ -183,7 +184,7 @@ struct ThrustIntegrals {
     double twist = 0.0;   // E[∫ r U_T u dr]
     double inflow = 0.0;  // E[∫ |U_T| dr]
 };
-ThrustIntegrals thrust_integrals(double B, double mu, bool reverse) {
+inline ThrustIntegrals thrust_integrals(double B, double mu, bool reverse) {
     const int nr = 2000;
     const int np = 720;
     ThrustIntegrals t;

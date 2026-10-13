@@ -326,4 +326,29 @@ inline GenHelAirframeOutput genhel_airframe(const GenHelAirframeTables& t,
     return o;
 }
 
+// The fuselage wake at the tail rotor (p. 5.4-5): K_QTR from Table 3.5.7 on
+// |PSIWF|, sidewash from Table 3.5.8 on PSIWF and downwash from Table 3.5.4
+// on ALFWF, each delayed; NaN delayed values mean the steady state.
+struct GenHelTailRotorWake {
+    double KQTR = 1.0;
+    double SIGTR = 0.0, EPSTR = 0.0;    // undelayed [deg]
+    double VYWFTR = 0.0, VZWFTR = 0.0;  // [ft/s]
+};
+
+inline GenHelTailRotorWake genhel_tail_rotor_wake(const GenHelAirframeTables& t, double ALFWF,
+                                                  double PSIWF, double VXB, double SIGTR_DELAYED,
+                                                  double EPSTR_DELAYED) {
+    constexpr double r2d = 57.29577951308232;
+    GenHelTailRotorWake w;
+    const double sgn = PSIWF > 0.0 ? 1.0 : (PSIWF < 0.0 ? -1.0 : 0.0);
+    w.KQTR = std::sqrt(t.QV1(std::abs(PSIWF)));
+    w.SIGTR = sgn * t.SGV1(std::abs(PSIWF));
+    w.EPSTR = t.EPH1(ALFWF);
+    const double sig = std::isnan(SIGTR_DELAYED) ? w.SIGTR : SIGTR_DELAYED;
+    const double eps = std::isnan(EPSTR_DELAYED) ? w.EPSTR : EPSTR_DELAYED;
+    w.VYWFTR = -VXB / r2d * sig * w.KQTR;
+    w.VZWFTR = -VXB / r2d * eps * w.KQTR;
+    return w;
+}
+
 }  // namespace eyas::test

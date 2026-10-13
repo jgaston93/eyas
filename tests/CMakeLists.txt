@@ -24,6 +24,7 @@ add_executable(eyas_unit_tests
     unit/test_rotor_inputs.cpp
     unit/test_rigid_body.cpp
     unit/test_table.cpp
+    unit/test_tail_rotor_wake.cpp
     unit/test_units.cpp
     unit/test_uh60a_data.cpp)
 target_include_directories(eyas_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
