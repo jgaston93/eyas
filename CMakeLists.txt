@@ -18,6 +18,7 @@ include(EyasCompilerFlags)
 include(EyasDependencies)
 
 add_library(eyas STATIC
+    src/airframe/airframe_aero.cpp
     src/core/attitude.cpp
     src/core/coupling.cpp
     src/core/rigid_body.cpp

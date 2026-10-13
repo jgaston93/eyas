@@ -3,6 +3,7 @@ include(GoogleTest)
 add_executable(eyas_unit_tests
     support/alloc_counter.cpp
     unit/test_alloc_counter.cpp
+    unit/test_airframe_aero.cpp
     unit/test_atmosphere.cpp
     unit/test_bailey_rotor.cpp
     unit/test_attitude.cpp

@@ -213,3 +213,10 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 - *Trim (M7).* The pitch bias actuator (±15% authority, a function of airspeed among other inputs, PDF p. 179) and the stabilator schedule change the trimmed longitudinal cyclic and pitch attitude, so a flight-test trim comparison without them compares different aircraft.
 - *Piloted evaluation (M8).* The UH-60A's handling qualities with SAS off are not representative of the aircraft pilots know.
 **Suggested resolution:** add the static (steady-state) parts of the stabilator and pitch bias actuator before the M7 trim comparison, and the dynamic AFCS (SAS, FPS attitude hold, stabilator servo and feedback) before M8, as its own milestone or as part of M8. GenHel §5.5 has the block diagrams and gains. To decide with the spec owner.
+
+## 26. GenHel's wind axes point the drag forward in rearward flight — `resolved → DECISIONS.md D-030 (2026-10-13)`
+**Spec:** §6.7, §6.8; GenHel CR-166309 pp. 5.2-6, 5.2-9, 5.3-7, 5.3-8, 5.3-11, 5.3-12.
+**Problem:** GenHel computes every angle of attack as atan(V_Z/|V_X|) (fuselage, stabilator, fin) and builds the wind-to-body rotation from it. With V_X < 0 the rotation's drag axis keeps a forward x component, so the drag force points aft while the aircraft moves aft: it adds energy. GenHel says the transformation "gives invalid body axes forces and moments when these angles approach 90°" (p. 5.2-2) and offers a low-speed filter instead, which it doesn't run ("not being executed on PDP10", p. 5.2-10) and whose parameters it doesn't give. The UH-60A flies rearward and sideways at low speed (hover repositioning, rearward taxi), so Eyas needs forces that are at least physically consistent there.
+**Why it matters:** a drag that feeds energy into a low-speed rearward drift is a destabilizing artefact, not aircraft behaviour, and it would appear in exactly the piloted hover tasks of M8.
+**Suggested resolution:** see D-030.
+

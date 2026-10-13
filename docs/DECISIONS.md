@@ -427,7 +427,7 @@ Do not restore and continue automatically and silently: an input-driven fault re
 1. **Exact-equation references (gate).** Independent test-side transcriptions of GenHel §5.4.2, §5.2.2 and §5.3.2 in GenHel's own notation and sign conventions (inches, buttlines positive to port, wind-tunnel angles), sharing only the tables with production. Production loads and state derivatives must agree with them under random velocities, rates, controls, wind and rotor outputs. These replace "forces match GenHel table values at the test points".
 2. **Closed-form and independent anchors (gate):**
    - tail rotor: the Bailey thrust against the production blade-element rotor (M3/M4 code) configured as the tail rotor (linear airfoil, C_d = 0, B, flapping free), with the tolerance from a residual study (the closed form drops O(μ³)); the hover inflow time constant (D-027 form); the δ₃ thrust reduction;
-   - airframe: the symmetries the tables imply (side force, roll and yaw odd in sideslip; drag, lift and pitch even), and the lag-against-delay phase at low frequency;
+   - airframe: the symmetries the tables imply (corrected in D-030: GenHel's tables don't have all the parities first expected), and the lag-against-delay phase at low frequency;
    - gear: the static load split, which is statically determinate for three contact points (closed form from the CG and gear positions), summing to weight minus rotor thrust; energy conservation with damping and friction off; no creep on a slope below atan μ with brakes on, and sliding at μ_slide·N above it.
 3. **Whole aircraft (M6d):**
    - *spec "sits stably on the ground":* dropped from a small height, it settles with the gear-load sum equal to weight (rotor thrust subtracted), and stays in place;
@@ -461,3 +461,18 @@ Do not restore and continue automatically and silently: an input-driven fault re
 - The AFCS components are `DynamicComponent`s whose states are the filter and servo states, so the lateral-acceleration feedback loop closes through the servo dynamics, as in GenHel, and not through an algebraic loop.
 
 **Rationale:** the pitch bias actuator and stabilator change trimmed longitudinal cyclic and pitch attitude, so a trim comparison against flight test without them compares a different aircraft. Pilots know the UH-60A with its AFCS on, so M8 pilot comments need it.
+
+## D-030 Wind axes for the airframe aerodynamics in rearward flight (SPEC_REVIEW #26) — `Approved (2026-10-13)`
+**Decision:** the fuselage, stabilator and fin look their tables up on GenHel's angles exactly (α = atan(V_Z/|V_X|), β = atan(V_Y/√(V_X² + V_Z²)), ψ_WF = −β_WF), but build the wind-to-body rotation from the flow's actual direction, α' = atan2(V_Z, V_X), with the same β. For V_X > 0, α' = α and this is GenHel exactly. For V_X < 0 the drag axis is the flow direction, so drag opposes the flow, and the lift and side-force axes stay perpendicular to it. GenHel's untransmitted low-speed filter (p. 5.2-10) is not used (D-028).
+
+**Verification (`tests/unit/test_airframe_aero.cpp`):**
+- *Layer 1:* production matches the GenHel transcription for V_X > 0 at every panel (`MatchesGenHelSteadyState`, `MatchesGenHelWithDelayedWake`).
+- *Energy:* with only the drag tables nonzero, the force on the fuselage and each panel opposes the local flow (F·V ≤ 0) and is parallel to it, over 500 random directions, more than 200 of them rearward (`DragOpposesTheFlow`). The same test shows GenHel's own axes fail this in rearward flight.
+- *Continuity:* the loads are continuous as V_X changes sign (`ContinuousThroughZeroForwardSpeed`). Both α (through ±90°) and α' are continuous there.
+
+**What it doesn't fix:** the tables come from a tunnel sweep of ±90°, so the coefficients in rearward flight are still GenHel's (for α within ±90°, mirrored by the |V_X|); no data exists for flow from behind. The fuselage wake terms (−V_xb ε K_Q, −V_xb σ K_Q) are kept as GenHel writes them; they change sign in rearward flight, where the tail is upstream of the fuselage and the wake angles have no physical meaning. The lag rates use |V_xb|, as D-028 says. Both are small at the low rearward speeds the aircraft flies.
+
+**Also found while transcribing (M6b):**
+- *Symmetry acceptance (D-028 layer 2) corrected.* D-028 expected "drag, lift and pitch even, side force, roll and yaw odd" in sideslip. The data says otherwise: GenHel makes the pitching-moment increment odd (ψ/|ψ|·f(|ψ|), p. 5.2-7), Table 2.5.7 (lift increment) is not even, and Table 2.5.11 (yaw) is odd only inside ±30°. The test checks the parities GenHel imposes on each table, and mirror symmetry of the transformation with symmetric stand-ins for the asymmetric tables (`FuselageMirrorSymmetry`, `KnownTableAsymmetries`).
+- *Single maps outside their range* (Tables 2.5.7, 2.5.10, 3.5.3, 3.5.7 cover ±30° only) hold their end values. GenHel doesn't say what its map routine does; holding is the only choice that adds no data, and the maps' ends are flat or at their physical limit (the dynamic-pressure ratios reach 1.0 at ±30°). DATA_GAPS.md records it.
+

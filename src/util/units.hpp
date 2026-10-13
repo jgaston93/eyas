@@ -42,6 +42,7 @@ enum class Dimension : std::uint8_t {
     rotational_stiffness,  // moment per angle, e.g. a hinge spring
     rotational_damping,    // moment per angular rate, e.g. a hinge damper
     area,
+    volume,           // e.g. a moment per unit dynamic pressure [m³]
     angle_per_force,  // compliance, e.g. a coning angle per unit thrust
 };
 
