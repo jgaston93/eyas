@@ -1,0 +1,36 @@
+# Transcribed by eye from rendered page images (130-500 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Figure 5.1.7 "Black Hawk stabilator control system", p. 5.5-18
+# (PDF p. 194, page rotated), handwritten block diagram.
+# status: read with high confidence except where marked (docs/DATA_GAPS.md, "UH-60A stabilator
+# schedule"); not yet reviewed by a person. UNVERIFIED values must not be used.
+#
+# Signal flow as drawn (IHT0 is the commanded incidence before the servo):
+#   IHT0 = (BIAS_ITAIL0 + KVTDT*Q3SENSR) + Y.SENS*KVYDT*limit(VF - 30, 0, 30)
+#        + KVX1*limit(VF - 30, 0, 50) + KVX2*limit(VF - 80, 0, 67)
+#   VF   = VXBIKT/(TAU*s + 1)                       (airspeed [kt], lagged)
+#   KVX1 = -(KCO*1 + KC2*limit(50 - XCPC, 0, 50) + KC1*limit(70 - XCPC, 0, 20))
+#   IH1  = limit(rate_limit(servo(IHT0), +-7 deg/s), -8, 39) [deg], or STBSET when switched
+#   servo = 1/(0.0254 s^2 + 0.223 s + 1)
+#
+# name           value        unit      confidence
+BIAS_ITAIL0      42           deg       high
+KVTDT            0.16         deg/(deg/s)?  high (digits); unit not stated
+KVYDT            -0.0433      -         high
+LMKDT            0 30         kt        high
+BIAS_VX1         -30          kt        high
+LMP50            0 50         kt        high
+BIAS_VX2         -80          kt        high
+LMP51            0 67         kt        high
+KVX2             -0.1119      deg/kt    high
+KCO              0.67         deg/kt    high
+BIAS_C2          50           %?        high (digits); XCPC units not stated
+LMC2             0 50         %?        high
+KC2              0.003286     -         high (two identical copies on the page)
+BIAS_C1          70           %?        high
+LMC1             0 20         %?        high
+KC1              0.003286     -         high
+TAU              0.398        s         UNVERIFIED - leading mark read as a decimal point; 3.98 also possible
+SERVO_A2         0.0254       s^2       high
+SERVO_A1         0.223        s         high
+RATE_LIMIT       7            deg/s     high
+LMSTAB           -8 39        deg       high
