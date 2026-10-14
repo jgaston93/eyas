@@ -126,8 +126,7 @@ struct LandingGearConfig {
     double sliding_factor = 0.0;                      // K_SLIP
     double sliding_blend_speed = 0.1 * units::kFoot;  // v_s [m/s] (D-032 item 2)
     // Upward normal of the ground plane, NED (D-032 item 9). The plane passes
-    // through the point on the NED origin's vertical at Environment::ground_height
-    // above MSL: z_n = origin altitude − ground_height.
+    // through (0, 0, SimContext::ground_z_n) NED (D-033).
     Vec3 ground_normal_n = Vec3(0.0, 0.0, -1.0);
 };
 

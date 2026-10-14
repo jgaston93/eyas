@@ -71,7 +71,7 @@ struct Rig {
         c.body = ex->body_state();
         c.env = env;
         c.controls = controls;
-        c.air.altitude = -c.body.pos_n.z();
+        c.ground_z_n = -c.env.ground_height;  // NED origin at MSL
         return gear->gear_state(c, gear_states(), i);
     }
     void step(double dt) {

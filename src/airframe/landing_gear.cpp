@@ -178,7 +178,7 @@ LandingGear::Frame LandingGear::frame(const SimContext& ctx) const noexcept {
 
     // Ground plane (D-032 item 9): through (0, 0, z_g) NED, upward normal u.
     const Vec3& u = config_.ground_normal_n;
-    f.z_g = ctx.air.altitude + ctx.body.pos_n.z() - ctx.env.ground_height;
+    f.z_g = ctx.ground_z_n;
     f.ground = std::isfinite(f.z_g);
 
     // Ground axes g: z down the normal, x the body's heading in the plane

@@ -207,6 +207,7 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     ctx.controls = controls;
     ctx.env = env;
     ctx.air = isa_atmosphere(origin_altitude_ - body.pos_n.z(), env.isa_delta_T);  // D-016
+    ctx.ground_z_n = origin_altitude_ - env.ground_height;                         // D-033
 
     // (M_rb − Σ H) a = bias + Σ load0 + Σ forces   (spec §5, "Coupling")
     Mat66 A = mass_matrix_;

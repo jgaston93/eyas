@@ -261,6 +261,40 @@ TEST(Executive, AtmosphereOutOfRangeIsReported) {
     EXPECT_FALSE(ex.advance(Controls{}, Environment{}, 0).atmosphere_out_of_range);
 }
 
+// The ground plane reaches the components in NED (D-033): its z is the
+// origin's altitude less Environment::ground_height, whatever the body's
+// position; NaN (no ground) passes through.
+class GroundProbe : public ForceModel {
+public:
+    explicit GroundProbe(double* seen) : seen_(seen) {}
+    Wrench compute(const SimContext& ctx) const override {
+        *seen_ = ctx.ground_z_n;
+        return {};
+    }
+
+private:
+    double* seen_;
+};
+
+TEST(Executive, GroundPlaneIsGivenInNed) {
+    double seen = 0.0;
+    ExecutiveConfig cfg = test_config();
+    cfg.origin_altitude = 1234.5;
+    std::vector<std::unique_ptr<ForceModel>> forces;
+    forces.push_back(std::make_unique<GroundProbe>(&seen));
+    const Executive ex(cfg, {}, std::move(forces));
+    std::vector<double> x(ex.state().begin(), ex.state().end());
+    x[body_layout::kPos + 2] = -321.0;
+    std::vector<double> xdot(x.size());
+    Environment env;
+    env.ground_height = 1000.0;
+    ASSERT_TRUE(ex.derivatives(0.0, x, Controls{}, env, xdot));
+    EXPECT_EQ(seen, 234.5);
+    env.ground_height = std::numeric_limits<double>::quiet_NaN();
+    ASSERT_TRUE(ex.derivatives(0.0, x, Controls{}, env, xdot));
+    EXPECT_TRUE(std::isnan(seen));
+}
+
 // restore() is the other way to install a whole state, so it applies the same
 // checks as reset(): a non-finite value or a zero quaternion is refused and
 // nothing changes.

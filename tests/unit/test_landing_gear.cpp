@@ -134,7 +134,7 @@ Layer1Case random_case(std::mt19937& rng, const LandingGear& gear, test::GenHelG
     gh.brake = 0.5 * (1.0 + u(rng));
     c.ctx.controls.brake_left = gh.brake;
     c.ctx.controls.brake_right = gh.brake;
-    c.ctx.air.altitude = -c.ctx.body.pos_n.z();  // NED origin at MSL
+    c.ctx.ground_z_n = -c.ctx.env.ground_height;  // NED origin at MSL
     // GenHel's retained contact points and filtered rates for the same state.
     const Mat3 C_nb = c.ctx.body.q_nb.toRotationMatrix();
     const Mat3 C_ng = Eigen::AngleAxisd(gh.PSI, Vec3::UnitZ()).toRotationMatrix();
@@ -370,7 +370,7 @@ struct Rig {
         c.body = ex->body_state();
         c.env = env;
         c.controls = controls;
-        c.air.altitude = -c.body.pos_n.z();
+        c.ground_z_n = -c.env.ground_height;  // NED origin at MSL
         return c;
     }
     GearState state(std::size_t i) const {
@@ -677,8 +677,7 @@ TEST(LandingGear, SlopeHoldAndSlide) {
 TEST(LandingGear, LiftOffClearsDeflection) {
     const auto gear = uh60a_gear();
     SimContext ctx;
-    ctx.env.ground_height = -100.0;  // far below
-    ctx.air.altitude = 0.0;
+    ctx.ground_z_n = 100.0;  // far below
     std::vector<double> x(gear->num_states(), 0.0);
     x[2] = 0.02;
     x[3] = -0.015;
@@ -698,7 +697,7 @@ SimContext turning_on_ground(const LandingGear& gear) {
     ctx.body.q_nb = attitude(0.01, 0.01, 1.0);
     ctx.body.vel_b = Vec3(0.4, -0.3, 0.05);
     ctx.body.omega_b = Vec3(0.3, -0.2, 0.5);
-    ctx.air.altitude = -ctx.body.pos_n.z();
+    ctx.ground_z_n = -ctx.env.ground_height;  // NED origin at MSL
     return ctx;
 }
 
@@ -713,7 +712,7 @@ TEST(LandingGear, DampingLagRestsOffTheGround) {
     // Every tire 1 in clear, sinking at 3 m/s.
     ctx.body.pos_n = Vec3(0.0, 0.0, -(g.axle_b.z() + g.tire.radius + 1.0 * units::kInch));
     ctx.body.vel_b = Vec3(0.0, 0.0, 3.0);
-    ctx.air.altitude = -ctx.body.pos_n.z();
+    ctx.ground_z_n = -ctx.env.ground_height;  // NED origin at MSL
     std::vector<double> x(gear->num_states(), 0.0);
     const Derivs d = eval(*gear, ctx, x);
     for (std::size_t i = 0; i < 3; ++i) {
@@ -767,7 +766,7 @@ TEST(LandingGear, DampingLagSeesExactDeflectionRate) {
         const Vec3 wh = ctx.body.omega_b * h;
         c.body.q_nb =
             (ctx.body.q_nb * Quat(Eigen::AngleAxisd(wh.norm(), wh.normalized()))).normalized();
-        c.air.altitude = -c.body.pos_n.z();
+        c.ground_z_n = -c.env.ground_height;  // NED origin at MSL
         std::vector<double> y = x;
         for (std::size_t j = 0; j < y.size(); ++j) {
             y[j] += h * d.xdot[j];
@@ -816,7 +815,7 @@ TEST(LandingGear, WheelHopRk4Accuracy) {
     const GearConfig& g = gear->config().gears[0];
     // Main tires 2 in into the ground, the tail clear.
     ctx.body.pos_n = Vec3(0.0, 0.0, -(g.axle_b.z() + g.tire.radius - 2.0 * units::kInch));
-    ctx.air.altitude = -ctx.body.pos_n.z();
+    ctx.ground_z_n = -ctx.env.ground_height;  // NED origin at MSL
     const auto simulate = [&](double h, double T, std::vector<double>& out) {
         std::vector<double> x(gear->num_states(), 0.0);
         x[0] = 0.05;  // stroked 5 cm, released
@@ -868,7 +867,7 @@ TEST(LandingGear, FrictionLimitBlend) {
     ctx.body.pos_n = Vec3(0.0, 0.0, -(g.axle_b.z() + g.tire.radius - 2.0 * units::kInch));
     ctx.controls.brake_left = 1.0;
     ctx.controls.brake_right = 1.0;
-    ctx.air.altitude = -ctx.body.pos_n.z();
+    ctx.ground_z_n = -ctx.env.ground_height;  // NED origin at MSL
     const std::vector<double> x(gear->num_states(), 0.0);
     double prev = 2.0;
     for (const double frac : {0.0, 0.25, 0.5, 0.75, 1.0, 2.0}) {
@@ -986,7 +985,7 @@ TEST(LandingGear, BrakeInputs) {
     ctx.env.ground_height = 0.0;
     const GearConfig& g = c.gears[0];
     ctx.body.pos_n = Vec3(0.0, 0.0, -(g.axle_b.z() + g.tire.radius - 2.0 * units::kInch));
-    ctx.air.altitude = -ctx.body.pos_n.z();
+    ctx.ground_z_n = -ctx.env.ground_height;  // NED origin at MSL
     const std::vector<double> x(gear->num_states(), 0.0);
     const auto kb = [&](std::size_t i) {
         const GearState st = gear->gear_state(ctx, x, i);

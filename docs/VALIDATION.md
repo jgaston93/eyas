@@ -479,4 +479,4 @@ Planted bugs, each caught: the in-plane forces' moment arm at the axle instead o
 
 ![v_s sweep](validation/m6/m6c_vs_sweep.png)
 
-**Builds:** all 261 tests pass with GCC 13.3 (Debug) and Clang 18.1 (Debug); the M6c tests pass under ASan+UBSan. clang-format and clang-tidy are clean, and `tools/build_uh60a_gear.py --check` matches the CSVs to the transcriptions.
+**Builds:** all 262 tests pass with GCC 13.3 (Debug) and Clang 18.1 (Debug); the M6c tests pass under ASan+UBSan. clang-format and clang-tidy are clean, and `tools/build_uh60a_gear.py --check` matches the CSVs to the transcriptions.
