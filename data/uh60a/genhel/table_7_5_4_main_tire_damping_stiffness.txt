@@ -1,0 +1,12 @@
+# Transcribed by eye from rendered page images (110 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Table 7.5.4 "Vertical tire stiffness (used in damping calculations)",
+# p. 5.7-44 (PDF p. 282), handwritten.
+# status: read with high confidence; see docs/DATA_GAPS.md, "UH-60A landing gear (M6c)".
+# KTZR' = KTZL' [lbf/in] (multiply by 12 for lbf/ft) against -ZFTHR [lbf] (rows) and PM [psi] (columns).
+#
+# load_lbf  90     120    150
+0           2970   3600   4170
+4000        3710   4630   5390
+8000        4320   5240   6030
+12000       4600   5510   6300
+16000       4780   5710   6500

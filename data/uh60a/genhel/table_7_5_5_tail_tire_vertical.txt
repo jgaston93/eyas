@@ -1,0 +1,18 @@
+# Transcribed by eye from rendered page images (110-250 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Table 7.5.5 "Vertical load ~ deflection data" (tail gear), p. 5.7-46
+# (PDF p. 284), handwritten.
+# status: read with high confidence; see docs/DATA_GAPS.md, "UH-60A landing gear (M6c)".
+# ZFTHN [lbf] against 12*DZ [in] (rows) and PN [psi] (columns).
+#
+# dz_in   90      120     150
+0         0       0       0
+.5        950     1150    1380
+1.0       2100    2500    2900
+1.5       3350    4000    4690
+2.0       4700    5600    6500
+2.5       6300    7450    8600
+3.0       10000   11800   13700
+3.5       18300   21900   25800
+4.0       26600   32000   38000
+4.5       34900   42100   50100
+5.0       43200   52200   62300

@@ -85,6 +85,7 @@ jobs:
         run: |
           python3 tools/build_uh60a_blade.py --check
           python3 tools/build_uh60a_airframe.py --check
+          python3 tools/build_uh60a_gear.py --check
       - name: Configure (for compile_commands.json)
         run: cmake --preset debug
       - name: clang-tidy

@@ -1,0 +1,13 @@
+# Transcribed by eye from rendered page images (110-300 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Table 7.5.6 "Vertical stiffness for use in the tire damping equations"
+# (tail gear), p. 5.7-47 (PDF p. 285), handwritten.
+# status: read with high confidence; the overwritten 12000 row VERIFIED by human review 2026-10-14; see docs/DATA_GAPS.md,
+# "UH-60A landing gear (M6c)".
+# KTZN' [lbf/in] (multiply by 12 for lbf/ft) against -ZFTHN [lbf]. One pressure only (PN = 90 psi).
+#
+# load_lbf  ktzn_lbf_per_in
+0           2040
+4000        2630
+8000        4050
+12000       6000   # overwritten digits; VERIFIED by human review 2026-10-14
+16000       6000
