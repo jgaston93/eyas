@@ -106,8 +106,8 @@ def outputs():
             rows("table_7_5_4_main_tire_damping_stiffness.txt", 4), p3),
         "main_tire_lateral.csv": by_pressure(
             f"{G} Table 7.5.2, pp. 5.7-42, 5.7-43 (PDF pp. 280, 281): main tire lateral stiffness "
-            "KTYR against deflection 12*|DZHRG| and tire pressure PM (Figure 7.5.2(a), p. 5.7-49); "
-            "the two pages merged at 1.4 in.",
+            "KTYR against deflection 12*|DZHRG| and tire pressure PM "
+            "(Figure 7.5.2(a), pp. 5.7-49, 5.7-50); the two pages merged at 1.4 in.",
             "deflection[in]", "stiffness[lbf/in]", lateral(), p3),
         "tail_tire_vertical.csv": by_pressure(
             f"{G} Table 7.5.5, p. 5.7-46 (PDF p. 284): tail tire vertical load ZFTHN against "

@@ -29,6 +29,12 @@ namespace {
 // contact. A numerical guard (the aircraft would be on its side), not data.
 constexpr double kMinCosGamma = 1e-6;
 
+// An in-plane axis whose stiffness is below this fraction of the tire's total
+// in-plane stiffness counts as having none. A numerical guard, not data: with
+// the √F lateral law at zero load the axis is stiff only through rounding, and
+// the slip law would divide by it.
+constexpr double kMinAxisStiffness = 1e-9;
+
 double smoothstep(double t) noexcept {
     t = std::clamp(t, 0.0, 1.0);
     return t * t * (3.0 - 2.0 * t);
@@ -105,6 +111,15 @@ LandingGear::LandingGear(LandingGearConfig config) : config_(std::move(config)) 
         if (!(initial_tire_slope(t) > 0.0)) {
             throw InitError("landing gear: " + w + "the vertical load must rise from zero");
         }
+        // Increasing throughout, since the last segment's slope continues
+        // beyond the table (tire_vertical_load).
+        const std::span<const double> bp = t.vertical_load.x_axis().breakpoints();
+        for (std::size_t k = 1; k < bp.size(); ++k) {
+            if (!(t.vertical_load(bp[k]) > t.vertical_load(bp[k - 1]))) {
+                throw InitError("landing gear: " + w +
+                                "the vertical load must increase with deflection");
+            }
+        }
         if (!(min_value(t.damping_stiffness) >= 0.0)) {
             throw InitError("landing gear: " + w + "the damping stiffness must not be negative");
         }
@@ -173,14 +188,23 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
     const bool ground = std::isfinite(z_g);
 
     // Ground axes g: z down the normal, x the body's heading in the plane
-    // (GenHel's space axes with ψ = 0, p. 5.7-18).
+    // (GenHel's space axes with ψ = 0, p. 5.7-18). They turn about z_g at
+    // Ω_g = y_g·ẋ_g, the heading rate in the plane (D-032, deflection axes).
     const Vec3 zg = -u;
     Vec3 xg = C_nb.col(0) - C_nb.col(0).dot(zg) * zg;
+    double omega_g = 0.0;
     if (xg.norm() < 1e-9) {  // nose along the normal: use the body's y
-        const Vec3 yg = (C_nb.col(1) - C_nb.col(1).dot(zg) * zg).normalized();
+        const Vec3 py = C_nb.col(1) - C_nb.col(1).dot(zg) * zg;
+        const Vec3 py_dot = C_nb * w.cross(Vec3::UnitY());
+        const Vec3 yg = py.normalized();
         xg = yg.cross(zg);
+        omega_g = -xg.dot(py_dot) / py.norm();  // ẏ_g = −Ω_g x_g
+    } else {
+        const Vec3 px_dot = C_nb * w.cross(Vec3::UnitX());
+        const double px = xg.norm();
+        xg /= px;
+        omega_g = zg.cross(xg).dot(px_dot) / px;
     }
-    xg.normalize();
     const Vec3 yg = zg.cross(xg);
     Mat3 C_ng;
     C_ng.col(0) = xg;
@@ -220,6 +244,11 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
     }
     st.tire_deflection = delta_t;
     st.contact_velocity = vc;
+    // While the tire sticks, δ is an earth-fixed vector written in turning
+    // axes: δ' = v_c − Ω_g e_z × δ (GenHel retains the contact point in
+    // space axes, p. 5.7-16).
+    const std::array<double, 2> vs_stick{vc[0] + omega_g * dy, vc[1] - omega_g * dx};
+    st.stick_rate = vs_stick;
 
     const Vec3 delta_b = C_bg * Vec3(dx, dy, 0.0) + Vec3(0.0, 0.0, delta_t);
     st.vertical_deflection = delta_b.z();
@@ -246,7 +275,7 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
         const Eigen::Matrix2d M = C_gb.topLeftCorner<2, 2>();
         const Eigen::Matrix2d A = M * Eigen::Vector2d(kx, ky).asDiagonal() * M.transpose();
         const Eigen::Vector2d b = -f_v * C_gb.block<2, 1>(0, 2);
-        const Eigen::Vector2d qt(dx + G * vc[0], dy + G * vc[1]);
+        const Eigen::Vector2d qt(dx + G * vs_stick[0], dy + G * vs_stick[1]);
         // Trial (sticking) forces, body and ground axes (pp. 5.7-17, 5.7-18).
         const Vec3 qt_b = C_bg * Vec3(qt.x(), qt.y(), 0.0);
         const Vec3 Ft_b(-kx * qt_b.x(), -ky * qt_b.y(), -f_v);
@@ -275,7 +304,12 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
             const Eigen::Index j = 1 - k;
             const auto ku = static_cast<std::size_t>(k);
             const double ft = Ft_g(k);
-            if (std::abs(ft) > lim[ku] && A(k, k) > 0.0) {
+            if (!(A(k, k) > kMinAxisStiffness * A.trace())) {
+                // No stiffness on this axis (the √F law at zero load): no
+                // force whatever δ, so it relaxes as off the ground. Sticking
+                // would let δ grow with v_c and return as a stale force.
+                dd[ku] = -d[ku] / G;
+            } else if (std::abs(ft) > lim[ku]) {
                 // Slip: the force is held at ±L; the deflection q that gives
                 // it, with the other axis at its trial value (D-032 item 1).
                 const double sg = sign(ft);
@@ -284,7 +318,7 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
                 F_g(k) = sg * lim[ku];
                 st.slipping[ku] = true;
             } else {
-                dd[ku] = vc[ku];
+                dd[ku] = vs_stick[ku];
             }
         }
         F_b = C_bg * F_g;
@@ -292,9 +326,18 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
     }
     st.tire_force_b = F_b;
 
-    // Vertical deflection rate through GenHel's lag (D-032 item 3).
-    const double dz_dot = line_ok ? (C_bg * Vec3(dd[0], dd[1], 0.0)).z() + delta_t_dot : 0.0;
-    const double zf_dot = line_ok ? (dz_dot - zf) / tc.damping_lag : -zf / tc.damping_lag;
+    // Vertical deflection rate through GenHel's lag (D-032 item 3), only in
+    // contact: GenHel skips the tire while it is off the ground (p. 5.7-14),
+    // so the lag starts from rest at touchdown. The exact rate of
+    // ΔZ = (C_bg δ)_z + δ_T, with Ċ_bg δ = −ω × C_bg δ + C_bg (Ω_g e_z × δ).
+    double zf_dot = -zf / tc.damping_lag;
+    if (contact) {
+        const Vec3 d_g(dx, dy, 0.0);
+        const Vec3 turn_g(-omega_g * dy, omega_g * dx, 0.0);
+        const double dz_dot =
+            (C_bg * (Vec3(dd[0], dd[1], 0.0) + turn_g) - w.cross(C_bg * d_g)).z() + delta_t_dot;
+        zf_dot = (dz_dot - zf) / tc.damping_lag;
+    }
 
     // Strut (pp. 5.7-23, 5.7-24; D-032 items 5, 6).
     const StrutDamperRegime& reg = std::abs(sd) <= sc.break_speed ? sc.low : sc.high;

@@ -1,6 +1,6 @@
 # Transcribed by eye from rendered page images (110-250 dpi) of the NASA scan of GenHel,
 # NASA CR-166309 (1981), Table 7.5.2 "Tire lateral stiffness", pp. 5.7-42 and 5.7-43
-# (PDF pp. 280, 281), handwritten. Plotted as Figure 7.5.2(a), p. 5.7-50.
+# (PDF pp. 280, 281), handwritten. Plotted as Figure 7.5.2(a), pp. 5.7-49, 5.7-50 (PDF pp. 287, 288).
 # status: read with high confidence; the one doubtful cell (0.8 in, 150 psi) VERIFIED by human review 2026-10-14; see docs/DATA_GAPS.md,
 # "UH-60A landing gear (M6c)".
 # KTYR = KTYL [lbf/in] (multiply by 12 for lbf/ft) against 12*|DZ| [in] (rows) and PM [psi] (columns).

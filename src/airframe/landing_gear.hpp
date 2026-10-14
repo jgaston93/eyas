@@ -126,7 +126,8 @@ struct LandingGearConfig {
     double sliding_factor = 0.0;                      // K_SLIP
     double sliding_blend_speed = 0.1 * units::kFoot;  // v_s [m/s] (D-032 item 2)
     // Upward normal of the ground plane, NED (D-032 item 9). The plane passes
-    // through the point at Environment::ground_height below the NED origin.
+    // through the point on the NED origin's vertical at Environment::ground_height
+    // above MSL: z_n = origin altitude − ground_height.
     Vec3 ground_normal_n = Vec3(0.0, 0.0, -1.0);
 };
 
@@ -141,6 +142,7 @@ struct GearState {
     std::array<bool, 2> slipping{};            // x, y in ground axes
     std::array<double, 2> limit{};             // L_x, L_y [N]
     std::array<double, 2> contact_velocity{};  // v_c, ground axes [m/s]
+    std::array<double, 2> stick_rate{};        // δ' while sticking, ground axes [m/s]
     double strut_force = 0.0;                  // F_S [N], on the wheel, down
     Vec3 contact_point_b = Vec3::Zero();       // r_c [m]
     Vec3 axle_b = Vec3::Zero();                // r_ax [m]

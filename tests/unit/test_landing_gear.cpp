@@ -147,8 +147,7 @@ Layer1Case random_case(std::mt19937& rng, const LandingGear& gear, test::GenHelG
         g.XID = I[0] - d_s.x();
         g.YID = I[1] - d_s.y();
         const GearState st = gear.gear_state(c.ctx, c.x, i);
-        const Vec3 rate_b =
-            C_bg * Vec3(st.contact_velocity[0], st.contact_velocity[1], 0.0) / kFoot;
+        const Vec3 rate_b = C_bg * Vec3(st.stick_rate[0], st.stick_rate[1], 0.0) / kFoot;
         g.DXF = rate_b.x();
         g.DYF = rate_b.y();
     }
@@ -286,8 +285,7 @@ TEST(LandingGear, MatchesGenHelSliding) {
                 fast = fast &&
                        std::abs(st.contact_velocity[0]) >= gear->config().sliding_blend_speed &&
                        std::abs(st.contact_velocity[1]) >= gear->config().sliding_blend_speed;
-                const Vec3 rb =
-                    C_bg * Vec3(st.contact_velocity[0], st.contact_velocity[1], 0.0) / kFoot;
+                const Vec3 rb = C_bg * Vec3(st.stick_rate[0], st.stick_rate[1], 0.0) / kFoot;
                 gh.gears[i].DXF = rb.x();
                 gh.gears[i].DYF = rb.y();
             }
@@ -691,6 +689,124 @@ TEST(LandingGear, LiftOffClearsDeflection) {
     EXPECT_FALSE(gear->gear_state(ctx, x, 0).in_contact);
 }
 
+// A state with every tire pressed into level ground, moving and turning.
+SimContext turning_on_ground(const LandingGear& gear) {
+    SimContext ctx;
+    ctx.env.ground_height = 0.0;
+    const GearConfig& g = gear.config().gears[0];
+    ctx.body.pos_n = Vec3(0.0, 0.0, -(g.axle_b.z() + g.tire.radius - 3.0 * units::kInch));
+    ctx.body.q_nb = attitude(0.01, 0.01, 1.0);
+    ctx.body.vel_b = Vec3(0.4, -0.3, 0.05);
+    ctx.body.omega_b = Vec3(0.3, -0.2, 0.5);
+    ctx.air.altitude = -ctx.body.pos_n.z();
+    return ctx;
+}
+
+// The vertical damping lag starts from rest at touchdown (D-032 item 3):
+// GenHel skips the tire while it is off the ground (p. 5.7-14), so the lag
+// doesn't track the closing rate before contact.
+TEST(LandingGear, DampingLagRestsOffTheGround) {
+    const auto gear = uh60a_gear();
+    SimContext ctx;
+    ctx.env.ground_height = 0.0;
+    const GearConfig& g = gear->config().gears[0];
+    // Every tire 1 in clear, sinking at 3 m/s.
+    ctx.body.pos_n = Vec3(0.0, 0.0, -(g.axle_b.z() + g.tire.radius + 1.0 * units::kInch));
+    ctx.body.vel_b = Vec3(0.0, 0.0, 3.0);
+    ctx.air.altitude = -ctx.body.pos_n.z();
+    std::vector<double> x(gear->num_states(), 0.0);
+    const Derivs d = eval(*gear, ctx, x);
+    for (std::size_t i = 0; i < 3; ++i) {
+        ASSERT_FALSE(gear->gear_state(ctx, x, i).in_contact);
+        EXPECT_EQ(d.xdot[kN * i + 4], 0.0);
+    }
+    x[4] = 0.5;  // a rate left from an earlier contact decays
+    EXPECT_DOUBLE_EQ(eval(*gear, ctx, x).xdot[4], -0.5 / g.tire.damping_lag);
+}
+
+// While a tire sticks its contact point is fixed in the earth (GenHel,
+// p. 5.7-16), so in heading axes the deflection turns at −ψ̇:
+// δ' − v_c = ψ̇ (δ_y, −δ_x), ψ̇ = (q sin φ + r cos φ)/cos θ (Padfield 3rd ed.
+// Eq. 3A.42), on level ground.
+TEST(LandingGear, StickingDeflectionIsEarthFixed) {
+    const auto gear = uh60a_gear();
+    const SimContext ctx = turning_on_ground(*gear);
+    std::vector<double> x(gear->num_states(), 0.0);
+    const double phi = 0.01;
+    const double theta = 0.01;
+    const Vec3& w = ctx.body.omega_b;
+    const double psi_dot = (w.y() * std::sin(phi) + w.z() * std::cos(phi)) / std::cos(theta);
+    for (std::size_t i = 0; i < 3; ++i) {
+        x[kN * i + 2] = 0.003;
+        x[kN * i + 3] = -0.002;
+    }
+    for (std::size_t i = 0; i < 3; ++i) {
+        const GearState st = gear->gear_state(ctx, x, i);
+        ASSERT_TRUE(st.in_contact);
+        EXPECT_NEAR(st.stick_rate[0] - st.contact_velocity[0], psi_dot * -0.002, 1e-12);
+        EXPECT_NEAR(st.stick_rate[1] - st.contact_velocity[1], -psi_dot * 0.003, 1e-12);
+    }
+}
+
+// The lag is driven by the exact rate of ΔZ (D-032 item 3): against a
+// central difference of ΔZ along the state's own motion.
+TEST(LandingGear, DampingLagSeesExactDeflectionRate) {
+    const auto gear = uh60a_gear();
+    const SimContext ctx = turning_on_ground(*gear);
+    std::vector<double> x(gear->num_states(), 0.0);
+    for (std::size_t i = 0; i < 3; ++i) {
+        x[kN * i + 1] = 0.05;  // stroking
+        x[kN * i + 2] = 0.003;
+        x[kN * i + 3] = -0.002;
+    }
+    const Derivs d = eval(*gear, ctx, x);
+    const auto moved = [&](double h) {
+        SimContext c = ctx;
+        const Mat3 C_nb = ctx.body.q_nb.toRotationMatrix();
+        c.body.pos_n += C_nb * ctx.body.vel_b * h;
+        const Vec3 wh = ctx.body.omega_b * h;
+        c.body.q_nb =
+            (ctx.body.q_nb * Quat(Eigen::AngleAxisd(wh.norm(), wh.normalized()))).normalized();
+        c.air.altitude = -c.body.pos_n.z();
+        std::vector<double> y = x;
+        for (std::size_t j = 0; j < y.size(); ++j) {
+            y[j] += h * d.xdot[j];
+        }
+        return std::pair{c, y};
+    };
+    const double h = 1e-6;
+    const auto [cp, xp] = moved(h);
+    const auto [cm, xm] = moved(-h);
+    for (std::size_t i = 0; i < 3; ++i) {
+        ASSERT_TRUE(gear->gear_state(ctx, x, i).in_contact);
+        const double fd = (gear->gear_state(cp, xp, i).vertical_deflection -
+                           gear->gear_state(cm, xm, i).vertical_deflection) /
+                          (2.0 * h);
+        const double lag = gear->config().gears[i].tire.damping_lag;
+        EXPECT_NEAR(d.xdot[kN * i + 4] * lag, fd, 1e-7) << "gear " << i;
+    }
+}
+
+// An in-plane axis with no stiffness (the tail tire's √F law with the
+// vertical force clamped at zero in a fast rebound) carries no force, so its
+// deflection relaxes as off the ground instead of following v_c.
+TEST(LandingGear, UnloadedAxisRelaxes) {
+    const auto gear = uh60a_gear();
+    SimContext ctx = turning_on_ground(*gear);
+    ctx.body.q_nb = attitude(0.0, 0.0, 0.0);
+    ctx.body.omega_b = Vec3::Zero();
+    ctx.body.vel_b = Vec3(0.0, 1.0, 0.0);
+    std::vector<double> x(gear->num_states(), 0.0);
+    const std::size_t t = 2;  // tail
+    x[kN * t + 3] = 0.004;
+    x[kN * t + 4] = -100.0;  // rebounding fast: G K′ ż_f outweighs the spring
+    const GearState st = gear->gear_state(ctx, x, t);
+    ASSERT_TRUE(st.in_contact);
+    ASSERT_EQ(st.tire_force_b.z(), 0.0);
+    const double G = gear->config().gears[t].tire.damping_factor;
+    EXPECT_DOUBLE_EQ(eval(*gear, ctx, x).xdot[kN * t + 3], -0.004 / G);
+}
+
 // Wheel hop at 1 kHz against a fine step (D-028: h ω ≈ 0.15): the stroke
 // history agrees to 0.1% of its swing over 0.2 s, body held fixed.
 TEST(LandingGear, WheelHopRk4Accuracy) {
@@ -848,6 +964,10 @@ TEST(LandingGear, RejectsInvalidConfig) {
     expect_throw([](LandingGearConfig& c) { c.gears[0].strut.preload = 0.0; });
     expect_throw([](LandingGearConfig& c) {
         c.gears[0].tire.vertical_load = Table1D(Axis({0.0, 1.0}), {1.0, 2.0});
+    });
+    // Falling at the end: the extension beyond the table would fall too.
+    expect_throw([](LandingGearConfig& c) {
+        c.gears[0].tire.vertical_load = Table1D(Axis({0.0, 0.1, 0.2}), {0.0, 2e4, 1.9e4});
     });
     expect_throw([](LandingGearConfig& c) { c.gears[2].tire.lateral_reference_load = 0.0; });
     // Config reader: a wheel's brake is left, right or none.
