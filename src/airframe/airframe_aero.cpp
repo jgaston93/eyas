@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 #include <string>
 #include <utility>
 
@@ -43,16 +44,37 @@ Vec3 wind_to_body(double alpha, double beta, const Vec3& x_w) {
 }
 
 // GenHel's flow angles at a point (pp. 5.2-6, 5.3-7, 5.3-11), with atan2 so
-// that they stay defined at V_X = 0, and the wind-axes angle α' (D-030).
+// that they stay defined at V_X = 0, the wind-axes angle α' (D-030) and the
+// sideward fade s (D-031), already applied to α.
 struct FlowAngles {
-    double alpha;       // atan(V_Z/|V_X|): table lookups
+    double alpha;       // s·atan(V_Z/|V_X|): table lookups
     double beta;        // atan(V_Y/√(V_X² + V_Z²))
     double alpha_axes;  // atan2(V_Z, V_X): wind-to-body rotation
+    double fade;        // s in [0, 1]; 1 away from the sideward line
 };
-FlowAngles flow_angles(const Vec3& v_b) {
+FlowAngles flow_angles(const Vec3& v_b, double sin_fade) {
     const double xz = std::sqrt(v_b.x() * v_b.x() + v_b.z() * v_b.z());
-    return {std::atan2(v_b.z(), std::abs(v_b.x())), std::atan2(v_b.y(), xz),
-            std::atan2(v_b.z(), v_b.x())};
+    // t = cos β / sin c = xz / (sin c · |V|); s = 1 for t ≥ 1.
+    const double edge = sin_fade * v_b.norm();
+    double s = 1.0;
+    if (xz < edge) {
+        const double t = xz / edge;
+        s = t * t * (3.0 - 2.0 * t);
+    }
+    return {s * std::atan2(v_b.z(), std::abs(v_b.x())), std::atan2(v_b.y(), xz),
+            std::atan2(v_b.z(), v_b.x()), s};
+}
+
+// A wind-axis force or moment in body axes (D-030, D-031): the x component
+// along the flow, the others turned by R(α', β) faded into R(0, β).
+Vec3 wind_to_body(const FlowAngles& fa, const Vec3& x_w) {
+    if (fa.fade == 1.0) {
+        return wind_to_body(fa.alpha_axes, fa.beta, x_w);
+    }
+    const Vec3 perp_w(0.0, x_w.y(), x_w.z());
+    return wind_to_body(fa.alpha_axes, fa.beta, Vec3(x_w.x(), 0.0, 0.0)) +
+           fa.fade * wind_to_body(fa.alpha_axes, fa.beta, perp_w) +
+           (1.0 - fa.fade) * wind_to_body(0.0, fa.beta, perp_w);
 }
 
 }  // namespace
@@ -65,6 +87,10 @@ AirframeAero::AirframeAero(AirframeAeroConfig config) : config_(std::move(config
     validate_panel(config_.fin, "fin");
     if (config_.fin.schedule) {
         throw InitError("airframe aero: only the stabilator has an incidence schedule");
+    }
+    const double fade = config_.sideward_fade;
+    if (!std::isfinite(fade) || fade < 0.0 || fade >= 0.5 * std::numbers::pi) {
+        throw InitError("airframe aero: the sideward fade must be in [0, 90) deg");
     }
 }
 
@@ -134,7 +160,8 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
     // ---- Fuselage (GenHel CR-166309 §5.2.2) ----
     // Velocity with main-rotor wash; no body-rate terms (p. 5.2-5).
     const Vec3 v_wf_b = v_air_b + fuselage_wash_b;
-    const FlowAngles fw = flow_angles(v_wf_b);
+    const double sin_fade = std::sin(c.sideward_fade);
+    const FlowAngles fw = flow_angles(v_wf_b, sin_fade);
     out.alpha_wf = fw.alpha;
     out.psi_wf = -fw.beta;  // p. 5.2-12: PSIWF = −BETAWF
     out.q_wf = 0.5 * rho * v_wf_b.squaredNorm();
@@ -149,9 +176,8 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
         const double pitch = t.pitch(a) + t.pitch_increment(p);
         const double q = out.q_wf;
         // p. 5.2-9: wind axes at the mounting point, then moved to the CG.
-        const Vec3 F_b = wind_to_body(fw.alpha_axes, fw.beta, Vec3(-drag, -t.side(p), -lift) * q);
-        const Vec3 M_b =
-            wind_to_body(fw.alpha_axes, fw.beta, Vec3(t.roll(p), -pitch, t.yaw(p)) * q);
+        const Vec3 F_b = wind_to_body(fw, Vec3(-drag, -t.side(p), -lift) * q);
+        const Vec3 M_b = wind_to_body(fw, Vec3(t.roll(p), -pitch, t.yaw(p)) * q);
         out.fuselage.F = F_b;
         out.fuselage.M = M_b + c.fuselage_point_b.cross(F_b);
     }
@@ -168,7 +194,7 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
                          Vec3(0.0, 0.0, -u * x[0] * kq);
         out.v_stabilator_b = v_b;
         out.q_h = 0.5 * rho * v_b.squaredNorm();
-        const FlowAngles fa = flow_angles(v_b);
+        const FlowAngles fa = flow_angles(v_b, sin_fade);
         out.stabilator_incidence = h.incidence;
         if (h.schedule) {
             // GenHel Fig. 5.1.7, steady state (D-028).
@@ -178,8 +204,8 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
         out.alpha_h = out.stabilator_incidence + fa.alpha;
         const double qs = out.q_h * h.area;
         // p. 5.3-8: drag along the flow, lift in the x–z plane.
-        const Vec3 F_b = wind_to_body(fa.alpha_axes, fa.beta,
-                                      Vec3(-qs * h.cd(out.alpha_h), 0.0, -qs * h.cl(out.alpha_h)));
+        const Vec3 F_b =
+            wind_to_body(fa, Vec3(-qs * h.cd(out.alpha_h), 0.0, -qs * h.cl(out.alpha_h)));
         out.stabilator.F = F_b;
         out.stabilator.M = h.position_b.cross(F_b);
         out.downwash_rate = std::abs(u) / -h.position_b.x() * (out.downwash - x[0]);
@@ -192,12 +218,12 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
                          Vec3(0.0, -u * x[1] * kq, 0.0);
         out.v_fin_b = v_b;
         out.q_v = 0.5 * rho * v_b.squaredNorm();
-        const FlowAngles fa = flow_angles(v_b);
+        const FlowAngles fa = flow_angles(v_b, sin_fade);
         out.beta_v = v_.incidence + fa.beta;
         const double qs = out.q_v * v_.area;
         // p. 5.3-12: drag along the flow, lift along the wind-axis y.
-        const Vec3 F_b = wind_to_body(fa.alpha_axes, fa.beta,
-                                      Vec3(-qs * v_.cd(out.beta_v), qs * v_.cl(out.beta_v), 0.0));
+        const Vec3 F_b =
+            wind_to_body(fa, Vec3(-qs * v_.cd(out.beta_v), qs * v_.cl(out.beta_v), 0.0));
         out.fin.F = F_b;
         out.fin.M = v_.position_b.cross(F_b);
         out.sidewash_rate = std::abs(u) / -v_.position_b.x() * (out.sidewash - x[1]);
@@ -308,7 +334,8 @@ PanelConfig panel(const Config& node, const std::string& angle, const std::strin
 }  // namespace
 
 std::unique_ptr<AirframeAero> AirframeAero::from_config(const Config& node) {
-    node.allow_keys({"type", "name", "fuselage", "tail_wash", "stabilator", "fin"});
+    node.allow_keys(
+        {"type", "name", "fuselage", "tail_wash", "stabilator", "fin", "sideward_fade"});
     AirframeAeroConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -353,6 +380,9 @@ std::unique_ptr<AirframeAero> AirframeAero::from_config(const Config& node) {
     });
     c.fin = node.in_context(
         "fin", [&] { return panel(node.child("fin"), "beta", "psi_wf", "sidewash", false); });
+    if (node.contains("sideward_fade")) {
+        c.sideward_fade = node.quantity("sideward_fade", Dimension::angle);
+    }
     return node.in_context("", [&] { return std::make_unique<AirframeAero>(std::move(c)); });
 }
 

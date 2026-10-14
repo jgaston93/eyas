@@ -33,6 +33,7 @@
 #include <iostream>
 #include <numbers>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "airframe/airframe_aero.hpp"
@@ -360,6 +361,98 @@ void a1_sensitivity(const std::filesystem::path& dir) {
     }
 }
 
+// The sideward fade (D-031, SPEC_REVIEW #27): how steeply the total airframe
+// loads change with the flow direction near the sideward line, for several
+// fade half-widths c, against how steeply they change well away from it
+// (20°–45° from the line, where no fade acts). Directions on a grid in the
+// angle eta from the sideward line and the angle theta of the x–z part;
+// the steepness is the largest load change between grid neighbours per
+// degree of angle between their directions. No wash, lag states zero, so
+// the loads scale with q and the ratios hold at any speed (20 kt here).
+void sideward_fade(const std::filesystem::path& dir) {
+    const double speed = 20.0 * units::kKnot;
+    const auto direction = [](double eta, double theta) {
+        return Vec3(std::sin(eta) * std::cos(theta), std::cos(eta),
+                    std::sin(eta) * std::sin(theta));
+    };
+    const std::size_t n_theta = 120;  // 3°
+    const auto theta_at = [&](std::size_t k) {
+        return 2.0 * std::numbers::pi * static_cast<double>(k) / static_cast<double>(n_theta);
+    };
+    const auto steepest = [&](const AirframeAero& a, double eta_lo, double eta_hi, double d_eta) {
+        std::vector<double> etas;
+        for (double e = eta_lo; e <= eta_hi + 1e-12; e += d_eta) {
+            etas.push_back(e);
+        }
+        std::vector<Wrench> grid(etas.size() * n_theta);
+        SimContext c = sea_level();
+        const std::vector<double> x = {0.0, 0.0};
+        for (std::size_t i = 0; i < etas.size(); ++i) {
+            for (std::size_t k = 0; k < n_theta; ++k) {
+                c.body.vel_b = speed * direction(etas[i], theta_at(k));
+                grid[i * n_theta + k] = a.evaluate(c, x, Vec3::Zero(), Vec3::Zero()).body;
+            }
+        }
+        double gf = 0.0;
+        double gm = 0.0;
+        const auto pair = [&](std::size_t i, std::size_t k, std::size_t j, std::size_t l) {
+            const Vec3 d1 = direction(etas[i], theta_at(k));
+            const Vec3 d2 = direction(etas[j], theta_at(l));
+            const double ang = std::atan2(d1.cross(d2).norm(), d1.dot(d2)) / kDegree;
+            const Wrench& w1 = grid[i * n_theta + k];
+            const Wrench& w2 = grid[j * n_theta + l];
+            gf = std::max(gf, (w1.F - w2.F).norm() / ang);
+            gm = std::max(gm, (w1.M - w2.M).norm() / ang);
+        };
+        for (std::size_t i = 0; i < etas.size(); ++i) {
+            for (std::size_t k = 0; k < n_theta; ++k) {
+                pair(i, k, i, (k + 1) % n_theta);
+                if (i + 1 < etas.size()) {
+                    pair(i, k, i + 1, k);
+                }
+            }
+        }
+        return std::pair{gf, gm};
+    };
+    const auto with_fade = [](double c) {
+        AirframeAeroConfig cfg = uh60a_airframe_scheduled();
+        cfg.sideward_fade = c;
+        return AirframeAero(std::move(cfg));
+    };
+    const auto [ref_f, ref_m] = steepest(with_fade(0.0), 20.0 * kDegree, 45.0 * kDegree, kDegree);
+    {
+        std::ofstream out = open_csv(dir / "m6b_fade_steepness.csv");
+        out << "fade_deg,steepest_force_N_per_deg,steepest_moment_Nm_per_deg,"
+               "ratio_force,ratio_moment\n";
+        out << "away," << ref_f << ',' << ref_m << ",1,1\n";
+        for (const double c_deg : {2.0, 5.0, 10.0, 15.0, 20.0}) {
+            // Grid inside 20° of the line, fine near it; the fade-off model
+            // is unbounded there, so it isn't listed.
+            const auto [gf, gm] = steepest(with_fade(c_deg * kDegree), 0.05 * kDegree,
+                                           20.0 * kDegree, 0.05 * kDegree);
+            out << c_deg << ',' << gf << ',' << gm << ',' << gf / ref_f << ',' << gm / ref_m
+                << '\n';
+        }
+    }
+    // Rolling and yawing moment around the line at a few distances from it.
+    std::ofstream out = open_csv(dir / "m6b_fade_sweep.csv");
+    out << "fade_deg,eta_deg,theta_deg,Fx,Fy,Fz,L,M,N\n";
+    SimContext c = sea_level();
+    const std::vector<double> x = {0.0, 0.0};
+    for (const double c_deg : {0.0, 10.0, 20.0}) {
+        const AirframeAero a = with_fade(c_deg * kDegree);
+        for (const double eta_deg : {1.0, 4.0, 8.0, 15.0}) {
+            for (int k = 0; k <= 72; ++k) {
+                const double theta = 5.0 * k * kDegree;
+                c.body.vel_b = speed * direction(eta_deg * kDegree, theta);
+                const Wrench w = a.evaluate(c, x, Vec3::Zero(), Vec3::Zero()).body;
+                out << c_deg << ',' << eta_deg << ',' << theta / kDegree << ',' << w.F.x() << ','
+                    << w.F.y() << ',' << w.F.z() << ',' << w.M.x() << ',' << w.M.y() << ','
+                    << w.M.z() << '\n';
+            }
+        }
+    }
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -374,6 +467,7 @@ int main(int argc, char** argv) {
         pedal_step(dir);
         lag_vs_delay(dir);
         a1_sensitivity(dir);
+        sideward_fade(dir);
     } catch (const std::exception& e) {
         std::cerr << "eyas_m6_cases: " << e.what() << "\n";
         return 1;

@@ -143,6 +143,39 @@ def a1_sensitivity(data, out):
     plt.close(fig)
 
 
+def sideward_fade(data, out):
+    st = load(data / "m6b_fade_steepness.csv")
+    sw = load(data / "m6b_fade_sweep.csv")
+    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
+    ax = axes[0]
+    fades = st["fade_deg"][1:].astype(float)
+    ax.plot(fades, st["ratio_force"][1:].astype(float), "ko-", label="force")
+    ax.plot(fades, st["ratio_moment"][1:].astype(float), "ks--", label="moment")
+    ax.axhline(2, color="C3", lw=0.8)
+    ax.set_xlabel("fade half-width c [deg]")
+    ax.set_ylabel("steepest load change per deg, / same away from the line")
+    ax.set_title("steepness within 20° of the line (red: 2×)")
+    ax.legend(fontsize=8)
+    ax.grid(True, lw=0.3)
+    styles = {0.0: ":", 10.0: "--", 20.0: "-"}
+    for ax, comp, name in ((axes[1], "L", "rolling"), (axes[2], "N", "yawing")):
+        for i, eta in enumerate(np.unique(sw["eta_deg"])):
+            for fade, ls in styles.items():
+                sel = (sw["eta_deg"] == eta) & (sw["fade_deg"] == fade)
+                label = f"{eta:g}° from the line" if fade == 20.0 else None
+                ax.plot(sw["theta_deg"][sel], sw[comp][sel] / 1000.0, f"C{i}{ls}", lw=1, label=label)
+        ax.set_xlabel("direction θ of the x–z flow component [deg] (0 forward, 90 down)")
+        ax.set_ylabel(f"total {name} moment [kN·m]")
+        ax.set_title(f"{name} moment (fade: dotted none, dashed 10°, solid 20°)", fontsize=10)
+        ax.set_xticks(range(0, 361, 90))
+        ax.grid(True, lw=0.3)
+    axes[2].legend(fontsize=8)
+    fig.suptitle("UH-60A airframe, 20 kt nearly sideward, no main-rotor wash, sea level (D-031)")
+    fig.tight_layout()
+    fig.savefig(out / "m6b_sideward_fade.png", dpi=110)
+    plt.close(fig)
+
+
 def main():
     data = Path(sys.argv[1])
     out = Path(sys.argv[2])
@@ -151,6 +184,7 @@ def main():
     pedal_step(data, out)
     lag_vs_delay(data, out)
     a1_sensitivity(data, out)
+    sideward_fade(data, out)
 
 
 if __name__ == "__main__":

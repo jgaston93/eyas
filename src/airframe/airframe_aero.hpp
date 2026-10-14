@@ -9,6 +9,7 @@
 #include "core/component.hpp"
 #include "rotor/rotor_wash.hpp"
 #include "util/table.hpp"
+#include "util/units.hpp"
 
 namespace eyas {
 class Config;
@@ -35,6 +36,15 @@ class Config;
 // Wind axes (D-030): table lookups use GenHel's angles, but the wind-to-body
 // rotation uses the flow's actual direction, α' = atan2(V_Z, V_X), so that
 // drag always opposes the flow. For V_X > 0 this is GenHel exactly.
+//
+// Sideward fade (D-031, SPEC_REVIEW #27): on the line V_X = V_Z = 0 the wind
+// axes are singular. Within `sideward_fade` of it (|β| > 90° − c) every
+// lookup angle derived from α is multiplied by
+//   s = smoothstep(cos β / sin c),  smoothstep(t) = t²(3 − 2t), s = 1 for t ≥ 1,
+// and of each wind-axis force or moment w, w_x stays along the flow while
+// (0, w_y, w_z) is s·R(α', β) + (1 − s)·R(0, β) applied to it. The loads are
+// then continuous across the line, and drag still opposes the flow. GenHel's
+// own low-speed filter (p. 5.2-10, not executed) is the model for the fade.
 //
 // States (D-028): the delayed fuselage downwash at the stabilator and
 // sidewash at the fin, each a first-order lag standing in for GenHel's
@@ -98,6 +108,9 @@ struct AirframeAeroConfig {
     std::optional<RotorWash> tail_wash;      // Tables 3.5.1–3.5.2, stabilator and fin
     PanelConfig stabilator;
     PanelConfig fin;
+    // c [rad] in [0, 90°): half-width of the fade about the sideward line
+    // (D-031); 0 turns the fade off.
+    double sideward_fade = 20.0 * units::kDegree;
 };
 
 struct AirframeAeroLoads {

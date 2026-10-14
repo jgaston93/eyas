@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <numbers>
 #include <random>
 #include <span>
 #include <string>
@@ -342,6 +343,12 @@ TEST(AirframeAero, RejectsInvalidPanels) {
     c.fin.schedule =
         IncidenceSchedule{Table2D(Axis({0.0, 1.0}), Axis({0.0, 1.0}), {0, 0, 0, 0}), -0.1, 0.1};
     EXPECT_THROW(AirframeAero{std::move(c)}, InitError);
+    // The sideward fade (D-031) is a half-width in [0, 90°).
+    for (const double fade : {-1.0 * kDegree, 90.0 * kDegree}) {
+        c = good;
+        c.sideward_fade = fade;
+        EXPECT_THROW(AirframeAero{std::move(c)}, InitError) << fade;
+    }
 }
 
 // D-030 in level flow (V_Z = 0), rearward: the tables see the same angles as
@@ -410,6 +417,122 @@ TEST(AirframeAero, ContinuousThroughZeroForwardSpeed) {
             EXPECT_NEAR((a.body.F - b.body.F).norm(), 0.0, s) << vy << " " << vz;
             EXPECT_NEAR((a.body.M - b.body.M).norm(), 0.0, s * 10.0) << vy << " " << vz;
         }
+    }
+}
+
+// A body velocity [ft/s] at angle eta from the sideward line (eta = 90° − |β|),
+// its x–z part at angle theta from +x towards +z.
+Vec3 near_sideward(double speed, double vy_sign, double eta, double theta) {
+    const double xz = speed * std::sin(eta);
+    return {xz * std::cos(theta), vy_sign * speed * std::cos(eta), xz * std::sin(theta)};
+}
+
+// SPEC_REVIEW #27, D-031: on the sideward line (V_X = V_Z = 0) the loads no
+// longer depend on the direction the flow comes from. Without the fade they
+// spread by kilonewton-metres (the measurement in SPEC_REVIEW #27).
+TEST(AirframeAero, ContinuousThroughPureSidewardFlow) {
+    const test::GenHelAirframeGeometry g = test::uh60a_geometry();
+    AirframeAeroConfig off = test::uh60a_airframe(g);
+    off.sideward_fade = 0.0;
+    const AirframeAero faded(test::uh60a_airframe(g));
+    const AirframeAero unfaded(std::move(off));
+    const std::vector<double> x = {0.0, 0.0};
+    for (const double vy : {30.0, -45.0}) {
+        const auto at = [&](const AirframeAero& a, double theta) {
+            const Vec3 v = near_sideward(std::abs(vy), vy > 0.0 ? 1.0 : -1.0, 1e-9, theta);
+            return a.evaluate(context(v.x(), v.y(), v.z(), 0.0, 0.0, 0.0, 0.0023769), x,
+                              Vec3::Zero(), Vec3::Zero());
+        };
+        const AirframeAeroLoads ref = at(faded, 0.0);
+        ASSERT_GT(ref.body.F.norm(), 100.0);  // not vacuous
+        double spread_unfaded = 0.0;
+        for (int k = 1; k < 16; ++k) {
+            const double theta = 2.0 * std::numbers::pi * k / 16.0;
+            const AirframeAeroLoads l = at(faded, theta);
+            const double tol = 1e-6 * (ref.body.F.norm() + ref.body.M.norm());
+            EXPECT_NEAR((l.body.F - ref.body.F).norm(), 0.0, tol) << vy << " " << k;
+            EXPECT_NEAR((l.body.M - ref.body.M).norm(), 0.0, tol) << vy << " " << k;
+            EXPECT_NEAR(l.alpha_wf, ref.alpha_wf, 1e-9) << vy << " " << k;
+            EXPECT_NEAR(l.alpha_h, ref.alpha_h, 1e-9) << vy << " " << k;
+            EXPECT_NEAR(l.q_h, ref.q_h, 1e-9 * ref.q_h) << vy << " " << k;
+            spread_unfaded = std::max(spread_unfaded,
+                                      (at(unfaded, theta).body.M - at(unfaded, 0.0).body.M).norm());
+        }
+        EXPECT_GT(spread_unfaded, 100.0) << vy;  // the problem is real without the fade
+    }
+}
+
+// D-031, exact equation (fuselage): with s = smoothstep(cos β / sin c), the
+// tables are read at s·α and the wind-axis loads w go to body axes as
+//   w_x along the flow + s·R(α', β)·(0, w_y, w_z) + (1 − s)·R(0, β)·(0, w_y, w_z),
+// for forces and for the moments about the mounting point. The reference
+// gets w from GenHel's own equations at the velocity with the same speed and
+// β but angle of attack s·α (V_X > 0, where D-030 is GenHel), and undoes
+// GenHel's rotation. Outside the fade the loads are bit-identical to the
+// unfaded model.
+TEST(AirframeAero, SidewardFadeMatchesReference) {
+    const test::GenHelAirframeGeometry g = test::uh60a_geometry();
+    const AirframeAero aero(test::uh60a_airframe(g));
+    AirframeAeroConfig off_config = test::uh60a_airframe(g);
+    off_config.sideward_fade = 0.0;
+    const AirframeAero off(std::move(off_config));
+    const double c = aero.config().sideward_fade;
+    ASSERT_DOUBLE_EQ(c, 20.0 * kDegree);  // the D-031 default
+    const Vec3 r_ft = aero.config().fuselage_point_b / kFoot;
+    const auto wind_to_body = [](double a, double b, const Vec3& w) {
+        const test::GenHelVec v = test::genhel_wind_to_body(a, b, {w.x(), w.y(), w.z()});
+        return Vec3(v[0], v[1], v[2]);
+    };
+    // GenHel's rotation is orthogonal: wind axes = Rᵀ · body.
+    const auto body_to_wind = [](double a, double b, const Vec3& f) {
+        const double ca = std::cos(a), sa = std::sin(a), cb = std::cos(b), sb = std::sin(b);
+        return Vec3(ca * cb * f.x() + sb * f.y() + sa * cb * f.z(),
+                    ca * sb * f.x() - cb * f.y() + sa * sb * f.z(), -sa * f.x() + ca * f.z());
+    };
+    std::mt19937_64 rng(6301);
+    std::uniform_real_distribution<double> u(0.0, 1.0);
+    const std::vector<double> x = {0.0, 0.0};
+    for (int i = 0; i < 300; ++i) {
+        const double speed = 10.0 + 70.0 * u(rng);
+        const double eta = 24.0 * kDegree * u(rng);  // some just outside the fade
+        const double theta = 2.0 * std::numbers::pi * u(rng);
+        const Vec3 v = near_sideward(speed, u(rng) < 0.5 ? 1.0 : -1.0, eta, theta);
+        const SimContext ctx = context(v.x(), v.y(), v.z(), 0.0, 0.0, 0.0, 0.0023769);
+        const Wrench p = aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero()).fuselage;
+        const double t = std::cos(std::atan2(v.y(), std::hypot(v.x(), v.z()))) / std::sin(c);
+        if (t >= 1.0) {
+            const Wrench q = off.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero()).fuselage;
+            EXPECT_EQ(p.F, q.F) << "case " << i;
+            EXPECT_EQ(p.M, q.M) << "case " << i;
+            continue;
+        }
+        const double s = t * t * (3.0 - 2.0 * t);
+        const double xz = std::hypot(v.x(), v.z());
+        const double alpha = s * std::atan2(v.z(), std::abs(v.x()));
+        const double alpha_axes = std::atan2(v.z(), v.x());
+        const double beta = std::atan2(v.y(), xz);
+        test::GenHelAirframeInput in;
+        test::apply(g, in);
+        in.RHO = 0.0023769;
+        in.VXB = xz * std::cos(alpha);
+        in.VYB = v.y();
+        in.VZB = xz * std::sin(alpha);
+        const test::GenHelLoads ref = test::genhel_airframe(genhel_tables(), in).WF;
+        const Vec3 f_ref(ref.X, ref.Y, ref.Z);
+        const Vec3 m_ref = Vec3(ref.L, ref.M, ref.N) - r_ft.cross(f_ref);  // about the mount
+        const auto faded = [&](const Vec3& body_at_alpha) -> Vec3 {
+            const Vec3 w = body_to_wind(alpha, beta, body_at_alpha);
+            const Vec3 perp(0.0, w.y(), w.z());
+            return wind_to_body(alpha_axes, beta, Vec3(w.x(), 0.0, 0.0)) +
+                   s * wind_to_body(alpha_axes, beta, perp) +
+                   (1.0 - s) * wind_to_body(0.0, beta, perp);
+        };
+        const Vec3 f_ft = faded(f_ref);
+        const Vec3 m_ft = faded(m_ref) + r_ft.cross(f_ft);
+        const Vec3 f_si = f_ft * kPoundForce;
+        const Vec3 m_si = m_ft * (kPoundForce * kFoot);
+        EXPECT_NEAR((p.F - f_si).norm(), 0.0, 1e-9 * (f_si.norm() + 1.0)) << "case " << i;
+        EXPECT_NEAR((p.M - m_si).norm(), 0.0, 1e-9 * (m_si.norm() + 1.0)) << "case " << i;
     }
 }
 
@@ -513,7 +636,7 @@ namespace {
 // the UH-60A tables from data/uh60a/airframe/ and no placeholders.
 TEST(AirframeAero, ReadsConfig) {
     const std::string dir = test::uh60a_airframe_dir();
-    const Config cfg = Config::from_string(R"(
+    const std::string cfg_text = R"(
 type: airframe_aero
 name: airframe
 fuselage:
@@ -522,9 +645,10 @@ fuselage:
   psi_table: )" + dir + R"(/fuselage_psi.csv
   psi_low_table: )" + dir + R"(/fuselage_psi_low.csv
   main_rotor_wash: {rotor: main_rotor, table: )" +
-                                           dir + R"(/fuselage_wash.csv}
-tail_wash: {rotor: main_rotor, table: )" + dir +
-                                           R"(/tail_wash.csv}
+                                 dir + R"(/fuselage_wash.csv}
+tail_wash: {rotor: main_rotor, table: )" +
+                                 dir +
+                                 R"(/tail_wash.csv}
 stabilator:
   position: {x: "-344.2 in", y: "0 in", z: "4.2 in"}
   area: "45 ft^2"
@@ -538,10 +662,14 @@ fin:
   coefficients: )" + dir + R"(/fin_coefficients.csv
   q_ratio: )" + dir + R"(/fin_q_ratio.csv
   sidewash: )" + dir + R"(/fin_sidewash.csv
-)");
+)";
+    const Config cfg = Config::from_string(cfg_text);
     const std::unique_ptr<AirframeAero> read = AirframeAero::from_config(cfg);
     EXPECT_TRUE(cfg.placeholders().empty());
     EXPECT_EQ(read->name(), "airframe");
+    EXPECT_DOUBLE_EQ(read->config().sideward_fade, 20.0 * kDegree);  // default (D-031)
+    const Config faded = Config::from_string(cfg_text + "sideward_fade: \"4 deg\"\n");
+    EXPECT_DOUBLE_EQ(AirframeAero::from_config(faded)->config().sideward_fade, 4.0 * kDegree);
 
     test::GenHelAirframeGeometry g{};
     g.FSCGB = 355.9;

@@ -220,7 +220,7 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 **Why it matters:** a drag that feeds energy into a low-speed rearward drift is a destabilizing artefact, not aircraft behaviour, and it would appear in exactly the piloted hover tasks of M8.
 **Suggested resolution:** see D-030.
 
-## 27. The wind axes are singular in pure sideward flow — `open`
+## 27. The wind axes are singular in pure sideward flow — `resolved → DECISIONS.md D-031 (2026-10-14)`
 **Spec:** §6.7, §6.8; GenHel CR-166309 pp. 5.2-2, 5.2-6, 5.2-9, 5.2-10; DECISIONS D-030.
 **Problem:** on the line V_X = V_Z = 0, V_Y ≠ 0 (β = ±90°) the angles α = atan(V_Z/|V_X|) and α' = atan2(V_Z, V_X) are undefined, and close to it they take any value, depending only on the direction of a vanishing x–z component. The table lookups (in α) and the wind-to-body rotation (in α') follow them, so the loads are not a function of the velocity there. Found in code review (2026-10-13), measured with the UH-60A fuselage at 30 ft/s sideward with a 0.001 ft/s x–z component swept around the circle (no wash):
 - production (D-030): rolling moment −684 to +1836 N·m, yawing moment +394 to −1723 N·m, body x force +378 to −178 N;
@@ -236,4 +236,6 @@ GenHel has the singularity too, and says so: the transformation "gives invalid b
 - c₀ (first guess sin 10°, i.e. |β| > 80°) set by a sensitivity sweep reported in VALIDATION.md, as for AA1FMR (D-028).
 
 Verification: the probe above, as a test (loads continuous as the x–z component goes to zero from every direction); `DragOpposesTheFlow`; the Layer-1 GenHel match unchanged outside the fade (its random cases kept to |β| < 80°, or checked against the faded reference).
+
+**Resolution:** adopted as proposed (D-031), with the table angle faded rather than the table values and c = 20° from the sweep (the first guess of 10° failed the steepness criterion).
 
