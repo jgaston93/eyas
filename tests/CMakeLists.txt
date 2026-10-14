@@ -27,7 +27,8 @@ add_executable(eyas_unit_tests
     unit/test_table.cpp
     unit/test_tail_rotor_wake.cpp
     unit/test_units.cpp
-    unit/test_uh60a_data.cpp)
+    unit/test_uh60a_data.cpp
+    unit/test_uh60a_aircraft.cpp)
 target_include_directories(eyas_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_unit_tests PRIVATE eyas_internal GTest::gtest_main)
 target_compile_definitions(eyas_unit_tests PRIVATE EYAS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
@@ -87,3 +88,10 @@ target_include_directories(eyas_m6c_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m6c_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_m6c_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m6c_cases)
+
+# Writes the M6d whole-aircraft data (VALIDATION.md; tools/plot_m6d.py).
+add_executable(eyas_m6d_cases validation/m6d_cases.cpp)
+target_include_directories(eyas_m6d_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m6d_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m6d_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m6d_cases)

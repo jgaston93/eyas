@@ -29,9 +29,10 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
   - e′ (SPRLMR, ft) is the "Spar length exposed" (p. 5.1-39, PDF p. 59), measured **from the hinge to the blade cuff**, where the lifting blade and its first segment begin. Source: the blade-geometry sketch on p. 5.1-12 (PDF p. 32; read by the human reviewer, 2026-10-11) and the first-segment formula below it, which is the equal-area midpoint of an annulus starting at (ξ + ξ′)R. **Aerodynamic root cutout = (e + e′)/R = (1.25 + 3.83)/26.83 = 0.189 R** (5.08 ft from the center of rotation). The same page gives ξ = e/R and ξ′ = e′/R, and 5 equal-annulus-area segments (NSS = 5, p. 5.1-49).
   - θ_GEOMR (THLDMR, deg) is a lag-damper kinematics geometry constant (p. 5.1-46, PDF p. 66). It is **not** a blade pitch reference; the geometric blade pitch is T_HOAMR on p. 5.1-44.
   - WEIGHT is "Total helicopter weight" (p. 5.1-39), so it includes the blades.
-- **Still open:**
-  - i_θ and i_φ are not in the nomenclature (pp. 5.1-39 to 5.1-48). Shaft tilt is assumed; confirm the meaning and sign from the main-rotor equations (§5.1.2) before using them in the hub transform.
-  - The remaining constants on p. 5.1-49 (lag damper, δ_0, T_FILMR, K_FP*, NBS/NSS, δ_3, ΔC_DMR, K_CT/K_CM/K_CL, T_DW*, ρ, a) are not yet reviewed. Review them before use.
+- **Settled from the source (2026-10-14, M6d; D-034):**
+  - i_θ = −3°, i_φ = 0 are the shaft inclination: i_θ about Y_B, then i_φ about X_S (text p. 5.1-2, PDF p. 22). Fig. 1.1.1 (p. 5.1-7, PDF p. 27) draws a positive i_θ raising X_S above X_H (nose-up), so −3° tilts the top of the shaft forward: Eyas's hub pitch, directly.
+  - Δ_SP = −9.7° is the swashplate phase angle (nomenclature, PDF p. 64), in the blade pitch θ = θ_cuff − A1S cos(ψ + Δ_SP) − B1S sin(ψ + Δ_SP) (p. 5.1-24, PDF p. 44).
+  - The rest of p. 5.1-49 is transcribed in `data/uh60a/genhel/main_rotor_constants_5_1_5.txt` (read with high confidence, not reviewed by a person). Of those, M6d uses none beyond the above; K_FP0, T_FILMR and ΔC_DMR are deferred (below), the lag-damper constants and δ_0 wait for M9.
 - **Note:** an AI assistant's definitions of i_θ, e′ and θ_GEOMR were checked against the source. Two of the three were wrong. AI answers are not sources.
 
 **Source:** GenHel p. 5.1-49 (PDF p. 69), handwritten. As read:
@@ -210,7 +211,7 @@ Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/re
   - *Airspeed lag time constant* — `VERIFIED by human review (2026-10-13)`: **0.398 s** ("·398S+1", the leading mark a decimal point as on ·16, ·67, ·0433), not the 3.98 s of the first 110 dpi reading. Used only by the dynamic law (AFCS, D-029).
   - *Units of the collective input XCPC* — `missing`. The figure doesn't state them, and the collective channel (Fig. 5.1.6(a), p. 5.5-14) works in inches. The biases 50 and 70 and the limits 0–50 and 0–20 only make sense on a 0–100 scale, so Eyas assumes **percent of collective travel, 0 = full down** (Eyas's `collective` × 100). To check: the schedule must give continuous incidence across the full collective range and a hover value at the 39° limit, and M7 trim stabilator angles against published data would confirm the scale.
 - Landing gear (§5.7.5, PDF pp. 278–286): main gear constants and Tables 7.5.1–7.5.6.
-- Control rigging (§5.5.1.6, collective and pedal to blade pitch): needed for M6d.
+- Control rigging (§5.5.1.6): transcribed for M6d; see "UH-60A control rigging (M6d)" below.
 
 **Inconsistencies in the source** (rulings 2026-10-13; the reviewer adopted the recommendations, and D-028 records the verification for each assumption):
 1. *Main-rotor downwash sign at the fin* — `RESOLVED (assumption, D-028)`. V_ZMRH1 = −DWSHMR·Ω·R·EKZH1 at the stabilator (p. 5.3-5, PDF p. 127) and V_ZMRTR = −DWSHMR·Ω·R·EKZTR at the tail rotor (p. 5.4-5, PDF p. 166), but V_ZMRV1 = DWSHMR·Ω·R·EKZV1, with no sign, at the fin (p. 5.3-9, PDF p. 131), from the same map (Table 3.5.2). GenHel's velocities are the aircraft's velocity relative to the air, so the minus is physical; the fin page also calls its wash "same as horizontal tail for Black Hawk". **Eyas uses the minus at the fin.** Affects only the fin's dynamic pressure and α_V1.
@@ -237,6 +238,17 @@ Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/re
 - *Strut top stop* — `missing` (D-032 item 6). GenHel has no stop force (its preload logic resets the stroke). Eyas uses k_stop = 10 × the tire's slope at zero deflection (main 43 333 lbf/in, tail 19 000 lbf/in) and critical damping with the wheel: a rule, not data. The overshoot is under 0.1 in.
 - *Partial braking* — `assumption` (D-032 notes). GenHel's brakes are set (K_μB = 1.0) or off (0.01). For a brake input between, k_B is interpolated linearly; no pedal-to-torque data in the library.
 - *Tire tables beyond their range* — `assumption` (D-032 notes). The vertical load continues with the last segment's slope past 8 in (main) and 5 in (tail); the lateral and damping-stiffness tables hold their end values.
+
+## UH-60A control rigging (M6d) — transcribed; XB+2 sign `UNVERIFIED — needs human review`; travels `!placeholder`
+**Source:** GenHel §5.5, Figs. 5.1.6(a)–(d), pp. 5.5-14 to 5.5-17 (PDF pp. 190–193, pages rotated), and §5.5.4, p. 5.5-20 (PDF p. 196), handwritten. File: `data/uh60a/genhel/control_rigging_5_5.txt`. Everything was read with high confidence except the item below.
+- *Sign of the pilot's longitudinal input XB+2* — `UNVERIFIED — needs human review` (sent to the reviewer 2026-10-14, with crops). At the first summing junction of Fig. 5.1.6(c), XB+2 carries a "−" at its arrowhead; the matching junctions in the other three channels are all "+". The mark beside XB+1 may be a "−" or the leader of the label "← XB"; Eyas doesn't use XB+1. As transcribed (`SIGN_XB2 = −1`), positive XB+2 raises B1S, which tilts the disc forward. Positive-forward is Eyas's convention, so the physical direction holds either way; only the GenHel-inch value of a given stick position depends on the sign.
+- *Stick and pedal travels* — `missing`; `!placeholder` in the config. The gains are in deg/in, but the travels are only in Vol. II. Eyas spans the rotor-head pitch limits (p. 5.5-20) with collective down and the other inputs at zero: collective 0–10 in and lateral 0–10 in come out exactly; longitudinal −0.963 to 9.214 in and pedal −2.636 to 3.141 in do not, so the rule is doubtful there. Every control-map value in `uh60a.yaml` is tagged. A public source of the UH-60A control travels would replace them (D-034).
+- *Rotor-head pitch travel limits* (p. 5.5-20) — transcribed, not applied: GenHel adds them "for piloted simulation". Revisit in M8.
+
+## UH-60A main-rotor features not modelled (M6d) — deferred to M7 (D-034)
+- *Elastic twist* K_FP0 = −0.0003 − 0.0000044 (V_kt − 100), limited to [−0.00052, −0.0003] (p. 5.1-49; applied to the blade pitch on p. 5.1-24, through loads F_PDYMR not yet read). Eyas's blades are rigid. Symptom to look for in M7: trimmed collective or cyclic errors that grow with speed.
+- *Rotor force and moment filter* T_FILMR = 0.3 s (p. 5.1-36). Eyas couples the rotor exactly. Symptom: a response-phase mismatch in M7/M8.
+- *Profile-drag correction* ΔC_DMR = 0.002 (p. 5.1-49). Eyas uses the SC1095 tables as printed. Symptom: hover and cruise power low against the reference in M7.
 
 ## UH-60A tail-rotor torque — `missing` (M6, M7)
 GenHel's tail rotor computes thrust only (p. 5.4-2) and gives no blade profile-drag coefficient, so Eyas's tail rotor has no torque in M6 (D-028). Its power is a sizable part of hover power, which matters for the M7 power comparison and the M9 drivetrain. Check whether GenHel's engine module (§5.6) accounts for tail-rotor power, and look for a public tail-rotor blade section or profile-drag value before M7.
