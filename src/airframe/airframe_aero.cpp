@@ -9,6 +9,7 @@
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 
 namespace eyas {
 namespace {
@@ -56,11 +57,7 @@ FlowAngles flow_angles(const Vec3& v_b, double sin_fade) {
     const double xz = std::sqrt(v_b.x() * v_b.x() + v_b.z() * v_b.z());
     // t = cos β / sin c = xz / (sin c · |V|); s = 1 for t ≥ 1.
     const double edge = sin_fade * v_b.norm();
-    double s = 1.0;
-    if (xz < edge) {
-        const double t = xz / edge;
-        s = t * t * (3.0 - 2.0 * t);
-    }
+    const double s = xz < edge ? smoothstep(xz / edge) : 1.0;
     return {s * std::atan2(v_b.z(), std::abs(v_b.x())), std::atan2(v_b.y(), xz),
             std::atan2(v_b.z(), v_b.x()), s};
 }

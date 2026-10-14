@@ -9,6 +9,7 @@
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 
 namespace eyas {
 
@@ -34,11 +35,6 @@ constexpr double kMinCosGamma = 1e-6;
 // the √F lateral law at zero load the axis is stiff only through rounding, and
 // the slip law would divide by it.
 constexpr double kMinAxisStiffness = 1e-9;
-
-double smoothstep(double t) noexcept {
-    t = std::clamp(t, 0.0, 1.0);
-    return t * t * (3.0 - 2.0 * t);
-}
 
 double sign(double v) noexcept {
     return v < 0.0 ? -1.0 : 1.0;
@@ -154,8 +150,71 @@ void LandingGear::initial_states(std::span<double> x) const {
     std::fill(x.begin(), x.end(), 0.0);
 }
 
-void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std::size_t i,
-                           GearOut& out) const noexcept {
+// Everything that doesn't depend on the gear: attitude, gravity, the ground
+// plane and the ground axes, once per evaluation.
+struct LandingGear::Frame {
+    Mat3 C_nb;
+    Mat3 C_bg;
+    Mat3 C_gb;
+    Vec3 g_b;
+    Vec3 xg;
+    Vec3 yg;
+    double z_g = 0.0;
+    double omega_g = 0.0;  // Ω_g [rad/s]
+    bool ground = false;
+    // The gear line (body z) against the ground: cos γ, its rate, and the
+    // line direction's rate, NED.
+    double cg = 0.0;
+    double cg_dot = 0.0;
+    Vec3 wd_n;
+};
+
+LandingGear::Frame LandingGear::frame(const SimContext& ctx) const noexcept {
+    Frame f;
+    f.C_nb = ctx.body.q_nb.toRotationMatrix();
+    const Mat3& C_nb = f.C_nb;
+    const Vec3& w = ctx.body.omega_b;
+    f.g_b = C_nb.transpose() * gravity_n();
+
+    // Ground plane (D-032 item 9): through (0, 0, z_g) NED, upward normal u.
+    const Vec3& u = config_.ground_normal_n;
+    f.z_g = ctx.air.altitude + ctx.body.pos_n.z() - ctx.env.ground_height;
+    f.ground = std::isfinite(f.z_g);
+
+    // Ground axes g: z down the normal, x the body's heading in the plane
+    // (GenHel's space axes with ψ = 0, p. 5.7-18). They turn about z_g at
+    // Ω_g = y_g·ẋ_g, the heading rate in the plane (D-032, deflection axes).
+    const Vec3 zg = -u;
+    Vec3 xg = C_nb.col(0) - C_nb.col(0).dot(zg) * zg;
+    if (xg.norm() < 1e-9) {  // nose along the normal: use the body's y
+        const Vec3 py = C_nb.col(1) - C_nb.col(1).dot(zg) * zg;
+        const Vec3 py_dot = C_nb * w.cross(Vec3::UnitY());
+        const Vec3 yg = py.normalized();
+        xg = yg.cross(zg);
+        f.omega_g = -xg.dot(py_dot) / py.norm();  // ẏ_g = −Ω_g x_g
+    } else {
+        const Vec3 px_dot = C_nb * w.cross(Vec3::UnitX());
+        const double px = xg.norm();
+        xg /= px;
+        f.omega_g = zg.cross(xg).dot(px_dot) / px;
+    }
+    f.xg = xg;
+    f.yg = zg.cross(xg);
+    Mat3 C_ng;
+    C_ng.col(0) = f.xg;
+    C_ng.col(1) = f.yg;
+    C_ng.col(2) = zg;
+    f.C_bg = C_nb.transpose() * C_ng;
+    f.C_gb = f.C_bg.transpose();
+
+    f.wd_n = C_nb * w.cross(Vec3::UnitZ());  // d/dt of the gear line's direction
+    f.cg = -u.dot(C_nb.col(2));
+    f.cg_dot = -u.dot(f.wd_n);
+    return f;
+}
+
+void LandingGear::evaluate(const SimContext& ctx, const Frame& f, std::span<const double> x,
+                           std::size_t i, GearOut& out) const noexcept {
     const GearConfig& gc = config_.gears[i];
     const TireConfig& tc = gc.tire;
     const StrutConfig& sc = gc.strut;
@@ -170,7 +229,11 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
     const double G = tc.damping_factor;
     const double nt = tc.wheels;
 
-    const Mat3 C_nb = ctx.body.q_nb.toRotationMatrix();
+    const Mat3& C_nb = f.C_nb;
+    const Mat3& C_bg = f.C_bg;
+    const Mat3& C_gb = f.C_gb;
+    const Vec3& g_b = f.g_b;
+    const double omega_g = f.omega_g;
     const Vec3& v = ctx.body.vel_b;
     const Vec3& w = ctx.body.omega_b;
     const Vec3 ez(0.0, 0.0, 1.0);
@@ -180,38 +243,6 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
     const Vec3 r_dot = -sd * ez;
     const Vec3 v_ax = v + w.cross(r) + r_dot;
     const Vec3 c0 = w.cross(v) + w.cross(w.cross(r)) + 2.0 * w.cross(r_dot);
-    const Vec3 g_b = C_nb.transpose() * gravity_n();
-
-    // Ground plane (D-032 item 9): through (0, 0, z_g) NED, upward normal u.
-    const Vec3& u = config_.ground_normal_n;
-    const double z_g = ctx.air.altitude + ctx.body.pos_n.z() - ctx.env.ground_height;
-    const bool ground = std::isfinite(z_g);
-
-    // Ground axes g: z down the normal, x the body's heading in the plane
-    // (GenHel's space axes with ψ = 0, p. 5.7-18). They turn about z_g at
-    // Ω_g = y_g·ẋ_g, the heading rate in the plane (D-032, deflection axes).
-    const Vec3 zg = -u;
-    Vec3 xg = C_nb.col(0) - C_nb.col(0).dot(zg) * zg;
-    double omega_g = 0.0;
-    if (xg.norm() < 1e-9) {  // nose along the normal: use the body's y
-        const Vec3 py = C_nb.col(1) - C_nb.col(1).dot(zg) * zg;
-        const Vec3 py_dot = C_nb * w.cross(Vec3::UnitY());
-        const Vec3 yg = py.normalized();
-        xg = yg.cross(zg);
-        omega_g = -xg.dot(py_dot) / py.norm();  // ẏ_g = −Ω_g x_g
-    } else {
-        const Vec3 px_dot = C_nb * w.cross(Vec3::UnitX());
-        const double px = xg.norm();
-        xg /= px;
-        omega_g = zg.cross(xg).dot(px_dot) / px;
-    }
-    const Vec3 yg = zg.cross(xg);
-    Mat3 C_ng;
-    C_ng.col(0) = xg;
-    C_ng.col(1) = yg;
-    C_ng.col(2) = zg;
-    const Mat3 C_bg = C_nb.transpose() * C_ng;
-    const Mat3 C_gb = C_bg.transpose();
 
     // Gear line and tire radial deflection (pp. 5.7-13 to 5.7-15).
     GearState& st = out.st;
@@ -220,26 +251,25 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
     double delta_t_dot = 0.0;
     std::array<double, 2> vc{0.0, 0.0};
     bool line_ok = false;
-    if (ground) {
-        const Vec3 d_n = C_nb.col(2);
-        const double cg = -u.dot(d_n);
+    if (f.ground) {
+        const double cg = f.cg;
         if (cg > kMinCosGamma) {
             line_ok = true;
-            const Vec3 p0(0.0, 0.0, z_g);
+            const Vec3& u = config_.ground_normal_n;
+            const Vec3 p0(0.0, 0.0, f.z_g);
             const Vec3 p_ax = ctx.body.pos_n + C_nb * r;
             const double h = u.dot(p_ax - p0);
             const Vec3 v_ax_n = C_nb * v_ax;
-            const Vec3 wd_n = C_nb * w.cross(ez);  // d/dt of the gear line's direction
             const double h_dot = u.dot(v_ax_n);
-            const double cg_dot = -u.dot(wd_n);
+            const double cg_dot = f.cg_dot;
             const double L = h / cg;
             const double L_dot = (h_dot * cg - h * cg_dot) / (cg * cg);
             delta_t = R - L;
             delta_t_dot = -L_dot;
             // Velocity of the gear line's intersection with the ground: the
             // rate of GenHel's in-plane deflection while the tire sticks.
-            const Vec3 v_int = v_ax_n + L * wd_n + L_dot * d_n;
-            vc = {xg.dot(v_int), yg.dot(v_int)};
+            const Vec3 v_int = v_ax_n + L * f.wd_n + L_dot * C_nb.col(2);
+            vc = {f.xg.dot(v_int), f.yg.dot(v_int)};
         }
     }
     st.tire_deflection = delta_t;
@@ -374,10 +404,11 @@ void LandingGear::evaluate(const SimContext& ctx, std::span<const double> x, std
 
 void LandingGear::derivatives(const SimContext& ctx, std::span<const double> x,
                               ComponentDerivs& out) const {
+    const Frame f = frame(ctx);
     GearOut g;
     for (std::size_t i = 0; i < config_.gears.size(); ++i) {
         g = GearOut{};
-        evaluate(ctx, x, i, g);
+        evaluate(ctx, f, x, i, g);
         for (std::size_t k = 0; k < kStatesPerGear; ++k) {
             out.xdot0[kStatesPerGear * i + k] = g.xdot[k];
         }
@@ -394,7 +425,7 @@ void LandingGear::derivatives(const SimContext& ctx, std::span<const double> x,
 GearState LandingGear::gear_state(const SimContext& ctx, std::span<const double> x,
                                   std::size_t i) const noexcept {
     GearOut g;
-    evaluate(ctx, x, i, g);
+    evaluate(ctx, frame(ctx), x, i, g);
     return g.st;
 }
 

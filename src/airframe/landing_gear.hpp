@@ -176,7 +176,9 @@ public:
 
 private:
     struct GearOut;
-    void evaluate(const SimContext& ctx, std::span<const double> x, std::size_t i,
+    struct Frame;
+    Frame frame(const SimContext& ctx) const noexcept;
+    void evaluate(const SimContext& ctx, const Frame& f, std::span<const double> x, std::size_t i,
                   GearOut& out) const noexcept;
 
     LandingGearConfig config_;
