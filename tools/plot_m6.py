@@ -79,12 +79,78 @@ def pedal_step(data, out):
     plt.close(fig)
 
 
+def lag_vs_delay(data, out):
+    d = load(data / "m6b_lag_vs_delay.csv")
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=True)
+    speeds = [20, 40, 60, 100, 150]
+    for i, kt in enumerate(speeds):
+        sel = d["speed_kt"] == kt
+        w = d["omega"][sel]
+        c = f"C{i}"
+        axes[0, 0].plot(w, d["wash_gain"][sel], c + "-", label=f"{kt} kt")
+        axes[0, 0].plot(w, d["wash_gain_analytic"][sel], "k:", lw=0.8)
+        axes[1, 0].plot(w, d["wash_phase_deg"][sel], c + "-")
+        axes[1, 0].plot(w, d["wash_phase_deg_analytic"][sel], "k:", lw=0.8)
+        axes[0, 1].plot(w, 100 * (d["lift_gain"][sel] - 1), c + "-", label=f"{kt} kt")
+        axes[1, 1].plot(w, d["lift_phase_deg"][sel], c + "-")
+    for ax in axes.flat:
+        ax.set_xscale("log")
+        ax.axvspan(1, 5, color="0.92", zorder=0)
+        ax.grid(True, which="both", lw=0.3)
+    axes[0, 0].set_title("delayed fuselage downwash at the stabilator: lag / exact delay")
+    axes[0, 0].set_ylabel("gain ratio")
+    axes[1, 0].set_ylabel("phase difference [deg]")
+    axes[0, 1].set_title("resulting stabilator lift: lag / exact delay")
+    axes[0, 1].set_ylabel("gain error [%]")
+    axes[1, 1].set_ylabel("phase difference [deg]")
+    for ax in axes[1]:
+        ax.set_xlabel("heave frequency [rad/s] (shaded: piloted band)")
+    axes[0, 0].legend(fontsize=8, title="dotted: e^{jωτ}/(1+jωτ)", title_fontsize=8)
+    axes[0, 1].set_ylim(-5, 5)
+    axes[1, 1].set_ylim(-5, 5)
+    fig.suptitle("UH-60A stabilator, sinusoidal heave, collective 50 %, sea level")
+    fig.tight_layout()
+    fig.savefig(out / "m6b_lag_vs_delay.png", dpi=110)
+    plt.close(fig)
+
+
+def a1_sensitivity(data, out):
+    d = load(data / "m6b_a1_derivatives.csv")
+    lag = load(data / "m6b_a1_lag.csv")
+    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5))
+    ax = axes[0]
+    ax.plot(d["speed_kt"], np.abs(d["ratio"]), "ko-")
+    ax.set_xlabel("airspeed [kt]")
+    ax.set_ylabel("|lift per deg a1| / |lift per deg angle of attack|")
+    ax.set_title("how much the stabilator feels main-rotor flapping a1")
+    ax.grid(True, lw=0.3)
+    ax = axes[1]
+    for i, tau in enumerate(np.unique(lag["tau"])):
+        sel = lag["tau"] == tau
+        ax.plot(lag["omega"][sel], -lag["phase_deg"][sel], f"C{i}o", label=f"τ = {tau:g} s (production path)")
+        ax.plot(lag["omega"][sel], -lag["phase_deg_analytic"][sel], f"C{i}:", lw=1)
+    ax.axhline(5, color="k", lw=0.8)
+    ax.axvspan(1, 5, color="0.92", zorder=0)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("frequency [rad/s] (shaded: piloted band)")
+    ax.set_ylabel("phase lag the a1 filter adds [deg]")
+    ax.set_title("a lag on AA1FMR: 5° limit (line) holds for τ ≤ 17.5 ms")
+    ax.legend(fontsize=8)
+    ax.grid(True, which="both", lw=0.3)
+    fig.tight_layout()
+    fig.savefig(out / "m6b_a1_sensitivity.png", dpi=110)
+    plt.close(fig)
+
+
 def main():
     data = Path(sys.argv[1])
     out = Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
     anchor(data, out)
     pedal_step(data, out)
+    lag_vs_delay(data, out)
+    a1_sensitivity(data, out)
 
 
 if __name__ == "__main__":

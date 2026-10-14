@@ -142,6 +142,39 @@ inline AirframeAeroConfig uh60a_airframe(const GenHelAirframeGeometry& g) {
     return c;
 }
 
+// GenHel's UH-60A stations, areas and fin incidence (pp. 5.1-49, 5.2-15,
+// 5.3-19; read with high confidence, DATA_GAPS.md). The stabilator
+// incidence comes from the schedule.
+inline GenHelAirframeGeometry uh60a_geometry() {
+    GenHelAirframeGeometry g{};
+    g.FSCGB = 355.9;
+    g.WLCGB = 248.2;
+    g.BLCGB = 0.0;
+    g.FSWF = 345.5;
+    g.WLWF = 234.0;
+    g.BLWF = 0.0;
+    g.FSH1 = 700.1;
+    g.WLH1 = 244.0;
+    g.BLH1 = 0.0;
+    g.SAH1 = 45.0;
+    g.FSV1 = 695.0;
+    g.WLV1 = 273.0;
+    g.BLV1 = 0.0;
+    g.SAV1 = 32.3;
+    g.IV1 = 0.0;
+    return g;
+}
+
+// GenHel's steady-state stabilator schedule (Fig. 5.1.7), −8°…39°.
+inline IncidenceSchedule uh60a_stabilator_schedule() {
+    IncidenceSchedule s;
+    const CsvTable csv = read_csv_table(uh60a_airframe_dir() + "/stabilator_schedule.csv");
+    s.command = make_table2d(csv, "airspeed", "collective", "incidence");
+    s.min = -8.0 * units::kDegree;
+    s.max = 39.0 * units::kDegree;
+    return s;
+}
+
 // The airframe's wake at the UH-60A tail rotor: GenHel's fin and stabilator
 // tables (p. 5.4-5).
 inline FuselageWake uh60a_tail_rotor_wake() {
