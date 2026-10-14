@@ -19,6 +19,10 @@ struct Controls {
     double lat_cyclic = 0.0;  // [-1, 1] +1 = full right stick
     double lon_cyclic = 0.0;  // [-1, 1] +1 = full forward stick
     double pedal = 0.0;       // [-1, 1] +1 = full right pedal
+    // Wheel brakes, per side (D-032): 0 = released, 1 = full (GenHel's "set").
+    // Values outside [0, 1] are clamped; NaN counts as released.
+    double brake_left = 0.0;   // [0, 1]
+    double brake_right = 0.0;  // [0, 1]
 };
 
 // Atmospheric conditions set by the host (D-016). Eyas evaluates the
