@@ -81,7 +81,7 @@ ctest --preset debug                 # all tests
 ctest --preset debug -R 'Axis\.'     # tests matching a regex (each GoogleTest case is a ctest test)
 ./build/debug/tests/eyas_unit_tests --gtest_filter='Config.*'   # run the binary directly
 clang-format --dry-run --Werror src/**/*.{cpp,hpp} tests/**/*.{cpp,hpp}
-clang-tidy -p build/debug src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp
+clang-tidy -p build/debug src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp src/airframe/*.cpp
 ```
 
 - **Dependencies:** fetched by FetchContent at configure time, pinned by version and SHA-256 in `cmake/EyasDependencies.cmake` (Eigen 3.4.0, yaml-cpp 0.8.0, GoogleTest 1.15.2). Offline machines: `-DFETCHCONTENT_SOURCE_DIR_<NAME>=<path>`.

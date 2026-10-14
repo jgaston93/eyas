@@ -220,3 +220,20 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 **Why it matters:** a drag that feeds energy into a low-speed rearward drift is a destabilizing artefact, not aircraft behaviour, and it would appear in exactly the piloted hover tasks of M8.
 **Suggested resolution:** see D-030.
 
+## 27. The wind axes are singular in pure sideward flow — `open`
+**Spec:** §6.7, §6.8; GenHel CR-166309 pp. 5.2-2, 5.2-6, 5.2-9, 5.2-10; DECISIONS D-030.
+**Problem:** on the line V_X = V_Z = 0, V_Y ≠ 0 (β = ±90°) the angles α = atan(V_Z/|V_X|) and α' = atan2(V_Z, V_X) are undefined, and close to it they take any value, depending only on the direction of a vanishing x–z component. The table lookups (in α) and the wind-to-body rotation (in α') follow them, so the loads are not a function of the velocity there. Found in code review (2026-10-13), measured with the UH-60A fuselage at 30 ft/s sideward with a 0.001 ft/s x–z component swept around the circle (no wash):
+- production (D-030): rolling moment −684 to +1836 N·m, yawing moment +394 to −1723 N·m, body x force +378 to −178 N;
+- GenHel transcription: rolling moment −504 to +1354 ft·lbf (the same spread), yawing moment +295 to −704 ft·lbf, body x force −6 to +85 lbf.
+
+GenHel has the singularity too, and says so: the transformation "gives invalid body axes forces and moments when these angles approach 90°" (p. 5.2-2). D-030 didn't create it; it changes its shape (α' sweeps a full turn, GenHel's α half of one). The stabilator and fin have the same singular line in their local flow.
+**Why it matters:** in flight the main-rotor downwash keeps the fuselage's V_Z away from zero, and the tail wash does the same at the panels. It matters with little rotor thrust: on the ground in a crosswind (M6d, M8) and possibly at M7 trim points near hover, where a finite-difference Jacobian across the line would be meaningless. Every RK4 stage near the line sees a load that changes by kilonewton-metres over a millimetre per second.
+**Suggested resolution (proposal, for review):** regularize near the line, taking the structure from GenHel's own low-speed filter (p. 5.2-10). That filter fades, below |V_XWF| = 25 ft/s, from the wind-axis loads to body-axis low-speed loads X_LS…N_LS·q, in proportion to |V_XWF|/25. It can't be used as printed: X_LS…N_LS aren't given, its sign factors (α_WF/|α_WF|, V_YWF/|V_YWF|) jump themselves, and fading on |V_X| also changes vertical descent, where D-030's axes are already continuous. Proposed instead:
+- fade on direction, not speed: s = smoothstep(cos β / c₀), with cos β = |V_xz|/|V|, so the fade acts only for |β| > acos c₀ and is C¹ for the M7 Jacobians;
+- loads = s · (D-030 loads) + (1 − s) · (the same model at α = α' = 0, same β and q): the fixed-orientation term is the value GenHel's own atan2(0, 0) = 0 picks on the line, it depends only on β and q, and so the loads become continuous across the line;
+- the drag keeps the flow's true direction in both terms (only its table value is faded), so the drag stays dissipative (`DragOpposesTheFlow`);
+- the same fade for the fuselage and both panels, in the shared `flow_angles`;
+- c₀ (first guess sin 10°, i.e. |β| > 80°) set by a sensitivity sweep reported in VALIDATION.md, as for AA1FMR (D-028).
+
+Verification: the probe above, as a test (loads continuous as the x–z component goes to zero from every direction); `DragOpposesTheFlow`; the Layer-1 GenHel match unchanged outside the fade (its random cases kept to |β| < 80°, or checked against the faded reference).
+

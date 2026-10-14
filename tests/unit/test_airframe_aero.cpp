@@ -320,7 +320,73 @@ TEST(AirframeAero, DragOpposesTheFlow) {
     EXPECT_LT(ref.WF.X, 0.0);  // force aft while moving aft: positive power
 }
 
-// D-030: the loads are continuous as the flow goes from ahead to behind.
+// A dynamic-pressure ratio below zero has no square root (K_Q = √ratio), and
+// only the stabilator has a schedule: both are init errors, not a NaN or a
+// silently ignored table at run time.
+TEST(AirframeAero, RejectsInvalidPanels) {
+    test::GenHelAirframeGeometry g{};
+    g.FSCGB = 355.9;
+    g.FSH1 = g.FSV1 = 700.0;
+    g.SAH1 = 45.0;
+    g.SAV1 = 32.3;
+    const AirframeAeroConfig good = test::uh60a_airframe(g);
+    ASSERT_NO_THROW(AirframeAero{good});
+    const Table1D negative(Axis({0.0, 1.0}), {1.0, -0.01});
+    AirframeAeroConfig c = good;
+    c.stabilator.q_ratio = negative;
+    EXPECT_THROW(AirframeAero{std::move(c)}, InitError);
+    c = good;
+    c.fin.q_ratio = negative;
+    EXPECT_THROW(AirframeAero{std::move(c)}, InitError);
+    c = good;
+    c.fin.schedule =
+        IncidenceSchedule{Table2D(Axis({0.0, 1.0}), Axis({0.0, 1.0}), {0, 0, 0, 0}), -0.1, 0.1};
+    EXPECT_THROW(AirframeAero{std::move(c)}, InitError);
+}
+
+// D-030 in level flow (V_Z = 0), rearward: the tables see the same angles as
+// at +|V_X|, and α' = π turns the wind-to-body rotation into diag(−1, 1, −1).
+// So the drag and the lift both reverse in body axes, as do the rolling and
+// yawing moments; the side force and the pitching moment don't. A mirror
+// image of the forward loads would keep the lift and the roll and reverse the
+// pitch instead (DECISIONS.md D-030, "What it doesn't fix").
+TEST(AirframeAero, RearwardFuselageLoadsInLevelFlow) {
+    test::GenHelAirframeGeometry g{};
+    g.FSCGB = 355.9;
+    g.WLCGB = 248.2;
+    g.FSWF = 345.5;
+    g.WLWF = 234.0;
+    g.FSH1 = g.FSV1 = 700.0;
+    g.SAH1 = 45.0;
+    g.SAV1 = 32.3;
+    const AirframeAero aero(test::uh60a_airframe(g));
+    const Vec3 r_b = aero.config().fuselage_point_b;
+    const Vec3 flip(-1.0, 1.0, -1.0);
+    const std::vector<double> x = {0.0, 0.0};
+    for (const double vy : {0.0, 15.0, -25.0}) {
+        const Wrench fwd = aero.evaluate(context(40.0, vy, 0.0, 0.0, 0.0, 0.0, 0.0023769), x,
+                                         Vec3::Zero(), Vec3::Zero())
+                               .fuselage;
+        const Wrench aft = aero.evaluate(context(-40.0, vy, 0.0, 0.0, 0.0, 0.0, 0.0023769), x,
+                                         Vec3::Zero(), Vec3::Zero())
+                               .fuselage;
+        ASSERT_GT(std::abs(fwd.F.z()), 1.0);  // not vacuous: the lift is there
+        // Moments about the mounting point, where the tables put them.
+        const Vec3 m_fwd_b = fwd.M - r_b.cross(fwd.F);
+        const Vec3 m_aft_b = aft.M - r_b.cross(aft.F);
+        if (vy != 0.0) {
+            ASSERT_GT(std::abs(m_fwd_b.x()), 1.0) << vy;
+            ASSERT_GT(std::abs(m_fwd_b.z()), 1.0) << vy;
+        }
+        EXPECT_NEAR((aft.F - flip.cwiseProduct(fwd.F)).norm(), 0.0, 1e-12 * fwd.F.norm()) << vy;
+        EXPECT_NEAR((m_aft_b - flip.cwiseProduct(m_fwd_b)).norm(), 0.0, 1e-12 * m_fwd_b.norm())
+            << vy;
+    }
+}
+
+// D-030: the loads are continuous as the flow goes from ahead to behind, with
+// flow in the x–z plane (V_Z ≠ 0). Pure sideward flow (V_X = V_Z = 0) is a
+// singular line of the wind axes, here and in GenHel (SPEC_REVIEW #27).
 TEST(AirframeAero, ContinuousThroughZeroForwardSpeed) {
     test::GenHelAirframeGeometry g{};
     g.FSCGB = 355.9;
@@ -657,6 +723,10 @@ stabilator:
     EXPECT_THROW((void)AirframeAero::from_config(
                      Config::from_string(common + schedule + "  incidence: \"2 deg\"\n")),
                  InitError);
+    // The fin has no schedule: the key is unknown there, not ignored.
+    std::string fin_scheduled = common;
+    fin_scheduled.insert(fin_scheduled.find("fin:\n") + 5, schedule);
+    EXPECT_THROW((void)AirframeAero::from_config(Config::from_string(fin_scheduled)), InitError);
 }
 
 }  // namespace

@@ -181,6 +181,12 @@ def stabilator_csv():
     is bilinear (the PR50 x KVX1 product included). The travel limit is applied
     by the model after interpolation."""
     k = stabilator_constants()
+    # The breakpoints below put the limiters' lower corners at -BIAS, which
+    # holds only while every lower limit is zero.
+    for name in ("LMP50", "LMP51", "LMC2", "LMC1"):
+        if k[name][0] != 0.0:
+            raise ValueError(f"{name} lower limit {k[name][0]} is not zero: add its corner "
+                             "to the schedule grid")
     v_breaks = sorted({0.0, -k["BIAS_VX1"][0], -k["BIAS_VX1"][0] + k["LMP50"][1],
                        -k["BIAS_VX2"][0], -k["BIAS_VX2"][0] + k["LMP51"][1]})
     c_breaks = sorted({0.0, k["BIAS_C2"][0] - k["LMC2"][1], k["BIAS_C2"][0],

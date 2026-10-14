@@ -268,6 +268,10 @@ fuselage_wake:
     BaileyRotorConfig c = tail_with_wake();
     c.hub_position_b.x() = 0.5;
     EXPECT_THROW(BaileyRotor{std::move(c)}, InitError);
+    // A dynamic-pressure ratio below zero has no square root (K_QTR = √ratio).
+    c = tail_with_wake();
+    c.fuselage_wake->q_ratio = Table1D(Axis({0.0, 1.0}), {1.0, -0.01});
+    EXPECT_THROW(BaileyRotor{std::move(c)}, InitError);
 }
 
 }  // namespace

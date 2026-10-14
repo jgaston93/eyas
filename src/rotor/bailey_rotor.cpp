@@ -65,6 +65,11 @@ void validate(const BaileyRotorConfig& c) {
         if (!(c.hub_position_b.x() < 0.0)) {
             throw InitError("bailey rotor: a fuselage wake needs the hub aft of the CG (x < 0)");
         }
+        if (!(min_value(c.fuselage_wake->q_ratio) >= 0.0)) {
+            throw InitError(
+                "bailey rotor: the fuselage wake's dynamic-pressure ratio must not be "
+                "negative");
+        }
     }
 }
 
