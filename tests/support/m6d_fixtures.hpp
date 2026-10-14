@@ -41,6 +41,26 @@ inline constexpr double kGenHelWeight = 16638.0;  // [lbm]
 inline constexpr double kFSCG = 355.9;            // [in]
 inline constexpr double kWLCG = 248.2;            // [in]
 
+// The placeholder travels (D-034): each spans the rotor-head pitch limits
+// (p. 5.5-20) with collective down and the other inputs at zero. Normalized
+// input → GenHel inches. Shared by the tests and the validation run; if the
+// travels change in tools/build_uh60a_config.py, ControlMapsAreGenHelsRigging
+// fails until these follow.
+struct Travels {
+    static double xc(double c) { return 10.0 * c; }       // 9.9..25.9 deg / 1.6
+    static double xa(double l) { return 5.0 + 5.0 * l; }  // ±8 deg / 1.6
+    static double xb2(double f) {                         // −12.5..16.3 deg / 2.83
+        const double lo = (-12.5 + 9.7754) / 2.83;
+        const double hi = (16.3 + 9.7754) / 2.83;
+        return 0.5 * (lo + hi) + 0.5 * (hi - lo) * f;
+    }
+    static double xp(double p) {  // 36.5..4.5 deg / −5.539 (right pedal: less thrust)
+        const double lo = (36.5 - 21.9) / -5.539;
+        const double hi = (4.5 - 21.9) / -5.539;
+        return 0.5 * (lo + hi) + 0.5 * (hi - lo) * p;
+    }
+};
+
 // The UH-60A components, built from the config, evaluated outside the
 // executive.
 class Uh60aHarness {
@@ -166,7 +186,9 @@ public:
 
     // Every component's load0 (body axes, about the airframe CG) and xdot0 at
     // (t, x): the loads with the body acceleration zero. xdot0 is written
-    // into xdot (component states only; the body part is left as is).
+    // into xdot (component states only; the body part is left as is). Throws
+    // if a component's bounded iteration did not converge (D-023), so no
+    // check passes on unconverged loads.
     std::vector<Wrench> evaluate(double t, std::span<const double> x, const Controls& controls,
                                  const Environment& env, std::span<double> xdot = {}) const {
         const SimContext ctx = context(t, x, controls, env);
@@ -178,6 +200,9 @@ public:
             std::vector<double> G(n * 6, 0.0);
             ComponentDerivs d{xd, G, Wrench{}, Mat66::Zero(), true, &coupling_};
             comps_[i]->derivatives(ctx, x.subspan(offsets_[i], n), d);
+            if (!d.converged) {
+                throw std::runtime_error("unconverged: " + std::string(comps_[i]->name()));
+            }
             loads[i] = d.load0_b;
             if (!xdot.empty()) {
                 std::copy(xd.begin(), xd.end(),

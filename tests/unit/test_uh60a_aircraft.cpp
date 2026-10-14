@@ -195,30 +195,12 @@ struct GenHelRigging {
     }
 };
 
-// The placeholder travels (D-034): each spans the rotor-head pitch limits
-// (p. 5.5-20) with collective down and the other inputs at zero. Normalized
-// input → GenHel inches.
-struct Travels {
-    static double xc(double c) { return 10.0 * c; }       // 9.9..25.9 deg / 1.6
-    static double xa(double l) { return 5.0 + 5.0 * l; }  // ±8 deg / 1.6
-    static double xb2(double f) {                         // −12.5..16.3 deg / 2.83
-        const double lo = (-12.5 + 9.7754) / 2.83;
-        const double hi = (16.3 + 9.7754) / 2.83;
-        return 0.5 * (lo + hi) + 0.5 * (hi - lo) * f;
-    }
-    static double xp(double p) {  // 36.5..4.5 deg / −5.539 (right pedal: less thrust)
-        const double lo = (36.5 - 21.9) / -5.539;
-        const double hi = (4.5 - 21.9) / -5.539;
-        return 0.5 * (lo + hi) + 0.5 * (hi - lo) * p;
-    }
-};
-
 TEST(Uh60aAircraft, ControlMapsAreGenHelsRigging) {
     const Uh60aHarness ac;
     const PitchSchedule& main = *ac.get<BladeElementRotor>("main_rotor").config().controls;
     const PitchSchedule& tail = *ac.get<BaileyRotor>("tail_rotor").config().controls;
     const GenHelRigging g;
-    const Travels tr;
+    using tr = test::Travels;
     std::mt19937_64 rng(6004);
     std::uniform_real_distribution<double> u(-1.0, 1.0);
     for (int n = 0; n < 200; ++n) {
@@ -228,7 +210,7 @@ TEST(Uh60aAircraft, ControlMapsAreGenHelsRigging) {
         c.lon_cyclic = u(rng);
         c.pedal = u(rng);
         const auto o =
-            g(tr.xc(c.collective), tr.xa(c.lat_cyclic), tr.xb2(c.lon_cyclic), tr.xp(c.pedal));
+            g(tr::xc(c.collective), tr::xa(c.lat_cyclic), tr::xb2(c.lon_cyclic), tr::xp(c.pedal));
         const SwashplatePitch p = main.pitch(c);
         for (int k = 0; k < 12; ++k) {
             const double psi = 2.0 * std::numbers::pi * k / 12;

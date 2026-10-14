@@ -24,9 +24,18 @@ def load(path):
     return np.genfromtxt(path, delimiter=",", names=True, dtype=None, encoding="utf-8")
 
 
+def summary_value(data, key):
+    """A value from m6d_summary.csv, whose lines are key,value (or # comments)."""
+    for line in (data / "m6d_summary.csv").read_text(encoding="utf-8").splitlines():
+        parts = line.split(",")
+        if parts[0] == key:
+            return float(parts[1])
+    raise KeyError(f"{key} not in m6d_summary.csv")
+
+
 def drop(data, out):
     d = load(data / "m6d_drop.csv")
-    weight = 16638.0
+    weight = summary_value(data, "weight_lbf")
     fig, ax = plt.subplots(3, 1, figsize=(7.5, 8.5), sharex=True)
     ax[0].plot(d["t"], d["height"], label="CG height above the ground [m]")
     ax[0].legend(fontsize=8)

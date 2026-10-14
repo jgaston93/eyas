@@ -33,16 +33,6 @@ using namespace eyas;
 using test::Uh60aHarness;
 constexpr double kDeg = std::numbers::pi / 180.0;
 
-// GenHel inches from a normalized input: the placeholder travels (D-034).
-double xc_in(double c) {
-    return 10.0 * c;
-}
-double xp_in(double p) {
-    const double lo = (36.5 - 21.9) / -5.539;
-    const double hi = (4.5 - 21.9) / -5.539;
-    return 0.5 * (lo + hi) + 0.5 * (hi - lo) * p;
-}
-
 void hover(const Uh60aHarness& ac, std::ostream& out) {
     BodyState b;
     b.pos_n = Vec3(0.0, 0.0, -500.0);
@@ -80,10 +70,10 @@ void hover(const Uh60aHarness& ac, std::ostream& out) {
     out << "# Hover OGE, ISA sea level, body held level, cyclic centred (M6d)\n";
     out << "weight_lbf," << ac.total_weight() / units::kPoundForce << "\n";
     out << "collective," << c.collective << "\n";
-    out << "collective_in," << xc_in(c.collective) << "\n";
+    out << "collective_in," << test::Travels::xc(c.collective) << "\n";
     out << "theta0_deg," << p_mr.theta0 / kDeg << "\n";
     out << "pedal," << c.pedal << "\n";
-    out << "pedal_in," << xp_in(c.pedal) << "\n";
+    out << "pedal_in," << test::Travels::xp(c.pedal) << "\n";
     out << "theta_tr_cmd_deg," << th_cmd / kDeg << "\n";
     out << "theta_tr_deg," << th_tr / kDeg << "\n";
     out << "mr_thrust_lbf," << thrust / units::kPoundForce << "\n";
@@ -115,7 +105,7 @@ void ground(const Uh60aHarness& ac, const std::filesystem::path& dir, std::ostre
     c.brake_left = 1.0;
     c.brake_right = 1.0;
     summary << "ground_pedal," << c.pedal << "\n";
-    summary << "ground_pedal_in," << xp_in(c.pedal) << "\n";
+    summary << "ground_pedal_in," << test::Travels::xp(c.pedal) << "\n";
 
     Model m = Model::from_file(test::uh60a_config_path());
     const auto& gear = ac.get<LandingGear>("gear");
