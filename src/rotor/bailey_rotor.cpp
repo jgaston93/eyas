@@ -9,7 +9,6 @@
 #include "rotor/hub_frame.hpp"
 #include "rotor/pitt_peters.hpp"
 #include "util/config.hpp"
-#include "util/csv_table.hpp"
 #include "util/error.hpp"
 
 namespace eyas {
@@ -65,11 +64,6 @@ void validate(const BaileyRotorConfig& c) {
         if (!(c.hub_position_b.x() < 0.0)) {
             throw InitError("bailey rotor: a fuselage wake needs the hub aft of the CG (x < 0)");
         }
-        if (!(min_value(c.fuselage_wake->q_ratio) >= 0.0)) {
-            throw InitError(
-                "bailey rotor: the fuselage wake's dynamic-pressure ratio must not be "
-                "negative");
-        }
     }
 }
 
@@ -95,8 +89,10 @@ std::vector<std::string> BaileyRotor::consumes() const {
     std::vector<std::string> names =
         config_.wash ? config_.wash->consumes() : std::vector<std::string>{};
     if (config_.fuselage_wake) {
-        names.push_back(config_.fuselage_wake->airframe + ".alpha_wf");
-        names.push_back(config_.fuselage_wake->airframe + ".psi_wf");
+        const std::string& a = config_.fuselage_wake->airframe;
+        names.push_back(a + ".fin_q_factor");
+        names.push_back(a + ".sidewash");
+        names.push_back(a + ".downwash");
     }
     return names;
 }
@@ -107,8 +103,10 @@ void BaileyRotor::bind(const CouplingRegistry& registry) {
         config_.wash->bind(registry, consumer);
     }
     if (config_.fuselage_wake) {
-        alpha_wf_ = registry.find(config_.fuselage_wake->airframe + ".alpha_wf", consumer);
-        psi_wf_ = registry.find(config_.fuselage_wake->airframe + ".psi_wf", consumer);
+        const std::string& a = config_.fuselage_wake->airframe;
+        q_factor_ = registry.find(a + ".fin_q_factor", consumer);
+        sidewash_ = registry.find(a + ".sidewash", consumer);
+        downwash_ = registry.find(a + ".downwash", consumer);
     }
 }
 
@@ -123,11 +121,12 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx,
     }
     FuselageWakeInput wake;
     if (ctx.coupling != nullptr) {
-        wake.alpha_wf = ctx.coupling->get(alpha_wf_);
-        wake.psi_wf = ctx.coupling->get(psi_wf_);
+        wake.q_factor = ctx.coupling->get(q_factor_);
+        wake.sidewash = ctx.coupling->get(sidewash_);
+        wake.downwash = ctx.coupling->get(downwash_);
     }
-    wake.sidewash = x[1];
-    wake.downwash = x[2];
+    wake.sidewash_d = x[1];
+    wake.downwash_d = x[2];
     return evaluate(ctx, x[0], wash_b, &wake);
 }
 
@@ -147,16 +146,17 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i, c
         // Fuselage wake (p. 5.4-5): K_QTR = √(Q_TRQWF(|ψ_WF|)) scales the body
         // velocity; the delayed sidewash and downwash enter as −u σ_d K_QTR
         // and −u ε_d K_QTR (GenHel: −(V_xb/57.3) SIG_TR K_QTR, with degrees).
-        const FuselageWake& f = *c.fuselage_wake;
+        // K_QTR, σ and ε are the airframe's: GenHel reads the fin's and the
+        // stabilator's maps here (QV1MP, SGV1MP, EPH1MP).
         const double u = v_air_b.x();
-        out.q_factor = std::sqrt(f.q_ratio(wake->psi_wf));
-        out.sidewash = f.sidewash(wake->psi_wf);
-        out.downwash = f.downwash(wake->alpha_wf);
-        v_b += (out.q_factor - 1.0) * v_air_b +
-               Vec3(0.0, -u * wake->sidewash * out.q_factor, -u * wake->downwash * out.q_factor);
+        out.q_factor = wake->q_factor;
+        out.sidewash = wake->sidewash;
+        out.downwash = wake->downwash;
+        v_b += (out.q_factor - 1.0) * v_air_b + Vec3(0.0, -u * wake->sidewash_d * out.q_factor,
+                                                     -u * wake->downwash_d * out.q_factor);
         const double rate = std::abs(u) / -c.hub_position_b.x();
-        out.sidewash_rate = rate * (out.sidewash - wake->sidewash);
-        out.downwash_rate = rate * (out.downwash - wake->downwash);
+        out.sidewash_rate = rate * (out.sidewash - wake->sidewash_d);
+        out.downwash_rate = rate * (out.downwash - wake->downwash_d);
     }
     const Vec3 v_h = C_hb_ * v_b;
     const double mu2 = (v_h.x() * v_h.x() + v_h.y() * v_h.y()) / (tip_speed_ * tip_speed_);
@@ -216,29 +216,10 @@ void BaileyRotor::derivatives(const SimContext& ctx, std::span<const double> x,
 
 namespace {
 
-// {airframe: <name>, q_ratio: CSV (psi_wf, q_ratio), sidewash: CSV (psi_wf,
-// sidewash), downwash: CSV (alpha_wf, downwash)}: GenHel Tables 3.5.7, 3.5.8,
-// 3.5.4 as tools/build_uh60a_airframe.py writes them.
+// {airframe: <name>}: the airframe instance whose wake values are read.
 FuselageWake fuselage_wake_from_config(const Config& node) {
-    using units::Dimension;
-    node.allow_keys({"airframe", "q_ratio", "sidewash", "downwash"});
-    FuselageWake w;
-    w.airframe = node.string("airframe");
-    const auto column = [&](const char* key, const char* x, Dimension d) {
-        return node.in_context(key, [&] {
-            const CsvTable csv = read_csv_table(node.path(key));
-            csv.require_dimension(x, Dimension::angle);
-            csv.require_dimension(key, d);
-            if (csv.is_placeholder()) {
-                node.note_placeholder(key, csv.origin + " (# status: placeholder)");
-            }
-            return make_table1d(csv, x, key);
-        });
-    };
-    w.q_ratio = column("q_ratio", "psi_wf", Dimension::dimensionless);
-    w.sidewash = column("sidewash", "psi_wf", Dimension::angle);
-    w.downwash = column("downwash", "alpha_wf", Dimension::angle);
-    return w;
+    node.allow_keys({"airframe"});
+    return FuselageWake{node.string("airframe")};
 }
 
 }  // namespace

@@ -54,7 +54,7 @@ const test::GenHelAirframeTables& genhel_tables() {
 
 BaileyRotorConfig tail_with_wake() {
     BaileyRotorConfig c = test::bailey_from_genhel(test::genhel_uh60a_tail_rotor());
-    c.fuselage_wake = test::uh60a_tail_rotor_wake();
+    c.fuselage_wake = FuselageWake{"airframe"};
     return c;
 }
 
@@ -99,11 +99,14 @@ TEST(TailRotorWake, MatchesGenHel) {
         ctx.body.omega_b = Vec3(in.P, in.Q, in.R);
         ctx.air.density = in.RHO * kSlugPerFt3;
         ctx.controls.pedal = in.THETTR * kDegree;
+        // The airframe's wake values (AirframePublishesGenHelsTailRotorWake
+        // checks them against these).
         FuselageWakeInput wake;
-        wake.alpha_wf = alfwf * kDegree;
-        wake.psi_wf = psiwf * kDegree;
-        wake.sidewash = (steady ? w.SIGTR : sig_d) * kDegree;
-        wake.downwash = (steady ? w.EPSTR : eps_d) * kDegree;
+        wake.q_factor = w.KQTR;
+        wake.sidewash = w.SIGTR * kDegree;
+        wake.downwash = w.EPSTR * kDegree;
+        wake.sidewash_d = (steady ? w.SIGTR : sig_d) * kDegree;
+        wake.downwash_d = (steady ? w.EPSTR : eps_d) * kDegree;
         const BaileyRotorLoads p =
             rotor.evaluate(ctx, ref.DWSHTR, Vec3(vxmr, 0.0, vzmr) * kFoot, &wake);
 
@@ -115,14 +118,37 @@ TEST(TailRotorWake, MatchesGenHel) {
         EXPECT_NEAR(p.body.M.y(), ref.MTR * kPoundForce * kFoot, 1e-10 * scale * arm);
         EXPECT_NEAR(p.body.M.z(), ref.NTR * kPoundForce * kFoot, 1e-10 * scale * arm);
         EXPECT_NEAR(p.thrust, ref.TTR * kPoundForce, 1e-10 * scale) << "case " << i;
-        EXPECT_NEAR(p.q_factor, w.KQTR, 1e-14) << "case " << i;
-        EXPECT_NEAR(p.sidewash, w.SIGTR * kDegree, 1e-14) << "case " << i;
-        EXPECT_NEAR(p.downwash, w.EPSTR * kDegree, 1e-14) << "case " << i;
 
         // D-028 lag: dσ_d/dt = (|u|/l)(σ − σ_d), l the hub's distance aft.
         const double rate = std::abs(ctx.body.vel_b.x()) / -rotor.config().hub_position_b.x();
-        EXPECT_NEAR(p.sidewash_rate, rate * (p.sidewash - wake.sidewash), 1e-12);
-        EXPECT_NEAR(p.downwash_rate, rate * (p.downwash - wake.downwash), 1e-12);
+        EXPECT_NEAR(p.sidewash_rate, rate * (wake.sidewash - wake.sidewash_d), 1e-12);
+        EXPECT_NEAR(p.downwash_rate, rate * (wake.downwash - wake.downwash_d), 1e-12);
+    }
+}
+
+// Layer 1 for the values the tail rotor reads: what the airframe publishes
+// is GenHel's tail-rotor wake (p. 5.4-5: K_QTR = √QV1MP(|ψ_WF|),
+// SIG_TR = SGV1MP(ψ_WF), EPS_TR = EPH1MP(α_WF)) at GenHel's tunnel angles,
+// read from the raw transcriptions with GenHel's own map lookups.
+TEST(TailRotorWake, AirframePublishesGenHelsTailRotorWake) {
+    const AirframeAero aero(test::uh60a_airframe(test::uh60a_geometry()));
+    std::mt19937_64 rng(6203);
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+    const std::vector<double> x = {0.0, 0.0};
+    for (int i = 0; i < 300; ++i) {
+        // Forward and rearward, sideslip and incidence well inside the
+        // tables, outside the sideward fade (D-031).
+        SimContext ctx;
+        ctx.body.vel_b = Vec3(60.0 * u(rng), 20.0 * u(rng), 20.0 * u(rng));
+        ctx.body.vel_b.x() += ctx.body.vel_b.x() > 0.0 ? 15.0 : -15.0;
+        ctx.air.density = 1.2;
+        const AirframeAeroLoads l = aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero());
+        const test::GenHelTailRotorWake w = test::genhel_tail_rotor_wake(
+            genhel_tables(), l.alpha_wf / kDegree, l.psi_wf / kDegree, 0.0,
+            std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN());
+        EXPECT_NEAR(l.fin_q_factor, w.KQTR, 1e-14) << "case " << i;
+        EXPECT_NEAR(l.sidewash, w.SIGTR * kDegree, 1e-14) << "case " << i;
+        EXPECT_NEAR(l.downwash, w.EPSTR * kDegree, 1e-14) << "case " << i;
     }
 }
 
@@ -132,13 +158,7 @@ TEST(TailRotorWake, NoWakeIsM6a) {
     const BaileyRotor m6b(tail_with_wake());
     EXPECT_EQ(m6a.num_states(), 1U);
     EXPECT_EQ(m6b.num_states(), 3U);
-    // With the airframe at zero angles and a zero wake, K_Q = √0.62 differs
-    // from 1, so the two differ; with K = 1 tables they agree.
-    BaileyRotorConfig c = tail_with_wake();
-    c.fuselage_wake->q_ratio = Table1D(Axis({0.0, 1.0}), {1.0, 1.0});
-    c.fuselage_wake->sidewash = Table1D(Axis({0.0, 1.0}), {0.0, 0.0});
-    c.fuselage_wake->downwash = Table1D(Axis({0.0, 1.0}), {0.0, 0.0});
-    const BaileyRotor unit(std::move(c));
+    // With a neutral wake (K = 1, no sidewash or downwash) they agree.
     SimContext ctx;
     ctx.body.vel_b = Vec3(30.0, 4.0, -2.0);
     ctx.body.omega_b = Vec3(0.1, 0.2, -0.1);
@@ -146,12 +166,17 @@ TEST(TailRotorWake, NoWakeIsM6a) {
     ctx.controls.pedal = 12.0 * kDegree;
     const FuselageWakeInput zero;
     const BaileyRotorLoads a = m6a.evaluate(ctx, 0.04, Vec3(1.0, 0.0, -3.0));
-    const BaileyRotorLoads b = unit.evaluate(ctx, 0.04, Vec3(1.0, 0.0, -3.0), &zero);
+    const BaileyRotorLoads b = m6b.evaluate(ctx, 0.04, Vec3(1.0, 0.0, -3.0), &zero);
     EXPECT_NEAR((a.body.F - b.body.F).norm(), 0.0, 1e-12 * a.body.F.norm());
     EXPECT_EQ(a.lambda_dot, b.lambda_dot);
+    // And a wake changes them (the input is used).
+    FuselageWakeInput wake;
+    wake.q_factor = 0.8;
+    const BaileyRotorLoads c = m6b.evaluate(ctx, 0.04, Vec3(1.0, 0.0, -3.0), &wake);
+    EXPECT_GT((a.body.F - c.body.F).norm(), 1e-3 * a.body.F.norm());
 }
 
-// End to end: the tail rotor reads the airframe's tunnel angles and the main
+// End to end: the tail rotor reads the airframe's wake values and the main
 // rotor's outputs from the same evaluation, whatever the config order.
 TEST(TailRotorWake, ThroughTheExecutive) {
     BladeElementRotorConfig m =
@@ -215,10 +240,11 @@ TEST(TailRotorWake, ThroughTheExecutive) {
     const Vec3 wt = tw.evaluate(lambda0, mu_x, ml.mu_z, beta_1c, main->tip_speed()).velocity_b;
     const AirframeAeroLoads al = aero->evaluate(ctx, x.subspan(i_aero, 2), wf, wt);
     FuselageWakeInput wake;
-    wake.alpha_wf = al.alpha_wf;
-    wake.psi_wf = al.psi_wf;
-    wake.sidewash = x[i_tail + 1];
-    wake.downwash = x[i_tail + 2];
+    wake.q_factor = al.fin_q_factor;
+    wake.sidewash = al.sidewash;
+    wake.downwash = al.downwash;
+    wake.sidewash_d = x[i_tail + 1];
+    wake.downwash_d = x[i_tail + 2];
     const BaileyRotorLoads expect = tail->evaluate(ctx, x[i_tail], wt, &wake);
     EXPECT_GT(std::abs(al.psi_wf), 1.0 * kDegree);
 
@@ -253,25 +279,32 @@ tip_loss: 0.92
 twist: "-18 deg"
 hub: {position: {x: "-376.1 in", y: "14 in", z: "-76.5 in"}, roll: "70 deg"}
 controls: {theta0: {pedal: "1 rad"}}
-fuselage_wake:
-  airframe: airframe
-  q_ratio: )" + dir + R"(/fin_q_ratio.csv
-  sidewash: )" + dir + R"(/fin_sidewash.csv
-  downwash: )" + dir + R"(/stabilator_downwash.csv
+fuselage_wake: {airframe: airframe}
 )");
     const std::unique_ptr<BaileyRotor> r = BaileyRotor::from_config(cfg);
     EXPECT_EQ(r->num_states(), 3U);
-    EXPECT_EQ(r->consumes(), (std::vector<std::string>{"airframe.alpha_wf", "airframe.psi_wf"}));
+    EXPECT_EQ(r->consumes(), (std::vector<std::string>{"airframe.fin_q_factor", "airframe.sidewash",
+                                                       "airframe.downwash"}));
     EXPECT_TRUE(cfg.placeholders().empty());
 
     // A wake needs the hub aft of the CG (its delay is l/u).
     BaileyRotorConfig c = tail_with_wake();
     c.hub_position_b.x() = 0.5;
     EXPECT_THROW(BaileyRotor{std::move(c)}, InitError);
-    // A dynamic-pressure ratio below zero has no square root (K_QTR = √ratio).
-    c = tail_with_wake();
-    c.fuselage_wake->q_ratio = Table1D(Axis({0.0, 1.0}), {1.0, -0.01});
-    EXPECT_THROW(BaileyRotor{std::move(c)}, InitError);
+    // The wake tables are the airframe's: a copy here is an error, not a
+    // second source that could drift from the fin's (code review, M6b).
+    EXPECT_THROW((void)BaileyRotor::from_config(Config::from_string(R"(
+type: bailey_rotor
+blades: 4
+radius: "5.5 ft"
+rotor_speed: "124.62 rad/s"
+chord: "0.81 ft"
+lift_slope: "5.73 1/rad"
+hub: {position: {x: "-376.1 in", y: "14 in", z: "-76.5 in"}, roll: "70 deg"}
+controls: {theta0: {pedal: "1 rad"}}
+fuselage_wake: {airframe: airframe, q_ratio: )" + dir + R"(/fin_q_ratio.csv}
+)")),
+                 InitError);
 }
 
 }  // namespace

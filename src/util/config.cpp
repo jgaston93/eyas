@@ -7,6 +7,7 @@
 #include <sstream>
 #include <system_error>
 
+#include "util/csv_table.hpp"
 #include "util/error.hpp"
 #include "util/parse.hpp"
 #include "util/units.hpp"
@@ -102,6 +103,14 @@ std::filesystem::path Config::path(std::string_view key) const {
         fail(key, "empty path");
     }
     return p.is_absolute() ? p : *base_dir_ / p;
+}
+
+CsvTable Config::csv_table(std::string_view key) const {
+    CsvTable csv = read_csv_table(path(key));
+    if (csv.is_placeholder()) {
+        note_placeholder(key, csv.origin + " (# status: placeholder)");
+    }
+    return csv;
 }
 
 std::string Config::full_path(std::string_view key) const {

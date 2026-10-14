@@ -11,7 +11,6 @@
 #include <string>
 
 #include "airframe/airframe_aero.hpp"
-#include "rotor/bailey_rotor.hpp"
 #include "rotor/rotor_wash.hpp"
 #include "support/genhel_airframe.hpp"
 #include "util/csv_table.hpp"
@@ -173,18 +172,6 @@ inline IncidenceSchedule uh60a_stabilator_schedule() {
     s.min = -8.0 * units::kDegree;
     s.max = 39.0 * units::kDegree;
     return s;
-}
-
-// The airframe's wake at the UH-60A tail rotor: GenHel's fin and stabilator
-// tables (p. 5.4-5).
-inline FuselageWake uh60a_tail_rotor_wake() {
-    using units::Dimension;
-    FuselageWake w;
-    w.airframe = "airframe";
-    w.q_ratio = uh60a_column("fin_q_ratio.csv", "psi_wf", "q_ratio", Dimension::dimensionless);
-    w.sidewash = uh60a_column("fin_sidewash.csv", "psi_wf", "sidewash", Dimension::angle);
-    w.downwash = uh60a_column("stabilator_downwash.csv", "alpha_wf", "downwash", Dimension::angle);
-    return w;
 }
 
 }  // namespace eyas::test

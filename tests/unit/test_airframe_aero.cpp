@@ -148,6 +148,7 @@ TEST(AirframeAero, MatchesGenHelSteadyState) {
         EXPECT_NEAR(p.sidewash, ref.SIGV1 * kDegree, 1e-12) << "case " << i;
         EXPECT_NEAR(p.alpha_h, ref.ALFHH1 * kDegree, 1e-12) << "case " << i;
         EXPECT_NEAR(p.beta_v, ref.BETVV1 * kDegree, 1e-12) << "case " << i;
+        EXPECT_NEAR(p.fin_q_factor, ref.KQV1, 1e-14) << "case " << i;
         expect_loads(p.fuselage, ref.WF, magnitude(ref.WF), "fuselage", i);
         expect_loads(p.stabilator, ref.H1, magnitude(ref.H1), "stabilator", i);
         expect_loads(p.fin, ref.V1, magnitude(ref.V1), "fin", i);
@@ -619,7 +620,9 @@ TEST(AirframeAero, ThroughTheExecutive) {
     // The lag states moved off zero: the wake is being tracked.
     const std::size_t i_aero = body_layout::kSize;
     EXPECT_NE(x[i_aero], 0.0);
-    EXPECT_EQ(aero->produces(), (std::vector<std::string>{"airframe.alpha_wf", "airframe.psi_wf"}));
+    EXPECT_EQ(aero->produces(), (std::vector<std::string>{
+                                    "airframe.alpha_wf", "airframe.psi_wf", "airframe.fin_q_factor",
+                                    "airframe.sidewash", "airframe.downwash"}));
 
     const test::AllocationCounter count;
     (void)ex.advance(Controls{}, Environment{}, 16'666'667);
@@ -737,6 +740,12 @@ TEST(AirframeAero, WritesTunnelAnglesToTheStore) {
     const AirframeAeroLoads l = aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero());
     EXPECT_EQ(store.get(registry.find("airframe.alpha_wf", "test")), l.alpha_wf);
     EXPECT_EQ(store.get(registry.find("airframe.psi_wf", "test")), l.psi_wf);
+    EXPECT_EQ(store.get(registry.find("airframe.fin_q_factor", "test")), l.fin_q_factor);
+    EXPECT_EQ(store.get(registry.find("airframe.sidewash", "test")), l.sidewash);
+    EXPECT_EQ(store.get(registry.find("airframe.downwash", "test")), l.downwash);
+    EXPECT_NE(l.fin_q_factor, 1.0);  // not vacuous
+    EXPECT_NE(l.sidewash, 0.0);
+    EXPECT_NE(l.downwash, 0.0);
     EXPECT_GT(l.psi_wf, 0.0);  // v_y < 0: ψ_WF = −β_WF > 0
 }
 

@@ -102,7 +102,8 @@ std::vector<std::string> AirframeAero::produces() const {
     if (config_.name.empty()) {
         return {};
     }
-    return {config_.name + ".alpha_wf", config_.name + ".psi_wf"};
+    const std::string& n = config_.name;
+    return {n + ".alpha_wf", n + ".psi_wf", n + ".fin_q_factor", n + ".sidewash", n + ".downwash"};
 }
 
 std::vector<std::string> AirframeAero::consumes() const {
@@ -130,6 +131,9 @@ void AirframeAero::bind(const CouplingRegistry& registry) {
     if (!config_.name.empty()) {
         alpha_wf_ = registry.find(config_.name + ".alpha_wf", consumer);
         psi_wf_ = registry.find(config_.name + ".psi_wf", consumer);
+        fin_q_factor_ = registry.find(config_.name + ".fin_q_factor", consumer);
+        sidewash_ = registry.find(config_.name + ".sidewash", consumer);
+        downwash_ = registry.find(config_.name + ".downwash", consumer);
     }
 }
 
@@ -213,6 +217,7 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
     {
         const PanelConfig& v_ = c.fin;
         const double kq = std::sqrt(v_.q_ratio(out.psi_wf));
+        out.fin_q_factor = kq;
         out.sidewash = v_.wake_angle(out.psi_wf);
         const Vec3 v_b = kq * v_air_b + b.omega_b.cross(v_.position_b) + tail_wash_b +
                          Vec3(0.0, -u * x[1] * kq, 0.0);
@@ -243,6 +248,9 @@ void AirframeAero::derivatives(const SimContext& ctx, std::span<const double> x,
     if (out.coupling != nullptr && alpha_wf_.valid()) {
         out.coupling->set(alpha_wf_, l.alpha_wf);
         out.coupling->set(psi_wf_, l.psi_wf);
+        out.coupling->set(fin_q_factor_, l.fin_q_factor);
+        out.coupling->set(sidewash_, l.sidewash);
+        out.coupling->set(downwash_, l.downwash);
     }
 }
 
@@ -270,11 +278,8 @@ struct Columns {
 
 Columns read_columns(const Config& node, const std::string& key, const std::string& x) {
     return node.in_context(key, [&] {
-        CsvTable csv = read_csv_table(node.path(key));
+        CsvTable csv = node.csv_table(key);
         csv.require_dimension(x, Dimension::angle);
-        if (csv.is_placeholder()) {
-            node.note_placeholder(key, csv.origin + " (# status: placeholder)");
-        }
         return Columns{std::move(csv), x};
     });
 }
@@ -284,13 +289,10 @@ IncidenceSchedule schedule(const Config& node) {
     node.allow_keys({"table", "min", "max"});
     IncidenceSchedule s;
     s.command = node.in_context("table", [&] {
-        const CsvTable csv = read_csv_table(node.path("table"));
+        const CsvTable csv = node.csv_table("table");
         csv.require_dimension("airspeed", Dimension::speed);
         csv.require_dimension("collective", Dimension::dimensionless);
         csv.require_dimension("incidence", Dimension::angle);
-        if (csv.is_placeholder()) {
-            node.note_placeholder("table", csv.origin + " (# status: placeholder)");
-        }
         return make_table2d(csv, "airspeed", "collective", "incidence");
     });
     s.min = node.quantity("min", Dimension::angle);

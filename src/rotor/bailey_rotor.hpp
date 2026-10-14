@@ -43,30 +43,31 @@ class Config;
 // Loads: thrust along −z_h and GenHel's drag −½ρ S v_x|v_x| along x_b, at
 // the hub, moved to the CG. G = H = 0.
 //
-// Fuselage wake (optional, p. 5.4-5; M6b): the airframe's tunnel angles
-// α_WF, ψ_WF from the coupling store give a dynamic-pressure ratio K² (on
-// |ψ_WF|) that scales the body velocity, and a sidewash σ(ψ_WF) and downwash
-// ε(α_WF) entering as −u σ_d K along y_b and −u ε_d K along z_b, u the body x
-// velocity relative to the air. σ_d, ε_d lag σ, ε with GenHel's transport
-// delay l/u replaced by dσ_d/dt = (|u|/l)(σ − σ_d), l the hub's distance aft
-// of the CG (D-028); two more states.
+// Fuselage wake (optional, p. 5.4-5; M6b): GenHel reads the fin's and the
+// stabilator's wake maps here (QV1MP, SGV1MP, EPH1MP), so the airframe looks
+// them up once and publishes them (D-003): the dynamic-pressure factor K
+// scales the body velocity, and the sidewash σ and downwash ε enter as
+// −u σ_d K along y_b and −u ε_d K along z_b, u the body x velocity relative
+// to the air. σ_d, ε_d lag σ, ε with GenHel's transport delay l/u replaced
+// by dσ_d/dt = (|u|/l)(σ − σ_d), l the hub's distance aft of the CG (D-028);
+// two more states. The main-rotor wash stays the tail rotor's own: GenHel
+// gives it its own maps, equal to the stabilator's "for Black Hawk"
+// (p. 5.4-4).
 namespace eyas {
 
-// The airframe's wake at the tail rotor (GenHel p. 5.4-5), from the fin's
-// tables: GenHel Tables 3.5.7, 3.5.8 and the stabilator's 3.5.4.
+// The airframe's wake at the tail rotor (GenHel p. 5.4-5).
 struct FuselageWake {
-    std::string airframe;  // instance producing <airframe>.alpha_wf and .psi_wf
-    Table1D q_ratio{Axis({0.0, 1.0}), {1.0, 1.0}};   // K² [-] against ψ_WF [rad]
-    Table1D sidewash{Axis({0.0, 1.0}), {0.0, 0.0}};  // σ [rad] against ψ_WF [rad]
-    Table1D downwash{Axis({0.0, 1.0}), {0.0, 0.0}};  // ε [rad] against α_WF [rad]
+    // Instance producing <airframe>.fin_q_factor, .sidewash and .downwash.
+    std::string airframe;
 };
 
-// The airframe's outputs and the wake lag states, for one evaluation.
+// The airframe's wake values and the lag states, for one evaluation.
 struct FuselageWakeInput {
-    double alpha_wf = 0.0;  // [rad]
-    double psi_wf = 0.0;    // [rad]
-    double sidewash = 0.0;  // σ_d [rad], lagged
-    double downwash = 0.0;  // ε_d [rad], lagged
+    double q_factor = 1.0;    // K [-]
+    double sidewash = 0.0;    // σ [rad], undelayed
+    double downwash = 0.0;    // ε [rad], undelayed
+    double sidewash_d = 0.0;  // σ_d [rad], lagged
+    double downwash_d = 0.0;  // ε_d [rad], lagged
 };
 
 struct BaileyRotorConfig {
@@ -132,10 +133,10 @@ public:
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
 
-    // Loads at states x. The main-rotor wash and the airframe's tunnel
-    // angles come from ctx.coupling, or are zero when that is null (the
-    // component evaluated on its own, D-003). The second form takes them
-    // given (tests).
+    // Loads at states x. The main-rotor wash and the airframe's wake values
+    // come from ctx.coupling; without it the wash is zero and the wake
+    // neutral (K = 1, σ = ε = 0; the component evaluated on its own, D-003).
+    // The second form takes them given (tests).
     BaileyRotorLoads evaluate(const SimContext& ctx, std::span<const double> x) const noexcept;
     // `wake` null: no fuselage wake (K = 1).
     BaileyRotorLoads evaluate(const SimContext& ctx, double lambda_i, const Vec3& wash_b,
@@ -155,8 +156,9 @@ private:
     double coning_pitch_;  // (∂a₀/∂T) tan δ₃ [rad/N]
     Mat3 C_hb_;
     Mat3 C_bh_;
-    CouplingSlot alpha_wf_;
-    CouplingSlot psi_wf_;
+    CouplingSlot q_factor_;
+    CouplingSlot sidewash_;
+    CouplingSlot downwash_;
 };
 
 }  // namespace eyas

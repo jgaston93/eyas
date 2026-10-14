@@ -51,8 +51,12 @@ class Config;
 // transport delay l/u: dε_d/dt = (|u|/l)(ε − ε_d), l the panel's distance aft
 // of the CG. G = H = 0.
 //
-// Coupling (D-003): produces <name>.alpha_wf and <name>.psi_wf [rad] for the
-// tail rotor; consumes the main rotor's outputs through the wash maps.
+// Coupling (D-003): produces <name>.alpha_wf and <name>.psi_wf [rad] (GenHel's
+// tunnel angles), and for the tail rotor the fuselage wake it reads from the
+// fin's and stabilator's maps (GenHel p. 5.4-5): <name>.fin_q_factor (K_Q at
+// the fin [-]), <name>.sidewash (σ at the fin) and <name>.downwash (ε at the
+// stabilator) [rad], undelayed. Consumes the main rotor's outputs through the
+// wash maps.
 namespace eyas {
 
 // GenHel Tables 2.5.3–2.5.11 as tools/build_uh60a_airframe.py merges them.
@@ -121,6 +125,7 @@ struct AirframeAeroLoads {
     double alpha_h = 0.0, q_h = 0.0;      // stabilator angle incl. incidence [rad], [Pa]
     double stabilator_incidence = 0.0;    // [rad] fixed or scheduled
     double beta_v = 0.0, q_v = 0.0;       // fin angle incl. incidence [rad], [Pa]
+    double fin_q_factor = 1.0;            // K_Q = √(q ratio) at the fin [-]
     double downwash = 0.0;                // ε at the stabilator, undelayed [rad]
     double sidewash = 0.0;                // σ at the fin, undelayed [rad]
     double downwash_rate = 0.0;           // dε_d/dt [rad/s]
@@ -162,6 +167,9 @@ private:
     AirframeAeroConfig config_;
     CouplingSlot alpha_wf_;
     CouplingSlot psi_wf_;
+    CouplingSlot fin_q_factor_;
+    CouplingSlot sidewash_;
+    CouplingSlot downwash_;
 };
 
 }  // namespace eyas

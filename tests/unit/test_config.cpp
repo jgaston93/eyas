@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "util/csv_table.hpp"
 #include "util/error.hpp"
 #include "util/units.hpp"
 
@@ -196,6 +197,30 @@ TEST(Config, NotedPlaceholdersAreSharedByTheWholeDocument) {
     ASSERT_EQ(p.size(), 3U);
     EXPECT_EQ(p[2], "rotors[0].table: t.csv (# status: placeholder)");
     EXPECT_EQ(c.child("main_rotor").placeholders().size(), 3U);
+}
+
+// csv_table(key): the CSV file a key names, relative to the config file,
+// with a "# status: placeholder" table reported as a data gap (D-025).
+TEST(Config, ReadsCsvTablesAndNotesPlaceholders) {
+    const auto dir = std::filesystem::path(testing::TempDir()) / "eyas_config_csv";
+    std::filesystem::create_directories(dir);
+    {
+        std::ofstream(dir / "data.csv") << "# source: test\nx[1],y[1]\n0,1\n1,2\n";
+        std::ofstream(dir / "gap.csv")
+            << "# source: test\n# status: placeholder\nx[1],y[1]\n0,1\n1,2\n";
+        std::ofstream(dir / "c.yaml") << "a: {table: data.csv}\nb: {table: gap.csv}\n";
+    }
+    const Config c = Config::from_file(dir / "c.yaml");
+    const CsvTable data = c.child("a").csv_table("table");
+    EXPECT_EQ(data.columns.size(), 2U);
+    EXPECT_TRUE(c.placeholders().empty());
+    (void)c.child("b").csv_table("table");
+    ASSERT_EQ(c.placeholders().size(), 1U);
+    EXPECT_EQ(c.placeholders()[0],
+              "b.table: " + (dir / "gap.csv").string() + " (# status: placeholder)");
+    // A missing file is an InitError.
+    EXPECT_THROW((void)c.child("a").csv_table("missing"), InitError);
+    std::filesystem::remove_all(dir);
 }
 
 TEST(Config, SyntaxErrorsAndMissingFilesAreInitErrors) {
