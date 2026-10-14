@@ -18,6 +18,8 @@
 
 namespace eyas {
 
+struct CsvTable;
+
 // Read-only view of a YAML configuration document, used at init time only.
 // Every accessor throws InitError naming the file and the full key path.
 //
@@ -50,6 +52,11 @@ public:
     // A file path. A relative path is taken relative to the directory of the
     // config file (from_file) or to the current directory (from_string).
     std::filesystem::path path(std::string_view key) const;
+    // The CSV table in the file `key` names (path()). A table marked
+    // "# status: placeholder" is recorded with note_placeholder() (D-025).
+    // Call it inside in_context(key), with the reader's own column checks, so
+    // that file errors name the key.
+    CsvTable csv_table(std::string_view key) const;
 
     bool contains(std::string_view key) const;
     // Throws unless this node is a map whose keys are all in `allowed`.

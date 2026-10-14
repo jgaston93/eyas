@@ -10,17 +10,37 @@
 // anchor cases use the bare rotor (no δ₃, blockage or bias) and the
 // thin-plate test airfoil (tests/support/m6_fixtures.hpp).
 //
+// And the M6b cases (D-028, "Check (M6b)" and "Data rulings"):
+// - the lag that stands in for GenHel's transport delay of the fuselage
+//   downwash at the stabilator, against the exact delay, in a sinusoidal
+//   heave from 20 to 150 kt and 0.5 to 10 rad/s: the delayed downwash and
+//   the resulting stabilator lift, both through the production airframe;
+// - the sensitivity of the stabilator to a lag on GenHel's undefined
+//   AA1FMR: the lift per degree of a₁ against the lift per degree of angle
+//   of attack, and the gain and phase a first-order lag of time constant τ
+//   on a₁ would add.
+// The airframe is the UH-60A's (GenHel stations, tables and stabilator
+// schedule) at sea level, collective 50 %.
+//
 // Usage: eyas_m6_cases <output-dir>
 
+#include <algorithm>
 #include <cmath>
+#include <complex>
 #include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <numbers>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
+#include "airframe/airframe_aero.hpp"
 #include "rotor/bailey_rotor.hpp"
+#include "rotor/rotor_wash.hpp"
 #include "support/m6_fixtures.hpp"
+#include "support/m6b_fixtures.hpp"
 #include "util/units.hpp"
 
 namespace {
@@ -139,6 +159,300 @@ void pedal_step(const std::filesystem::path& dir) {
     }
 }
 
+// ---- M6b ------------------------------------------------------------------------
+
+using Complex = std::complex<double>;
+
+AirframeAeroConfig uh60a_airframe_scheduled() {
+    AirframeAeroConfig c = uh60a_airframe(uh60a_geometry());
+    c.stabilator.schedule = uh60a_stabilator_schedule();
+    return c;
+}
+
+SimContext sea_level() {
+    SimContext ctx;
+    ctx.air.density = 1.225;
+    ctx.air.speed_of_sound = 340.3;
+    ctx.controls.collective = 0.5;
+    return ctx;
+}
+
+// Complex amplitude at ω of a periodic signal sampled over whole periods.
+struct Fourier {
+    double omega;
+    Complex sum{0.0, 0.0};
+    void add(double t, double y, double h) { sum += y * std::exp(Complex(0.0, -omega * t)) * h; }
+    Complex amplitude(double span) const { return 2.0 * sum / span; }
+};
+
+struct HeaveResponse {
+    Complex downwash;  // ε_d [rad]
+    Complex lift;      // stabilator lift, −F_z [N]
+};
+
+// Heave w(t) = w0 sin ωt at body speed u: the stabilator's delayed downwash
+// and lift, with the production lag state (RK4) or with the exact delay
+// ε_d(t) = ε(t − l/u) fed in as the state.
+HeaveResponse heave(const AirframeAero& aero, double u, double omega, bool exact) {
+    const double l = -aero.config().stabilator.position_b.x();
+    const double tau = l / u;
+    const double w0 = 0.02 * u;  // ±1.1° angle of attack: linear range
+    const double period = 2.0 * std::numbers::pi / omega;
+    const double h_max = std::min(2e-3, period / 400.0);
+    const int n_meas = static_cast<int>(std::ceil(3.0 * period / h_max));
+    const double h = 3.0 * period / n_meas;
+    const int n_settle = static_cast<int>(std::ceil(std::max(12.0 * tau, period) / h));
+    const SimContext base = sea_level();
+    const auto at = [&](double t) {
+        SimContext c = base;
+        c.body.vel_b = Vec3(u, 0.0, w0 * std::sin(omega * t));
+        return c;
+    };
+    const Vec3 zero = Vec3::Zero();
+    const auto undelayed = [&](double t) {
+        const std::vector<double> x0 = {0.0, 0.0};
+        return aero.evaluate(at(t), x0, zero, zero).downwash;
+    };
+    std::vector<double> x = {undelayed(0.0), 0.0};
+    const auto rate = [&](double t, double e) {
+        const std::vector<double> xs = {e, 0.0};
+        return aero.evaluate(at(t), xs, zero, zero).downwash_rate;
+    };
+    Fourier fd{omega};
+    Fourier fl{omega};
+    const int n_total = n_settle + n_meas;
+    for (int n = 0; n < n_total; ++n) {
+        const double t = n * h;
+        if (exact) {
+            x[0] = undelayed(t - tau);
+        }
+        if (n >= n_settle) {
+            const double lift = -aero.evaluate(at(t), x, zero, zero).stabilator.F.z();
+            fd.add(t, x[0], h);
+            fl.add(t, lift, h);
+        }
+        if (!exact) {
+            const double k1 = rate(t, x[0]);
+            const double k2 = rate(t + 0.5 * h, x[0] + 0.5 * h * k1);
+            const double k3 = rate(t + 0.5 * h, x[0] + 0.5 * h * k2);
+            const double k4 = rate(t + h, x[0] + h * k3);
+            x[0] += h / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+        }
+    }
+    const double span = n_meas * h;
+    return {fd.amplitude(span), fl.amplitude(span)};
+}
+
+double phase_deg(Complex z) {
+    return std::arg(z) / kDegree;
+}
+
+void lag_vs_delay(const std::filesystem::path& dir) {
+    const AirframeAero aero(uh60a_airframe_scheduled());
+    const double l = -aero.config().stabilator.position_b.x();
+    std::ofstream out = open_csv(dir / "m6b_lag_vs_delay.csv");
+    out << "speed_kt,omega,tau,wash_gain,wash_phase_deg,wash_gain_analytic,"
+           "wash_phase_deg_analytic,lift_gain,lift_phase_deg\n";
+    for (int kt = 20; kt <= 150; kt += 10) {
+        const double u = kt * units::kKnot;
+        for (int k = 0; k <= 20; ++k) {
+            const double omega = 0.5 * std::pow(20.0, k / 20.0);  // 0.5 to 10 rad/s
+            const HeaveResponse lag = heave(aero, u, omega, false);
+            const HeaveResponse del = heave(aero, u, omega, true);
+            const Complex rw = lag.downwash / del.downwash;
+            const Complex rl = lag.lift / del.lift;
+            const double tau = l / u;
+            // Analytic: (1/(1 + jωτ)) / e^{−jωτ}.
+            const Complex ra = std::exp(Complex(0.0, omega * tau)) / Complex(1.0, omega * tau);
+            out << kt << ',' << omega << ',' << tau << ',' << std::abs(rw) << ',' << phase_deg(rw)
+                << ',' << std::abs(ra) << ',' << phase_deg(ra) << ',' << std::abs(rl) << ','
+                << phase_deg(rl) << '\n';
+        }
+    }
+}
+
+// Uniform inflow of the UH-60A main rotor in level flight at μ (momentum
+// theory, Glauert, μ_z = 0): an operating point for the wash maps.
+double momentum_inflow(double ct, double mu) {
+    double lam = std::sqrt(ct / 2.0);
+    for (int i = 0; i < 200; ++i) {
+        lam = ct / (2.0 * std::sqrt(mu * mu + lam * lam));
+    }
+    return lam;
+}
+
+void a1_sensitivity(const std::filesystem::path& dir) {
+    const AirframeAero aero(uh60a_airframe_scheduled());
+    const RotorWash fus = uh60a_wash("fuselage_wash.csv");
+    const RotorWash tail = uh60a_wash("tail_wash.csv");
+    const double tip = 27.0 * 26.83 * units::kFoot;  // GenHel p. 5.1-49
+    const double area = std::numbers::pi * std::pow(26.83 * units::kFoot, 2);
+    const double ct = 16638.0 * units::kPoundForce / (1.225 * area * tip * tip);
+    const double a10 = 2.0 * kDegree;
+
+    // Lift at a₁ (fed to both wash maps) and heave w, lag states at equilibrium.
+    const auto lift = [&](double u, double lam, double a1, double w) {
+        SimContext c = sea_level();
+        c.body.vel_b = Vec3(u, 0.0, w);
+        const double mu = u / tip;
+        const Vec3 wf = fus.evaluate(lam, mu, 0.0, -a1, tip).velocity_b;
+        const Vec3 wt = tail.evaluate(lam, mu, 0.0, -a1, tip).velocity_b;
+        std::vector<double> x = {0.0, 0.0};
+        const AirframeAeroLoads l0 = aero.evaluate(c, x, wf, wt);
+        x = {l0.downwash, l0.sidewash};
+        return -aero.evaluate(c, x, wf, wt).stabilator.F.z();
+    };
+    {
+        std::ofstream out = open_csv(dir / "m6b_a1_derivatives.csv");
+        out << "speed_kt,mu,lambda0,chi_deg,dlift_da1,dlift_dalpha,ratio\n";
+        for (int kt = 20; kt <= 150; kt += 10) {
+            const double u = kt * units::kKnot;
+            const double mu = u / tip;
+            const double lam = momentum_inflow(ct, mu);
+            const double d = 0.25 * kDegree;
+            const double da1 = (lift(u, lam, a10 + d, 0.0) - lift(u, lam, a10 - d, 0.0)) / 0.5;
+            const double dal =
+                (lift(u, lam, a10, u * std::tan(d)) - lift(u, lam, a10, -u * std::tan(d))) / 0.5;
+            const double chi = (std::atan2(mu, lam) + a10) / kDegree;
+            out << kt << ',' << mu << ',' << lam << ',' << chi << ',' << da1 << ',' << dal << ','
+                << da1 / dal << '\n';
+        }
+    }
+    // The lag itself, through the production path at 100 kt: a₁ = a₁₀ +
+    // 0.5° sin ωt through dã/dt = (a₁ − ã)/τ, ã fed to both wash maps.
+    // The airframe is linear in ã here, so the ratio to τ = 0 must be
+    // 1/(1 + jωτ).
+    std::ofstream out = open_csv(dir / "m6b_a1_lag.csv");
+    out << "tau,omega,gain,phase_deg,gain_analytic,phase_deg_analytic\n";
+    const double u = 100.0 * units::kKnot;
+    const double lam = momentum_inflow(ct, u / tip);
+    for (const double tau : {0.0175, 0.05, 0.3}) {
+        for (const double omega : {0.5, 1.0, 2.0, 3.0, 5.0, 10.0}) {
+            const auto response = [&](double ta) {
+                const double period = 2.0 * std::numbers::pi / omega;
+                const int n_meas = static_cast<int>(std::ceil(3.0 * period / 1e-3));
+                const double h = 3.0 * period / n_meas;
+                const int n_settle = static_cast<int>(std::ceil(12.0 * std::max(ta, 0.1) / h));
+                double af = a10;
+                Fourier f{omega};
+                const auto a1 = [&](double t) { return a10 + 0.5 * kDegree * std::sin(omega * t); };
+                for (int n = 0; n < n_settle + n_meas; ++n) {
+                    const double t = n * h;
+                    const double used = ta > 0.0 ? af : a1(t);
+                    if (n >= n_settle) {
+                        f.add(t, lift(u, lam, used, 0.0), h);
+                    }
+                    if (ta > 0.0) {
+                        const auto r = [&](double tt, double a) { return (a1(tt) - a) / ta; };
+                        const double k1 = r(t, af);
+                        const double k2 = r(t + 0.5 * h, af + 0.5 * h * k1);
+                        const double k3 = r(t + 0.5 * h, af + 0.5 * h * k2);
+                        const double k4 = r(t + h, af + h * k3);
+                        af += h / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+                    }
+                }
+                return f.amplitude(n_meas * h);
+            };
+            const Complex ratio = response(tau) / response(0.0);
+            const Complex analytic = 1.0 / Complex(1.0, omega * tau);
+            out << tau << ',' << omega << ',' << std::abs(ratio) << ',' << phase_deg(ratio) << ','
+                << std::abs(analytic) << ',' << phase_deg(analytic) << '\n';
+        }
+    }
+}
+
+// The sideward fade (D-031, SPEC_REVIEW #27): how steeply the total airframe
+// loads change with the flow direction near the sideward line, for several
+// fade half-widths c, against how steeply they change well away from it
+// (20°–45° from the line, where no fade acts). Directions on a grid in the
+// angle eta from the sideward line and the angle theta of the x–z part;
+// the steepness is the largest load change between grid neighbours per
+// degree of angle between their directions. No wash, lag states zero, so
+// the loads scale with q and the ratios hold at any speed (20 kt here).
+void sideward_fade(const std::filesystem::path& dir) {
+    const double speed = 20.0 * units::kKnot;
+    const auto direction = [](double eta, double theta) {
+        return Vec3(std::sin(eta) * std::cos(theta), std::cos(eta),
+                    std::sin(eta) * std::sin(theta));
+    };
+    const std::size_t n_theta = 120;  // 3°
+    const auto theta_at = [&](std::size_t k) {
+        return 2.0 * std::numbers::pi * static_cast<double>(k) / static_cast<double>(n_theta);
+    };
+    const auto steepest = [&](const AirframeAero& a, double eta_lo, double eta_hi, double d_eta) {
+        std::vector<double> etas;
+        for (double e = eta_lo; e <= eta_hi + 1e-12; e += d_eta) {
+            etas.push_back(e);
+        }
+        std::vector<Wrench> grid(etas.size() * n_theta);
+        SimContext c = sea_level();
+        const std::vector<double> x = {0.0, 0.0};
+        for (std::size_t i = 0; i < etas.size(); ++i) {
+            for (std::size_t k = 0; k < n_theta; ++k) {
+                c.body.vel_b = speed * direction(etas[i], theta_at(k));
+                grid[i * n_theta + k] = a.evaluate(c, x, Vec3::Zero(), Vec3::Zero()).body;
+            }
+        }
+        double gf = 0.0;
+        double gm = 0.0;
+        const auto pair = [&](std::size_t i, std::size_t k, std::size_t j, std::size_t l) {
+            const Vec3 d1 = direction(etas[i], theta_at(k));
+            const Vec3 d2 = direction(etas[j], theta_at(l));
+            const double ang = std::atan2(d1.cross(d2).norm(), d1.dot(d2)) / kDegree;
+            const Wrench& w1 = grid[i * n_theta + k];
+            const Wrench& w2 = grid[j * n_theta + l];
+            gf = std::max(gf, (w1.F - w2.F).norm() / ang);
+            gm = std::max(gm, (w1.M - w2.M).norm() / ang);
+        };
+        for (std::size_t i = 0; i < etas.size(); ++i) {
+            for (std::size_t k = 0; k < n_theta; ++k) {
+                pair(i, k, i, (k + 1) % n_theta);
+                if (i + 1 < etas.size()) {
+                    pair(i, k, i + 1, k);
+                }
+            }
+        }
+        return std::pair{gf, gm};
+    };
+    const auto with_fade = [](double c) {
+        AirframeAeroConfig cfg = uh60a_airframe_scheduled();
+        cfg.sideward_fade = c;
+        return AirframeAero(std::move(cfg));
+    };
+    const auto [ref_f, ref_m] = steepest(with_fade(0.0), 20.0 * kDegree, 45.0 * kDegree, kDegree);
+    {
+        std::ofstream out = open_csv(dir / "m6b_fade_steepness.csv");
+        out << "fade_deg,steepest_force_N_per_deg,steepest_moment_Nm_per_deg,"
+               "ratio_force,ratio_moment\n";
+        out << "away," << ref_f << ',' << ref_m << ",1,1\n";
+        for (const double c_deg : {2.0, 5.0, 10.0, 15.0, 20.0}) {
+            // Grid inside 20° of the line, fine near it; the fade-off model
+            // is unbounded there, so it isn't listed.
+            const auto [gf, gm] = steepest(with_fade(c_deg * kDegree), 0.05 * kDegree,
+                                           20.0 * kDegree, 0.05 * kDegree);
+            out << c_deg << ',' << gf << ',' << gm << ',' << gf / ref_f << ',' << gm / ref_m
+                << '\n';
+        }
+    }
+    // Rolling and yawing moment around the line at a few distances from it.
+    std::ofstream out = open_csv(dir / "m6b_fade_sweep.csv");
+    out << "fade_deg,eta_deg,theta_deg,Fx,Fy,Fz,L,M,N\n";
+    SimContext c = sea_level();
+    const std::vector<double> x = {0.0, 0.0};
+    for (const double c_deg : {0.0, 10.0, 20.0}) {
+        const AirframeAero a = with_fade(c_deg * kDegree);
+        for (const double eta_deg : {1.0, 4.0, 8.0, 15.0}) {
+            for (int k = 0; k <= 72; ++k) {
+                const double theta = 5.0 * k * kDegree;
+                c.body.vel_b = speed * direction(eta_deg * kDegree, theta);
+                const Wrench w = a.evaluate(c, x, Vec3::Zero(), Vec3::Zero()).body;
+                out << c_deg << ',' << eta_deg << ',' << theta / kDegree << ',' << w.F.x() << ','
+                    << w.F.y() << ',' << w.F.z() << ',' << w.M.x() << ',' << w.M.y() << ','
+                    << w.M.z() << '\n';
+            }
+        }
+    }
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -151,6 +465,9 @@ int main(int argc, char** argv) {
         std::filesystem::create_directories(dir);
         anchor_cases(dir);
         pedal_step(dir);
+        lag_vs_delay(dir);
+        a1_sensitivity(dir);
+        sideward_fade(dir);
     } catch (const std::exception& e) {
         std::cerr << "eyas_m6_cases: " << e.what() << "\n";
         return 1;

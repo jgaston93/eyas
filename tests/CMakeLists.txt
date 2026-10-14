@@ -3,6 +3,7 @@ include(GoogleTest)
 add_executable(eyas_unit_tests
     support/alloc_counter.cpp
     unit/test_alloc_counter.cpp
+    unit/test_airframe_aero.cpp
     unit/test_atmosphere.cpp
     unit/test_bailey_rotor.cpp
     unit/test_attitude.cpp
@@ -23,6 +24,7 @@ add_executable(eyas_unit_tests
     unit/test_rotor_inputs.cpp
     unit/test_rigid_body.cpp
     unit/test_table.cpp
+    unit/test_tail_rotor_wake.cpp
     unit/test_units.cpp
     unit/test_uh60a_data.cpp)
 target_include_directories(eyas_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -75,4 +77,5 @@ eyas_target_defaults(eyas_m5_cases)
 add_executable(eyas_m6_cases validation/m6_cases.cpp)
 target_include_directories(eyas_m6_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m6_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m6_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m6_cases)

@@ -82,10 +82,12 @@ jobs:
       - name: clang-format
         run: git ls-files '*.cpp' '*.hpp' | xargs clang-format-18 --dry-run --Werror
       - name: Generated UH-60A tables match their transcriptions
-        run: python3 tools/build_uh60a_blade.py --check
+        run: |
+          python3 tools/build_uh60a_blade.py --check
+          python3 tools/build_uh60a_airframe.py --check
       - name: Configure (for compile_commands.json)
         run: cmake --preset debug
       - name: clang-tidy
         run: |
-          out=$(clang-tidy-18 -p build/debug --quiet src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp 2>&1 | grep -E "warning:|error:" || true)
+          out=$(clang-tidy-18 -p build/debug --quiet src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp src/airframe/*.cpp 2>&1 | grep -E "warning:|error:" || true)
           if [ -n "$out" ]; then echo "$out"; exit 1; fi

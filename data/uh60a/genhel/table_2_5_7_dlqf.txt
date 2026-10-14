@@ -1,0 +1,9 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 2.5.7, p. 5.2-18 (PDF p. 103). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# DLQFMP: incremental fuselage lift L/q [ft^2] against PSIWF; single map -30..30 deg step 5
+
+; low
+30.0  20.0  12.0  7.0  3.0
+2.0  0.0  2.0  5.0  10.0
+15.0  22.0  30.0

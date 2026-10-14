@@ -1,0 +1,9 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 3.5.3, p. 5.3-21 (PDF p. 143). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# QH1MP: QH1QWF (dynamic-pressure ratio at the horizontal tail) against ALFWF (equation p. 5.3-6 and Figure 3.5.3, p. 5.3-26; the range comment saying ALFHH1 is wrong); single map -30..30 deg step 5
+
+; low
+1.0  1.0  .95  .76  .76
+.76  .73  .76  .76  .82
+.91  1.0  1.0

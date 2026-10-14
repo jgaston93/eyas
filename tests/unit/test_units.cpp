@@ -74,6 +74,9 @@ TEST(Units, Dimensions) {
     EXPECT_EQ(dim("ft^2"), Dimension::area);
     EXPECT_EQ(dim("deg/lbf"), Dimension::angle_per_force);
     EXPECT_EQ(find_unit("ft^2")->si_scale, kFoot * kFoot);
+    EXPECT_EQ(dim("ft^3"), Dimension::volume);
+    EXPECT_EQ(dim("m^3"), Dimension::volume);
+    EXPECT_EQ(find_unit("ft^3")->si_scale, kFoot * kFoot * kFoot);
     EXPECT_EQ(find_unit("deg/lbf")->si_scale, kDegree / kPoundForce);
     EXPECT_EQ(find_unit("ft*lbf/rad")->si_scale, find_unit("ft*lbf")->si_scale);
     EXPECT_EQ(find_unit("ft")->si_scale, kFoot);

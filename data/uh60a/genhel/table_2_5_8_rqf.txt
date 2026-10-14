@@ -1,0 +1,11 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 2.5.8, p. 5.2-18 (PDF p. 103). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# RQFMP: fuselage rolling moment R/q [ft^3] against PSIWF; low map 0..30 deg step 5, high map 30..90 deg step 10; R(PSI) = -R(-PSI)
+
+; low
+0.0  0.0  0.0  -30.0  -75.0
+-120.0  -110.0
+; high
+-110.0  -106.0  -103.0  -101.0  -100.0
+-100.0  -100.0

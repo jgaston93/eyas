@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 40> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 42> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -50,6 +50,8 @@ constexpr std::array<std::pair<std::string_view, Unit>, 40> kRegistry{{
     {"ft*lbf*s/rad", {kFoot * kPoundForce, D::rotational_damping}},
     {"m^2",          {1.0, D::area}},
     {"ft^2",         {kFoot * kFoot, D::area}},
+    {"m^3",          {1.0, D::volume}},
+    {"ft^3",         {kFoot * kFoot * kFoot, D::volume}},
     {"rad/N",        {1.0, D::angle_per_force}},
     {"deg/lbf",      {kDegree / kPoundForce, D::angle_per_force}},
 }};
@@ -112,6 +114,8 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "rotational damping";
         case Dimension::area:
             return "area";
+        case Dimension::volume:
+            return "volume";
         case Dimension::angle_per_force:
             return "angle per force";
     }

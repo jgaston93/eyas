@@ -57,6 +57,14 @@ void validate(const BaileyRotorConfig& c) {
     if (!c.controls) {
         throw InitError("bailey rotor: no control map");
     }
+    if (c.fuselage_wake) {
+        if (c.fuselage_wake->airframe.empty()) {
+            throw InitError("bailey rotor: the fuselage wake needs the airframe's name");
+        }
+        if (!(c.hub_position_b.x() < 0.0)) {
+            throw InitError("bailey rotor: a fuselage wake needs the hub aft of the CG (x < 0)");
+        }
+    }
 }
 
 }  // namespace
@@ -78,25 +86,52 @@ void BaileyRotor::initial_states(std::span<double> x) const {
 }
 
 std::vector<std::string> BaileyRotor::consumes() const {
-    return config_.wash ? config_.wash->consumes() : std::vector<std::string>{};
+    std::vector<std::string> names =
+        config_.wash ? config_.wash->consumes() : std::vector<std::string>{};
+    if (config_.fuselage_wake) {
+        const std::string& a = config_.fuselage_wake->airframe;
+        names.push_back(a + ".fin_q_factor");
+        names.push_back(a + ".sidewash");
+        names.push_back(a + ".downwash");
+    }
+    return names;
 }
 
 void BaileyRotor::bind(const CouplingRegistry& registry) {
+    const std::string consumer = config_.name.empty() ? "bailey_rotor" : config_.name;
     if (config_.wash) {
-        config_.wash->bind(registry, config_.name.empty() ? "bailey_rotor" : config_.name);
+        config_.wash->bind(registry, consumer);
+    }
+    if (config_.fuselage_wake) {
+        const std::string& a = config_.fuselage_wake->airframe;
+        q_factor_ = registry.find(a + ".fin_q_factor", consumer);
+        sidewash_ = registry.find(a + ".sidewash", consumer);
+        downwash_ = registry.find(a + ".downwash", consumer);
     }
 }
 
-BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i) const noexcept {
+BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx,
+                                       std::span<const double> x) const noexcept {
     Vec3 wash_b = Vec3::Zero();
     if (config_.wash && ctx.coupling != nullptr) {
         wash_b = config_.wash->evaluate(*ctx.coupling).velocity_b;
     }
-    return evaluate(ctx, lambda_i, wash_b);
+    if (!config_.fuselage_wake) {
+        return evaluate(ctx, x[0], wash_b);
+    }
+    FuselageWakeInput wake;
+    if (ctx.coupling != nullptr) {
+        wake.q_factor = ctx.coupling->get(q_factor_);
+        wake.sidewash = ctx.coupling->get(sidewash_);
+        wake.downwash = ctx.coupling->get(downwash_);
+    }
+    wake.sidewash_d = x[1];
+    wake.downwash_d = x[2];
+    return evaluate(ctx, x[0], wash_b, &wake);
 }
 
-BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i,
-                                       const Vec3& wash_b) const noexcept {
+BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i, const Vec3& wash_b,
+                                       const FuselageWakeInput* wake) const noexcept {
     const BaileyRotorConfig& c = config_;
     const BodyState& b = ctx.body;
     BaileyRotorLoads out;
@@ -106,7 +141,23 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i,
     // Hub velocity relative to the air, with body rates and main-rotor wash
     // (GenHel p. 5.4-6; body-axis wind stands in for GenHel's gust input).
     const Vec3 v_air_b = b.vel_b - b.q_nb.conjugate() * ctx.env.wind_n;
-    const Vec3 v_b = v_air_b + b.omega_b.cross(c.hub_position_b) + wash_b;
+    Vec3 v_b = v_air_b + b.omega_b.cross(c.hub_position_b) + wash_b;
+    if (c.fuselage_wake && wake != nullptr) {
+        // Fuselage wake (p. 5.4-5): K_QTR = √(Q_TRQWF(|ψ_WF|)) scales the body
+        // velocity; the delayed sidewash and downwash enter as −u σ_d K_QTR
+        // and −u ε_d K_QTR (GenHel: −(V_xb/57.3) SIG_TR K_QTR, with degrees).
+        // K_QTR, σ and ε are the airframe's: GenHel reads the fin's and the
+        // stabilator's maps here (QV1MP, SGV1MP, EPH1MP).
+        const double u = v_air_b.x();
+        out.q_factor = wake->q_factor;
+        out.sidewash = wake->sidewash;
+        out.downwash = wake->downwash;
+        v_b += (out.q_factor - 1.0) * v_air_b + Vec3(0.0, -u * wake->sidewash_d * out.q_factor,
+                                                     -u * wake->downwash_d * out.q_factor);
+        const double rate = std::abs(u) / -c.hub_position_b.x();
+        out.sidewash_rate = rate * (out.sidewash - wake->sidewash_d);
+        out.downwash_rate = rate * (out.downwash - wake->downwash_d);
+    }
     const Vec3 v_h = C_hb_ * v_b;
     const double mu2 = (v_h.x() * v_h.x() + v_h.y() * v_h.y()) / (tip_speed_ * tip_speed_);
     out.mu = std::sqrt(mu2);
@@ -152,18 +203,32 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i,
 
 void BaileyRotor::derivatives(const SimContext& ctx, std::span<const double> x,
                               ComponentDerivs& out) const {
-    const BaileyRotorLoads loads = evaluate(ctx, x[0]);
+    const BaileyRotorLoads loads = evaluate(ctx, x);
     out.load0_b = loads.body;
     out.xdot0[0] = loads.lambda_dot;
+    if (config_.fuselage_wake) {
+        out.xdot0[1] = loads.sidewash_rate;
+        out.xdot0[2] = loads.downwash_rate;
+    }
 }
 
 // ---- Config ------------------------------------------------------------------
+
+namespace {
+
+// {airframe: <name>}: the airframe instance whose wake values are read.
+FuselageWake fuselage_wake_from_config(const Config& node) {
+    node.allow_keys({"airframe"});
+    return FuselageWake{node.string("airframe")};
+}
+
+}  // namespace
 
 std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
     using units::Dimension;
     node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "chord", "lift_slope",
                      "tip_loss", "twist", "delta3", "coning_per_thrust", "pitch_bias", "drag_area",
-                     "blockage", "hub", "controls", "main_rotor_wash"});
+                     "blockage", "hub", "controls", "main_rotor_wash", "fuselage_wake"});
     BaileyRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -212,6 +277,11 @@ std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
     c.controls = LinearControlMap::from_config(node.child("controls"));
     if (node.contains("main_rotor_wash")) {
         c.wash = RotorWash::from_config(node.child("main_rotor_wash"));
+    }
+    if (node.contains("fuselage_wake")) {
+        c.fuselage_wake = node.in_context("fuselage_wake", [&] {
+            return fuselage_wake_from_config(node.child("fuselage_wake"));
+        });
     }
     return node.in_context("", [&] { return std::make_unique<BaileyRotor>(std::move(c)); });
 }

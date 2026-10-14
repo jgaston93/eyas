@@ -1,0 +1,11 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 2.5.5, p. 5.2-17 (PDF p. 102). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# YQFMP: fuselage side force Y/q [ft^2] against PSIWF; low map 0..30 deg step 5, high map 30..90 deg step 10; Y(PSI) = -Y(-PSI)
+
+; low
+0.0  11.0  23.0  35.0  50.0
+65.0  72.0
+; high
+72.0  92.0  103.0  100.0  84.0
+64.0  37.0

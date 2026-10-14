@@ -1,0 +1,14 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 3.5.4, p. 5.3-21 (PDF p. 143). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# EPH1MP: EPSH1 (fuselage downwash angle at the horizontal tail) [deg] against ALFWF (Figure 3.5.4(a), p. 5.3-27, prints INPUT VARIABLE ALFWF; the range comments saying ALFHH1 are wrong); low map -30..30 deg step 5, high map -90..90 deg step 10
+
+; low
+1.8  1.4  1.1  .8  .55
+.5  .45  .4  .38  .33
+.19  -.12  -.4
+; high
+0.0  .25  .7  1.2  1.6
+1.9  1.8  1.1  .55  .45
+.38  .19  -.4  -.7  -.75
+-.65  -.45  -.15  0.0

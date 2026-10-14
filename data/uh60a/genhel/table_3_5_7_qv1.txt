@@ -1,0 +1,8 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# Table 3.5.7, p. 5.3-22 (PDF p. 144). Laid out row for row as printed; slashed zeros written as 0.
+# status: accepted by human review 2026-10-13; see docs/DATA_GAPS.md, "UH-60A airframe tables (M6b)"
+# QV1MP: QV1QWF (dynamic-pressure ratio at the vertical tail; also the tail rotor) against PSABWF = |PSIWF|; single map 0..30 deg step 5
+
+; low
+.62  .64  .66  .72  .79
+.88  1.00

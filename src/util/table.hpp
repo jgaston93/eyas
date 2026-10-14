@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -51,6 +52,17 @@ private:
     Axis x_;
     std::vector<double> v_;
 };
+
+// The smallest value the table can return: interpolation and the clamped
+// ends never go below the smallest node value.
+inline double min_value(const Table1D& t) noexcept {
+    const std::span<const double> bp = t.x_axis().breakpoints();
+    double m = t(bp[0]);
+    for (const double x : bp) {
+        m = t(x) < m ? t(x) : m;
+    }
+    return m;
+}
 
 class Table2D {
 public:

@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "airframe/airframe_aero.hpp"
 #include "core/attitude.hpp"
 #include "env/geodesy.hpp"
 #include "rotor/bailey_rotor.hpp"
@@ -85,7 +86,9 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
     for (std::size_t i = 0; i < list.size(); ++i) {
         const Config c = list[i];
         const std::string type = c.string("type");
-        if (type == "bailey_rotor") {
+        if (type == "airframe_aero") {
+            components.push_back(AirframeAero::from_config(c));
+        } else if (type == "bailey_rotor") {
             components.push_back(BaileyRotor::from_config(c));
         } else if (type == "blade_element_rotor") {
             components.push_back(BladeElementRotor::from_config(c));

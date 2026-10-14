@@ -21,14 +21,11 @@ RotorWash RotorWash::from_config(const Config& node) {
     node.allow_keys({"rotor", "table"});
     std::string rotor = node.string("rotor");
     MultiTable2D<2> map = node.in_context("table", [&] {
-        const CsvTable csv = read_csv_table(node.path("table"));
+        const CsvTable csv = node.csv_table("table");
         csv.require_dimension("chi", units::Dimension::angle);
         csv.require_dimension("a1", units::Dimension::angle);
         csv.require_dimension("ekx", units::Dimension::dimensionless);
         csv.require_dimension("ekz", units::Dimension::dimensionless);
-        if (csv.is_placeholder()) {
-            node.note_placeholder("table", csv.origin + " (# status: placeholder)");
-        }
         return make_multi_table2d<2>(csv, "chi", "a1", {"ekx", "ekz"});
     });
     return node.in_context("rotor", [&] { return RotorWash(std::move(rotor), std::move(map)); });

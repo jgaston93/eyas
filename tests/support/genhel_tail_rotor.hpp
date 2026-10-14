@@ -50,6 +50,8 @@ struct GenHelTailRotorInput {
     double THETTR = 0.0;                     // commanded pitch [deg]
     // Total interference velocities (p. 5.4-6), [ft/s].
     double VXITR = 0.0, VYITR = 0.0, VZITR = 0.0;
+    // Fuselage dynamic-pressure factor at the tail rotor (p. 5.4-5).
+    double KQTR = 1.0;
 };
 
 struct GenHelTailRotorOutput {
@@ -69,8 +71,8 @@ inline GenHelTailRotorOutput genhel_tail_rotor(const GenHelTailRotorInput& in) {
     const double FTR = (in.FSTR - in.FSCGB) / 12.0;
     const double WTR = (in.WLTR - in.WLCGB) / 12.0;
     const double BTR_ = (in.BLTR - in.BLCGB) / 12.0;
-    // Tail rotor velocities in the body axes, p. 5.4-6 (gust 0, K_QTR = 1).
-    const double KQTR = 1.0;
+    // Tail rotor velocities in the body axes, p. 5.4-6 (gust 0).
+    const double KQTR = in.KQTR;
     const double VXTRB = in.VXB * KQTR - in.Q * WTR + in.R * BTR_ + in.VXITR;
     const double VYTRB = in.VYB * KQTR - in.R * FTR + in.P * WTR + in.VYITR;
     const double VZTRB = in.VZB * KQTR + in.Q * FTR - in.P * BTR_ + in.VZITR;
