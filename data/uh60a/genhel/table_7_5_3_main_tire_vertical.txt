@@ -1,0 +1,19 @@
+# Transcribed by eye from rendered page images (110-300 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Table 7.5.3 "Tire vertical load deflection data", p. 5.7-43
+# (PDF p. 281), handwritten. Plotted as Figure 7.5.3, p. 5.7-51 (PDF p. 289).
+# status: read with high confidence; see docs/DATA_GAPS.md, "UH-60A landing gear (M6c)".
+# ZFTHR = ZFTHL [lbf] against 12*|DZ| [in] (rows) and PM [psi] (columns).
+# The second row prints with a mark before the 1 that reads like ".1"; the rows run 0..8 in
+# steps of 1, Figure 7.5.3's axis is 0..9 in with the curves through 3800 lbf at 1 in, and
+# Table 7.5.4's slope at zero load (2970-4170 lbf/in) matches 1 in, not 0.1 in. Read as 1.
+#
+# dz_in   90      120     150
+0         0       0       0
+1         3100    3800    4600
+2         6900    8800    10600
+3         11500   14200   17000
+4         16300   19900   23900
+5         21000   26300   31600
+6         32100   42000   51900
+7         48150   63000   77850
+8         72220   94490   116760

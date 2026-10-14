@@ -225,5 +225,18 @@ Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/re
 
 **Older gaps:** the reviewer kept every earlier open item (main-rotor i_θ/i_φ and the unreviewed p. 5.1-49 constants, δ₀, the mass-properties discrepancy, tail-rotor torque, the SC1095 primary-map check, the M5 rotor B data, tiltrotor data) deferred as of 2026-10-13.
 
+## UH-60A landing gear (M6c) — constants and tables transcribed; doubtful cells verified; T_FGR `missing`
+**Source:** GenHel §5.7.5, pp. 5.7-40 to 5.7-47 (PDF pp. 278–285), handwritten, with plots on pp. 5.7-48 to 5.7-53 (PDF pp. 286–291). Read by eye from 110–400 dpi renders. Files: `data/uh60a/genhel/gear_constants_5_7_5.txt` and `table_7_5_2` to `table_7_5_6`. Everything else was read with high confidence; the doubtful cells are below.
+- *Table 7.5.1* (cube root) is p^(1/3) to 5 decimals at all 24 points (checked numerically), so production computes the cube root and the table isn't transcribed.
+- *Table 7.5.3, second row* — `RESOLVED from the source`. The deflection prints with a mark before the 1 that reads like ".1". It is 1 in: the rows run 0–8 in steps of 1, Figure 7.5.3's axis is 0–9 in with the curves through about 3800 lbf at 1 in, and Table 7.5.4's slope at zero load (2970–4170 lbf/in) matches. **This corrects D-028's stiffness note** (38 000 lbf/in → about 3800–4600 lbf/in).
+- *Table 7.5.2, 0.8 in, 150 psi* — `VERIFIED by human review (2026-10-14)`: **2410** lbf/in (PDF p. 280); 2440 was the alternative reading. Figure 7.5.2(a) (PDF p. 287) reads about 2430 and can't separate them.
+- *Table 7.5.6, 12 000 lbf row* — `VERIFIED by human review (2026-10-14)`: **6000** lbf/in, written over other digits (PDF p. 285). The 16 000 lbf row is also 6000.
+- *Strut γ = 1.34* is listed with both struts' data, but the printed strut equation (pp. 5.7-23, 5.7-24) is isothermal, F = C_PV/(C_PV/F_PRE − δ), and has no γ. Figure 7.1.1 says "isentropic"; the notation (p. 5.7-38) says "isothermal". To decide in D-032.
+- *Missing:* T_FGR, the vertical gear-load filter time constant (p. 5.7-25), and the switch STLDSW. Neither is given in §5.7.
+- *Tail gear units:* F_PREN and C_NG are printed without units; they are read as lbf and lbf·s²/ft², as on the main gear.
+- *Strut top stop* — `missing` (D-032 item 6). GenHel has no stop force (its preload logic resets the stroke). Eyas uses k_stop = 10 × the tire's slope at zero deflection (main 43 333 lbf/in, tail 19 000 lbf/in) and critical damping with the wheel: a rule, not data. The overshoot is under 0.1 in.
+- *Partial braking* — `assumption` (D-032 notes). GenHel's brakes are set (K_μB = 1.0) or off (0.01). For a brake input between, k_B is interpolated linearly; no pedal-to-torque data in the library.
+- *Tire tables beyond their range* — `assumption` (D-032 notes). The vertical load continues with the last segment's slope past 8 in (main) and 5 in (tail); the lateral and damping-stiffness tables hold their end values.
+
 ## UH-60A tail-rotor torque — `missing` (M6, M7)
 GenHel's tail rotor computes thrust only (p. 5.4-2) and gives no blade profile-drag coefficient, so Eyas's tail rotor has no torque in M6 (D-028). Its power is a sizable part of hover power, which matters for the M7 power comparison and the M9 drivetrain. Check whether GenHel's engine module (§5.6) accounts for tail-rotor power, and look for a public tail-rotor blade section or profile-drag value before M7.

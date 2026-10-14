@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -22,6 +23,9 @@ struct SimContext {
     Controls controls;
     Environment env;
     AirState air;  // atmosphere at the CG altitude, from env (D-016)
+    // NED z of the ground plane where it crosses the origin's vertical [m]:
+    // origin altitude − env.ground_height (D-032 item 9, D-033). NaN: no ground.
+    double ground_z_n = std::numeric_limits<double>::quiet_NaN();
     // Outputs of the components evaluated before this one (D-003); read
     // only the slots returned by bind().
     const CouplingOutputs* coupling = nullptr;

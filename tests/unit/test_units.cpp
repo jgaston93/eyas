@@ -83,6 +83,24 @@ TEST(Units, Dimensions) {
     EXPECT_FALSE(find_unit("lb").has_value());
 }
 
+// Landing-gear units (GenHel §5.7.5): tire pressure, tire stiffness in lbf/in
+// and lbf/ft, linear and quadratic damping. NIST: 1 psi = 6894.757293168 Pa.
+TEST(Units, GearUnits) {
+    const auto dim = [](std::string_view u) { return find_unit(u)->dimension; };
+    EXPECT_EQ(dim("psi"), Dimension::pressure);
+    EXPECT_EQ(dim("Pa"), Dimension::pressure);
+    EXPECT_NEAR(kPsi, 6894.757293168361, 1e-9);
+    EXPECT_EQ(dim("lbf/in"), Dimension::stiffness);
+    EXPECT_EQ(dim("lbf/ft"), Dimension::stiffness);
+    EXPECT_EQ(dim("N/m"), Dimension::stiffness);
+    EXPECT_NEAR(*si_scale("lbf/in"), 12.0 * *si_scale("lbf/ft"), 1e-10);
+    EXPECT_EQ(dim("lbf*s/ft"), Dimension::damping);
+    EXPECT_EQ(dim("N*s/m"), Dimension::damping);
+    EXPECT_EQ(dim("lbf*s^2/ft^2"), Dimension::quadratic_damping);
+    EXPECT_EQ(dim("N*s^2/m^2"), Dimension::quadratic_damping);
+    EXPECT_NEAR(*si_scale("lbf*s^2/ft^2"), kSlug / kFoot, 1e-12);
+}
+
 TEST(Units, RejectsUnknownAndAmbiguous) {
     EXPECT_FALSE(si_scale("lb").has_value());
     EXPECT_FALSE(si_scale("furlong").has_value());

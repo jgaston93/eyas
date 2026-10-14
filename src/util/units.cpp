@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 42> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 51> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -54,6 +54,15 @@ constexpr std::array<std::pair<std::string_view, Unit>, 42> kRegistry{{
     {"ft^3",         {kFoot * kFoot * kFoot, D::volume}},
     {"rad/N",        {1.0, D::angle_per_force}},
     {"deg/lbf",      {kDegree / kPoundForce, D::angle_per_force}},
+    {"Pa",           {1.0, D::pressure}},
+    {"psi",          {kPsi, D::pressure}},
+    {"N/m",          {1.0, D::stiffness}},
+    {"lbf/in",       {kPoundForce / kInch, D::stiffness}},
+    {"lbf/ft",       {kPoundForce / kFoot, D::stiffness}},
+    {"N*s/m",        {1.0, D::damping}},
+    {"lbf*s/ft",     {kPoundForce / kFoot, D::damping}},
+    {"N*s^2/m^2",    {1.0, D::quadratic_damping}},
+    {"lbf*s^2/ft^2", {kPoundForce / (kFoot * kFoot), D::quadratic_damping}},
 }};
 // clang-format on
 
@@ -118,6 +127,14 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "volume";
         case Dimension::angle_per_force:
             return "angle per force";
+        case Dimension::pressure:
+            return "pressure";
+        case Dimension::stiffness:
+            return "stiffness";
+        case Dimension::damping:
+            return "damping";
+        case Dimension::quadratic_damping:
+            return "quadratic damping";
     }
     return "unknown";
 }

@@ -1,0 +1,68 @@
+# Transcribed by eye from rendered page images (110-300 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), §5.7.5 "Black Hawk landing module input data", pp. 5.7-40, 5.7-42,
+# 5.7-45, 5.7-46, 5.7-47 (PDF pp. 278, 280, 283, 284, 285), handwritten.
+# status: read with high confidence, not reviewed by a person (the reviewer asked to see only
+# doubtful readings); see docs/DATA_GAPS.md, "UH-60A landing gear (M6c)".
+#
+# GenHel calls the third gear the "nose gear" (suffix N, NG) throughout §5.7.2; the Black Hawk
+# data page calls it the tail gear. Units as printed: inches for FS/WL/BL and tire sizes, psi,
+# slugs, ft*lbf, lbf, ft/s, lbf*s^2/ft^2.
+#
+# Strut force (p. 5.7-23/24): F_STR = sgn(ds)*(C*ds^2 + F_DRG0) + C_PV/((C_PV/F_PRE) - s),
+# denominator limited to >= 0.01 [ft]. GAMMA is listed with the strut data but appears in no
+# equation (the notation, p. 5.7-38, calls C_PV an "isothermal air spring coef.").
+#
+# name     value      unit           confidence / note
+# --- main gear (each of two), p. 5.7-40 ---
+RTM        12.65      in             high  (tire radius)
+DTM        25.3       in             high  (tire diameter)
+PM         140        psi            high  (tire pressure)
+PRM        110        psi            high  (rated tire pressure)
+NTM        1          -              high  (wheels per gear)
+FSMGA      297.43     in             high
+WLMGA      184.8      in             high  (WL of the axle at free extension, WLMGAO in §5.7.2)
+BLMGA      53.2       in             high  (right gear at +BL in §5.7.2, left gear mirrored)
+MMG        2.6708     slug           high  (unsprung mass)
+GDR        .003       s              high  (tire damping factor; "= GDL")
+CPVM       3465.      ft*lbf         high
+FPREM      3000       lbf            high
+GAMMA_M    1.34       -              high  (unused by the printed equations)
+SDOT_BRK_M 1.4167     ft/s           high  (damping break point on |ds|)
+CMG_LO     1382.4     lbf*s^2/ft^2   high  (|ds| <= 1.4167)
+FDRG0_LO   0          lbf            high
+CMG_HI     216.0      lbf*s^2/ft^2   high  (|ds| > 1.4167)
+FDRG0_HI   2340.98    lbf            high  (continuity check: 1382.4*1.4167^2 = 216.0*1.4167^2 + 2340.98 to 0.1 lbf)
+# main tire longitudinal stiffness, p. 5.7-42 (cube root: Table 7.5.1 = p^(1/3) to 5 decimals):
+#   KTXR = KTXL = .53*DTM*(PM + 4*PRM)*(12*DZ/DTM)^(1/3) * 12   [lbf/ft], DZ [ft]
+# main tire lateral stiffness: Table 7.5.2; vertical load: Table 7.5.3; damping slope: Table 7.5.4
+#
+# --- tail gear, p. 5.7-45 ---
+RTN        7.5        in             high
+DTN        15         in             high
+PN         90         psi            high
+PRN        110        psi            high
+NTN        1          -              high
+FSNGA      644.62     in             high
+WLNGA      180.4      in             high  (WLNGAO in §5.7.2)
+BLNGA      0          in             high
+MNG        1.0        slug           high
+GDN        .003       s              high
+CPVN       2208.0     ft*lbf         high
+FPREN      1251.0     lbf            high  (unit not printed; lbf as FPREM)
+GAMMA_N    1.34       -              high  (unused by the printed equations)
+CNG        66.72      lbf*s^2/ft^2   high  (unit not printed; single regime)
+FDNG0      0.0        lbf            high
+# tail tire stiffness, p. 5.7-46:
+#   KTXN = .53*DTN*(PN + 4*PRN)*(12*DZ/DTN)^(1/3) * 12   [lbf/ft]
+#   KTYN = 19.7*(ZFTHN)^(1/2) * 12                         [lbf/ft], ZFTHN [lbf]
+# tail tire vertical load: Table 7.5.5; damping slope: Table 7.5.6
+#
+# --- general, p. 5.7-47 ---
+WLFD       0          ft             high  (ground plane height)
+MU         0.6        -              high
+BRK        1.0        -              high  (K_mu,B with brakes set)
+NBRK       .01        -              high  (K_mu,B with brakes off; always for the tail wheel)
+KSLIP      .85        -              high  (sliding force / breakout force)
+#
+# Not given anywhere in §5.7: T_FGR (vertical gear load filter, p. 5.7-25), STLDSW, the 0.01 s
+# tire-damping lag is given in the equation itself (p. 5.7-17).

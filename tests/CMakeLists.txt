@@ -18,6 +18,7 @@ add_executable(eyas_unit_tests
     unit/test_flap_anchors.cpp
     unit/test_flapping_rotor.cpp
     unit/test_geodesy.cpp
+    unit/test_landing_gear.cpp
     unit/test_model.cpp
     unit/test_pitt_peters.cpp
     unit/test_recorder.cpp
@@ -79,3 +80,10 @@ target_include_directories(eyas_m6_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m6_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_m6_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m6_cases)
+
+# Writes the M6c landing-gear validation data (VALIDATION.md; tools/plot_m6c.py).
+add_executable(eyas_m6c_cases validation/m6c_cases.cpp)
+target_include_directories(eyas_m6c_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m6c_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m6c_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m6c_cases)

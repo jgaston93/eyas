@@ -18,6 +18,7 @@ inline constexpr double kSlug = kPoundForce / kFoot;                  // [kg] 1 
 inline constexpr double kKnot = 1852.0 / 3600.0;                      // [m/s] exact
 inline constexpr double kDegree = std::numbers::pi / 180.0;           // [rad]
 inline constexpr double kRpm = 2.0 * std::numbers::pi / 60.0;         // [rad/s]
+inline constexpr double kPsi = kPoundForce / (kInch * kInch);         // [Pa] lbf/in²
 
 // Physical dimension of a unit. Config quantities are read with the dimension
 // they must have, so a value in a unit of the wrong kind ("1000 s" for a rate)
@@ -44,6 +45,10 @@ enum class Dimension : std::uint8_t {
     area,
     volume,           // e.g. a moment per unit dynamic pressure [m³]
     angle_per_force,  // compliance, e.g. a coning angle per unit thrust
+    pressure,
+    stiffness,          // force per length, e.g. a tire spring
+    damping,            // force per speed, e.g. a linear damper
+    quadratic_damping,  // force per speed², e.g. an oleo orifice
 };
 
 // Name used in error messages, e.g. "length".
