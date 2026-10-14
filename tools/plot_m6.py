@@ -146,7 +146,7 @@ def a1_sensitivity(data, out):
 def sideward_fade(data, out):
     st = load(data / "m6b_fade_steepness.csv")
     sw = load(data / "m6b_fade_sweep.csv")
-    fig, axes = plt.subplots(1, 3, figsize=(16, 4.5))
+    fig, axes = plt.subplots(1, 4, figsize=(21, 4.5))
     ax = axes[0]
     fades = st["fade_deg"][1:].astype(float)
     ax.plot(fades, st["ratio_force"][1:].astype(float), "ko-", label="force")
@@ -158,7 +158,7 @@ def sideward_fade(data, out):
     ax.legend(fontsize=8)
     ax.grid(True, lw=0.3)
     styles = {0.0: ":", 10.0: "--", 20.0: "-"}
-    for ax, comp, name in ((axes[1], "L", "rolling"), (axes[2], "N", "yawing")):
+    for ax, comp, name in ((axes[1], "L", "rolling"), (axes[2], "M", "pitching"), (axes[3], "N", "yawing")):
         for i, eta in enumerate(np.unique(sw["eta_deg"])):
             for fade, ls in styles.items():
                 sel = (sw["eta_deg"] == eta) & (sw["fade_deg"] == fade)
@@ -169,7 +169,7 @@ def sideward_fade(data, out):
         ax.set_title(f"{name} moment (fade: dotted none, dashed 10°, solid 20°)", fontsize=10)
         ax.set_xticks(range(0, 361, 90))
         ax.grid(True, lw=0.3)
-    axes[2].legend(fontsize=8)
+    axes[3].legend(fontsize=8)
     fig.suptitle("UH-60A airframe, 20 kt nearly sideward, no main-rotor wash, sea level (D-031)")
     fig.tight_layout()
     fig.savefig(out / "m6b_sideward_fade.png", dpi=110)

@@ -396,7 +396,27 @@ Tests: `tests/unit/test_airframe_aero.cpp`, `tests/unit/test_tail_rotor_wake.cpp
 | steepest force change / away from the line | 15.0 | 6.2 | 3.2 | 2.2 | 1.7 |
 | steepest moment change / away from the line | 19.8 | 7.9 | 3.9 | 2.6 | 1.9 |
 
-So **c = 20°**, not the first guess of 10°. What it costs (20 kt): 15° from the line the 20° fade changes the total moment by up to 1.0 kN·m, against nothing for a 10° fade; 8° from it, 3.4 against 0.8 kN·m. Within a few degrees of the line any continuous model changes the loads by up to their full size (4.6 kN·m at 1°), because the unfaded loads swing across that range there (dotted curves below). GenHel's own unexecuted filter (p. 5.2-10) would act up to about 48° from the line at 20 kt.
+So **c = 20°**, not the first guess of 10°. What it costs, as the largest change of each moment around the line at 20 kt (kN·m; the unfaded moments swing by 3.0–3.2 in roll, 4.1 in pitch and 4.3–4.4 in yaw around it):
+
+| Distance from the line | 10° fade: roll, pitch, yaw | 20° fade: roll, pitch, yaw |
+|---|---|---|
+| 1° | 1.72, 3.27, 3.44 | 1.77, 3.33, 3.49 |
+| 4° | 1.54, 3.16, 2.44 | 1.65, 2.96, 3.20 |
+| 8° | 0.32, 0.69, 0.76 | 1.53, 3.11, 2.38 |
+| 15° | 0 | 0.45, 0.93, 0.94 |
+
+Close to the line any continuous model must change the loads by a large part of their swing, because the unfaded ones swing across that whole range there (dotted curves below); this one changes them by 55–80 % of it at 1°, more than an average would, since level flow from ahead sits near one end of the pitch and yaw swings. On the line the faded loads take the value of level flow from slightly ahead (θ = 0: roll 0.80, pitch −1.13, yaw 3.19 kN·m), the tunnel's sideslip-sweep condition, not the average around the line (0.44, 0.23, 2.25). GenHel's own unexecuted filter (p. 5.2-10) would act up to about 48° from the line at 20 kt.
+
+*Where the fade acts in flight.* The main-rotor wash keeps the flow at the fuselage and tail away from the line. With GenHel's UH-60A wash maps (pure sideward flight, so no wake skew) the flow enters the 20° fade at:
+
+| Rotor thrust | Fuselage | Stabilator and fin |
+|---|---|---|
+| hover (16 638 lbf, λ₀ = 0.054) | beyond 45 kt sideward | about 35 kt |
+| half | about 35 kt | about 20 kt |
+| quarter | about 15 kt | about 10 kt |
+| none (rotor stopped) | at any sideward speed | at any sideward speed |
+
+So it matters at low thrust and on the ground in a crosswind (M6d, M8). Near the line the panel loads are not credible with or without the fade: GenHel's panels use the full dynamic pressure, spanwise flow included, and its wash maps don't skew the wake sideways. The fade buys continuity there, not accuracy.
 
 ![Sideward fade](validation/m6/m6b_sideward_fade.png)
 
