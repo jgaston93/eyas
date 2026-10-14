@@ -88,8 +88,8 @@ TEST(Uh60aAircraft, MassSplitKeepsGenHelsWeightAndCg) {
 // ---- Control rigging (layer 1) -----------------------------------------------------
 
 // GenHel Figs. 5.1.6(a)–(d) and p. 5.5-20, the mechanical path in GenHel's
-// own units (inches, degrees), test-side; the XB+2 sign as transcribed
-// (pending review, DATA_GAPS.md).
+// own units (inches, degrees), test-side; XB = −XB+1 − XB+2 + XBOLS
+// (verified by human review, DATA_GAPS.md).
 struct GenHelRigging {
     double KXCTH0 = 1.60, KXAA1S = 1.60, KXBB1S = -2.83, KXPTHR = -5.539;
     double BIAS_C = 9.9, BIAS_A = -8.0, BIAS_B = -9.7754, BIAS_P = 21.9;
