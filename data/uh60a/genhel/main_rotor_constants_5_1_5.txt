@@ -1,0 +1,63 @@
+# Transcribed by eye from rendered page images (110 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), §5.1.5 "Black Hawk main rotor input data", p. 5.1-49 (PDF p. 69),
+# handwritten. Definitions from the nomenclature, pp. 5.1-39 to 5.1-48 (PDF pp. 59-68).
+# status: the digits of R..I_b, B, FS/WL/BL_MR, WEIGHT and FS/WL/BLCG were confirmed by human
+# review (2026-10-10); K_beta, K_betadot, delta_0, delta_3 (2026-10-11). The others were read with
+# high confidence, not reviewed by a person (the reviewer asked to see only doubtful readings).
+# See docs/DATA_GAPS.md, "UH-60A main-rotor constants".
+#
+# Meanings settled from the source (M6d):
+# - I_PHI, I_THETA: shaft inclination; i_theta about Y_B, then i_phi about the resulting X_S
+#   (p. 5.1-2, PDF p. 22). Figure 1.1.1 (p. 5.1-7, PDF p. 27) draws a positive i_theta raising
+#   X_S above X_H, i.e. nose-up, so i_theta = -3 tilts the top of the shaft forward.
+# - DSP: swashplate phase angle (nomenclature, PDF p. 64). Blade pitch (p. 5.1-24, PDF p. 44):
+#   THOAMR = THETA_CUFF - A1S cos(psi + DSP) - B1S sin(psi + DSP) - 57.3 beta tan(delta_3)
+#            + 57.3 delta K_a1 + (57.3 delta)^2 K_a2 + dynamic twist.
+# - KFP0: dynamic (elastic) twist gain, speed scheduled; not modelled (DECISIONS.md D-034).
+# - TFILMR: first-order filter on the rotor forces and moments (p. 5.1-36); not used (D-034).
+#
+# name     value      unit       note
+R          26.83      ft
+OMEGA      27.0       rad/s
+NB         4          -
+I_PHI      0          deg
+I_THETA    -3         deg
+DSP        -9.7       deg        swashplate phase angle
+C_T        1.73       ft         tip chord
+C_R        1.73       ft         root chord
+C_75       1.73       ft         chord at 0.75 R
+E          1.25       ft         flap hinge offset
+E_PRIME    3.83       ft         exposed spar, hinge to cuff (root cutout = E + E_PRIME)
+W_B        256.9      lbm        blade weight (GenHel lb; mass in lbm)
+M_B        86.7       slug*ft    first moment about the hinge
+I_B        1512.6     slug*ft^2  inertia about the hinge
+B_TL       0.97       -          tip loss factor
+DCD        0.002      -          profile drag correction (DELTA C_DMR)
+K_BETA     0          -          flap spring (value zero)
+K_BETADOT  0          -          flap damper (value zero)
+K_A1       0          -          pitch-lag coupling
+K_A2       0          -          pitch-lag coupling
+K_CT       1.0        -
+K_CM       0          -
+K_CL       0          -
+T_DW0      0.01038    s          GenHel's uniform inflow time constant (Eyas: Pitt-Peters, D-027)
+T_DWC      0          s
+T_DWS      0          s
+RHO        0.002378   slug/ft^3
+A_SOUND    1117.0     ft/s
+FS_MR      341.2      in
+WL_MR      315.0      in
+BL_MR      0          in
+DELTA_0    7          deg        lag damper geometry (LAGOMR); meaning open, M9
+DELTA_3    0          deg
+T_FILMR    0.3        s          rotor force and moment filter (not used, D-034)
+K_FPC      0          -
+K_FPS      0          -
+NBS        4          -
+NSS        5          -          GenHel's blade segments (Eyas chooses its own element count)
+# KFP0 = -0.0003 - 0.0000044*(V_KT - 100), limited to -0.00052 <= KFP0 <= -0.0003 (not used)
+WEIGHT     16638.0    lbm        total helicopter weight, blades included (p. 5.1-39)
+FSCG       355.9      in
+WLCG       248.2      in
+BLCG       0          in
+# Lag damper geometry (ALDMR .. RLDMR, THGEOMR) is not used before the lag DOF (M9).

@@ -1,0 +1,23 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# §5.4.5 "Black Hawk tail rotor input data", p. 5.4-14 (PDF p. 175), handwritten.
+# status: all digits confirmed by human review (2026-10-10); buttlines positive to port
+# (2026-10-12). See docs/DATA_GAPS.md, "UH-60A tail-rotor constants".
+#
+# name     value      unit       note
+FS_TR      732.0      in
+WL_TR      324.7      in
+BL_TR      -14.0      in         14 in to starboard (buttlines positive to port)
+R_TR       5.5        ft
+OMEGA_TR   124.62     rad/s
+NB_TR      4          -
+TWST_TR    -18        deg        linear twist over the radius
+GAMMA_TR   70.0       deg        cant angle (hub roll, D-028)
+DELTA3_TR  35.0       deg
+C_TR       0.81       ft
+A_TR       5.73       1/rad
+B_TR       0.92       -          tip loss factor
+CD_TR      0          ft^2       drag area (value zero)
+DA0DT_TR   0.001455   deg/lbf    coning per thrust
+K_BVT_TR   0.796      -          fin blockage factor
+V_BVT_TR   30         kt         fin blockage speed
+BIAS_TR    6.0        deg        pitch bias (BIASTR)

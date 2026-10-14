@@ -1,0 +1,20 @@
+# Transcribed by eye from rendered page images (110 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981): §5.2.5 fuselage input data, p. 5.2-15 (PDF p. 100), and §5.3.5
+# empennage input data, p. 5.3-19 (PDF p. 141), both handwritten.
+# status: read with high confidence, not reviewed by a person (the reviewer asked to see only
+# doubtful readings); the two panel areas are confirmed by the printed table headers (Table 3.5.5
+# "S=45 FT**2", Table 3.5.9 "S=32.3 FT**2"). See docs/DATA_GAPS.md, "UH-60A airframe ... data".
+#
+# name     value      unit       note
+FS_WF      345.5      in         fuselage wind-tunnel mounting point
+WL_WF      234.0      in
+BL_WF      0.0        in
+FS_H1      700.1      in         stabilator
+WL_H1      244.0      in
+BL_H1      0          in
+SA_H1      45.0       ft^2       (IH1 is "calculated in the control system": the schedule)
+FS_V1      695.0      in         fin
+WL_V1      273.0      in
+BL_V1      0.0        in
+SA_V1      32.3       ft^2
+I_V1       0.0        deg

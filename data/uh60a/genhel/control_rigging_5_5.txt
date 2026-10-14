@@ -1,0 +1,53 @@
+# Transcribed by eye from rendered page images (110-400 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), §5.5 flight control system module:
+#   Figure 5.1.6(a) collective,         p. 5.5-14 (PDF p. 190, page rotated), handwritten
+#   Figure 5.1.6(b) lateral cyclic,     p. 5.5-15 (PDF p. 191)
+#   Figure 5.1.6(c) longitudinal cyclic, p. 5.5-16 (PDF p. 192)
+#   Figure 5.1.6(d) tail rotor collective, p. 5.5-17 (PDF p. 193)
+#   §5.5.4 control system general input, p. 5.5-20 (PDF p. 196)
+# status: read with high confidence except the sign of XB+2 (below), not reviewed by a person
+# (the reviewer asked to see only doubtful readings). See docs/DATA_GAPS.md, "UH-60A control
+# rigging (M6d)".
+#
+# The mechanical path only (pilot input XC/XA/XB/XP [in] -> blade pitch [deg]); the SAS, FPS and
+# PBA inputs (XCILS, XAILS, XBILS, XBBAS, XCOLS, XAOLS, XBOLS, XPOLS), the trim inputs (X*+1,
+# THETA*+1) and the canned inputs are zero here, and the primary servos
+# 1/(.00114 s^2 + .0473 s + 1) are at unit gain (steady state; D-029). The SAS actuators are
+# 1/(.00032 s^2 + .025 s + 1).
+#
+#   THOSUM = KXCTH0*XC                                   THETA0 = THOSUM + BIAS_C
+#   THRSUM = KXPTHR*XP                                   THETTR = THRSUM + THOSUM + BIAS_P
+#   A1S    = KXAA1S*XA + MIX_AC*THOSUM + BIAS_A
+#   B1S    = KXBB1S*XB + MIX_BC*THOSUM + MIX_BP*THRSUM + BIAS_B
+#   XB     = XB+1 + SIGN_XB2*XB+2 + XBOLS               (the other junctions are all "+")
+# Blade pitch (main rotor input, p. 5.1-24): THETA0 at the cuff, A1S and B1S with the swashplate
+# phase DSP (main_rotor_constants_5_1_5.txt).
+#
+# name      value     unit     confidence / note
+KXCTH0      1.60      deg/in   high  (p. 5.5-20; collective)
+KXAA1S      1.60      deg/in   high  (lateral)
+KXBB1S      -2.83     deg/in   high  (longitudinal)
+KXPTHR      -5.539    deg/in   high  (directional)
+BIAS_C      9.9       deg      high  ("+9.9", Fig. 5.1.6(a))
+BIAS_A      -8        deg      high  (Fig. 5.1.6(b))
+MIX_AC      -0.16     -        high  (THOSUM into A1S, Fig. 5.1.6(b))
+BIAS_B      -9.7754   deg      high  (Fig. 5.1.6(c))
+MIX_BC      0.29      -        high  (THOSUM into B1S)
+MIX_BP      -0.2936   -        high  (THRSUM into B1S)
+BIAS_P      21.9      deg      high  (Fig. 5.1.6(d))
+SIGN_XB2    -1        -        PENDING human review: a "-" at the XB+2 arrowhead of the first
+#                                    junction of Fig. 5.1.6(c), unlike the other three channels.
+#                                    With -1, positive XB+2 raises B1S (forward stick), which is
+#                                    the physically required direction for a positive-forward input.
+#
+# Rotor head blade pitch travel limits (p. 5.5-20), "for piloted simulation" (not applied, M8):
+A1S_UL      8.0       deg      high
+A1S_LL      -8.0      deg      high
+B1S_UL      16.3      deg      high
+B1S_LL      -12.5     deg      high
+TH0_UL      25.9      deg      high
+TH0_LL      9.9       deg      high
+THR_UL      36.5      deg      high
+THR_LL      4.5       deg      high
+# Stick and pedal travels are not given (p. 5.5-20: "see Volume II"); Eyas's placeholders are
+# derived from the head limits by tools/build_uh60a_config.py (DECISIONS.md D-034).
