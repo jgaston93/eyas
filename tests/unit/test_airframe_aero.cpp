@@ -30,6 +30,7 @@
 #include "support/m3_fixtures.hpp"
 #include "support/m6b_fixtures.hpp"
 #include "util/config.hpp"
+#include "util/csv_table.hpp"
 #include "util/error.hpp"
 #include "util/units.hpp"
 
@@ -543,6 +544,119 @@ TEST(AirframeAero, WritesTunnelAnglesToTheStore) {
     EXPECT_EQ(store.get(registry.find("airframe.alpha_wf", "test")), l.alpha_wf);
     EXPECT_EQ(store.get(registry.find("airframe.psi_wf", "test")), l.psi_wf);
     EXPECT_GT(l.psi_wf, 0.0);  // v_y < 0: ψ_WF = −β_WF > 0
+}
+
+}  // namespace
+}  // namespace eyas
+
+namespace eyas {
+namespace {
+
+AirframeAeroConfig scheduled_airframe() {
+    test::GenHelAirframeGeometry g{};
+    g.FSCGB = 355.9;
+    g.WLCGB = 248.2;
+    g.FSWF = 345.5;
+    g.WLWF = 234.0;
+    g.FSH1 = 700.1;
+    g.WLH1 = 244.0;
+    g.SAH1 = 45.0;
+    g.FSV1 = 695.0;
+    g.WLV1 = 273.0;
+    g.SAV1 = 32.3;
+    AirframeAeroConfig c = test::uh60a_airframe(g);
+    IncidenceSchedule sch;
+    const CsvTable csv = read_csv_table(test::uh60a_airframe_dir() + "/stabilator_schedule.csv");
+    sch.command = make_table2d(csv, "airspeed", "collective", "incidence");
+    sch.min = -8.0 * kDegree;
+    sch.max = 39.0 * kDegree;
+    c.stabilator.schedule = sch;
+    return c;
+}
+
+// The stabilator schedule (GenHel Fig. 5.1.7, steady state; D-028) against
+// GenHel's block diagram evaluated directly: the merged table is exact (each
+// cell is bilinear), so they agree to rounding everywhere, outside the table
+// too (rearward flight, past 147 kt, collective past its stops).
+TEST(StabilatorSchedule, MatchesGenHel) {
+    const test::GenHelStabilator ref = test::read_genhel_stabilator(test::uh60a_genhel_dir());
+    const AirframeAero aero(scheduled_airframe());
+    std::mt19937_64 rng(6301);
+    std::uniform_real_distribution<double> v(-40.0, 200.0);  // [kt]
+    std::uniform_real_distribution<double> c(-0.1, 1.1);
+    const std::vector<double> x = {0.0, 0.0};
+    for (int i = 0; i < 2000; ++i) {
+        const double v_kt = v(rng);
+        SimContext ctx = context(v_kt * units::kKnot / kFoot, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0023769);
+        ctx.controls.collective = c(rng);
+        const AirframeAeroLoads p = aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero());
+        const double expect = ref.incidence(v_kt, 100.0 * ctx.controls.collective);
+        EXPECT_NEAR(p.stabilator_incidence, expect * kDegree, 1e-12) << v_kt << " kt";
+    }
+}
+
+// What the schedule does, checked by hand from the diagram: in hover the 42°
+// bias meets the 39° travel limit; the command starts falling at 30 kt, and
+// more steeply at low collective.
+TEST(StabilatorSchedule, HoverAndForwardFlight) {
+    const AirframeAero aero(scheduled_airframe());
+    const std::vector<double> x = {0.0, 0.0};
+    const auto incidence = [&](double v_kt, double collective) {
+        SimContext ctx = context(v_kt * units::kKnot / kFoot, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0023769);
+        ctx.controls.collective = collective;
+        return aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero()).stabilator_incidence / kDegree;
+    };
+    EXPECT_NEAR(incidence(0.0, 0.6), 39.0, 1e-12);
+    EXPECT_NEAR(incidence(30.0, 0.6), 39.0, 1e-12);
+    // 80 kt, 50 %: 42 − (0.67 + 0.003286·20)·50 = 5.214°.
+    EXPECT_NEAR(incidence(80.0, 0.5), 5.214, 1e-10);
+    EXPECT_LT(incidence(80.0, 0.2), incidence(80.0, 0.5));
+    // Past 147 kt both airspeed terms are saturated.
+    EXPECT_NEAR(incidence(160.0, 0.5), incidence(147.0, 0.5), 1e-12);
+
+    // The scheduled incidence drives the loads exactly as a fixed one would.
+    AirframeAeroConfig fixed = scheduled_airframe();
+    fixed.stabilator.schedule.reset();
+    fixed.stabilator.incidence = incidence(80.0, 0.5) * kDegree;
+    const AirframeAero f(std::move(fixed));
+    SimContext ctx = context(80.0 * units::kKnot / kFoot, 3.0, -4.0, 0.0, 0.1, 0.0, 0.0023769);
+    ctx.controls.collective = 0.5;
+    const AirframeAeroLoads a = aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero());
+    const AirframeAeroLoads b = f.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero());
+    EXPECT_EQ(a.stabilator.F, b.stabilator.F);
+}
+
+TEST(StabilatorSchedule, ReadsConfig) {
+    const std::string dir = test::uh60a_airframe_dir();
+    const std::string common = R"(
+type: airframe_aero
+fuselage:
+  mounting_point: {x: "0 in", y: "0 in", z: "0 in"}
+  alpha_table: )" + dir + R"(/fuselage_alpha.csv
+  psi_table: )" + dir + R"(/fuselage_psi.csv
+  psi_low_table: )" + dir + R"(/fuselage_psi_low.csv
+fin:
+  position: {x: "-339.1 in", y: "0 in", z: "-24.8 in"}
+  area: "32.3 ft^2"
+  coefficients: )" + dir + R"(/fin_coefficients.csv
+  q_ratio: )" + dir + R"(/fin_q_ratio.csv
+  sidewash: )" + dir + R"(/fin_sidewash.csv
+stabilator:
+  position: {x: "-344.2 in", y: "0 in", z: "4.2 in"}
+  area: "45 ft^2"
+  coefficients: )" + dir + R"(/stabilator_coefficients.csv
+  q_ratio: )" + dir + R"(/stabilator_q_ratio.csv
+  downwash: )" + dir + R"(/stabilator_downwash.csv
+)";
+    const std::string schedule = "  schedule: {table: " + dir +
+                                 "/stabilator_schedule.csv, min: \"-8 deg\", max: \"39 deg\"}\n";
+    const auto r = AirframeAero::from_config(Config::from_string(common + schedule));
+    ASSERT_TRUE(r->config().stabilator.schedule.has_value());
+    EXPECT_DOUBLE_EQ(r->config().stabilator.schedule->max, 39.0 * kDegree);
+    // Incidence and schedule together is an error.
+    EXPECT_THROW((void)AirframeAero::from_config(
+                     Config::from_string(common + schedule + "  incidence: \"2 deg\"\n")),
+                 InitError);
 }
 
 }  // namespace

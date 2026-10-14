@@ -65,11 +65,24 @@ struct FuselageTables {
 // One empennage panel. The stabilator's lift acts in the x–z plane and its
 // angle is α_H = atan(V_Z/|V_X|) + incidence; the fin's lift acts along y and
 // its angle is β_V = atan(V_Y/√(V_X² + V_Z²)) + incidence.
+// The stabilator's incidence schedule (GenHel Fig. 5.1.7, steady state:
+// airspeed lag settled, no pitch-rate or lateral-acceleration feedback, servo
+// at unit gain; D-028): i = clamp(command(u, collective), min, max), with u
+// the body x velocity relative to the air. The dynamic law is the AFCS's
+// (D-029).
+struct IncidenceSchedule {
+    // [rad] against airspeed u [m/s] and collective [0, 1].
+    Table2D command{Axis({0.0, 1.0}), Axis({0.0, 1.0}), {0.0, 0.0, 0.0, 0.0}};
+    double min = 0.0;  // [rad] travel limits
+    double max = 0.0;
+};
+
 struct PanelConfig {
-    Vec3 position_b = Vec3::Zero();            // [m] from the airframe CG, body axes; x < 0 (aft)
-    double area = 0.0;                         // S [m²]
-    double incidence = 0.0;                    // [rad] fixed (stabilator: GenHel's STBSET override)
-    Table1D cl{Axis({0.0, 1.0}), {0.0, 0.0}};  // against the panel angle [rad]
+    Vec3 position_b = Vec3::Zero();  // [m] from the airframe CG, body axes; x < 0 (aft)
+    double area = 0.0;               // S [m²]
+    double incidence = 0.0;          // [rad] fixed (stabilator: GenHel's STBSET override)
+    std::optional<IncidenceSchedule> schedule;  // stabilator: replaces `incidence`
+    Table1D cl{Axis({0.0, 1.0}), {0.0, 0.0}};   // against the panel angle [rad]
     Table1D cd{Axis({0.0, 1.0}), {0.0, 0.0}};
     // Fuselage wake, against α_WF (stabilator) or ψ_WF (fin) [rad]:
     // dynamic-pressure ratio K_Q² [-] and wake angle ε or σ [rad].
@@ -93,6 +106,7 @@ struct AirframeAeroLoads {
     double alpha_wf = 0.0, psi_wf = 0.0;  // [rad] GenHel's tunnel angles
     double q_wf = 0.0;                    // [Pa]
     double alpha_h = 0.0, q_h = 0.0;      // stabilator angle incl. incidence [rad], [Pa]
+    double stabilator_incidence = 0.0;    // [rad] fixed or scheduled
     double beta_v = 0.0, q_v = 0.0;       // fin angle incl. incidence [rad], [Pa]
     double downwash = 0.0;                // ε at the stabilator, undelayed [rad]
     double sidewash = 0.0;                // σ at the fin, undelayed [rad]

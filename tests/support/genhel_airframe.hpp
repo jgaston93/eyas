@@ -326,6 +326,52 @@ inline GenHelAirframeOutput genhel_airframe(const GenHelAirframeTables& t,
     return o;
 }
 
+// GenHel's stabilator control system (Fig. 5.1.7, p. 5.5-18), steady
+// state: airspeed lag settled, no pitch rate or lateral acceleration, servo
+// at unit gain. Constants read from data/uh60a/genhel/fig_5_5_1_7_stabilator.txt.
+struct GenHelStabilator {
+    std::map<std::string, std::vector<double>> k;
+    // Commanded incidence IHT0 [deg] at airspeed VXBIKT [kt] and collective
+    // XCPC [percent, assumed: DATA_GAPS.md].
+    double command(double VXBIKT, double XCPC) const {
+        const auto lim = [](double x, const std::vector<double>& l) {
+            return std::fmin(std::fmax(x, l[0]), l[1]);
+        };
+        const double PR50 = lim(VXBIKT + k.at("BIAS_VX1")[0], k.at("LMP50"));
+        const double PR51 = lim(VXBIKT + k.at("BIAS_VX2")[0], k.at("LMP51"));
+        const double C2 = lim(k.at("BIAS_C2")[0] - XCPC, k.at("LMC2"));
+        const double C1 = lim(k.at("BIAS_C1")[0] - XCPC, k.at("LMC1"));
+        const double KVX1 = -(k.at("KCO")[0] * 1.0 + k.at("KC2")[0] * C2 + k.at("KC1")[0] * C1);
+        return k.at("BIAS_ITAIL0")[0] + KVX1 * PR50 + k.at("KVX2")[0] * PR51;
+    }
+    // IH1 [deg]: the command within the travel limits.
+    double incidence(double VXBIKT, double XCPC) const {
+        return std::fmin(std::fmax(command(VXBIKT, XCPC), k.at("LMSTAB")[0]), k.at("LMSTAB")[1]);
+    }
+};
+
+inline GenHelStabilator read_genhel_stabilator(const std::string& dir) {
+    std::ifstream f(dir + "/fig_5_5_1_7_stabilator.txt");
+    if (!f) {
+        throw std::runtime_error("cannot open the stabilator transcription");
+    }
+    GenHelStabilator s;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        std::istringstream in(line);
+        std::string name;
+        in >> name;
+        double v = 0.0;
+        while (in >> v) {
+            s.k[name].push_back(v);
+        }
+    }
+    return s;
+}
+
 // The fuselage wake at the tail rotor (p. 5.4-5): K_QTR from Table 3.5.7 on
 // |PSIWF|, sidewash from Table 3.5.8 on PSIWF and downwash from Table 3.5.4
 // on ALFWF, each delayed; NaN delayed values mean the steady state.

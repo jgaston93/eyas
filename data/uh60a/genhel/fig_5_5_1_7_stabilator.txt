@@ -1,8 +1,9 @@
 # Transcribed by eye from rendered page images (130-500 dpi) of the NASA scan of GenHel,
 # NASA CR-166309 (1981), Figure 5.1.7 "Black Hawk stabilator control system", p. 5.5-18
 # (PDF p. 194, page rotated), handwritten block diagram.
-# status: read with high confidence except where marked (docs/DATA_GAPS.md, "UH-60A stabilator
-# schedule"); not yet reviewed by a person. UNVERIFIED values must not be used.
+# status: read with high confidence; TAU confirmed by human review 2026-10-13 (docs/DATA_GAPS.md,
+# "Stabilator law"). The other values were not reviewed by a person (the reviewer asked to see
+# only doubtful readings).
 #
 # Signal flow as drawn (IHT0 is the commanded incidence before the servo):
 #   IHT0 = (BIAS_ITAIL0 + KVTDT*Q3SENSR) + Y.SENS*KVYDT*limit(VF - 30, 0, 30)
@@ -29,7 +30,7 @@ KC2              0.003286     -         high (two identical copies on the page)
 BIAS_C1          70           %?        high
 LMC1             0 20         %?        high
 KC1              0.003286     -         high
-TAU              0.398        s         UNVERIFIED - leading mark read as a decimal point; 3.98 also possible
+TAU              0.398        s         confirmed by human review 2026-10-13 (not 3.98)
 SERVO_A2         0.0254       s^2       high
 SERVO_A1         0.223        s         high
 RATE_LIMIT       7            deg/s     high

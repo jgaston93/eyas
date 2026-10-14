@@ -139,6 +139,67 @@ def wash_csv(source, ekx_name, ekz_name):
     return "".join(lines)
 
 
+def stabilator_constants():
+    """Name -> list of numbers from the Fig. 5.1.7 transcription."""
+    out = {}
+    for line in (SRC / "fig_5_5_1_7_stabilator.txt").read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.startswith("#"):
+            continue
+        parts = line.split()
+        if "UNVERIFIED" in line:
+            sys.exit(f"stabilator: {parts[0]} is unverified")
+        values = []
+        for tok in parts[1:]:
+            try:
+                values.append(float(tok))
+            except ValueError:
+                break
+        out[parts[0]] = values
+    return out
+
+
+def limit(x, lo, hi):
+    return min(max(x, lo), hi)
+
+
+def stabilator_command(k, v_kt, collective_pct):
+    """GenHel's commanded incidence IHT0 [deg] (Fig. 5.1.7) in steady flight: the
+    airspeed lag settled (VF = V), no pitch rate, no lateral acceleration."""
+    pr50 = limit(v_kt + k["BIAS_VX1"][0], *k["LMP50"])
+    pr51 = limit(v_kt + k["BIAS_VX2"][0], *k["LMP51"])
+    c2 = limit(k["BIAS_C2"][0] - collective_pct, *k["LMC2"])
+    c1 = limit(k["BIAS_C1"][0] - collective_pct, *k["LMC1"])
+    kvx1 = -(k["KCO"][0] * 1.0 + k["KC2"][0] * c2 + k["KC1"][0] * c1)
+    return k["BIAS_ITAIL0"][0] + kvx1 * pr50 + k["KVX2"][0] * pr51
+
+
+def stabilator_csv():
+    """The steady-state command on a grid where bilinear interpolation is exact:
+    airspeed at the corners of the PR50 and PR51 limits, collective where
+    C1 + C2 changes slope. On this grid the command is linear in airspeed for a
+    given collective and linear in collective for a given airspeed, so each cell
+    is bilinear (the PR50 x KVX1 product included). The travel limit is applied
+    by the model after interpolation."""
+    k = stabilator_constants()
+    v_breaks = sorted({0.0, -k["BIAS_VX1"][0], -k["BIAS_VX1"][0] + k["LMP50"][1],
+                       -k["BIAS_VX2"][0], -k["BIAS_VX2"][0] + k["LMP51"][1]})
+    c_breaks = sorted({0.0, k["BIAS_C2"][0] - k["LMC2"][1], k["BIAS_C2"][0],
+                       k["BIAS_C1"][0] - k["LMC1"][1], k["BIAS_C1"][0], 100.0})
+    c_breaks = [c for c in c_breaks if 0.0 <= c <= 100.0]
+    lines = [
+        f"# source: GenHel, NASA CR-166309 (1981), Figure 5.1.7, p. 5.5-18: steady-state "
+        "stabilator command IHT0 (airspeed lag settled, no pitch-rate or lateral-acceleration "
+        "feedback) against body x airspeed VXBIKT and collective XCPC, taken as percent of "
+        "travel (DATA_GAPS.md); limit to -8..39 deg after lookup. " + GENERATED + "\n",
+        *([STATUS] if STATUS else []),
+        "airspeed[kt],collective[1],incidence[deg]\n",
+    ]
+    for v in v_breaks:
+        for c in c_breaks:
+            lines.append(f"{v:g},{c / 100.0:g},{stabilator_command(k, v, c):.12g}\n")
+    return "".join(lines)
+
+
 def outputs():
     g = "GenHel, NASA CR-166309 (1981),"
     return {
@@ -201,6 +262,7 @@ def outputs():
             "alpha[deg]",
             [("cl[1]", half("table_3_5_5_clh1.txt", "odd")),
              ("cd[1]", half("table_3_5_6_cdh1.txt", "even"))]),
+        "stabilator_schedule.csv": stabilator_csv(),
         "fin_coefficients.csv": table_csv(
             f"{g} Tables 3.5.9 and 3.5.10, p. 5.3-23: vertical tail lift and drag coefficients "
             "against BETVV1; S = 32.3 ft^2, AR 1.92, NACA 0021 mod.",

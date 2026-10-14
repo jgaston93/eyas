@@ -22,6 +22,9 @@ void validate_panel(const PanelConfig& p, const std::string& what) {
     if (!std::isfinite(p.incidence)) {
         throw InitError("airframe aero: the " + what + " incidence must be finite");
     }
+    if (p.schedule && !(p.schedule->min < p.schedule->max)) {
+        throw InitError("airframe aero: the " + what + " schedule's min must be below its max");
+    }
 }
 
 // GenHel's wind-to-body matrix (CR-166309 pp. 5.2-9, 5.3-8, 5.3-12), applied
@@ -157,7 +160,13 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
         out.v_stabilator_b = v;
         out.q_h = 0.5 * rho * v.squaredNorm();
         const FlowAngles fa = flow_angles(v);
-        out.alpha_h = h.incidence + fa.alpha;
+        out.stabilator_incidence = h.incidence;
+        if (h.schedule) {
+            // GenHel Fig. 5.1.7, steady state (D-028).
+            out.stabilator_incidence = std::clamp(h.schedule->command(u, ctx.controls.collective),
+                                                  h.schedule->min, h.schedule->max);
+        }
+        out.alpha_h = out.stabilator_incidence + fa.alpha;
         const double qs = out.q_h * h.area;
         // p. 5.3-8: drag along the flow, lift in the x–z plane.
         const Vec3 F = wind_to_body(fa.alpha_axes, fa.beta,
@@ -235,13 +244,39 @@ Columns read_columns(const Config& node, const std::string& key, const std::stri
     });
 }
 
+// {table: CSV (airspeed, collective, incidence), min, max}.
+IncidenceSchedule schedule(const Config& node) {
+    node.allow_keys({"table", "min", "max"});
+    IncidenceSchedule s;
+    s.command = node.in_context("table", [&] {
+        const CsvTable csv = read_csv_table(node.path("table"));
+        csv.require_dimension("airspeed", Dimension::speed);
+        csv.require_dimension("collective", Dimension::dimensionless);
+        csv.require_dimension("incidence", Dimension::angle);
+        if (csv.is_placeholder()) {
+            node.note_placeholder("table", csv.origin + " (# status: placeholder)");
+        }
+        return make_table2d(csv, "airspeed", "collective", "incidence");
+    });
+    s.min = node.quantity("min", Dimension::angle);
+    s.max = node.quantity("max", Dimension::angle);
+    return s;
+}
+
 PanelConfig panel(const Config& node, const std::string& angle, const std::string& wake_arg,
                   const std::string& wake_key) {
-    node.allow_keys({"position", "area", "incidence", "coefficients", "q_ratio", wake_key});
+    node.allow_keys(
+        {"position", "area", "incidence", "schedule", "coefficients", "q_ratio", wake_key});
     PanelConfig p;
     p.position_b = node.in_context("position", [&] { return position(node.child("position")); });
     p.area = node.quantity("area", Dimension::area);
     p.incidence = node.contains("incidence") ? node.quantity("incidence", Dimension::angle) : 0.0;
+    if (node.contains("schedule")) {
+        if (node.contains("incidence")) {
+            node.fail("schedule", "give either incidence or schedule, not both");
+        }
+        p.schedule = node.in_context("schedule", [&] { return schedule(node.child("schedule")); });
+    }
     const Columns coef = read_columns(node, "coefficients", angle);
     node.in_context("coefficients", [&] {
         p.cl = coef.column("cl", Dimension::dimensionless);
