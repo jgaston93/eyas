@@ -21,7 +21,9 @@ PRM        110        psi            high  (rated tire pressure)
 NTM        1          -              high  (wheels per gear)
 FSMGA      297.43     in             high
 WLMGA      184.8      in             high  (WL of the axle at free extension, WLMGAO in §5.7.2)
-BLMGA      53.2       in             high  (right gear at +BL in §5.7.2, left gear mirrored)
+BLMGA      53.2       in             high  (body y of the right gear, positive to starboard: Y_RMGA = BLMGA/12,
+#                                           p. 5.7-9; not a buttline. p. 5.7-10 prints Y_LMGA = Y_RMGA, minus
+#                                           missing; the left gear is mirrored, see DATA_GAPS.md)
 MMG        2.6708     slug           high  (unsprung mass)
 GDR        .003       s              high  (tire damping factor; "= GDL")
 CPVM       3465.      ft*lbf         high

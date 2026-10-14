@@ -14,6 +14,8 @@ What it works out:
   inertias are GenHel's motion-module values as written (D-002).
 - Positions. Every GenHel station becomes a body-axis offset from the airframe CG:
   x = -(FS - FS_cg), y = -(BL - BL_cg) (buttlines positive to port), z = -(WL - WL_cg).
+  The exception is BLMGA: GenHel's landing module uses it as body y (Y_RMGA = BLMGA/12,
+  p. 5.7-9, so positive to starboard), not as a buttline.
 - Controls (§5.5, Figs. 5.1.6(a)-(d)): normalized input -> stick or pedal inches -> GenHel's
   mechanical mixing [deg] -> the swashplate phase rotation (p. 5.1-24), written as the
   offsets and gains of Eyas's linear control map. The travels in inches are not in GenHel
@@ -91,9 +93,9 @@ def mass_split(mr, gear):
     """Airframe mass [lbm] and CG station (FS, BL, WL) [in]."""
     w_total = mr["WEIGHT"] * LBF_LBM
     blades = mr["NB"] * mr["W_B"] * LBF_LBM
-    wheels = [  # (mass [lbm], FS, BL, WL) at the axles, free extension
-        (gear["MMG"] * SLUG_LBM, gear["FSMGA"], gear["BLMGA"], gear["WLMGA"]),
-        (gear["MMG"] * SLUG_LBM, gear["FSMGA"], -gear["BLMGA"], gear["WLMGA"]),
+    wheels = [  # (mass [lbm], FS, BL, WL) at the axles, free extension; BL positive to port
+        (gear["MMG"] * SLUG_LBM, gear["FSMGA"], gear["BLMGA"], gear["WLMGA"]),   # left main
+        (gear["MMG"] * SLUG_LBM, gear["FSMGA"], -gear["BLMGA"], gear["WLMGA"]),  # right main
         (gear["MNG"] * SLUG_LBM, gear["FSNGA"], gear["BLNGA"], gear["WLNGA"]),
     ]
     parts = [(blades, mr["FS_MR"], mr["BL_MR"], mr["WL_MR"])] + wheels
@@ -202,9 +204,11 @@ def build():
 
     m_af, (fs_cg, bl_cg, wl_cg) = mass_split(mr, gear)
 
-    def pos(fs, bl, wl):
-        x, y, z = -(fs - fs_cg), -(bl - bl_cg), -(wl - wl_cg)
+    def vec(x, y, z):
         return f'{{x: "{fmt(round(x, 6))} in", y: "{fmt(round(y, 6))} in", z: "{fmt(round(z, 6))} in"}}'
+
+    def pos(fs, bl, wl):
+        return vec(-(fs - fs_cg), -(bl - bl_cg), -(wl - wl_cg))
 
     travel, main_map, tail_map = control_map(rig, mr)
     k_main = 10.0 * vertical_slope("main_tire_vertical.csv", gear["PM"])
@@ -217,10 +221,15 @@ def build():
     trav = ", ".join(f"{k} {fmt(round(a, 4))}..{fmt(round(b, 4))} in"
                      for k, (a, b) in travel.items())
 
-    def main_gear(name, bl, side):
+    def main_gear(name, y_body, side):
+        # y_body: GenHel's body y [in] from the centreline, positive to starboard
+        # (Y_RMGA = BLMGA/12, p. 5.7-9). It is not a buttline, so it skips pos()'s sign flip;
+        # the airframe CG's body y is -bl_cg. p. 5.7-10 prints Y_LMGA = Y_RMGA with the minus
+        # missing; the left gear is mirrored (DATA_GAPS.md).
+        axle = vec(-(gear["FSMGA"] - fs_cg), y_body + bl_cg, -(gear["WLMGA"] - wl_cg))
         return f"""\
       - name: {name}
-        axle: {pos(gear["FSMGA"], bl, gear["WLMGA"])}
+        axle: {axle}
         unsprung_mass: "{fmt(gear["MMG"])} slug"
         brake: {side}
         tire:

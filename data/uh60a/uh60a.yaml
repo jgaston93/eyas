@@ -107,7 +107,7 @@ components:
       sliding_factor: 0.85
     gears:
       - name: left_main
-        axle: {x: "59.499778 in", y: "53.2 in", z: "59.79329 in"}
+        axle: {x: "59.499778 in", y: "-53.2 in", z: "59.79329 in"}
         unsprung_mass: "2.6708 slug"
         brake: left
         tire:
@@ -131,7 +131,7 @@ components:
           stop_stiffness: !placeholder "43333.333 lbf/in"
           stop_damping: !placeholder "2356.961 lbf*s/ft"
       - name: right_main
-        axle: {x: "59.499778 in", y: "-53.2 in", z: "59.79329 in"}
+        axle: {x: "59.499778 in", y: "53.2 in", z: "59.79329 in"}
         unsprung_mass: "2.6708 slug"
         brake: right
         tire:

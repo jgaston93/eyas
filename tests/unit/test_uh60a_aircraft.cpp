@@ -7,6 +7,7 @@
 #include <numbers>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -83,6 +84,86 @@ TEST(Uh60aAircraft, MassSplitKeepsGenHelsWeightAndCg) {
         ac.get<BladeElementRotor>("main_rotor").C_hb().transpose() * Vec3(0.0, 0.0, -1.0);
     EXPECT_NEAR(std::asin(up_shaft.x()) / kDeg, 3.0, 1e-12);
     EXPECT_NEAR(up_shaft.y(), 0.0, 1e-15);
+}
+
+// The main wheels are mirrored about the centreline with the brakes on the
+// matching sides: GenHel's Y_RMGA = BLMGA/12 is body y, positive to
+// starboard (p. 5.7-9), and p. 5.7-10's Y_LMGA = Y_RMGA has lost its minus
+// sign (DATA_GAPS.md). The mass and CG checks are symmetric in y, so this is
+// the only check of which wheel is which.
+TEST(Uh60aAircraft, MainGearSidesMatchTheirBrakes) {
+    const Uh60aHarness ac;
+    const auto& gears = ac.get<LandingGear>("gear").config().gears;
+    ASSERT_EQ(gears.size(), 3U);
+    const auto by_name = [&](std::string_view name) -> const GearConfig* {
+        const auto it = std::find_if(gears.begin(), gears.end(),
+                                     [&](const GearConfig& g) { return g.name == name; });
+        return it == gears.end() ? nullptr : &*it;
+    };
+    const GearConfig* l = by_name("left_main");
+    const GearConfig* r = by_name("right_main");
+    const GearConfig* t = by_name("tail");
+    ASSERT_TRUE(l != nullptr && r != nullptr && t != nullptr);
+    const GearConfig& left = *l;
+    const GearConfig& right = *r;
+    const GearConfig& tail = *t;
+    EXPECT_NEAR(left.axle_b.y() / units::kInch, -53.2, 1e-9);  // port
+    EXPECT_NEAR(right.axle_b.y() / units::kInch, 53.2, 1e-9);  // starboard
+    EXPECT_EQ(left.axle_b.x(), right.axle_b.x());
+    EXPECT_EQ(left.axle_b.z(), right.axle_b.z());
+    EXPECT_EQ(left.brake, BrakeSide::left);
+    EXPECT_EQ(right.brake, BrakeSide::right);
+    EXPECT_EQ(tail.axle_b.y(), 0.0);
+    EXPECT_EQ(tail.brake, BrakeSide::none);
+}
+
+// The left brake alone turns the nose left, the right brake alone right
+// (D-032). Rolling forward at 3 m/s from tire contact, collective down and
+// the pedal that balances the yaw moment there (otherwise the run drifts and
+// the tail-dragger's directional instability amplifies the drift): the
+// heading after 1.5 s with one brake set, against the same run with both
+// brakes off.
+TEST(Uh60aAircraft, OneBrakeTurnsTowardsItsSide) {
+    const Uh60aHarness ac;
+    Controls trim;
+    {
+        BodyState b;
+        b.pos_n = Vec3(0.0, 0.0, -500.0);
+        std::vector<double> x = ac.initial(b);
+        double t = 0.0;
+        ASSERT_TRUE(test::balance_pedal(ac, x, t, trim, Environment{}));
+    }
+    double contact = 0.0;  // lowest tire bottom below the CG at free extension [m]
+    for (const auto& g : ac.get<LandingGear>("gear").config().gears) {
+        contact = std::max(contact, g.axle_b.z() + g.tire.radius);
+    }
+    Environment env;
+    env.ground_height = 0.0;
+    const auto heading_after = [&](double left, double right) {
+        Model m = Model::from_file(test::uh60a_config_path());
+        BodyState s;
+        s.pos_n = Vec3(0.0, 0.0, -contact);
+        s.vel_b = Vec3(3.0, 0.0, 0.0);
+        EXPECT_TRUE(m.reset(s));
+        Controls c = trim;
+        c.brake_left = left;
+        c.brake_right = right;
+        for (int k = 0; k < 1500; ++k) {
+            (void)m.advance(c, env, 1'000'000);
+        }
+        return m.outputs().heading;
+    };
+    const auto turn = [](double h, double h0) {  // h − h0 wrapped to (−π, π] [rad]
+        return std::remainder(h - h0, 2.0 * std::numbers::pi);
+    };
+    const double free = heading_after(0.0, 0.0);
+    const double left = turn(heading_after(1.0, 0.0), free);
+    const double right = turn(heading_after(0.0, 1.0), free);
+    // About −0.26° and +0.51°: the tire side forces, the tail wheel's above
+    // all (it doesn't swivel, D-032), take most of the brake's yaw moment.
+    // The free run drifts 0.02°.
+    EXPECT_LT(left, -0.1 * kDeg);  // nose left: heading decreases
+    EXPECT_GT(right, 0.1 * kDeg);
 }
 
 // ---- Control rigging (layer 1) -----------------------------------------------------
@@ -313,7 +394,8 @@ TEST(Uh60aAircraft, SitsStablyOnTheGround) {
 // ---- Real-time rules (spec §7) ------------------------------------------------------
 
 // The whole aircraft through the public API: no allocation in advance(),
-// bit-identical repeat runs, and snapshot/restore in the middle of the drop.
+// bit-identical repeat runs, and snapshot/restore, each across the first
+// tire contact of the drop.
 TEST(Uh60aAircraft, RealTimeRules) {
     Controls c;
     c.collective = 0.2;
@@ -333,19 +415,31 @@ TEST(Uh60aAircraft, RealTimeRules) {
     Model b = Model::from_file(test::uh60a_config_path());
     ASSERT_TRUE(a.reset(s));
     ASSERT_TRUE(b.reset(s));
-    run(a, 30);  // touchdown is at about 0.25 s
-    {
-        const test::AllocationCounter count;
-        run(a, 10);
-        EXPECT_EQ(count.count(), 0U);
-    }
-    run(b, 40);
-    EXPECT_TRUE(std::equal(a.state().begin(), a.state().end(), b.state().begin()));
-
+    // Σ gear normal load [N] at the model's current state.
+    const Uh60aHarness ac;
+    const auto& gear = ac.get<LandingGear>("gear");
+    const auto normal = [&](const Model& m) {
+        const auto st = m.state();
+        const SimContext ctx = ac.context(m.outputs().sim_time, st, c, env);
+        double n = 0.0;
+        for (std::size_t i = 0; i < gear.config().gears.size(); ++i) {
+            n += gear.gear_state(ctx, ac.states(st, ac.index("gear")), i).normal_load;
+        }
+        return n;
+    };
+    run(a, 12);  // 0.2 s; first contact is at about 0.27 s
+    ASSERT_EQ(normal(a), 0.0);
     auto snap = a.make_snapshot();
     ASSERT_TRUE(a.snapshot(snap));
-    run(a, 20);
+    {
+        const test::AllocationCounter count;
+        run(a, 20);
+        EXPECT_EQ(count.count(), 0U);
+    }
+    ASSERT_GT(normal(a), 0.0);  // the window took in the first contact
     const std::vector<double> first(a.state().begin(), a.state().end());
+    run(b, 32);
+    EXPECT_TRUE(std::equal(first.begin(), first.end(), b.state().begin()));
     ASSERT_TRUE(a.restore(snap));
     run(a, 20);
     EXPECT_TRUE(std::equal(first.begin(), first.end(), a.state().begin()));
