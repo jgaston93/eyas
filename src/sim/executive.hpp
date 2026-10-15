@@ -61,7 +61,36 @@ public:
     bool derivatives(double t, std::span<const double> x, const Controls& controls,
                      const Environment& env, std::span<double> xdot) const noexcept;
 
+    // The derivative function with the body held (D-035): a constraint keeps
+    // the body acceleration at zero, so every component state moves with
+    // ẋ_c = ẋ0_c. Writes the component part of xdot (its body part is left
+    // as is) and returns in `net` the wrench the free body would feel at
+    // a = 0: [m C_bn g − m ω × v; −ω × (I ω)] + Σ forces + Σ load0 (body axes,
+    // about the airframe CG), i.e. minus the wrench that holds it. Zero
+    // `net` with a = 0 is an equilibrium of the free body. If
+    // `component_loads` has one entry per component (config order), each
+    // component's load0 goes there; any other size is ignored. Pure, like derivatives(). Returns
+    // false if some component's bounded iteration did not converge (D-023). [s]
+    bool held_derivatives(double t, std::span<const double> x, const Controls& controls,
+                          const Environment& env, std::span<double> xdot, Vec6& net,
+                          std::span<Wrench> component_loads = {}) const noexcept;
+
+    // The context a derivative evaluation at (t, x) gives every component:
+    // unit quaternion (D-014), atmosphere at the CG (D-016), ground plane
+    // (D-033), and the coupling store (D-003). The store holds the outputs of
+    // the latest evaluation, so a caller reading a component's coupled inputs
+    // through it must evaluate at the same (t, x) first. [s]
+    SimContext context(double t, std::span<const double> x, const Controls& controls,
+                       const Environment& env) const noexcept;
+
     std::size_t num_states() const noexcept { return x_.size(); }
+    std::size_t num_components() const noexcept { return components_.size(); }
+    // Component i (config order), its first state index and its state count.
+    const DynamicComponent& component(std::size_t i) const noexcept { return *components_[i]; }
+    std::size_t component_offset(std::size_t i) const noexcept { return offsets_[i]; }
+    std::size_t component_size(std::size_t i) const noexcept { return sizes_[i]; }
+    const MassProperties& airframe_mass() const noexcept { return mass_; }
+    double origin_altitude() const noexcept { return origin_altitude_; }
     std::span<const double> state() const noexcept { return x_; }
     BodyState body_state() const noexcept { return unpack_body(x_); }
 
@@ -82,6 +111,15 @@ public:
     std::span<const std::size_t> evaluation_order() const noexcept { return order_; }
 
 private:
+    // Shared by derivatives() and held_derivatives(): evaluates the force
+    // models and the components at (t, x), writing xdot0_ and G_, adding the
+    // loads into `rhs` and their H into `A`, and each component's load0 into
+    // `component_loads` if it isn't empty. Returns false if some bounded
+    // iteration did not converge.
+    bool evaluate(double t, std::span<const double> x, const Controls& controls,
+                  const Environment& env, Mat66& A, Vec6& rhs,
+                  std::span<Wrench> component_loads) const noexcept;
+
     // One RK4 step. Returns false, leaving the state unchanged, if the result
     // is not finite.
     bool step(const Controls& controls, const Environment& env) noexcept;

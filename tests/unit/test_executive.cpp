@@ -138,6 +138,52 @@ TEST(Executive, DerivativeFunctionIsPure) {
     EXPECT_TRUE(bit_identical(d1, d2));
 }
 
+// The held-body evaluation (D-035) is the free one at a = 0: the free body's
+// acceleration solves (M_rb − ΣH) a = net, and each component's held rate is
+// its free rate less G a. Checked against LagOnAccel's known G and H.
+TEST(Executive, HeldEvaluationIsTheFreeOneAtZeroAcceleration) {
+    const Executive ex = make_full();
+    const std::vector<double> x(ex.state().begin(), ex.state().end());
+    Controls c;
+    c.collective = 0.4;
+    c.lon_cyclic = 0.3;
+    std::vector<double> free(ex.num_states());
+    std::vector<double> held(ex.num_states(), 0.0);
+    ex.derivatives(2.0, x, c, Environment{}, free);
+    Vec6 net;
+    std::vector<Wrench> loads(1);
+    ASSERT_TRUE(ex.held_derivatives(2.0, x, c, Environment{}, held, net, loads));
+
+    Vec6 a;
+    for (int k = 0; k < 3; ++k) {
+        a(k) = free[body_layout::kVel + static_cast<std::size_t>(k)];
+        a(3 + k) = free[body_layout::kOmega + static_cast<std::size_t>(k)];
+    }
+    Mat66 H = Mat66::Zero();
+    H(0, 0) = -20.0;
+    H(4, 4) = -3.0;
+    const Vec6 expect = (rigid_body_mass_matrix(ex.airframe_mass()) - H) * a;
+    EXPECT_LT((net - expect).norm(), 1e-9 * expect.norm());
+
+    const std::size_t i = body_layout::kSize;
+    EXPECT_NEAR(held[i], free[i] - 2.0 * a(0), 1e-12);
+    EXPECT_DOUBLE_EQ(held[i], -x[i] / 0.5 + 0.01 * x[body_layout::kVel]);
+    EXPECT_DOUBLE_EQ(loads[0].F.x(), -30.0 * x[i]);
+    EXPECT_DOUBLE_EQ(loads[0].M.y(), 5.0 * x[i]);
+
+    // A span of the wrong size is ignored; the result is the same.
+    Vec6 net2;
+    std::vector<Wrench> wrong(3);
+    ASSERT_TRUE(ex.held_derivatives(2.0, x, c, Environment{}, held, net2, wrong));
+    EXPECT_EQ(net, net2);
+    EXPECT_EQ(wrong[0].F, Vec3::Zero());
+
+    // Real-time rules: no allocation.
+    const test::AllocationCounter count;
+    (void)ex.held_derivatives(2.0, x, c, Environment{}, held, net2, loads);
+    EXPECT_EQ(count.count(), 0U);
+}
+
 // Spec §7.4: the same inputs give bit-identical results on the same build.
 TEST(Executive, RunsAreBitIdentical) {
     auto run = [] {

@@ -64,6 +64,25 @@ TEST(Attitude, EulerAnglesRecoverPadfieldRotation) {
     }
 }
 
+// quaternion() is the inverse: it reproduces Padfield's Γ (test-side,
+// Eqs. 3A.34–3A.36) on the same grid.
+TEST(Attitude, QuaternionFromEulerIsPadfieldRotation) {
+    const double r = pi / 180.0;
+    for (int i = 0; i < 11; ++i) {
+        for (int j = 0; j < 11; ++j) {
+            for (int k = 0; k < 9; ++k) {
+                const double phi = (-175.0 + 35.0 * i) * r;
+                const double theta = (-85.0 + 17.0 * j) * r;
+                const double psi = 40.0 * k * r;
+                const Quat q = quaternion(EulerAngles{phi, theta, psi});
+                EXPECT_NEAR(q.norm(), 1.0, 1e-15);
+                const Mat3 expect = padfield_gamma(phi, theta, psi).transpose();
+                EXPECT_LT((q.toRotationMatrix() - expect).norm(), 1e-14);
+            }
+        }
+    }
+}
+
 // Independent physical anchors for the quaternion convention (q_nb maps body
 // vectors to NED): heading 90° points the nose east; pitch +30° points it up
 // (negative down); roll +90° points the right wing down.

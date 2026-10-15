@@ -10,10 +10,11 @@
 # FS 356.9298, BL 0, WL 244.5933 in, the origin of every position here.
 # Positions: x = -(FS - FS_cg), y = -(BL - BL_cg) (buttlines positive to port), z = -(WL - WL_cg).
 #
-# Controls (D-034): stick and pedal travels are not in GenHel Vol. I. Placeholders spanning the
-# rotor-head pitch limits with collective down:
-#   collective 0..10.0 in, lat_cyclic 0..10.0 in, lon_cyclic -0.9628..9.2139 in, pedal -2.6359..3.1414 in.
-# Every control-map value depends on them and is tagged !placeholder.
+# Controls (D-034, D-035): stick and pedal travels from GenHel Figs. 6.3.1 and 6.4.1 (pp. 6.16-6.17):
+#   collective 0..10.0 in, lat_cyclic 0..10.0 in, lon_cyclic -3.4157..6.5843 in, pedal 0..5.38 in.
+# Collective, lateral and pedal fit the rigging exactly; the pedal uses its stroke with overtravel.
+# The longitudinal rows put neutral cyclic in three places 0.812 in apart; neutral is
+# their mean, so the theta1s and theta1c offsets are tagged !placeholder.
 
 geodetic_origin: {latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}  # scenario, not aircraft data
 
@@ -48,9 +49,9 @@ components:
         inertia: "1512.6 slug*ft^2"
         delta3: "0 deg"
     controls:
-      theta0: {offset: !placeholder "9.9 deg", collective: !placeholder "16.0 deg"}
-      theta1s: {offset: !placeholder "-2.278000145 deg", collective: !placeholder "-4.142331285 deg", lon_cyclic: !placeholder "-14.19412995 deg", lat_cyclic: !placeholder "-1.347915037 deg", pedal: !placeholder "-4.630440616 deg"}
-      theta1c: {offset: !placeholder "0.3893856957 deg", collective: !placeholder "3.305191602 deg", lon_cyclic: !placeholder "2.426247066 deg", lat_cyclic: !placeholder "-7.885627753 deg", pedal: !placeholder "0.7914957094 deg"}
+      theta0: {offset: "9.9 deg", collective: "16.0 deg"}
+      theta1s: {offset: !placeholder "0.9039886515 deg", collective: "-4.142331285 deg", lon_cyclic: "-13.94770409 deg", lat_cyclic: "-1.347915037 deg", pedal: "-4.312071778 deg"}
+      theta1c: {offset: !placeholder "-0.15452161 deg", collective: "3.305191602 deg", lon_cyclic: "2.384124721 deg", lat_cyclic: "-7.885627753 deg", pedal: "0.7370759273 deg"}
 
   - type: airframe_aero
     name: airframe
@@ -94,7 +95,7 @@ components:
       position: {x: "-375.070222 in", y: "14.0 in", z: "-80.10671 in"}
       roll: "70.0 deg"
     controls:
-      theta0: {offset: !placeholder "20.5 deg", collective: !placeholder "16.0 deg", pedal: !placeholder "-16.0 deg"}
+      theta0: {offset: "7.0 deg", collective: "16.0 deg", pedal: "-14.89991 deg"}
     main_rotor_wash: {rotor: main_rotor, table: airframe/tail_wash.csv}
     fuselage_wake: {airframe: airframe}
 

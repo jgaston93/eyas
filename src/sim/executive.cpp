@@ -194,24 +194,34 @@ double Executive::sim_time() const noexcept {
     return static_cast<double>(sim_time_ns()) * 1e-9;
 }
 
-bool Executive::derivatives(double t, std::span<const double> x, const Controls& controls,
-                            const Environment& env, std::span<double> xdot) const noexcept {
+SimContext Executive::context(double t, std::span<const double> x, const Controls& controls,
+                              const Environment& env) const noexcept {
     // Inside RK4 stages the stored quaternion is off unit length. Components
     // get the unit one, since they use it to rotate vectors; q̇ uses the
     // stored one.
-    const BodyState body = unpack_body(x);
     SimContext ctx;
     ctx.t = t;
-    ctx.body = body;
+    ctx.body = unpack_body(x);
     ctx.body.q_nb.normalize();
     ctx.controls = controls;
     ctx.env = env;
-    ctx.air = isa_atmosphere(origin_altitude_ - body.pos_n.z(), env.isa_delta_T);  // D-016
-    ctx.ground_z_n = origin_altitude_ - env.ground_height;                         // D-033
+    ctx.air = isa_atmosphere(origin_altitude_ - ctx.body.pos_n.z(), env.isa_delta_T);  // D-016
+    ctx.ground_z_n = origin_altitude_ - env.ground_height;                             // D-033
+    ctx.coupling = &coupling_;
+    return ctx;
+}
+
+bool Executive::evaluate(double t, std::span<const double> x, const Controls& controls,
+                         const Environment& env, Mat66& A, Vec6& rhs,
+                         std::span<Wrench> component_loads) const noexcept {
+    SimContext ctx = context(t, x, controls, env);
+    // Force models run before every component and can't consume (D-003), so
+    // they get no store; components get it once it is reset for this evaluation.
+    ctx.coupling = nullptr;
 
     // (M_rb − Σ H) a = bias + Σ load0 + Σ forces   (spec §5, "Coupling")
-    Mat66 A = mass_matrix_;
-    Vec6 rhs = rigid_body_bias(mass_, ctx.body);
+    A = mass_matrix_;
+    rhs = rigid_body_bias(mass_, ctx.body);
     for (const auto& f : forces_) {
         const Wrench w = f->compute(ctx);
         rhs.head<3>() += w.F;
@@ -219,8 +229,6 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     }
     std::fill(xdot0_.begin(), xdot0_.end(), 0.0);
     std::fill(G_.begin(), G_.end(), 0.0);
-    // Force models run before every component and can't consume (D-003), so
-    // they get no store; components get it once it is reset for this evaluation.
     coupling_.begin_evaluation();
     ctx.coupling = &coupling_;
     bool converged = true;
@@ -238,11 +246,22 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
         rhs.tail<3>() += d.load0_b.M;
         A -= d.H;
         converged = converged && d.converged;
+        if (component_loads.size() == components_.size()) {
+            component_loads[i] = d.load0_b;
+        }
     }
+    return converged;
+}
+
+bool Executive::derivatives(double t, std::span<const double> x, const Controls& controls,
+                            const Environment& env, std::span<double> xdot) const noexcept {
+    Mat66 A;
+    Vec6 rhs;
+    const bool converged = evaluate(t, x, controls, env, A, rhs, {});
     const Vec6 a = A.partialPivLu().solve(rhs);
 
     // Back-substitution: ẋ_c = ẋ0_c + G_c a
-    body_kinematics(body, a, xdot);
+    body_kinematics(unpack_body(x), a, xdot);
     for (std::size_t j = 0; j < xdot0_.size(); ++j) {
         double v = xdot0_[j];
         for (std::size_t k = 0; k < 6; ++k) {
@@ -250,6 +269,16 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
         }
         xdot[body_layout::kSize + j] = v;
     }
+    return converged;
+}
+
+bool Executive::held_derivatives(double t, std::span<const double> x, const Controls& controls,
+                                 const Environment& env, std::span<double> xdot, Vec6& net,
+                                 std::span<Wrench> component_loads) const noexcept {
+    Mat66 A;
+    const bool converged = evaluate(t, x, controls, env, A, net, component_loads);
+    std::copy(xdot0_.begin(), xdot0_.end(),
+              xdot.begin() + static_cast<std::ptrdiff_t>(body_layout::kSize));
     return converged;
 }
 

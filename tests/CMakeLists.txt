@@ -15,6 +15,7 @@ add_executable(eyas_unit_tests
     unit/test_csv_table.cpp
     unit/test_eigen_smoke.cpp
     unit/test_executive.cpp
+    unit/test_trim.cpp
     unit/test_flap_anchors.cpp
     unit/test_flapping_rotor.cpp
     unit/test_geodesy.cpp
@@ -95,3 +96,9 @@ target_include_directories(eyas_m6d_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m6d_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_m6d_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m6d_cases)
+
+add_executable(eyas_m7_cases validation/m7_cases.cpp)
+target_include_directories(eyas_m7_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m7_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m7_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m7_cases)

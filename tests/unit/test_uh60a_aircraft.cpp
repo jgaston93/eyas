@@ -25,22 +25,16 @@ constexpr double kDeg = std::numbers::pi / 180.0;
 // ---- Config ------------------------------------------------------------------------
 
 // The config loads through the public API, with exactly the placeholders
-// D-034 declares: the control map (it depends on the stick and pedal travels,
-// which GenHel Vol. I doesn't give) and the strut top stops (D-032 item 6).
+// D-034 and D-035 declare: the cyclic offsets (they depend on neutral
+// longitudinal cyclic, which GenHel's Fig. 6.3.1 leaves uncertain by 0.8 in)
+// and the strut top stops (D-032 item 6).
 TEST(Uh60aAircraft, ConfigLoadsWithTheDeclaredPlaceholders) {
     const Model m = Model::from_file(test::uh60a_config_path());
     std::vector<std::string> p = m.placeholders();
     std::sort(p.begin(), p.end());
     std::vector<std::string> expect;
     for (const char* r : {"theta1c", "theta1s"}) {
-        for (const char* k : {"collective", "lat_cyclic", "lon_cyclic", "offset", "pedal"}) {
-            expect.push_back(std::string("components[0].controls.") + r + "." + k);
-        }
-    }
-    expect.emplace_back("components[0].controls.theta0.collective");
-    expect.emplace_back("components[0].controls.theta0.offset");
-    for (const char* k : {"collective", "offset", "pedal"}) {
-        expect.push_back(std::string("components[2].controls.theta0.") + k);
+        expect.push_back(std::string("components[0].controls.") + r + ".offset");
     }
     for (const char* g : {"0", "1", "2"}) {
         expect.push_back(std::string("components[3].gears[") + g + "].strut.stop_damping");
@@ -157,13 +151,17 @@ TEST(Uh60aAircraft, OneBrakeTurnsTowardsItsSide) {
         return std::remainder(h - h0, 2.0 * std::numbers::pi);
     };
     const double free = heading_after(0.0, 0.0);
+    const double drift = std::abs(turn(free, 0.0));
     const double left = turn(heading_after(1.0, 0.0), free);
     const double right = turn(heading_after(0.0, 1.0), free);
-    // About −0.26° and +0.51°: the tire side forces, the tail wheel's above
-    // all (it doesn't swivel, D-032), take most of the brake's yaw moment.
-    // The free run drifts 0.02°.
-    EXPECT_LT(left, -0.1 * kDeg);  // nose left: heading decreases
-    EXPECT_GT(right, 0.1 * kDeg);
+    // About −0.083° and +0.090°, against a free-run drift of 0.017°: the tire
+    // side forces, the tail wheel's above all (it doesn't swivel, D-032), take
+    // most of the brake's yaw moment. The turn depends on the load on the tail
+    // wheel, and so on the attitude the rotor's flat-pitch cyclic gives (0.26°
+    // and 0.51° with D-034's placeholder travels, 1.1° less nose-up).
+    EXPECT_GT(drift, 0.0);
+    EXPECT_LT(left, -3.0 * drift);  // nose left: heading decreases
+    EXPECT_GT(right, 3.0 * drift);
 }
 
 // ---- Control rigging (layer 1) -----------------------------------------------------

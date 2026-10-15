@@ -2,7 +2,8 @@
 
 #include "core/types.hpp"
 
-// Euler angles for output only (spec §4: attitude is a quaternion).
+// Euler angles for output and for setting up states (spec §4: attitude is a
+// quaternion; trim, D-035, builds one from θ and φ).
 namespace eyas {
 
 // Padfield's yaw–pitch–roll Euler angles (3rd ed. Eqs. 3A.34–3A.37).
@@ -16,5 +17,10 @@ struct EulerAngles {
 //   θ = −asin Γ₁₃,  φ = atan2(Γ₂₃, Γ₃₃),  ψ_h = atan2(Γ₁₂, Γ₁₁).
 // At θ = ±π/2 roll and heading are not separable; the result is finite.
 EulerAngles euler_angles(const Quat& q_nb) noexcept;
+
+// The attitude with these angles, the inverse of euler_angles(): q_nb maps
+// body to NED, C_nb = Γᵀ = Ψᵀ Θᵀ Φᵀ (Padfield 3rd ed. Eqs. 3A.34–3A.40), i.e.
+// heading about z, then pitch about the new y, then roll about x. Unit.
+Quat quaternion(const EulerAngles& e) noexcept;
 
 }  // namespace eyas
