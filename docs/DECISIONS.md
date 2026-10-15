@@ -724,3 +724,7 @@ Johnson (2013) has nothing specific. No source gives the fade width; c = 20° is
 - ctest runs in parallel (`--parallel $(nproc)`), so a job takes about its longest test rather than the sum.
 - Compiled objects are cached with ccache through `actions/cache` (keys per job). ccache reuses an object only when the compiler, flags and preprocessed source match, so results are unchanged; the D-010 flags are untouched.
 - The L3 gate runs in hover, at 60 kt and at 150 kt. `eyas_m7b_cases` covers every 10 kt (VALIDATION.md M7b).
+- *Two tiers (approved 2026-10-15):*
+  - *Every push and PR (`ci.yml`):* every job runs every test, except that the ASan job skips the tests listed in `SLOW_TESTS`, which the sanitizers slow about 60×. These are L3 and the L4 rate derivatives, each about 15 min under ASan.
+  - *`full-verification.yml`, nightly on `main` and on demand:* every test under ASan, plus every validation generator and plot script, uploaded as an artifact for comparison with VALIDATION.md.
+  - *The trade:* a memory error that only a slow test reaches could merge and be caught by the next nightly run. The slow tests still run in every other build on every push, and the trim sweep flies the same components at every speed under ASan.

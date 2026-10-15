@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  # Tests too slow to run under ASan on every push (also in full-verification.yml).
+  SLOW_TESTS: ^Linearize\.(PeriodicModelMatchesTheNonlinearResponse|HoverRateDerivativesMatchPadfield)$
+
 jobs:
   ubuntu:
     name: Ubuntu ${{ matrix.compiler }} ${{ matrix.preset }}
@@ -44,8 +48,13 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
+      # The ASan build skips the slowest tests (sanitizers slow them about
+      # 60x); full-verification.yml runs them under ASan nightly and on
+      # demand. Every other job runs them on every push.
       - name: Test
-        run: ctest --preset ${{ matrix.preset }} --parallel "$(nproc)"
+        run: >-
+          ctest --preset ${{ matrix.preset }} --parallel "$(nproc)"
+          ${{ matrix.preset == 'asan' && format('--exclude-regex "{0}"', env.SLOW_TESTS) || '' }}
       - name: Compiler cache statistics
         run: ccache --show-stats
 
