@@ -10,14 +10,15 @@
 
 #include "eyas/aircraft_state.hpp"
 #include "eyas/error.hpp"
+#include "eyas/trim.hpp"
 #include "eyas/types.hpp"
 
 // The Eyas library API (spec §6.10, D-018). One Model is one aircraft. It is
 // single-threaded and synchronous: every call runs on the caller's thread.
 //
 // Real-time calls (no allocation, no exceptions, no I/O; spec §7): advance(),
-// outputs(), reset(), snapshot(), restore(). Everything else is init-time.
-// trim() arrives with M7.
+// outputs(), reset(), snapshot(), restore(). Everything else is init-time,
+// including trim().
 //
 // Only the headers in include/eyas/ are the API (D-020); the implementation is
 // behind a pointer, so internal changes don't reach host builds.
@@ -63,6 +64,16 @@ public:
     // value. Returns false, changing nothing, if `body` is not finite or its
     // quaternion is zero; the quaternion is normalized.
     bool reset(const BodyState& body) noexcept;
+
+    // Init-time (allocates; spec §6.8, D-035): trims for steady straight
+    // flight at `condition`, from a cold start or from `start`, a converged
+    // trim at a nearby condition (faster and more robust, e.g. in a speed
+    // sweep). On convergence the model is reset to t = 0 at the trimmed state,
+    // so advance() flies on from trim; otherwise it is unchanged. Check
+    // `converged`. Throws InitError on an invalid condition, or a `start`
+    // from a different model.
+    TrimResult trim(const TrimCondition& condition);
+    TrimResult trim(const TrimCondition& condition, const TrimResult& start);
 
     // Init-time: a snapshot buffer sized for this model, holding its current state.
     Snapshot make_snapshot() const;

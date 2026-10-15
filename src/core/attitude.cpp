@@ -26,4 +26,11 @@ EulerAngles euler_angles(const Quat& q_nb) noexcept {
     return e;
 }
 
+Quat quaternion(const EulerAngles& e) noexcept {
+    const Quat q = Quat(Eigen::AngleAxisd(e.heading, Vec3::UnitZ())) *
+                   Quat(Eigen::AngleAxisd(e.pitch, Vec3::UnitY())) *
+                   Quat(Eigen::AngleAxisd(e.roll, Vec3::UnitX()));
+    return q.normalized();
+}
+
 }  // namespace eyas
