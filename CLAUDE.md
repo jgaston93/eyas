@@ -39,6 +39,8 @@ The reference documents live outside this repo, in a local reference directory. 
 | Carpenter, NACA TN 1698 (1948) | Public NACA report, scanned. TN 3044's reference 1; rotor data table (rotors A and B) on p. 5. |
 | Abbott, von Doenhoff & Stivers, *Summary of Airfoil Data*, NACA Report 824 (1945) | Public, scanned; data charts only (read from images). NACA 23015 section lift slope for the M5 validation. |
 | Jacobs & Pinkerton, NACA TN 567 (1936) | Public, scanned with poor OCR. Series-230 airfoil tests; supporting only. |
+| Ballin, NASA TM-88360 (1987) | Public; text layer, plots scanned (read values from images). GenHel (Ames and Sikorsky) UH-60A trim against USAAEFA flight test (App. B) and step responses (App. D). M7 validation. |
+| Fletcher, 21st ERF (1995) Paper VII-4 | Public conference paper; UH-60 linear models identified from flight test, hover and 80 kt. M7 validation. Not NASA TM-110362, which carries a limited-distribution notice. |
 
 **Reading scans:** poppler isn't installed, so the Read tool can't render PDFs. Use PyMuPDF (`python3 -I`, `import fitz`) to extract text or render a page with `page.get_pixmap(dpi=...)` (use `prerotate(90)` for rotated pages), then Read the PNG. For DjVu: search with `djvutxt --page=N`, render with `ddjvu -format=tiff -page=N`, convert to PNG with PyMuPDF.
 

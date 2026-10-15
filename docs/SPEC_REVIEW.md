@@ -100,7 +100,7 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 - Bit-identical determinism also requires no `-ffast-math` and a fixed FP-contraction (FMA) policy. It only holds within one build configuration; Debug and Release will differ.
 **Suggested resolution:** Include Eigen as a SYSTEM include. Set `-ffp-contract` explicitly, forbid fast-math, and state in the determinism test that the guarantee holds per build.
 
-## 12. Reference-model license confirmation is blocking and unconfirmed — `open`
+## 12. Reference-model license confirmation is blocking and unconfirmed — `moot → DECISIONS.md D-035 (2026-10-15)`
 **Spec:** §2.1, §12 Q6.
 **Problem:** The spec makes the license confirmation a prerequisite for using reference-model outputs. Its status is unknown.
 **Suggested resolution:** Record the answer in DECISIONS.md. Until then, do not build anything that ingests reference-model outputs.
@@ -239,7 +239,7 @@ Verification: the probe above, as a test (loads continuous as the x–z componen
 
 **Resolution:** adopted as proposed (D-031), with the table angle faded rather than the table values and c = 20° from the sweep (the first guess of 10° failed the steepness criterion).
 
-## 28. M7 can't gate on the reference model, and trim and linearization are underspecified for a periodic rotor — `open` (proposal: DECISIONS.md D-035)
+## 28. M7 can't gate on the reference model, and trim and linearization are underspecified for a periodic rotor — `resolved → DECISIONS.md D-035 (2026-10-15)`
 **Spec:** §6.8, §6.9, M7; SPEC_REVIEW #1, #12; D-022, D-027, D-029, D-034 item 5.
 **Problem:**
 - *The reference-model criteria can't gate.* Every M7 criterion (trimmed controls, attitudes and power within ±5 % / ±1°, eigenvalues "in the same neighborhood", key derivatives) compares against the reference model. As in #19 and #23: the license check (#12) is still open, the reference model available is a generic medium helicopter rather than a UH-60A (D-027), and its internals can't be inspected (§2.1), so a mismatch can't be told apart from a modelling difference. "Agreed tolerances" and "the same neighborhood" are not defined either.
