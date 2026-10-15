@@ -1,0 +1,42 @@
+# Transcribed by eye from rendered page images (150-170 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), §6 cockpit definition:
+#   Figure 6.3.1 "Black Hawk angular control motions and displacements", p. 6.16 (PDF p. 360), typed
+#   Figure 6.4.1 "Black Hawk control forces and gradients", p. 6.17 (PDF p. 361), typed
+# status: every value below VERIFIED by human review (2026-10-15), row by row against the scan.
+# See docs/DATA_GAPS.md, "UH-60A control rigging (M6d)".
+#
+# Fig. 6.3.1 footnotes: * high collective, ** low collective, *** mid collective,
+# **** with overtravel, ***** "considers control reduction due to redundant quadrant".
+# Travels delta [in] are measured from the reference position named in the figure; rotor
+# outputs [deg] are THETA_CUFF (collective), B1S (longitudinal), A1S (lateral), THETA_TRCUFF (pedal).
+#
+# name          value   unit  figure row
+STROKE_C        10.0    in    Fig. 6.4.1 collective (and Fig. 6.3.1 low 0 / high 10.0)
+STROKE_A        10.0    in    Fig. 6.4.1 lateral cyclic
+STROKE_B        10.0    in    Fig. 6.4.1 longitudinal cyclic
+STROKE_P        4.92    in    Fig. 6.4.1 pedal, normal stroke
+STROKE_P_OVR    5.38    in    Fig. 6.4.1 pedal with overtravel (= Fig. 6.3.1 pedal delta ****)
+# Collective: low 0 in -> 9.9 deg, high 10.0 in -> 25.9 deg
+TH0_LOW         9.9     deg
+TH0_HIGH        25.9    deg
+# Longitudinal cyclic, from neutral cyclic
+B_FWD_IN        5.0     in    Forward *   (high collective)
+B_FWD_B1S       16.5    deg
+B_PIN_IN        3.89    in    Pinned **   aft (low collective)
+B_PIN_B1S       -11.0   deg
+B_AFT_IN        5.0     in    Aft ***     (mid collective)
+B_AFT_B1S       -12.3   deg
+B_DELTA_B1S     28.8    deg   delta 10.0 in
+# Lateral cyclic, from vertical
+A_LEFT_IN       5.0     in    Left **     (low collective)
+A_LEFT_A1S      -8.0    deg
+A_PIN_IN        0.96    in    Pinned **   left (low collective)
+A_PIN_A1S       -1.54   deg
+A_RIGHT_IN      5.0     in    Right
+A_RIGHT_A1S     8.0     deg
+# Pedal, from vertical (with overtravel; output ***** )
+P_LEFT_IN       2.69    in    Left ****
+P_LEFT_THR      29.9    deg
+P_PIN_THR       15.0    deg   Pinned *** (on vertical, mid collective)
+P_RIGHT_IN      2.69    in    Right ****
+P_RIGHT_THR     0.1     deg

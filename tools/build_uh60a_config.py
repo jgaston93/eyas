@@ -18,10 +18,11 @@ What it works out:
   p. 5.7-9, so positive to starboard), not as a buttline.
 - Controls (§5.5, Figs. 5.1.6(a)-(d)): normalized input -> stick or pedal inches -> GenHel's
   mechanical mixing [deg] -> the swashplate phase rotation (p. 5.1-24), written as the
-  offsets and gains of Eyas's linear control map. The travels in inches are not in GenHel
-  Vol. I, so each is a placeholder spanning the rotor-head pitch limits (p. 5.5-20) with
-  collective full down and the other inputs at zero; every value that depends on them is
-  tagged !placeholder.
+  offsets and gains of Eyas's linear control map. The travels in inches come from GenHel's
+  cockpit section (Figs. 6.3.1 and 6.4.1, pp. 6.16-6.17; D-035). Collective, lateral and pedal
+  fit the rigging exactly (checked here). The longitudinal stroke is given but its rows put
+  neutral cyclic in three places; neutral is their mean, and the values that depend on it
+  (the theta1s and theta1c offsets) are tagged !placeholder.
 """
 
 import argparse
@@ -121,28 +122,68 @@ def gear_constants():
     return out
 
 
-def control_map(rig, mr):
+def travels(rig, tv):
+    """Stick and pedal travels [in] from Figs. 6.3.1 and 6.4.1, checked against the rigging.
+
+    Returns (xc, xa, xb, xp, lon_spread): each travel as (inches at -1 or 0, inches at +1),
+    and the spread [in] of the three neutral-cyclic estimates behind xb.
+    """
+    def thosum(xc_in):
+        return rig["KXCTH0"] * xc_in
+
+    def close(a, b, what, tol=0.01):
+        if abs(a - b) > tol:
+            raise ValueError(f"control travels: {what}: {a:.4f} against {b:.4f} deg")
+
+    # Collective: 0 in (full down) to the stroke; the figure's ends must be the rigging's.
+    xc = (0.0, tv["STROKE_C"])
+    close(thosum(xc[0]) + rig["BIAS_C"], tv["TH0_LOW"], "collective low")
+    close(thosum(xc[1]) + rig["BIAS_C"], tv["TH0_HIGH"], "collective high")
+    xc_low, xc_mid, xc_high = xc[0], 0.5 * (xc[0] + xc[1]), xc[1]
+
+    # Pedal: the pinned (neutral) pedal gives the figure's 15.0 deg at mid collective; the
+    # travel is the stroke with overtravel, which the figure's end rows use.
+    xp_n = (tv["P_PIN_THR"] - thosum(xc_mid) - rig["BIAS_P"]) / rig["KXPTHR"]
+    h = 0.5 * tv["STROKE_P_OVR"]
+    close(h, tv["P_LEFT_IN"], "pedal half stroke (left)", 1e-9)
+    close(h, tv["P_RIGHT_IN"], "pedal half stroke (right)", 1e-9)
+    xp = (xp_n - h, xp_n + h)  # -1 = full left (more thrust), +1 = full right
+    close(rig["KXPTHR"] * xp[0] + thosum(xc_mid) + rig["BIAS_P"], tv["P_LEFT_THR"], "pedal left")
+    close(rig["KXPTHR"] * xp[1] + thosum(xc_mid) + rig["BIAS_P"], tv["P_RIGHT_THR"], "pedal right")
+
+    # Lateral: the rows are at low collective; neutral from the right row, the others checked.
+    def a1s(xa_in, xc_in):
+        return rig["KXAA1S"] * xa_in + rig["MIX_AC"] * thosum(xc_in) + rig["BIAS_A"]
+    xa_n = (tv["A_RIGHT_A1S"] - rig["MIX_AC"] * thosum(xc_low) - rig["BIAS_A"]) / rig["KXAA1S"] \
+        - tv["A_RIGHT_IN"]
+    xa = (xa_n - 0.5 * tv["STROKE_A"], xa_n + 0.5 * tv["STROKE_A"])
+    close(a1s(xa_n - tv["A_LEFT_IN"], xc_low), tv["A_LEFT_A1S"], "lateral left")
+    close(a1s(xa_n - tv["A_PIN_IN"], xc_low), tv["A_PIN_A1S"], "lateral pinned")
+
+    # Longitudinal, with the pedal at neutral: each row gives its own neutral cyclic. They
+    # disagree by up to 0.8 in (DATA_GAPS.md), so neutral is their mean.
+    kb = rig["KXBB1S"] * rig["SIGN_XB2"]
+
+    def b1s_rest(xc_in):  # B1S with the stick at XB+2 = 0
+        return (rig["MIX_BC"] * thosum(xc_in) + rig["MIX_BP"] * rig["KXPTHR"] * xp_n
+                + rig["BIAS_B"])
+    est = [(tv["B_FWD_B1S"] - b1s_rest(xc_high)) / kb - tv["B_FWD_IN"],
+           (tv["B_PIN_B1S"] - b1s_rest(xc_low)) / kb + tv["B_PIN_IN"],
+           (tv["B_AFT_B1S"] - b1s_rest(xc_mid)) / kb + tv["B_AFT_IN"]]
+    xb_n = sum(est) / len(est)
+    xb = (xb_n - 0.5 * tv["STROKE_B"], xb_n + 0.5 * tv["STROKE_B"])  # -1 = full aft
+    return xc, xa, xb, xp, max(est) - min(est)
+
+
+def control_map(rig, mr, tv):
     """Normalized controls -> GenHel inches -> blade pitch, as linear-map rows [deg].
 
-    Returns (travel, main, tail): travel maps each input to (inches at -1 or 0, inches at +1);
+    Returns (travel, main, tail, lon_spread): travel maps each input to (inches at -1 or 0, inches at +1);
     main and tail are {row: {input: gain [deg per unit], 'offset': deg}}.
     """
     sx = rig["SIGN_XB2"]
-    # Travels (placeholders): the span of each head limit with collective full down (XC = 0)
-    # and the other inputs at zero; length = head range / gain.
-    xc = (0.0, (rig["TH0_UL"] - rig["BIAS_C"]) / rig["KXCTH0"])  # collective 0..1
-    xa = ((rig["A1S_LL"] - rig["BIAS_A"]) / rig["KXAA1S"],
-          (rig["A1S_UL"] - rig["BIAS_A"]) / rig["KXAA1S"])        # lat -1..+1 (right = A1S up)
-    kb = rig["KXBB1S"] * sx                                      # B1S per inch of XB+2
-    xb_lo = (rig["B1S_LL"] - rig["BIAS_B"]) / kb
-    xb_hi = (rig["B1S_UL"] - rig["BIAS_B"]) / kb
-    xb = (min(xb_lo, xb_hi), max(xb_lo, xb_hi))
-    # Forward stick must raise B1S (tilt the disc forward); with kb > 0 that is +XB+2.
-    if kb < 0:
-        xb = (xb[1], xb[0])
-    xp_hi = (rig["THR_LL"] - rig["BIAS_P"]) / rig["KXPTHR"]       # right pedal: less thrust
-    xp_lo = (rig["THR_UL"] - rig["BIAS_P"]) / rig["KXPTHR"]
-    xp = (xp_lo, xp_hi)
+    kb = rig["KXBB1S"] * sx  # B1S per inch of forward stick (XB+2)
+    xc, xa, xb, xp, lon_spread = travels(rig, tv)
     travel = {"collective": xc, "lat_cyclic": xa, "lon_cyclic": xb, "pedal": xp}
 
     def affine(lo, hi, zero_to_one):
@@ -180,15 +221,16 @@ def control_map(rig, mr):
     theta1s = add((math.sin(d), a1s), (-math.cos(d), b1s))
     main = {"theta0": theta0, "theta1s": theta1s, "theta1c": theta1c}
     tail = {"theta0": thettr}
-    return travel, main, tail
+    return travel, main, tail, lon_spread
 
 
-def map_rows(rows, indent):
-    """YAML for a linear control map; every value depends on the placeholder travels."""
+def map_rows(rows, indent, placeholders=()):
+    """YAML for a linear control map; the (row, input) pairs in `placeholders` are tagged."""
     order = ("offset", "collective", "lon_cyclic", "lat_cyclic", "pedal")
     lines = []
     for row, gains in rows.items():
-        items = [f"{k}: {q(float(f'{gains[k]:.10g}'), 'deg', True)}" for k in order
+        items = [f"{k}: {q(float(f'{gains[k]:.10g}'), 'deg', (row, k) in placeholders)}"
+                 for k in order
                  if k in gains and gains[k] != 0.0]
         lines.append(f"{indent}{row}: {{{', '.join(items)}}}")
     return "\n".join(lines)
@@ -210,7 +252,8 @@ def build():
     def pos(fs, bl, wl):
         return vec(-(fs - fs_cg), -(bl - bl_cg), -(wl - wl_cg))
 
-    travel, main_map, tail_map = control_map(rig, mr)
+    tv = constants("control_travels_6_3.txt")
+    travel, main_map, tail_map, lon_spread = control_map(rig, mr, tv)
     k_main = 10.0 * vertical_slope("main_tire_vertical.csv", gear["PM"])
     k_tail = 10.0 * vertical_slope("tail_tire_vertical.csv", gear["PN"])
 
@@ -271,10 +314,11 @@ def build():
 # FS {fmt(round(fs_cg, 4))}, BL {fmt(round(bl_cg, 4))}, WL {fmt(round(wl_cg, 4))} in, the origin of every position here.
 # Positions: x = -(FS - FS_cg), y = -(BL - BL_cg) (buttlines positive to port), z = -(WL - WL_cg).
 #
-# Controls (D-034): stick and pedal travels are not in GenHel Vol. I. Placeholders spanning the
-# rotor-head pitch limits with collective down:
+# Controls (D-034, D-035): stick and pedal travels from GenHel Figs. 6.3.1 and 6.4.1 (pp. 6.16-6.17):
 #   {trav}.
-# Every control-map value depends on them and is tagged !placeholder.
+# Collective, lateral and pedal fit the rigging exactly; the pedal uses its stroke with overtravel.
+# The longitudinal rows put neutral cyclic in three places {fmt(round(lon_spread, 3))} in apart; neutral is
+# their mean, so the theta1s and theta1c offsets are tagged !placeholder.
 
 geodetic_origin: {{latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}}  # scenario, not aircraft data
 
@@ -309,7 +353,7 @@ components:
         inertia: "{fmt(mr["I_B"])} slug*ft^2"
         delta3: "{fmt(mr["DELTA_3"])} deg"
     controls:
-{map_rows(main_map, "      ")}
+{map_rows(main_map, "      ", (("theta1s", "offset"), ("theta1c", "offset")))}
 
   - type: airframe_aero
     name: airframe

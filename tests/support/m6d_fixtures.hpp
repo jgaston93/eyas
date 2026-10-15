@@ -41,24 +41,29 @@ inline constexpr double kGenHelWeight = 16638.0;  // [lbm]
 inline constexpr double kFSCG = 355.9;            // [in]
 inline constexpr double kWLCG = 248.2;            // [in]
 
-// The placeholder travels (D-034): each spans the rotor-head pitch limits
-// (p. 5.5-20) with collective down and the other inputs at zero. Normalized
-// input → GenHel inches. Shared by the tests and the validation run; if the
-// travels change in tools/build_uh60a_config.py, ControlMapsAreGenHelsRigging
-// fails until these follow.
+// The travels (D-035), from GenHel Figs. 6.3.1 and 6.4.1 (pp. 6.16-6.17),
+// written out here from the figure rather than taken from the generator.
+// Normalized input → GenHel inches. Shared by the tests and the validation
+// run; if the travels change in tools/build_uh60a_config.py,
+// ControlMapsAreGenHelsRigging fails until these follow.
 struct Travels {
-    static double xc(double c) { return 10.0 * c; }       // 9.9..25.9 deg / 1.6
-    static double xa(double l) { return 5.0 + 5.0 * l; }  // ±8 deg / 1.6
-    static double xb2(double f) {                         // −12.5..16.3 deg / 2.83
-        const double lo = (-12.5 + 9.7754) / 2.83;
-        const double hi = (16.3 + 9.7754) / 2.83;
-        return 0.5 * (lo + hi) + 0.5 * (hi - lo) * f;
+    static double xc(double c) { return 10.0 * c; }       // stroke 10.0 in, 0 = full down
+    static double xa(double l) { return 5.0 + 5.0 * l; }  // stroke 10.0 in, neutral 5.0 in
+    // Stroke 10.0 in about neutral cyclic, the mean of the three neutrals the
+    // figure's rows imply (pedal at neutral; they spread by 0.81 in, DATA_GAPS.md).
+    static double xb2(double f) {
+        const double b_rest_high = 0.29 * 16.0 - 0.2936 * -5.539 * kXpNeutral - 9.7754;
+        const double b_rest_mid = 0.29 * 8.0 - 0.2936 * -5.539 * kXpNeutral - 9.7754;
+        const double b_rest_low = -0.2936 * -5.539 * kXpNeutral - 9.7754;
+        const double neutral = ((16.5 - b_rest_high) / 2.83 - 5.0 + (-11.0 - b_rest_low) / 2.83 +
+                                3.89 + (-12.3 - b_rest_mid) / 2.83 + 5.0) /
+                               3.0;
+        return neutral + 5.0 * f;
     }
-    static double xp(double p) {  // 36.5..4.5 deg / −5.539 (right pedal: less thrust)
-        const double lo = (36.5 - 21.9) / -5.539;
-        const double hi = (4.5 - 21.9) / -5.539;
-        return 0.5 * (lo + hi) + 0.5 * (hi - lo) * p;
-    }
+    // Stroke with overtravel 5.38 in about the pinned pedal, which gives 15.0°
+    // at mid collective: (21.9 + 1.6 × 5 − 15.0) / 5.539 in. Right pedal: less thrust.
+    static constexpr double kXpNeutral = (21.9 + 8.0 - 15.0) / 5.539;
+    static double xp(double p) { return kXpNeutral + 2.69 * p; }
 };
 
 // The UH-60A components, built from the config, evaluated outside the
