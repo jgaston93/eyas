@@ -72,7 +72,7 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 ## D-005 Timing budget defined per host frame (SPEC_REVIEW #5) — `Approved (2026-10-10)`
 **Decision:** Replace §7 rule 5. The rule becomes: worst-case `advance()` for a nominal host frame, i.e. worst-case `step()` × ceil(dt_host / dt_physics), must stay below 50% of `dt_host` on the target hardware. The benchmark reports per-`step()` and per-`advance()` mean, p99 and max.
 - At 60 Hz host and 1 kHz physics (17 sub-steps), that means worst-case `step()` ≲ 0.49 ms.
-- **Target hardware (spec §12 Q4, answered by the spec owner on 2026-10-10):** a Linux server running RHEL 8 or RHEL 9. This is a general-purpose Linux server, not an embedded RTOS. The budget is measured there, with the release build configuration.
+- **Target hardware (spec §12 Q4, answered by the spec owner on 2026-10-10):** a Linux server running RHEL 8 or RHEL 9 (since D-037, Eyas and its host run in a RHEL 9 container on it). This is a general-purpose Linux server, not an embedded RTOS. The budget is measured there, with the release build configuration.
 
 **Rationale:** The spec's per-`step()` rule allows an 8 ms step inside a 16.7 ms frame that contains about 17 steps.
 **Notes:**
@@ -690,3 +690,37 @@ Johnson (2013) has nothing specific. No source gives the fade width; c = 20° is
 - *Validation entries:* VALIDATION.md M7a is regenerated with it. The M7c comparison with Ballin's GenHel trims lists D-036 among the explained departures.
 
 **Data note:** the fuselage lift-increment table header said "odd in PSIWF". That applied to the pitching-moment column only; the lift increment is printed for −30 to 30° and isn't symmetric. The header was corrected; no value changed.
+
+**Implementation notes (2026-10-15, M7b; VALIDATION.md M7b):**
+- *Coordinates:* `ReducedCoordinates` handles any blade count: β0, β_nc and β_ns, and β_d for even N_b (Johnson 2013 Eq. 15.77), with q̈ = a − 2Ω D q̇ − Ω² D² q, which reduces to Johnson's Eq. 15.80 for the flap equation. Flapping rotors are found by `dynamic_cast<BladeElementRotor>` and blade azimuths come from `blade_azimuth()`, so no §6 interface changed. ψ_h is taken within ±π of the reference heading.
+- *Held orbit:* the trim's held RK4 integrator moved to `analysis/held_orbit` and is shared; the linear models are taken about the mean body state (without the vibration offset).
+- *Floquet:* exponents are matched to the averaged roots nearest first, one to one, with the branch nearest to the matched root's frequency. That is Johnson's continuity rule (pp. 570–571) while gaps are small against root spacing. The monodromy starts at the held orbit's start.
+- *L3 as implemented (option A, approved 2026-10-15):*
+  - *Speeds:* hover, 60 and 150 kt in the test (first 0, 35, 60, 90, 120 and 150 kt; cut for CI time with D-037, since the generator covers the rest); every 10 kt in `eyas_m7b_cases`, reported.
+  - *Cases:* each body coordinate perturbed and each control given a 1 s sine doublet (continuous, so RK4 stays accurate), at four amplitudes halving from 0.0625 m/s, 0.005 rad/s, 0.0025 rad and 0.0025 of travel. These keep the largest clear of nearby map nodes: χ = −0.85° next to 0° in hover, a₁ = 0.12° next to 0° at 60 kt.
+  - *Steps:* both models step at T/256 up to 60 kt and T/512 above.
+  - *Criterion:* the relative error must fit c0 + c1 a to within 15 % beyond a noise allowance of half the limit. The leftover c0 must stay below 1e-4 up to 60 kt and 1e-3 above (measured ≤ 3.2e-5 and ≤ 5.4e-4).
+  - *Hover, averaged model:* gated at c0 < 2e-3 (measured 1.04e-3, for longitudinal cyclic). The probe's 0.014 % was for state perturbations only.
+  - *Why not "order 2 within the fit's uncertainty"* (the amendment's wording): the data are deterministic, so the fit has no statistical uncertainty, and part of the leftover is the held-body linearization. That part was measured (half the high-speed leftover; eigenvalues within 0.07 % to 120 kt and 0.4 % at 150 kt, with the free flight wandering by as much between revolutions) and approved as option A.
+- *30 kt:* GenHel's tail-rotor fin blockage has its breakpoint at exactly 30.0 kt (CR-166309 p. 5.4-2, "empirical and based on flight test data of other helicopters"; p. 5.4-12), a corner in airspeed. A 30.0 kt trim sits on it, and L3 there has a 12 % leftover. The corner isn't smoothed, because no source gives the shape (approved 2026-10-15), and 30 kt isn't an L3 gate speed. If M7c shows the aircraft's pedal smooth through 30 kt, that is the evidence to revisit it.
+- *L4 as implemented:*
+  - *Fixture:* the symmetric coaxial fixture with a centre hinge, no root cutout, B = 1, a linear airfoil without drag, and Pitt–Peters (heave) or uniform inflow (rate derivatives).
+  - *Rate derivatives:* quasi-steady with the body held (Padfield's definition: the disc settles before the fuselage moves).
+  - *M_q, L_p:* from the condensed model on a stiff hub (S_β = 0.3) over a heavy airframe (10⁶ kg·m²), so blade inertia and the acceleration coupling stay below 0.2 %. Eq. 4.81 drops the in-plane loads, which grow as the hub softens, so softer hubs are reported, not gated.
+- *Condensed outputs:* derivatives as Padfield's App. 4B plots them (gravity and kinematic terms included; moments primed), and modes with an eigenvector-based label (`modes()`). The label is a heuristic, indicative where modes couple strongly.
+- *Cost:* linearizing the UH-60A takes 25 ms (41 states, 64 azimuths) and its Floquet flow map 0.25 s (Release).
+
+## D-037 Deployment in a RHEL 9 container; RHEL 8 dropped from CI (refines D-005) — `Approved (2026-10-15)`
+**Context:** D-005 recorded the target as a Linux server running RHEL 8 or RHEL 9, so CI built and tested in Rocky Linux 8 (gcc-toolset-13) and 9 (system GCC 11). Eyas is an in-process library, so it must be built for the userspace the host simulator runs in: a RHEL 9 build (glibc 2.34) won't load into a host running natively on RHEL 8 (glibc 2.28). The deployment team (the spec owner) decided on 2026-10-15 to containerize the host.
+
+**Decision:**
+- Eyas and the host simulator always run in a RHEL 9 container, whether the server runs RHEL 8 or RHEL 9.
+- CI keeps the Rocky Linux 9 job (system GCC 11) and drops the Rocky Linux 8 job.
+- Configure still rejects GCC < 11 with instructions, which also covers anyone building elsewhere.
+- *Fidelity:* a container shares the host kernel and runs native code, so it changes neither speed nor results. A given binary gives bit-identical results on either host; determinism stays per build and compiler (D-005).
+- *Host-side setup:* real-time scheduling, CPU pinning and memory locking (D-005) need the container's privileges and cpusets, which is part of the host deployment, not Eyas.
+
+**CI changes made with it:**
+- ctest runs in parallel (`--parallel $(nproc)`), so a job takes about its longest test rather than the sum.
+- Compiled objects are cached with ccache through `actions/cache` (keys per job). ccache reuses an object only when the compiler, flags and preprocessed source match, so results are unchanged; the D-010 flags are untouched.
+- The L3 gate runs in hover, at 60 kt and at 150 kt. `eyas_m7b_cases` covers every 10 kt (VALIDATION.md M7b).

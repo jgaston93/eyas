@@ -6,11 +6,12 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 
 ---
 
-## 1. Linearization ignores rotor periodicity — `open`
+## 1. Linearization ignores rotor periodicity — `resolved → DECISIONS.md D-035 (2026-10-15)`
 **Spec:** §6.9, M7.
 **Problem:** With individual blade states retained, the coupled system is linear time-periodic (LTP), not LTI. Central-difference A/B matrices taken at one rotor azimuth depend on that azimuth. The spec does not mention a multiblade coordinate (Coleman) transform or azimuth averaging.
 **Why it matters:** M7 compares eigenvalues and derivatives against the reference model. Snapshot-azimuth Jacobians will not compare meaningfully.
 **Suggested resolution:** Transform blade states to multiblade coordinates, then average the Jacobians over one revolution (or N_b-per-rev samples) for the retained model. For the 6-DOF condensed model, condense using the revolution-averaged response.
+**Resolution:** D-035 and its amendment (#29), implemented in M7b. Multiblade coordinates, periodic and averaged models, Floquet exponents as the check on the averaging, and condensation of the averaged model.
 
 ## 2. Mass bookkeeping in the coupled solve — `resolved → DECISIONS.md D-002 (2026-10-10)`
 **Spec:** §5 (Coupling), §6.1.

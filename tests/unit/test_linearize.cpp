@@ -25,6 +25,7 @@
 #include "sim/build.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "support/m7_fixtures.hpp"
+#include "support/m7b_support.hpp"
 #include "util/units.hpp"
 
 namespace eyas {
@@ -373,50 +374,6 @@ TEST(Linearize, HoverHeaveDampingMatchesPadfield) {
     }
 }
 
-// The quasi-steady response of the rotor states to steady p and q with the
-// body held (Padfield's quasi-steady derivatives: the disc settles before
-// the fuselage moves), from the held derivative function, and the held net
-// moment derivatives with that response.
-struct QuasiSteady {
-    MatX flap;    // rotor reduced coordinates × (p, q)
-    MatX moment;  // net (L, M, N) × (p, q) [N·m·s/rad]
-};
-
-QuasiSteady quasi_steady(const Executive& ex, const TrimCondition& c, const TrimResult& r) {
-    const RC rc(ex, false);
-    const std::vector<double> ref = held_orbit_start(ex, c, r);
-    const VecX x0 = rc.to_reduced(0.0, ref, ref);
-    const Environment env = trim_environment(c);
-    const auto nr = static_cast<Eigen::Index>(rc.size() - 9);
-    std::vector<double> x(ex.num_states());
-    std::vector<double> xd(ex.num_states());
-    const auto g = [&](const VecX& xr) {
-        rc.to_full(0.0, xr, ref, x);
-        std::fill(xd.begin(), xd.end(), 0.0);
-        Vec6 net;
-        (void)ex.held_derivatives(0.0, x, r.controls, env, xd, net);
-        VecX out(nr + 3);
-        out.head(nr) = rc.rates(0.0, x, xd).tail(nr);
-        out.tail(3) = net.tail<3>();
-        return out;
-    };
-    MatX J(nr + 3, nr + 2);
-    for (Eigen::Index k = 0; k < nr + 2; ++k) {
-        constexpr auto kP = static_cast<Eigen::Index>(RC::kP);
-        const Eigen::Index col = k < nr ? 9 + k : (k == nr ? kP : kP + 1);
-        const double h = 1e-6;
-        VecX xp = x0;
-        VecX xm = x0;
-        xp(col) += h;
-        xm(col) -= h;
-        J.col(k) = (g(xp) - g(xm)) / (2.0 * h);
-    }
-    QuasiSteady q;
-    q.flap = -J.topLeftCorner(nr, nr).fullPivLu().solve(J.topRightCorner(nr, 2));
-    q.moment = J.bottomRightCorner(3, 2) + J.bottomLeftCorner(3, nr) * q.flap;
-    return q;
-}
-
 // Gate L4 (D-035): hover flap-rate and rate-damping derivatives against
 // Padfield 3rd ed. on a centre-spring rotor with uniform inflow (the
 // symmetric fixture: centre hinge with spring K_β, no root cutout, B = 1,
@@ -449,7 +406,7 @@ TEST(Linearize, HoverRateDerivativesMatchPadfield) {
         f.spring = Sb * gamma * Ib * W * W / 8.0;
         const Executive ex = test::symmetric_hover_executive(f);
         const TrimResult r = trim(ex, level(0.0));
-        const QuasiSteady q = quasi_steady(ex, level(0.0), r);
+        const test::QuasiSteady q = test::quasi_steady(ex, level(0.0), r);
         const double direct = (Sb + 16.0 / gamma) / ((1.0 + Sb * Sb) * W);
         const double coupling = (Sb * 16.0 / gamma - 1.0) / ((1.0 + Sb * Sb) * W);
         // Rotor 1's β1c and β1s are its reduced coordinates 1 and 2 after the body.
@@ -523,148 +480,43 @@ TEST(Linearize, ModesAndLabels) {
 
 // ---- L3: linear against nonlinear ----------------------------------------------
 
-// One L3 case: a reduced body coordinate perturbed at t = 0, or a control
-// given a one-cycle sine doublet (1 s; continuous, so RK4 stays accurate
-// across it). `amplitude` is the largest of the four amplitudes, which halve.
-struct L3Case {
-    int state = -1;
-    int control = -1;
-    double amplitude = 0.0;  // [coordinate or Controls units]
-};
-
-// The relative error of a linear model's response against the nonlinear
-// one at each amplitude: both as changes from the unperturbed free flight,
-// compared every linear step over `seconds`, over the body coordinates
-// weighted by typical sizes (1 m/s, 0.1 rad/s, 0.1 rad, 1 m), as the
-// largest error over the largest linear response. The free flights start
-// from the trim's state with its vibration offset (as Model::trim), by RK4
-// at T/J; the linear models step at 2T/J (linear_response).
-std::vector<double> l3_errors(const Executive& ex, const TrimCondition& c, const TrimResult& r,
-                              const std::vector<double>& start, const LinearModel& m,
-                              const L3Case& k, double seconds, bool averaged) {
-    const RC rc(ex, true);
-    const Environment env = trim_environment(c);
-    const auto per_rev = static_cast<int>(m.A_periodic.size());
-    const double dt = m.period / per_rev;
-    const int steps_lin = static_cast<int>(std::ceil(seconds / m.period)) * per_rev / 2;
-    const auto doublet = [](double t) {
-        return t < 1.0 ? std::sin(2.0 * std::numbers::pi * t) : 0.0;
-    };
-    const auto base =
-        test::free_flight(ex, env, start, [&](double) { return r.controls; }, dt, 2 * steps_lin);
-    const VecX x0 = rc.to_reduced(0.0, start, start);
-    VecX w = VecX::Ones(10);
-    w.segment(3, 6).setConstant(10.0);
-    std::vector<double> errors;
-    for (int level = 0; level < 4; ++level) {
-        const double a = k.amplitude / std::pow(2.0, level);
-        VecX xr = x0;
-        VecX dx0 = VecX::Zero(static_cast<Eigen::Index>(rc.size()));
-        if (k.state >= 0) {
-            dx0(k.state) = a;
-            xr(k.state) += a;
-        }
-        std::vector<double> x1(start.size());
-        rc.to_full(0.0, xr, start, x1);
-        const auto controls_at = [&](double t) {
-            Controls u = r.controls;
-            if (k.control >= 0) {
-                const std::array<double*, 4> p{&u.collective, &u.lat_cyclic, &u.lon_cyclic,
-                                               &u.pedal};
-                *p[static_cast<std::size_t>(k.control)] += a * doublet(t);
-            }
-            return u;
-        };
-        const auto input = [&](double t) {
-            Eigen::Vector4d v = Eigen::Vector4d::Zero();
-            if (k.control >= 0) {
-                v(k.control) = a * doublet(t);
-            }
-            return v;
-        };
-        const auto pert = test::free_flight(ex, env, x1, controls_at, dt, 2 * steps_lin);
-        const std::vector<VecX> lin = linear_response(m, dx0, input, steps_lin, averaged);
-        double err = 0.0;
-        double size = 0.0;
-        for (int n = 0; n <= steps_lin; ++n) {
-            const double t = 2.0 * dt * n;
-            const auto i = static_cast<std::size_t>(2 * n);
-            const VecX& l = lin[static_cast<std::size_t>(n)];
-            const VecX dnl = rc.to_reduced(t, pert[i], start) - rc.to_reduced(t, base[i], start);
-            err = std::max(err, (dnl.head(10) - l.head(10)).cwiseProduct(w).norm());
-            size = std::max(size, l.head(10).cwiseProduct(w).norm());
-        }
-        errors.push_back(err / size);
-    }
-    return errors;
-}
-
-// e(a) ≈ c0 + c1 a: c1 a is the part of a linear model's relative error that
-// shrinks with the amplitude (an absolute error of second order), c0 what
-// doesn't. Least squares in relative terms; `misfit` is the largest relative
-// deviation of the fit from the data.
-struct L3Fit {
-    double c0 = 0.0;
-    double c1 = 0.0;
-    double misfit = 0.0;
-};
-
-L3Fit fit_l3(const std::vector<double>& e, double amplitude, double noise) {
-    Eigen::MatrixXd M(static_cast<Eigen::Index>(e.size()), 2);
-    VecX y = VecX::Ones(static_cast<Eigen::Index>(e.size()));
-    for (std::size_t i = 0; i < e.size(); ++i) {
-        const double a = amplitude / std::pow(2.0, static_cast<double>(i));
-        M(static_cast<Eigen::Index>(i), 0) = 1.0 / e[i];
-        M(static_cast<Eigen::Index>(i), 1) = a / e[i];
-    }
-    const Eigen::Vector2d c = M.colPivHouseholderQr().solve(y);
-    L3Fit f{c(0), c(1), 0.0};
-    for (std::size_t i = 0; i < e.size(); ++i) {
-        const double a = amplitude / std::pow(2.0, static_cast<double>(i));
-        const double dev = std::max(std::abs(c(0) + c(1) * a - e[i]) - noise, 0.0);
-        f.misfit = std::max(f.misfit, dev / e[i]);
-    }
-    return f;
-}
-
 // Gate L3 (D-035 amendment, option A of 2026-10-15): small initial
 // perturbations of each body coordinate and small control doublets, flown
-// for 3 s, against the periodic linear model (J = 512). At every speed the
-// relative error must be the sum of a part proportional to the amplitude
-// (the fit c0 + c1 a describes the four amplitudes to within 15 %), which
-// proves the absolute error second order, and a leftover c0 below 1e-4 up
-// to 60 kt and 1e-3 above. The leftover is half the held-body linearization
-// (the free aircraft vibrates at 4/rev) and half the steps; VALIDATION.md
-// M7b reports both. In hover the averaged model is gated too (the
-// multiblade coefficients are almost constant there, SPEC_REVIEW #29).
+// for 3 s, against the periodic linear model (both stepped at T/256 up to
+// 60 kt, T/512 above), in hover, at 60 kt and at 150 kt; eyas_m7b_cases
+// covers every 10 kt (VALIDATION.md M7b). The relative error must be the sum
+// of a part proportional to the amplitude (the fit c0 + c1 a describes the
+// four amplitudes to within 15 %), which proves the absolute error second
+// order, and a leftover c0 below 1e-4 up to 60 kt and 1e-3 above. Half of
+// the high-speed leftover is the held-body linearization (the free aircraft
+// vibrates at 4/rev), half the steps. In hover the averaged model is gated
+// too (the multiblade coefficients are almost constant there, SPEC_REVIEW
+// #29).
 TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {
     const Executive ex = uh60a_executive();
-    const std::vector<L3Case> cases = {{0, -1, 0.0625}, {1, -1, 0.0625}, {2, -1, 0.0625},
-                                       {3, -1, 0.005},  {4, -1, 0.005},  {5, -1, 0.005},
-                                       {6, -1, 0.0025}, {7, -1, 0.0025}, {-1, 0, 0.0025},
-                                       {-1, 1, 0.0025}, {-1, 2, 0.0025}, {-1, 3, 0.0025}};
     TrimResult previous;
-    for (double knots : {0.0, 35.0, 60.0, 90.0, 120.0, 150.0}) {
+    for (double knots : {0.0, 60.0, 150.0}) {
         const TrimCondition c = level(knots);
         std::vector<double> start;
         const TrimResult r = solve_trim(ex, c, knots == 0.0 ? nullptr : &previous, start);
         ASSERT_TRUE(r.converged) << knots;
         previous = r;
+        // Both models step at 2T/J: T/256 up to 60 kt, T/512 above, where the
+        // rotor and inflow responses to collective need the finer step.
         LinearizeOptions o;
-        o.azimuths = 512;
-        o.steps_per_period = 512;
+        o.azimuths = knots <= 60.0 ? 512 : 1024;
+        o.steps_per_period = o.azimuths;
         const LinearModel m = linearize(ex, c, r, o);
-        const double floor = knots <= 60.0 ? 1e-4 : 1e-3;
-        for (const L3Case& k : cases) {
+        const double floor = test::l3_floor(knots);
+        for (const test::L3Case& k : test::l3_cases()) {
             SCOPED_TRACE(testing::Message()
                          << knots << " kt, state " << k.state << ", control " << k.control);
-            const std::vector<double> e = l3_errors(ex, c, r, start, m, k, 3.0, false);
-            const L3Fit f = fit_l3(e, k.amplitude, 0.5 * floor);
+            const test::L3Errors e = test::l3_errors(ex, c, r, start, m, k, 3.0);
+            const test::L3Fit f = test::fit_l3(e.periodic, k.amplitude, 0.5 * floor);
             EXPECT_LT(f.misfit, 0.15);
             EXPECT_LT(f.c0, floor);
             if (knots == 0.0) {
-                const std::vector<double> ea = l3_errors(ex, c, r, start, m, k, 3.0, true);
-                const L3Fit fa = fit_l3(ea, k.amplitude, 0.5 * 2e-3);
+                const test::L3Fit fa = test::fit_l3(e.averaged, k.amplitude, 0.5 * 2e-3);
                 EXPECT_LT(fa.misfit, 0.15) << "averaged";
                 EXPECT_LT(fa.c0, 2e-3) << "averaged";
             }

@@ -23,54 +23,64 @@ jobs:
     env:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
     steps:
       - uses: actions/checkout@v5
-      - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Install Ninja and ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+      # Compiled objects (ours and the FetchContent dependencies) are reused
+      # between runs; ccache only reuses an object when the compiler, flags
+      # and preprocessed source match, so results are unchanged.
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-ubuntu-${{ matrix.compiler }}-${{ matrix.preset }}-${{ github.sha }}
+          restore-keys: ccache-ubuntu-${{ matrix.compiler }}-${{ matrix.preset }}-
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
+        run: >-
+          cmake --preset ${{ matrix.preset }}
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
-        run: ctest --preset ${{ matrix.preset }}
+        run: ctest --preset ${{ matrix.preset }} --parallel "$(nproc)"
+      - name: Compiler cache statistics
+        run: ccache --show-stats
 
-  # Target platform (DECISIONS D-005): RHEL 9 and RHEL 8, via Rocky Linux.
+  # Target platform (DECISIONS D-037): Eyas and its host run in a RHEL 9
+  # container, checked here in Rocky Linux 9 with its system GCC 11.
   rhel9:
     name: Rocky Linux 9 (system GCC 11) release
     runs-on: ubuntu-24.04
     container: rockylinux:9
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
     steps:
       - name: Install toolchain
         run: |
-          dnf -y install gcc-c++ cmake git dnf-plugins-core
+          dnf -y install gcc-c++ cmake git dnf-plugins-core tar zstd epel-release
           dnf config-manager --set-enabled crb
-          dnf -y install ninja-build
+          dnf -y install ninja-build ccache
       - uses: actions/checkout@v5
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-rocky9-release-${{ github.sha }}
+          restore-keys: ccache-rocky9-release-
       - name: Configure
-        run: cmake --preset release
+        run: >-
+          cmake --preset release
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build --preset release
       - name: Test
-        run: ctest --preset release
-
-  rhel8:
-    name: Rocky Linux 8 (gcc-toolset-13) release
-    runs-on: ubuntu-24.04
-    container: rockylinux:8
-    steps:
-      - name: Install toolchain
-        run: |
-          dnf -y install gcc-c++ cmake git dnf-plugins-core
-          dnf config-manager --set-enabled powertools
-          dnf -y install ninja-build gcc-toolset-13-gcc-c++
-      - uses: actions/checkout@v5
-      - name: Configure, build and test
-        shell: bash
-        run: |
-          source /opt/rh/gcc-toolset-13/enable
-          cmake --preset release
-          cmake --build --preset release
-          ctest --preset release
+        run: ctest --preset release --parallel "$(nproc)"
+      - name: Compiler cache statistics
+        run: ccache --show-stats
 
   lint:
     name: clang-format and clang-tidy
