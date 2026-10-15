@@ -21,6 +21,7 @@
 #include "rotor/blade_element_rotor.hpp"
 #include "sim/executive.hpp"
 #include "support/bet_reference.hpp"
+#include "support/frame_status.hpp"
 #include "support/m3_fixtures.hpp"
 
 namespace {
@@ -265,7 +266,8 @@ void timing(const std::filesystem::path& dir) {
     const int n_steps = 20000;
     t0 = clock::now();
     for (int i = 0; i < n_steps / 20; ++i) {
-        (void)ex.advance(Controls{}, Environment{}, 20'000'000);  // 20 steps
+        test::require_frame(ex.advance(Controls{}, Environment{}, 20'000'000),
+                            "m3_cases");  // 20 steps
     }
     const double step_us =
         std::chrono::duration<double, std::micro>(clock::now() - t0).count() / n_steps;

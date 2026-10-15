@@ -22,6 +22,7 @@
 #include "sim/executive.hpp"
 #include "support/flap_closed_forms.hpp"
 #include "support/flap_momentum.hpp"
+#include "support/frame_status.hpp"
 #include "support/m4_fixtures.hpp"
 
 namespace {
@@ -161,7 +162,7 @@ void conservation(const std::filesystem::path& dir) {
         (void)ex.restore(xs, 0, 0);
         const FlapReference ref(*rotor, beads);
         const Momentum m0 = system_momentum(ex, *rotor, ref, beads, mp);
-        (void)ex.advance({}, {}, 1'000'000'000);
+        test::require_frame(ex.advance({}, {}, 1'000'000'000), "m4_cases");
         const Momentum m1 = system_momentum(ex, *rotor, ref, beads, mp);
         const double dP = (m1.P_n - (m0.P_n + m0.mass * gravity_n())).norm() / (m0.mass * 10.0);
         const double dH = (m1.H_cg_n - m0.H_cg_n).norm() / m0.H_cg_n.norm();

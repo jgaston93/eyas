@@ -157,7 +157,7 @@ TEST(ReducedCoordinates, RatesAreTheTimeDerivative) {
         for (int trial = 0; trial < 10; ++trial) {
             const std::vector<double> x = random_state(ex, rng);
             const double t = 0.093 * trial;
-            (void)ex.derivatives(t, x, u, env, xd);
+            EXPECT_TRUE(ex.derivatives(t, x, u, env, xd));
             const double d = 1e-6;
             for (std::size_t i = 0; i < x.size(); ++i) {
                 xp[i] = x[i] + d * xd[i];

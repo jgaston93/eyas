@@ -17,6 +17,8 @@
 #include <iostream>
 #include <numbers>
 #include <span>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "airframe/airframe_aero.hpp"
@@ -25,6 +27,7 @@
 #include "eyas/model.hpp"
 #include "rotor/bailey_rotor.hpp"
 #include "rotor/blade_element_rotor.hpp"
+#include "support/frame_status.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "util/units.hpp"
 
@@ -109,11 +112,14 @@ void write(const std::filesystem::path& dir) {
             continue;
         }
         // Free flight through the Model at 1 kHz: 931 steps ≈ 4 revolutions.
-        (void)m.trim(c, r);
+        if (!m.trim(c, r).converged) {
+            throw std::runtime_error("Model::trim did not converge at " + std::to_string(kt) +
+                                     " kt");
+        }
         const BodyState m0 = m.body_state();
         const int steps = static_cast<int>(std::lround(4.0 * T * 1000.0));
         for (int k = 0; k < steps; ++k) {
-            (void)m.advance(r.controls, Environment{}, 1'000'000);
+            test::require_frame(m.advance(r.controls, Environment{}, 1'000'000), "m7_cases");
         }
         const BodyState m1 = m.body_state();
         const double tm = steps * 1e-3;
@@ -121,12 +127,19 @@ void write(const std::filesystem::path& dir) {
         std::vector<double> xe = x;
         Rk4 rk(xe.size());
         const int N = 256;
+        std::size_t missed = 0;
         for (int k = 0; k < 4 * N; ++k) {
             rk.step(
                 [&](double ts, std::span<const double> xs, std::span<double> xd) {
-                    (void)ex.derivatives(ts, xs, r.controls, Environment{}, xd);
+                    if (!ex.derivatives(ts, xs, r.controls, Environment{}, xd)) {
+                        ++missed;
+                    }
                 },
                 T * k / N, T / N, xe);
+        }
+        if (missed != 0) {
+            throw std::runtime_error("RK4 flight: unconverged evaluations at " +
+                                     std::to_string(kt) + " kt");
         }
         const BodyState e0 = unpack_body(x);
         const BodyState e1 = unpack_body(xe);

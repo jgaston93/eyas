@@ -122,7 +122,7 @@ TEST(Coupling, ProducerRunsFirstWhateverTheConfigOrder) {
     b.vel_b = Vec3(5.0, 0.0, 0.0);
     ex.set_body_state(b);
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot));
     const std::size_t c = body_layout::kSize;  // consumer's state: first in layout
     EXPECT_EQ(xdot[c], 3.0 * 2.0 + 5.0);       // p's value from this evaluation
 }
@@ -136,7 +136,7 @@ TEST(Coupling, ChainsAcrossComponents) {
     EXPECT_EQ(order[1], 1U);
     EXPECT_EQ(order[2], 0U);
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot));
     EXPECT_EQ(xdot[body_layout::kSize], 6.0);
     EXPECT_EQ(xdot[body_layout::kSize + 1], 6.0);
 }
@@ -164,9 +164,9 @@ TEST(Coupling, DerivativesStayPure) {
     std::vector<double> a(ex.num_states());
     std::vector<double> b(ex.num_states());
     std::vector<double> junk(ex.num_states());
-    ex.derivatives(0.0, x, Controls{}, Environment{}, a);
-    ex.derivatives(0.0, other, Controls{}, Environment{}, junk);
-    ex.derivatives(0.0, x, Controls{}, Environment{}, b);
+    EXPECT_TRUE(ex.derivatives(0.0, x, Controls{}, Environment{}, a));
+    EXPECT_TRUE(ex.derivatives(0.0, other, Controls{}, Environment{}, junk));
+    EXPECT_TRUE(ex.derivatives(0.0, x, Controls{}, Environment{}, b));
     EXPECT_EQ(std::memcmp(a.data(), b.data(), a.size() * sizeof(double)), 0);
     EXPECT_NE(junk[body_layout::kSize], a[body_layout::kSize]);
 }
@@ -179,7 +179,7 @@ TEST(Coupling, ProducedNaNReachesTheConsumer) {
     std::vector<double> x(ex.state().begin(), ex.state().end());
     x[body_layout::kSize + 1] = std::numeric_limits<double>::quiet_NaN();  // producer state
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(0.0, x, Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(ex.derivatives(0.0, x, Controls{}, Environment{}, xdot));
     EXPECT_TRUE(std::isnan(xdot[body_layout::kSize]));
 }
 
@@ -204,7 +204,7 @@ TEST(Coupling, ForceModelsGetNoStore) {
                  list(std::make_unique<Consumer>("c", "p"), std::make_unique<Producer>("p")),
                  std::move(forces));
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot));
     EXPECT_FALSE(saw_store);
 }
 
@@ -225,7 +225,7 @@ TEST(CouplingDeathTest, UndeclaredReadAssertsInDebug) {
     Executive ex(config(), list(std::make_unique<Consumer>("c", "p", /*declare=*/false),
                                 std::make_unique<Producer>("p")));
     std::vector<double> xdot(ex.num_states());
-    EXPECT_DEATH(ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot), "");
+    EXPECT_DEATH((void)ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot), "");
 }
 #endif
 

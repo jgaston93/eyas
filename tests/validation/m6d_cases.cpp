@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "eyas/model.hpp"
+#include "support/frame_status.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "util/units.hpp"
 
@@ -127,7 +128,7 @@ void ground(const Uh60aHarness& ac, const std::filesystem::path& dir, std::ostre
     std::vector<Sample> hist;
     for (int k = 0; k <= n; ++k) {
         if (k > 0) {
-            (void)m.advance(c, env, 1'000'000);
+            test::require_frame(m.advance(c, env, 1'000'000), "m6d_cases");
         }
         if (k % 10 != 0) {
             continue;
@@ -217,7 +218,7 @@ void cost(std::ostream& summary) {
     const int steps = 20000;
     const auto t0 = std::chrono::steady_clock::now();
     for (int k = 0; k < steps; ++k) {
-        (void)m.advance(c, env, 1'000'000);
+        test::require_frame(m.advance(c, env, 1'000'000), "m6d_cases");
     }
     const double us =
         std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();

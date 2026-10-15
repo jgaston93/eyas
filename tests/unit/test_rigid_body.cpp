@@ -220,7 +220,7 @@ TEST(RigidBody, ConstantMomentGivesAnalyticAngularAcceleration) {
     ex.set_body_state(BodyState{});
 
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot));
     const Vec3 wdot(xdot[body_layout::kOmega], xdot[body_layout::kOmega + 1],
                     xdot[body_layout::kOmega + 2]);
     const Vec3 want = mp.inertia_b.ldlt().solve(M);

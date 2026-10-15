@@ -84,7 +84,7 @@ TEST(CoupledSolve, MatchesDirectSolutionOfCombinedSystem) {
     ex.set_body_state(b);
 
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, xdot));
     const auto z = oracle(mp, rail, b, s, sd);
 
     const std::size_t k = body_layout::kSize;  // first component state
@@ -130,8 +130,8 @@ TEST(CoupledSolve, OffUnitQuaternionGivesSameAccelerations) {
 
     std::vector<double> xd_unit(ex.num_states());
     std::vector<double> xd_off(ex.num_states());
-    ex.derivatives(0.0, x_unit, Controls{}, Environment{}, xd_unit);
-    ex.derivatives(0.0, x_off, Controls{}, Environment{}, xd_off);
+    EXPECT_TRUE(ex.derivatives(0.0, x_unit, Controls{}, Environment{}, xd_unit));
+    EXPECT_TRUE(ex.derivatives(0.0, x_off, Controls{}, Environment{}, xd_off));
 
     for (std::size_t i = 0; i < ex.num_states(); ++i) {
         const bool is_quat = i >= body_layout::kQuat && i < body_layout::kQuat + 4;

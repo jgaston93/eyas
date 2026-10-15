@@ -614,8 +614,8 @@ TEST(AirframeAero, ThroughTheExecutive) {
     const std::span<const double> x = ex.state();
     std::vector<double> d1(ex.num_states());
     std::vector<double> d2(ex.num_states());
-    ex.derivatives(ex.sim_time(), x, Controls{}, Environment{}, d1);
-    ex.derivatives(ex.sim_time(), x, Controls{}, Environment{}, d2);
+    EXPECT_TRUE(ex.derivatives(ex.sim_time(), x, Controls{}, Environment{}, d1));
+    EXPECT_TRUE(ex.derivatives(ex.sim_time(), x, Controls{}, Environment{}, d2));
     EXPECT_EQ(d1, d2);
     // The lag states moved off zero: the wake is being tracked.
     const std::size_t i_aero = body_layout::kSize;

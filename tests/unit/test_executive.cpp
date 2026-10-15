@@ -131,10 +131,10 @@ TEST(Executive, DerivativeFunctionIsPure) {
     std::vector<double> d1(ex.num_states());
     std::vector<double> d2(ex.num_states());
     std::vector<double> scratch(ex.num_states());
-    ex.derivatives(1.5, xa, ua, Environment{}, d1);
-    ex.derivatives(7.0, xb, ub, Environment{}, scratch);
-    ex.derivatives(0.0, xb, ua, Environment{}, scratch);
-    ex.derivatives(1.5, xa, ua, Environment{}, d2);
+    EXPECT_TRUE(ex.derivatives(1.5, xa, ua, Environment{}, d1));
+    EXPECT_TRUE(ex.derivatives(7.0, xb, ub, Environment{}, scratch));
+    EXPECT_TRUE(ex.derivatives(0.0, xb, ua, Environment{}, scratch));
+    EXPECT_TRUE(ex.derivatives(1.5, xa, ua, Environment{}, d2));
     EXPECT_TRUE(bit_identical(d1, d2));
 }
 
@@ -149,7 +149,7 @@ TEST(Executive, HeldEvaluationIsTheFreeOneAtZeroAcceleration) {
     c.lon_cyclic = 0.3;
     std::vector<double> free(ex.num_states());
     std::vector<double> held(ex.num_states(), 0.0);
-    ex.derivatives(2.0, x, c, Environment{}, free);
+    EXPECT_TRUE(ex.derivatives(2.0, x, c, Environment{}, free));
     Vec6 net;
     std::vector<Wrench> loads(1);
     ASSERT_TRUE(ex.held_derivatives(2.0, x, c, Environment{}, held, net, loads));

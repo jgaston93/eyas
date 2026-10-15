@@ -18,6 +18,7 @@
 #include "core/rigid_body.hpp"
 #include "sim/executive.hpp"
 #include "sim/recorder.hpp"
+#include "support/frame_status.hpp"
 #include "support/spring_mass.hpp"
 #include "util/units.hpp"
 
@@ -36,7 +37,7 @@ Executive make(const MassProperties& mp, std::vector<std::unique_ptr<DynamicComp
 
 void run_steps(Executive& ex, std::int64_t n) {
     for (std::int64_t i = 0; i < n; ++i) {
-        (void)ex.advance(Controls{}, Environment{}, kStepNs);
+        test::require_frame(ex.advance(Controls{}, Environment{}, kStepNs), "m1_cases");
     }
 }
 

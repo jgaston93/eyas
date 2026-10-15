@@ -312,7 +312,7 @@ TEST(BaileyRotor, ConsumesMainRotorWashThroughTheExecutive) {
     EXPECT_GT(w.velocity_b.norm(), 1.0);
 
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(ctx.t, x, Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(ex.derivatives(ctx.t, x, Controls{}, Environment{}, xdot));
     EXPECT_NEAR(xdot[i_tail], expect.lambda_dot, 1e-9 * std::abs(expect.lambda_dot) + 1e-12);
 
     // And no allocation while advancing.

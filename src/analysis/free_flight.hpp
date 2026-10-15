@@ -15,8 +15,8 @@ namespace eyas {
 // controls(t) at each RK4 stage. Returns how many of the step's four
 // evaluations had a bounded iteration that did not converge (D-023).
 template <class ControlsAt>
-int free_step(const Executive& ex, Rk4& rk4, ControlsAt&& controls, const Environment& env,
-              double t, double dt, std::span<double> x) {
+[[nodiscard]] int free_step(const Executive& ex, Rk4& rk4, ControlsAt&& controls,
+                            const Environment& env, double t, double dt, std::span<double> x) {
     int unconverged = 0;
     rk4.step(
         [&](double ts, std::span<const double> xs, std::span<double> xd) {

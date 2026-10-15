@@ -513,9 +513,9 @@ TEST(BladeElementRotor, DerivativesArePureWithRotor) {
     std::vector<double> d1(x.size());
     std::vector<double> d2(x.size());
     std::vector<double> scratch(x.size());
-    ex.derivatives(0.0123, x, Controls{}, Environment{}, d1);
-    ex.derivatives(1.7, y, Controls{}, Environment{}, scratch);
-    ex.derivatives(0.0123, x, Controls{}, Environment{}, d2);
+    EXPECT_TRUE(ex.derivatives(0.0123, x, Controls{}, Environment{}, d1));
+    EXPECT_TRUE(ex.derivatives(1.7, y, Controls{}, Environment{}, scratch));
+    EXPECT_TRUE(ex.derivatives(0.0123, x, Controls{}, Environment{}, d2));
     EXPECT_EQ(std::memcmp(d1.data(), d2.data(), d1.size() * sizeof(double)), 0);
 }
 
