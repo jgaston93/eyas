@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -117,6 +118,15 @@ struct LinearModel {
 // Throws InitError if the trim doesn't fit `ex`.
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& options = {});
+
+// Response of the linear model to x(0) = x0 and inputs u(t) [Controls
+// units, the change from trim], by RK4 with step 2T/J, every stage taking
+// the sampled matrices at its own time (J even), so the step and its
+// midpoint fall on samples: the periodic model with A(t_j), B(t_j); with
+// `averaged`, the constant A, B. Returns x at t_n = 2nT/J, n = 0…steps.
+std::vector<Eigen::VectorXd> linear_response(const LinearModel& m, const Eigen::VectorXd& x0,
+                                             const std::function<Eigen::Vector4d(double)>& u,
+                                             int steps, bool averaged = false);
 
 // The condensed model (D-035 amendment): h removed (as Padfield 3rd ed.
 // Eq. 4.44), then every set of non-body states that feeds no other state

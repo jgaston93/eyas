@@ -64,4 +64,47 @@ inline Executive symmetric_hover_executive(int blades = 4) {
     return Executive(cfg, std::move(comps));
 }
 
+// Flies `ex` free from x at t = 0 by RK4 with step dt [s], renormalizing the
+// quaternion every step as the executive does, the controls given by
+// controls(t). Returns the state after every step (n = 1…steps) and x
+// itself first.
+template <class ControlsAt>
+std::vector<std::vector<double>> free_flight(const Executive& ex, const Environment& env,
+                                             std::vector<double> x, ControlsAt&& controls,
+                                             double dt, int steps) {
+    const std::size_t n = x.size();
+    std::vector<double> k1(n);
+    std::vector<double> k2(n);
+    std::vector<double> k3(n);
+    std::vector<double> k4(n);
+    std::vector<double> tmp(n);
+    std::vector<std::vector<double>> out;
+    out.reserve(static_cast<std::size_t>(steps) + 1);
+    out.push_back(x);
+    for (int s = 0; s < steps; ++s) {
+        const double t = dt * s;
+        (void)ex.derivatives(t, x, controls(t), env, k1);
+        for (std::size_t i = 0; i < n; ++i) {
+            tmp[i] = x[i] + 0.5 * dt * k1[i];
+        }
+        (void)ex.derivatives(t + 0.5 * dt, tmp, controls(t + 0.5 * dt), env, k2);
+        for (std::size_t i = 0; i < n; ++i) {
+            tmp[i] = x[i] + 0.5 * dt * k2[i];
+        }
+        (void)ex.derivatives(t + 0.5 * dt, tmp, controls(t + 0.5 * dt), env, k3);
+        for (std::size_t i = 0; i < n; ++i) {
+            tmp[i] = x[i] + dt * k3[i];
+        }
+        (void)ex.derivatives(t + dt, tmp, controls(t + dt), env, k4);
+        for (std::size_t i = 0; i < n; ++i) {
+            x[i] += dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+        }
+        BodyState b = unpack_body(x);
+        b.q_nb.normalize();
+        pack_body(b, x);
+        out.push_back(x);
+    }
+    return out;
+}
+
 }  // namespace eyas::test

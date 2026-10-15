@@ -348,6 +348,37 @@ LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimRes
     return m;
 }
 
+std::vector<VecX> linear_response(const LinearModel& m, const VecX& x0,
+                                  const std::function<Eigen::Vector4d(double)>& u, int steps,
+                                  bool averaged) {
+    const std::size_t J = m.A_periodic.size();
+    if (J == 0 || J % 2 != 0) {
+        throw InitError("linear response: needs an even number of azimuth samples");
+    }
+    const double h = 2.0 * m.period / static_cast<double>(J);
+    const auto f = [&](std::size_t sample, double t, const VecX& x) {
+        const std::size_t j = sample % J;
+        const MatX& A = averaged ? m.A : m.A_periodic[j];
+        const MatX& B = averaged ? m.B : m.B_periodic[j];
+        return VecX(A * x + B * u(t));
+    };
+    std::vector<VecX> out;
+    out.reserve(static_cast<std::size_t>(steps) + 1);
+    out.push_back(x0);
+    VecX x = x0;
+    for (int n = 0; n < steps; ++n) {
+        const auto s0 = 2 * static_cast<std::size_t>(n);
+        const double t = h * n;
+        const VecX k1 = f(s0, t, x);
+        const VecX k2 = f(s0 + 1, t + 0.5 * h, x + 0.5 * h * k1);
+        const VecX k3 = f(s0 + 1, t + 0.5 * h, x + 0.5 * h * k2);
+        const VecX k4 = f(s0 + 2, t + h, x + h * k3);
+        x += h / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+        out.push_back(x);
+    }
+    return out;
+}
+
 // ---- Floquet ---------------------------------------------------------------------
 
 MatX monodromy(const Executive& ex, const TrimCondition& c, const TrimResult& r,
