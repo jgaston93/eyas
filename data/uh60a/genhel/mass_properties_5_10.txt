@@ -1,0 +1,12 @@
+# Transcribed by eye from rendered page images of the NASA scan of GenHel, NASA CR-166309 (1981),
+# §5.10 motion module input data, p. 5.10-19 (PDF p. 342), handwritten; units from the
+# nomenclature, p. 5.10-15.
+# status: digits confirmed by human review (2026-10-10). Used as written, as airframe-only
+# inertias about the airframe CG (DECISIONS.md D-002, D-034); see docs/DATA_GAPS.md,
+# "UH-60A mass properties".
+#
+# name     value      unit
+I_X        4659.0     slug*ft^2
+I_Y        38512.0    slug*ft^2
+I_Z        36796.0    slug*ft^2
+I_XZ       1882.0     slug*ft^2

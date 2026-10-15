@@ -81,11 +81,12 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y ninja-build clang-format-18 clang-tidy-18
       - name: clang-format
         run: git ls-files '*.cpp' '*.hpp' | xargs clang-format-18 --dry-run --Werror
-      - name: Generated UH-60A tables match their transcriptions
+      - name: Generated UH-60A tables and config match their transcriptions
         run: |
           python3 tools/build_uh60a_blade.py --check
           python3 tools/build_uh60a_airframe.py --check
           python3 tools/build_uh60a_gear.py --check
+          python3 tools/build_uh60a_config.py --check
       - name: Configure (for compile_commands.json)
         run: cmake --preset debug
       - name: clang-tidy
