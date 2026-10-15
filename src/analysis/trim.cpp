@@ -8,6 +8,7 @@
 
 #include <Eigen/Dense>
 
+#include "analysis/held_orbit.hpp"
 #include "core/attitude.hpp"
 #include "core/rigid_body.hpp"
 #include "env/atmosphere.hpp"
@@ -91,25 +92,19 @@ public:
           steps_(o.steps_per_period),
           n_(ex.num_states()),
           nc_(n_ - body_layout::kSize),
-          x_(n_, 0.0),
-          tmp_(n_, 0.0),
-          k1_(n_, 0.0),
-          k2_(n_, 0.0),
-          k3_(n_, 0.0),
-          k4_(n_, 0.0) {
-        period_ = trim_period(ex);
+          period_(trim_period(ex)),
+          env_(trim_environment(c)),
+          held_(ex, env_, period_, steps_),
+          x_(n_, 0.0) {
         weight_ = ex.airframe_mass().mass * units::kStandardGravity;
         length_ = rotor_info(ex).radius;
-        env_.isa_delta_T = c.isa_delta_T;
-        env_.wind_n = c.wind_n;
-        env_.ground_height = std::numeric_limits<double>::quiet_NaN();
     }
 
     std::size_t unknowns() const { return kHead + nc_; }
     double weight() const { return weight_; }
     double length() const { return length_; }
-    std::size_t evaluations_unconverged() const { return unconverged_; }
-    void clear_unconverged() { unconverged_ = 0; }
+    std::size_t evaluations_unconverged() const { return held_.unconverged(); }
+    void clear_unconverged() { held_.clear_unconverged(); }
 
     static Controls controls(const VecX& z) {
         Controls u;
@@ -149,41 +144,7 @@ public:
 
     // One held RK4 step from node s of the revolution, adding the step's
     // integral of the net wrench into `integral`.
-    void hold_one_step(int s, const Controls& u, Vec6& integral) {
-        const double h = period_ / steps_;
-        Vec6 n1;
-        Vec6 n2;
-        Vec6 n3;
-        Vec6 n4;
-        const std::size_t b = body_layout::kSize;
-        std::copy(x_.begin(), x_.end(), tmp_.begin());  // the body part stays
-        const auto stage = [&](const std::vector<double>& k, double scale) {
-            for (std::size_t i = b; i < n_; ++i) {
-                tmp_[i] = x_[i] + scale * k[i];
-            }
-        };
-        const auto eval = [&](double t, const std::vector<double>& x, std::vector<double>& k,
-                              Vec6& net) {
-            if (!ex_.held_derivatives(t, x, u, env_, k, net)) {
-                ++unconverged_;
-            }
-        };
-        {
-            // Time from the step count, so every revolution sees the same azimuths.
-            const double t = period_ * static_cast<double>(s) / steps_;
-            eval(t, x_, k1_, n1);
-            stage(k1_, 0.5 * h);
-            eval(t + 0.5 * h, tmp_, k2_, n2);
-            stage(k2_, 0.5 * h);
-            eval(t + 0.5 * h, tmp_, k3_, n3);
-            stage(k3_, h);
-            eval(t + h, tmp_, k4_, n4);
-            for (std::size_t i = b; i < n_; ++i) {
-                x_[i] += h / 6.0 * (k1_[i] + 2.0 * k2_[i] + 2.0 * k3_[i] + k4_[i]);
-            }
-            integral += h / 6.0 * (n1 + 2.0 * n2 + 2.0 * n3 + n4);
-        }
-    }
+    void hold_one_step(int s, const Controls& u, Vec6& integral) { held_.step(s, u, x_, integral); }
 
     // The body's vibration at t = 0 for z: the free body, flown along the
     // held orbit, accelerates with a(t) = [v̇_b; ω̇_b] (the full coupled
@@ -251,13 +212,8 @@ private:
     double weight_ = 0.0;
     double length_ = 1.0;
     Environment env_;
+    HeldIntegrator held_;
     std::vector<double> x_;
-    std::vector<double> tmp_;
-    std::vector<double> k1_;
-    std::vector<double> k2_;
-    std::vector<double> k3_;
-    std::vector<double> k4_;
-    std::size_t unconverged_ = 0;
 };
 
 struct Norms {
