@@ -665,3 +665,28 @@ Johnson (2013) has nothing specific. No source gives the fade width; c = 20° is
   - *Gate, hover only:* the averaged model, with a tolerance set from the measured gap (0.014 % in the probe).
 - *Reduced-coordinate check (gate, addition):* the reduced derivative function must equal the time derivative of the reduced coordinates along the free flow, to finite-difference precision. It checks the Euler-rate, height and multiblade terms, and caught a sign error in the planning probe.
 - *M7c consequence:* at high μ the averaged eigenvalues of some slow modes are about 10 % from the Floquet exponents (probe: 0.025 rad/s at 150 kt), so V2 reports the Floquet exponents alongside the averaged eigenvalues.
+
+## D-036 Flow-angle tables: a parabola through the three nodes around zero (SPEC_REVIEW #30) — `Approved (2026-10-15)` — departure from GenHel
+**Context:** SPEC_REVIEW #30. GenHel's linear interpolation puts a corner at zero angle in its even fuselage and empennage maps, where every straight-flight trim sits. That makes the model non-differentiable there and blocks D-035 L3.
+
+**Decision:**
+- Every airframe-aerodynamics table against a flow angle (the fuselage maps against α_WF and ψ_WF; each panel's c_l, c_d, dynamic-pressure ratio and wake angle) is read through `AngleTable`.
+- Where the table has a breakpoint at zero with symmetric neighbours ±a (all of the UH-60A's, a = 5°), the two segments next to zero use the parabola through the three nodes: f(x) = f(0) + o u + (e − f(0)) u², with u = x/a, e = (f(a) + f(−a))/2 and o = (f(a) − f(−a))/2. Elsewhere, and in tables without such a breakpoint, interpolation stays linear, as in GenHel.
+- Properties:
+  - it passes through every GenHel node;
+  - an odd table is unchanged (e = f(0) = 0);
+  - the odd part keeps its slope o/a through zero, and the even part is flat there;
+  - the only new slope changes are at the ±a nodes, where linear interpolation already had them.
+  `AngleTable::min_value()` includes the parabola's vertex for the dynamic-pressure-ratio check.
+- The GenHel reference used by the Layer-1 tests (`tests/support/genhel_airframe.hpp`) applies the same parabola to its own lookups, implemented independently on GenHel's printed maps, so those tests still check the production code against GenHel, with this departure.
+
+**Alternatives considered:**
+- *Keep the corners and weaken L3.* Average the ± responses to cancel the even part, and require only convergence. Rejected: the corner isn't physics, and the nonlinear model would keep a |β| coupling.
+- *Smooth interpolation everywhere (splines).* Rejected: it changes every value between nodes. The corner only matters where trims sit, i.e. at zero.
+
+**Effect (measured, VALIDATION.md M7b):**
+- *Linearization:* at the M7b trims the sideways-velocity and yaw-rate columns are now smooth (their one-sided differences converge as the step shrinks). L3's error shrinks with the amplitude at all speeds.
+- *M7a trims:* 0–150 kt, all converged; the largest changes are at 150 kt: collective 0.18 % of travel, pitch attitude 0.08°, roll 0.01°, main-rotor power 7.5 hp (1890 → 1882 hp), tail-rotor thrust 5 lbf.
+- *Validation entries:* VALIDATION.md M7a is regenerated with it. The M7c comparison with Ballin's GenHel trims lists D-036 among the explained departures.
+
+**Data note:** the fuselage lift-increment table header said "odd in PSIWF". That applied to the pitching-moment column only; the lift increment is printed for −30 to 30° and isn't symmetric. The header was corrected; no value changed.

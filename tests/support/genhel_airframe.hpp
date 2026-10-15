@@ -102,6 +102,26 @@ struct GenHelLowHighMap {
     }
 };
 
+// Eyas's departure D-036, applied to the reference: within 5° of zero (the
+// maps' spacing there) a lookup g of the signed angle [deg] is replaced by
+// the parabola through g(−5), g(0) and g(5).
+template <class Lookup>
+double genhel_zero_smoothed(const Lookup& g, double x) {
+    constexpr double a = 5.0;
+    if (std::abs(x) >= a) {
+        return g(x);
+    }
+    const double fp = g(a);
+    const double fm = g(-a);
+    const double f0 = g(0.0);
+    const double u = x / a;
+    return f0 + 0.5 * (fp - fm) * u + (0.5 * (fp + fm) - f0) * u * u;
+}
+
+inline double genhel_sign(double x) {
+    return x > 0.0 ? 1.0 : (x < 0.0 ? -1.0 : 0.0);
+}
+
 // BIV: E(χ, a₁) on χ = 0..100 step 10 and a₁ = −6, 0, 6, bilinear.
 struct GenHelWashMap {
     std::array<std::vector<double>, 3> block;
@@ -233,15 +253,20 @@ inline GenHelAirframeOutput genhel_airframe(const GenHelAirframeTables& t,
     o.PSIWF = -o.BETAWF;  // p. 5.2-12: PSIWF = −BETAWF
     o.QWF = 0.5 * in.RHO * (VXWF * VXWF + VYWF * VYWF + VZWF * VZWF);
     const double psi = o.PSIWF;
-    const double apsi = std::abs(psi);
-    const double sgn = psi > 0.0 ? 1.0 : (psi < 0.0 ? -1.0 : 0.0);
-    // p. 5.2-7.
-    const double DQFTOT = t.DQF(o.ALFWF) + t.DDQF(apsi);
-    const double YQFTOT = sgn * t.YQF(apsi);
-    const double LQFTOT = t.LQF(o.ALFWF) + t.DLQF(psi);
-    const double RQFTOT = sgn * t.RQF(apsi);
-    const double MQFTOT = t.MQF(o.ALFWF) + sgn * t.DMQF(apsi);
-    const double NQFTOT = t.NQF(psi);
+    // p. 5.2-7, each lookup as a function of the signed angle (D-036).
+    const auto sm = [](const auto& g, double x) { return genhel_zero_smoothed(g, x); };
+    const auto even = [](const GenHelLowHighMap& m) {
+        return [&m](double x) { return m(std::abs(x)); };
+    };
+    const auto odd = [](const GenHelLowHighMap& m) {
+        return [&m](double x) { return genhel_sign(x) * m(std::abs(x)); };
+    };
+    const double DQFTOT = sm(t.DQF, o.ALFWF) + sm(even(t.DDQF), psi);
+    const double YQFTOT = sm(odd(t.YQF), psi);
+    const double LQFTOT = sm(t.LQF, o.ALFWF) + sm(t.DLQF, psi);
+    const double RQFTOT = sm(odd(t.RQF), psi);
+    const double MQFTOT = sm(t.MQF, o.ALFWF) + sm(odd(t.DMQF), psi);
+    const double NQFTOT = sm(t.NQF, psi);
     // p. 5.2-9.
     const double a = o.ALFWF / r2d;
     const double b = o.BETAWF / r2d;
@@ -266,8 +291,8 @@ inline GenHelAirframeOutput genhel_airframe(const GenHelAirframeTables& t,
         const double B = (in.BLH1 - in.BLCGB) / 12.0;
         const double VXMRH1 = wash * t.EKXH1(in.CHIPMR, in.A1FMR);
         const double VZMRH1 = -wash * t.EKZH1(in.CHIPMR, in.A1FMR);
-        o.KQH1 = std::sqrt(t.QH1(o.ALFWF));
-        o.EPSH1 = t.EPH1(o.ALFWF);
+        o.KQH1 = std::sqrt(sm(t.QH1, o.ALFWF));
+        o.EPSH1 = sm(t.EPH1, o.ALFWF);
         const double eps = std::isnan(in.EPSH1_DELAYED) ? o.EPSH1 : in.EPSH1_DELAYED;
         const double VZWFH1 = -in.VXB / r2d * eps * o.KQH1;
         const double VXIH1 = VXMRH1;
@@ -282,8 +307,8 @@ inline GenHelAirframeOutput genhel_airframe(const GenHelAirframeTables& t,
         o.BETAH1 = std::atan(VYH1 / std::sqrt(VXH1 * VXH1 + VZH1 * VZH1)) * r2d;
         // CLH1 is odd (UVSUVS), CDH1 is looked up on |ALFHH1| (p. 5.3-8).
         const double ah = o.ALFHH1;
-        const double CLH1 = (ah < 0.0 ? -1.0 : 1.0) * t.CLH1(std::abs(ah));
-        const double CDH1 = t.CDH1(std::abs(ah));
+        const double CLH1 = sm(odd(t.CLH1), ah);
+        const double CDH1 = sm(even(t.CDH1), ah);
         const GenHelVec fh = genhel_wind_to_body(
             o.ALFH1 / r2d, o.BETAH1 / r2d, {-o.QH1 * in.SAH1 * CDH1, 0.0, -o.QH1 * in.SAH1 * CLH1});
         o.H1 = {fh[0],
@@ -301,8 +326,8 @@ inline GenHelAirframeOutput genhel_airframe(const GenHelAirframeTables& t,
         const double B = (in.BLV1 - in.BLCGB) / 12.0;
         const double VXMRV1 = wash * t.EKXH1(in.CHIPMR, in.A1FMR);
         const double VZMRV1 = -wash * t.EKZH1(in.CHIPMR, in.A1FMR);  // sign: see top
-        o.KQV1 = std::sqrt(t.QV1(apsi));
-        o.SIGV1 = sgn * t.SGV1(apsi);  // UVSUVS: odd in PSIWF
+        o.KQV1 = std::sqrt(sm(even(t.QV1), psi));
+        o.SIGV1 = sm(odd(t.SGV1), psi);  // UVSUVS: odd in PSIWF
         const double sig = std::isnan(in.SIGV1_DELAYED) ? o.SIGV1 : in.SIGV1_DELAYED;
         const double VYWFV1 = -in.VXB / r2d * sig * o.KQV1;
         const double VXV1 = in.VXB * o.KQV1 - in.Q * W + in.R * B + VXMRV1;
@@ -312,8 +337,8 @@ inline GenHelAirframeOutput genhel_airframe(const GenHelAirframeTables& t,
         o.ALFV1 = std::atan(VZV1 / std::abs(VXV1)) * r2d;
         o.BETAV1 = std::atan(VYV1 / std::sqrt(VXV1 * VXV1 + VZV1 * VZV1)) * r2d;
         o.BETVV1 = in.IV1 + o.BETAV1;
-        const double CLV1 = t.CLV1(o.BETVV1);
-        const double CDV1 = t.CDV1(o.BETVV1);
+        const double CLV1 = sm(t.CLV1, o.BETVV1);
+        const double CDV1 = sm(t.CDV1, o.BETVV1);
         const GenHelVec fv = genhel_wind_to_body(
             o.ALFV1 / r2d, o.BETAV1 / r2d, {-CDV1 * in.SAV1 * o.QV1, CLV1 * in.SAV1 * o.QV1, 0.0});
         o.V1 = {fv[0],
@@ -386,10 +411,11 @@ inline GenHelTailRotorWake genhel_tail_rotor_wake(const GenHelAirframeTables& t,
                                                   double EPSTR_DELAYED) {
     constexpr double r2d = 57.29577951308232;
     GenHelTailRotorWake w;
-    const double sgn = PSIWF > 0.0 ? 1.0 : (PSIWF < 0.0 ? -1.0 : 0.0);
-    w.KQTR = std::sqrt(t.QV1(std::abs(PSIWF)));
-    w.SIGTR = sgn * t.SGV1(std::abs(PSIWF));
-    w.EPSTR = t.EPH1(ALFWF);
+    // D-036: each lookup smoothed within 5° of zero.
+    w.KQTR = std::sqrt(genhel_zero_smoothed([&](double x) { return t.QV1(std::abs(x)); }, PSIWF));
+    w.SIGTR =
+        genhel_zero_smoothed([&](double x) { return genhel_sign(x) * t.SGV1(std::abs(x)); }, PSIWF);
+    w.EPSTR = genhel_zero_smoothed(t.EPH1, ALFWF);
     const double sig = std::isnan(SIGTR_DELAYED) ? w.SIGTR : SIGTR_DELAYED;
     const double eps = std::isnan(EPSTR_DELAYED) ? w.EPSTR : EPSTR_DELAYED;
     w.VYWFTR = -VXB / r2d * sig * w.KQTR;

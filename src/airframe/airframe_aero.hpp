@@ -59,21 +59,53 @@ class Config;
 // wash maps.
 namespace eyas {
 
+// A table against a flow angle (D-036): linear interpolation, as GenHel,
+// except on the two segments next to a breakpoint at zero angle with
+// symmetric neighbours ±a, where the parabola through the three nodes is
+// used: f(x) = f(0) + o u + (e − f(0)) u², u = x/a, with e = (f(a) + f(−a))/2
+// and o = (f(a) − f(−a))/2. It passes through every node, keeps the odd
+// part's slope (an odd table is unchanged) and makes the even part flat at
+// zero, where straight flight sits, instead of a V. Elsewhere, and for
+// tables without such a breakpoint, it is the table.
+class AngleTable {
+public:
+    AngleTable(Table1D table);  // NOLINT(google-explicit-constructor): a table converts
+
+    double operator()(double x) const noexcept {
+        if (smooth_ && std::abs(x) < a_) {
+            const double u = x / a_;
+            return f0_ + o_ * u + (e_ - f0_) * u * u;
+        }
+        return t_(x);
+    }
+    const Table1D& table() const noexcept { return t_; }
+    // The smallest value it can return (the nodes, and the parabola's vertex).
+    double min_value() const noexcept;
+
+private:
+    Table1D t_;
+    bool smooth_ = false;
+    double a_ = 0.0;   // [rad] the neighbours' distance from zero
+    double f0_ = 0.0;  // f(0)
+    double e_ = 0.0;   // even part at ±a
+    double o_ = 0.0;   // odd part at +a
+};
+
 // GenHel Tables 2.5.3–2.5.11 as tools/build_uh60a_airframe.py merges them.
 // Per unit dynamic pressure: forces [m²], moments [m³], in GenHel's wind axes
 // (drag aft, side force, lift up; rolling, pitching, yawing moment).
 struct FuselageTables {
     // Against α_WF [rad].
-    Table1D drag{Axis({0.0, 1.0}), {0.0, 0.0}};
-    Table1D lift{Axis({0.0, 1.0}), {0.0, 0.0}};
-    Table1D pitch{Axis({0.0, 1.0}), {0.0, 0.0}};
+    AngleTable drag{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable lift{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable pitch{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
     // Against ψ_WF [rad]; side, roll and pitch_increment are odd, drag_increment even.
-    Table1D drag_increment{Axis({0.0, 1.0}), {0.0, 0.0}};
-    Table1D side{Axis({0.0, 1.0}), {0.0, 0.0}};
-    Table1D lift_increment{Axis({0.0, 1.0}), {0.0, 0.0}};
-    Table1D roll{Axis({0.0, 1.0}), {0.0, 0.0}};
-    Table1D pitch_increment{Axis({0.0, 1.0}), {0.0, 0.0}};
-    Table1D yaw{Axis({0.0, 1.0}), {0.0, 0.0}};
+    AngleTable drag_increment{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable side{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable lift_increment{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable roll{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable pitch_increment{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable yaw{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
 };
 
 // One empennage panel. The stabilator's lift acts in the x–z plane and its
@@ -95,13 +127,13 @@ struct PanelConfig {
     Vec3 position_b = Vec3::Zero();  // [m] from the airframe CG, body axes; x < 0 (aft)
     double area = 0.0;               // S [m²]
     double incidence = 0.0;          // [rad] fixed (stabilator: GenHel's STBSET override)
-    std::optional<IncidenceSchedule> schedule;  // stabilator: replaces `incidence`
-    Table1D cl{Axis({0.0, 1.0}), {0.0, 0.0}};   // against the panel angle [rad]
-    Table1D cd{Axis({0.0, 1.0}), {0.0, 0.0}};
+    std::optional<IncidenceSchedule> schedule;             // stabilator: replaces `incidence`
+    AngleTable cl{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};  // against the panel angle [rad]
+    AngleTable cd{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
     // Fuselage wake, against α_WF (stabilator) or ψ_WF (fin) [rad]:
     // dynamic-pressure ratio K_Q² [-] and wake angle ε or σ [rad].
-    Table1D q_ratio{Axis({0.0, 1.0}), {1.0, 1.0}};
-    Table1D wake_angle{Axis({0.0, 1.0}), {0.0, 0.0}};
+    AngleTable q_ratio{Table1D(Axis({0.0, 1.0}), {1.0, 1.0})};
+    AngleTable wake_angle{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
 };
 
 struct AirframeAeroConfig {

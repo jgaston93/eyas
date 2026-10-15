@@ -272,3 +272,13 @@ Verification: the probe above, as a test (loads continuous as the x–z componen
 - The retained model keeps height; the condensed model drops it, as Padfield does.
 - L2 gates exactly on a symmetric hover fixture and is reported on the UH-60A, with the s-scaling.
 - States are dropped on zero columns.
+
+## 30. The GenHel airframe tables make the model non-differentiable in straight flight — `resolved → DECISIONS.md D-036 (2026-10-15)`
+**Spec:** §6.6 (fuselage and empennage), §6.9; D-028, D-030, D-034; found in M7b (D-035 L3).
+**Problem:** GenHel's fuselage and empennage maps are tabulated every 5° and interpolated linearly (CR-166309 pp. 5.2-7, 5.3-8, 5.3-11), with the even maps looked up on |angle|. Where a map is even about zero, the interpolation draws a V with its corner at zero angle. The fuselage drag increment against sideslip is 0, 1, 4, 9, 16.3 ft² at 0, 5, 10, 15, 20°, nearly (ψ/5)², but it becomes |ψ|/5 ft²/deg next to zero. The fuselage lift increment and the fin's dynamic-pressure ratio against sideslip have the same V, and so do the stabilator's drag and dynamic-pressure ratio against angle of attack. Every straight-flight trim sits at zero fuselage sideslip, so it sits on the corners.
+- *Measured (M7b):* at the trim the forward and backward differences of the sideways-velocity and yaw-rate columns differ by a fixed amount however small the step: 4.5e-3 (hover), 1.2e-2 (60 kt) and 2.3e-2 (120 kt) in the body-acceleration rows, all from the airframe component. Every other column, and every other component, is smooth.
+- *Effect:* a perturbation to the left and one to the right see different slopes, so no linear model fits both. L3's error against the periodic linear model stopped shrinking with the amplitude at 1–3 % of the response in forward flight, worst for lateral perturbations.
+- *Physics:* the underlying quantities are smooth and even in the angle, flat at zero. The corner is an interpolation artifact. In the nonlinear simulation it gives lift and drag changes proportional to |β| instead of β², i.e. a small first-order heave and pitch disturbance at twice the Dutch-roll frequency.
+
+**Why it matters:** the linearization is ill-defined at every straight-flight trim, gate L3 can't pass, and the nonlinear model has a non-physical first-order coupling.
+**Suggested resolution:** see D-036.

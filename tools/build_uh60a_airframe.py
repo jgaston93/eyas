@@ -236,9 +236,9 @@ def outputs():
              ("roll[ft^3]", half("table_2_5_8_rqf.txt", "odd")),
              ("yaw[ft^3]", merged("table_2_5_11_nqf.txt"))]),
         "fuselage_psi_low.csv": table_csv(
-            f"{g} Tables 2.5.7 and 2.5.10, pp. 5.2-18, 5.2-19: fuselage lift increment L/q and "
-            "pitching-moment increment M/q (odd in PSIWF, p. 5.2-7) against PSIWF; held at the "
-            "end values beyond +-30 deg.",
+            f"{g} Tables 2.5.7 and 2.5.10, pp. 5.2-18, 5.2-19: fuselage lift increment L/q (as "
+            "printed for -30..30 deg; not symmetric) and pitching-moment increment M/q (odd in "
+            "PSIWF, p. 5.2-7) against PSIWF; held at the end values beyond +-30 deg.",
             "psi_wf[deg]",
             [("lift_increment[ft^2]", single("table_2_5_7_dlqf.txt", LO)),
              ("pitch_increment[ft^3]", half("table_2_5_10_dmqf.txt", "odd"))]),
