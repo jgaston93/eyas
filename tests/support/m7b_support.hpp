@@ -16,6 +16,7 @@
 #include "analysis/linearize.hpp"
 #include "sim/executive.hpp"
 #include "support/m7_fixtures.hpp"
+#include "util/error.hpp"
 
 namespace eyas::test {
 
@@ -42,13 +43,14 @@ inline std::vector<L3Case> l3_cases() {
 // from the unperturbed free flight, compared every linear step over
 // `seconds`, over the body coordinates weighted by typical sizes (1 m/s,
 // 0.1 rad/s, 0.1 rad, 1 m), as the largest error over the largest linear
-// response. The free flights start from `start` (the trim's state with its
-// vibration offset, as Model::trim installs) by RK4 at T/J; the linear
-// models step at 2T/J (linear_response), and so do the free flights, by
-// RK4, compared at every step.
+// response. The linear models step at 2T/J (linear_response), and so do
+// the free flights (free_flight()), from `start` (the trim's state with its
+// vibration offset, as Model::trim installs), compared at every step. `m`
+// must have h (body_size 10), else InitError.
 struct L3Errors {
     std::vector<double> periodic;
     std::vector<double> averaged;
+    std::size_t unconverged = 0;  // free-flight evaluations unconverged (D-023)
 };
 
 inline L3Errors l3_errors(const Executive& ex, const TrimCondition& c, const TrimResult& r,
@@ -56,6 +58,9 @@ inline L3Errors l3_errors(const Executive& ex, const TrimCondition& c, const Tri
                           double seconds) {
     using VecX = Eigen::VectorXd;
     const ReducedCoordinates rc(ex, true);
+    if (m.body_size != rc.body_size() || m.states.size() != rc.size()) {
+        throw InitError("l3_errors: the linear model needs h in its states");
+    }
     const Environment env = trim_environment(c);
     const auto per_rev = static_cast<int>(m.A_periodic.size()) / 2;  // steps per revolution
     const double dt = m.period / per_rev;
@@ -63,11 +68,12 @@ inline L3Errors l3_errors(const Executive& ex, const TrimCondition& c, const Tri
     const auto doublet = [](double t) {
         return t < 1.0 ? std::sin(2.0 * std::numbers::pi * t) : 0.0;
     };
-    const auto base = free_flight(ex, env, start, [&](double) { return r.controls; }, dt, steps);
+    L3Errors out;
+    const auto base = free_flight(
+        ex, env, start, [&](double) { return r.controls; }, dt, steps, &out.unconverged);
     const VecX x0 = rc.to_reduced(0.0, start, start);
     VecX w = VecX::Ones(10);
     w.segment(3, 6).setConstant(10.0);
-    L3Errors out;
     for (int level = 0; level < 4; ++level) {
         const double a = k.amplitude / std::pow(2.0, level);
         VecX xr = x0;
@@ -94,7 +100,7 @@ inline L3Errors l3_errors(const Executive& ex, const TrimCondition& c, const Tri
             }
             return v;
         };
-        const auto pert = free_flight(ex, env, x1, controls_at, dt, steps);
+        const auto pert = free_flight(ex, env, x1, controls_at, dt, steps, &out.unconverged);
         for (const bool averaged : {false, true}) {
             const std::vector<VecX> lin = linear_response(m, dx0, input, steps, averaged);
             double err = 0.0;

@@ -113,7 +113,9 @@ struct LinearModel {
     // the non-rotating frame (Johnson 2013 §15.4).
     Eigen::MatrixXd A;
     Eigen::MatrixXd B;
-    std::size_t unconverged = 0;  // evaluations with an unconverged iteration (D-023)
+    // Evaluations with an unconverged iteration (D-023), in the held orbit
+    // and in the perturbations about it.
+    std::size_t unconverged = 0;
 };
 
 // Linearizes `ex` about trim `r` for `c` along the held orbit (D-035).
@@ -153,9 +155,14 @@ CondensedModel condense(const LinearModel& m);
 // central differences of the flow map from the held orbit's start (t = 0),
 // with the free body integrated by RK4 at options.steps_per_period steps per
 // revolution and the quaternion renormalized every step, as the executive
-// does. Independent of the sampled Jacobians (D-035 amendment, L2).
-Eigen::MatrixXd monodromy(const Executive& ex, const TrimCondition& c, const TrimResult& r,
-                          const LinearizeOptions& options = {});
+// does (free_step()). Independent of the sampled Jacobians (D-035
+// amendment, L2).
+struct Monodromy {
+    Eigen::MatrixXd matrix;       // Φ(T)
+    std::size_t unconverged = 0;  // evaluations with an unconverged iteration (D-023)
+};
+Monodromy monodromy(const Executive& ex, const TrimCondition& c, const TrimResult& r,
+                    const LinearizeOptions& options = {});
 
 // Floquet exponents (Johnson 2013 §15.6): λ = ln Λ / T for each multiplier
 // Λ of the monodromy matrix, with the branch of the logarithm (λ + i n 2π/T,

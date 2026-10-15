@@ -260,9 +260,10 @@ TEST(Linearize, SymmetricHoverIsConstantCoefficient) {
     // Measured 9e-11 of the largest entry.
     EXPECT_LT(var / scale, 1e-8) << "largest |A_j − Ā| " << var;
 
-    const MatX M = monodromy(ex, c, r);
+    const Monodromy M = monodromy(ex, c, r);
+    EXPECT_EQ(M.unconverged, 0U);
     const Eigen::VectorXcd lam = m.A.eigenvalues();
-    const FloquetModes f = floquet(M, m.period, lam);
+    const FloquetModes f = floquet(M.matrix, m.period, lam);
     double worst = 0.0;
     int matched = 0;
     for (Eigen::Index i = 0; i < f.exponents.size(); ++i) {
@@ -507,11 +508,13 @@ TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {
         o.azimuths = knots <= 60.0 ? 512 : 1024;
         o.steps_per_period = o.azimuths;
         const LinearModel m = linearize(ex, c, r, o);
+        EXPECT_EQ(m.unconverged, 0U);
         const double floor = test::l3_floor(knots);
         for (const test::L3Case& k : test::l3_cases()) {
             SCOPED_TRACE(testing::Message()
                          << knots << " kt, state " << k.state << ", control " << k.control);
             const test::L3Errors e = test::l3_errors(ex, c, r, start, m, k, 3.0);
+            EXPECT_EQ(e.unconverged, 0U);
             const test::L3Fit f = test::fit_l3(e.periodic, k.amplitude, 0.5 * floor);
             EXPECT_LT(f.misfit, 0.15);
             EXPECT_LT(f.c0, floor);

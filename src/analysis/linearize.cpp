@@ -6,10 +6,12 @@
 #include <complex>
 #include <numbers>
 
+#include "analysis/free_flight.hpp"
 #include "analysis/held_orbit.hpp"
 #include "analysis/trim.hpp"
 #include "core/attitude.hpp"
 #include "core/rigid_body.hpp"
+#include "core/rk4.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "util/error.hpp"
 
@@ -290,8 +292,8 @@ std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const Linea
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& o) {
     const ReducedCoordinates rc(ex, o.height);
-    const std::vector<std::vector<double>> orbit =
-        held_orbit(ex, c, r, o.azimuths, o.steps_per_period);
+    const HeldOrbit held = held_orbit(ex, c, r, o.azimuths, o.steps_per_period);
+    const std::vector<std::vector<double>>& orbit = held.states;
     const Environment env = trim_environment(c);
     const double T = trim_period(ex);
     const auto n = static_cast<Eigen::Index>(rc.size());
@@ -304,6 +306,7 @@ LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimRes
     m.period = T;
     m.A = MatX::Zero(n, n);
     m.B = MatX::Zero(n, 4);
+    m.unconverged = held.unconverged;
 
     std::vector<double> x(ex.num_states(), 0.0);
     std::vector<double> xd(ex.num_states(), 0.0);
@@ -381,8 +384,8 @@ std::vector<VecX> linear_response(const LinearModel& m, const VecX& x0,
 
 // ---- Floquet ---------------------------------------------------------------------
 
-MatX monodromy(const Executive& ex, const TrimCondition& c, const TrimResult& r,
-               const LinearizeOptions& o) {
+Monodromy monodromy(const Executive& ex, const TrimCondition& c, const TrimResult& r,
+                    const LinearizeOptions& o) {
     if (!o.height) {
         throw InitError("monodromy: the flow map needs h (density changes with height)");
     }
@@ -392,52 +395,32 @@ MatX monodromy(const Executive& ex, const TrimCondition& c, const TrimResult& r,
     const double T = trim_period(ex);
     const int steps = o.steps_per_period;
     const double dt = T / steps;
-    const std::size_t n_full = ex.num_states();
-    std::vector<double> x(n_full);
-    std::vector<double> tmp(n_full);
-    std::vector<double> k1(n_full);
-    std::vector<double> k2(n_full);
-    std::vector<double> k3(n_full);
-    std::vector<double> k4(n_full);
+    std::vector<double> x(ex.num_states());
+    Rk4 rk4(x.size());
+    Monodromy out;
+    const auto controls = [&](double) { return r.controls; };
     const auto flow = [&](const VecX& xr0) {
         rc.to_full(0.0, xr0, start, x);
         for (int s = 0; s < steps; ++s) {
             const double t = T * static_cast<double>(s) / steps;
-            (void)ex.derivatives(t, x, r.controls, env, k1);
-            for (std::size_t i = 0; i < n_full; ++i) {
-                tmp[i] = x[i] + 0.5 * dt * k1[i];
-            }
-            (void)ex.derivatives(t + 0.5 * dt, tmp, r.controls, env, k2);
-            for (std::size_t i = 0; i < n_full; ++i) {
-                tmp[i] = x[i] + 0.5 * dt * k2[i];
-            }
-            (void)ex.derivatives(t + 0.5 * dt, tmp, r.controls, env, k3);
-            for (std::size_t i = 0; i < n_full; ++i) {
-                tmp[i] = x[i] + dt * k3[i];
-            }
-            (void)ex.derivatives(t + dt, tmp, r.controls, env, k4);
-            for (std::size_t i = 0; i < n_full; ++i) {
-                x[i] += dt / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
-            }
-            BodyState b = unpack_body(x);
-            b.q_nb.normalize();
-            pack_body(b, x);
+            out.unconverged +=
+                static_cast<std::size_t>(free_step(ex, rk4, controls, env, t, dt, x));
         }
         return rc.to_reduced(T, x, start);
     };
     const VecX x0 = rc.to_reduced(0.0, start, start);
     const std::vector<double> h = perturbation_steps(rc, o);
     const auto n = static_cast<Eigen::Index>(rc.size());
-    MatX M(n, n);
+    out.matrix.resize(n, n);
     for (Eigen::Index k = 0; k < n; ++k) {
         const double hk = h[static_cast<std::size_t>(k)];
         VecX xp = x0;
         VecX xm = x0;
         xp(k) += hk;
         xm(k) -= hk;
-        M.col(k) = (flow(xp) - flow(xm)) / (2.0 * hk);
+        out.matrix.col(k) = (flow(xp) - flow(xm)) / (2.0 * hk);
     }
-    return M;
+    return out;
 }
 
 FloquetModes floquet(const MatX& monodromy, double period, const Eigen::VectorXcd& reference,

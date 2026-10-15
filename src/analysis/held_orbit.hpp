@@ -60,7 +60,11 @@ std::vector<double> held_orbit_start(const Executive& ex, const TrimCondition& c
 // j = 0…samples−1, over one revolution T = trim_period(ex), integrated with
 // `steps` RK4 steps per revolution (`samples` must divide `steps`, else
 // InitError).
-std::vector<std::vector<double>> held_orbit(const Executive& ex, const TrimCondition& c,
-                                            const TrimResult& r, int samples, int steps);
+struct HeldOrbit {
+    std::vector<std::vector<double>> states;  // x(t_j), num_states() long
+    std::size_t unconverged = 0;              // evaluations with an unconverged iteration (D-023)
+};
+HeldOrbit held_orbit(const Executive& ex, const TrimCondition& c, const TrimResult& r, int samples,
+                     int steps);
 
 }  // namespace eyas

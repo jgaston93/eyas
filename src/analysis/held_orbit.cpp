@@ -80,23 +80,24 @@ std::vector<double> held_orbit_start(const Executive& ex, const TrimCondition& c
     return x;
 }
 
-std::vector<std::vector<double>> held_orbit(const Executive& ex, const TrimCondition& c,
-                                            const TrimResult& r, int samples, int steps) {
+HeldOrbit held_orbit(const Executive& ex, const TrimCondition& c, const TrimResult& r, int samples,
+                     int steps) {
     if (samples <= 0 || steps <= 0 || steps % samples != 0) {
         throw InitError("held orbit: the samples must divide the steps per revolution");
     }
     std::vector<double> x = held_orbit_start(ex, c, r);
     HeldIntegrator held(ex, trim_environment(c), trim_period(ex), steps);
-    std::vector<std::vector<double>> orbit;
-    orbit.reserve(static_cast<std::size_t>(samples));
+    HeldOrbit orbit;
+    orbit.states.reserve(static_cast<std::size_t>(samples));
     const int every = steps / samples;
     Vec6 ignored = Vec6::Zero();
     for (int s = 0; s < steps; ++s) {
         if (s % every == 0) {
-            orbit.push_back(x);
+            orbit.states.push_back(x);
         }
         held.step(s, r.controls, x, ignored);
     }
+    orbit.unconverged = held.unconverged();
     return orbit;
 }
 

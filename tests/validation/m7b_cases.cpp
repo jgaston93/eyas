@@ -51,6 +51,15 @@ const std::array<const char*, 6> kRows = {"X", "Y", "Z", "L", "M", "N"};
 const std::array<const char*, 9> kCols = {"u", "v", "w", "p", "q", "r", "phi", "theta", "psi"};
 const std::array<const char*, 4> kInputs = {"col", "lat", "lon", "ped"};
 
+// Throws if any evaluation behind a result had an unconverged iteration
+// (D-023): such a result would go into VALIDATION.md unflagged.
+void require_converged(std::size_t unconverged, const std::string& what, int kt) {
+    if (unconverged != 0) {
+        throw std::runtime_error(what + ": " + std::to_string(unconverged) +
+                                 " unconverged evaluations at " + std::to_string(kt) + " kt");
+    }
+}
+
 // The nearest element of `set` to z.
 std::complex<double> nearest(const CVec& set, std::complex<double> z) {
     std::complex<double> best = set(0);
@@ -93,6 +102,7 @@ LinearModel around_free(const Executive& ex, const std::vector<std::vector<doubl
                         const Environment& env, const LinearModel& like) {
     const ReducedCoordinates rc(ex, like.body_size == 10);
     LinearModel m = like;
+    m.unconverged = 0;
     m.A.setZero();
     m.B.setZero();
     m.A_periodic.clear();
@@ -108,7 +118,9 @@ LinearModel around_free(const Executive& ex, const std::vector<std::vector<doubl
         const VecX x0 = rc.to_reduced(t, ref, ref);
         const auto f = [&](const VecX& xr, const Controls& c) {
             rc.to_full(t, xr, ref, x);
-            (void)ex.derivatives(t, x, c, env, xd);
+            if (!ex.derivatives(t, x, c, env, xd)) {
+                ++m.unconverged;
+            }
             return VecX(rc.rates(t, x, xd));
         };
         MatX A(n, n);
@@ -235,6 +247,7 @@ void write_uh60a(const std::filesystem::path& dir) {
         }
         const double mu = c.airspeed / tip_speed;
         const LinearModel m = linearize(ex, c, r);
+        require_converged(m.unconverged, "linearize", kt);
         const CondensedModel cm = condense(m);
         std::cerr << kt << " kt\n";
 
@@ -278,7 +291,9 @@ void write_uh60a(const std::filesystem::path& dir) {
 
         // Floquet exponents of the free flow map against the averaged roots.
         const CVec lam = m.A.eigenvalues();
-        const FloquetModes f = floquet(monodromy(ex, c, r), m.period, lam);
+        const Monodromy M = monodromy(ex, c, r);
+        require_converged(M.unconverged, "monodromy", kt);
+        const FloquetModes f = floquet(M.matrix, m.period, lam);
         for (Eigen::Index i = 0; i < f.exponents.size(); ++i) {
             const auto k = f.match[static_cast<std::size_t>(i)];
             if (k < 0 || std::abs(lam(k)) >= kBand || lam(k).imag() < 0.0) {
@@ -294,8 +309,10 @@ void write_uh60a(const std::filesystem::path& dir) {
         o512.azimuths = kt <= 60 ? 512 : 1024;  // steps T/256 and T/512, as the L3 test
         o512.steps_per_period = o512.azimuths;
         const LinearModel m512 = linearize(ex, c, r, o512);
+        require_converged(m512.unconverged, "linearize (L3)", kt);
         for (const test::L3Case& k : test::l3_cases()) {
             const test::L3Errors e = test::l3_errors(ex, c, r, start, m512, k, 3.0);
+            require_converged(e.unconverged, "L3 free flights", kt);
             const double floor = test::l3_floor(kt);
             const test::L3Fit fp = test::fit_l3(e.periodic, k.amplitude, 0.5 * floor);
             const test::L3Fit fa = test::fit_l3(e.averaged, k.amplitude, 0.5 * floor);
@@ -308,10 +325,13 @@ void write_uh60a(const std::filesystem::path& dir) {
             // Held orbit against the free flight.
             const Environment env = trim_environment(c);
             const double dt = m.period / 256;
-            const auto traj =
-                test::free_flight(ex, env, start, [&](double) { return r.controls; }, dt, 3 * 256);
+            std::size_t missed = 0;
+            const auto traj = test::free_flight(
+                ex, env, start, [&](double) { return r.controls; }, dt, 3 * 256, &missed);
+            require_converged(missed, "free flight", kt);
             const LinearModel f1 = around_free(ex, traj, 0, 64, 4, dt, r.controls, env, m);
             const LinearModel f3 = around_free(ex, traj, 512, 64, 4, dt, r.controls, env, m);
+            require_converged(f1.unconverged + f3.unconverged, "linearize (free flight)", kt);
             const CondensedModel c1 = condense(f1);
             const CondensedModel c3 = condense(f3);
             const CVec l1 = f1.A.eigenvalues();
@@ -338,6 +358,7 @@ void write_uh60a(const std::filesystem::path& dir) {
             o1024.azimuths = 1024;
             o1024.steps_per_period = 1024;
             const LinearModel m1024 = linearize(ex, c, r, o1024);
+            require_converged(m1024.unconverged, "linearize (scaling)", kt);
             for (const double s : {0.125, 0.25, 0.5, 1.0}) {
                 ss_csv << kt << "," << mu << "," << s << "," << scaled_gap(m1024, s) << "\n";
             }
@@ -354,6 +375,7 @@ void write_uh60a(const std::filesystem::path& dir) {
                 o.step_other *= factor;
                 o.step_control *= factor;
                 const LinearModel ms = linearize(ex, c, r, o);
+                require_converged(ms.unconverged, "linearize (step size)", kt);
                 const CondensedModel cs = condense(ms);
                 for (const auto& key : kKey) {
                     step_csv << kt << "," << factor << "," << derivative_name(key[0], key[1]) << ","
@@ -393,6 +415,7 @@ void write_l4(const std::filesystem::path& dir) {
         o.azimuths = 16;
         o.height = false;
         const LinearModel m = linearize(ex, hover, r, o);
+        require_converged(m.unconverged, "linearize (L4)", 0);
         const CondensedModel cm = condense(m);
         const auto& rotor = dynamic_cast<const BladeElementRotor&>(ex.component(0));
         const BladeElementRotorConfig& cfg = rotor.config();
@@ -431,7 +454,9 @@ void write_l4(const std::filesystem::path& dir) {
         LinearizeOptions o;
         o.azimuths = 16;
         o.height = false;
-        const CondensedModel cm = condense(linearize(ex, hover, r, o));
+        const LinearModel lm = linearize(ex, hover, r, o);
+        require_converged(lm.unconverged, "linearize (L4)", 0);
+        const CondensedModel cm = condense(lm);
         const auto& rotor = dynamic_cast<const BladeElementRotor&>(ex.component(0));
         const std::vector<double> xs = held_orbit_start(ex, hover, r);
         const SimContext ctx = ex.context(0.0, xs, r.controls, trim_environment(hover));
