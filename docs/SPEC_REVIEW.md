@@ -239,3 +239,19 @@ Verification: the probe above, as a test (loads continuous as the x–z componen
 
 **Resolution:** adopted as proposed (D-031), with the table angle faded rather than the table values and c = 20° from the sweep (the first guess of 10° failed the steepness criterion).
 
+## 28. M7 can't gate on the reference model, and trim and linearization are underspecified for a periodic rotor — `open` (proposal: DECISIONS.md D-035)
+**Spec:** §6.8, §6.9, M7; SPEC_REVIEW #1, #12; D-022, D-027, D-029, D-034 item 5.
+**Problem:**
+- *The reference-model criteria can't gate.* Every M7 criterion (trimmed controls, attitudes and power within ±5 % / ±1°, eigenvalues "in the same neighborhood", key derivatives) compares against the reference model. As in #19 and #23: the license check (#12) is still open, the reference model available is a generic medium helicopter rather than a UH-60A (D-027), and its internals can't be inspected (§2.1), so a mismatch can't be told apart from a modelling difference. "Agreed tolerances" and "the same neighborhood" are not defined either.
+- *No published UH-60A trim or derivative data is in the reference library.* Padfield's derivative charts and tables (App. 4B) are for the Lynx, Bo105 and Puma. GenHel Vol. I says its check cases are in Vol. II, which the library doesn't have.
+- *Trim residual with individual blades.* The UH-60A main rotor has four flapping blades at ψ = Ωt (D-024), so no state is constant in trim: the blades, the inflow harmonics and the airframe's 4/rev response are periodic. §6.8 allows "averaged over one or more revolutions" or quasi-steady flapping, but doesn't say what is averaged, whether the body is free or held during the revolution, or how the rotor states are made periodic.
+- *Six unknowns are blade angles.* §6.8 names θ0, θ1c, θ1s, θ_TR. Eyas's inputs are the four `Controls`, mapped through GenHel's mixing (D-034), so the unknowns are the four controls and the blade angles are outputs.
+- *Linearization of an LTP system* (#1, still open): the A and B matrices of the individual-blade model depend on azimuth.
+- *Reduced states and neutral states.* §6.9 asks for (u, v, w, p, q, r, φ, θ, ψ_h); Eyas's body states are a quaternion and NED position. Some non-body states are neutral at a trim point (the airframe's wash-lag states at zero airspeed, D-028, have identically zero rows), so a quasi-static condensation that inverts the non-body block fails there.
+- *Held-body evaluation.* The M6d harness (`tests/support/m6d_fixtures.hpp`) copies the executive's ordering and `SimContext` setup because the executive offers only the free-body derivative function. Trim needs the same evaluation (VALIDATION.md M6d, "Deferred to M7").
+- *Before a trim comparison,* D-029 requires the steady-state pitch bias actuator, and D-034 item 5 defers three GenHel features (elastic twist, rotor-force filter, profile-drag increment) to rulings "on evidence" from the trim comparison.
+- *Control travels.* D-034 left the stick and pedal travels as placeholders ("Vol. I gives none"). GenHel Vol. I §6 does give them (Fig. 6.3.1, p. 6.16, PDF p. 360; Fig. 6.4.1, p. 6.17, PDF p. 361); see DATA_GAPS.md. Trim controls in percent of travel depend on them.
+
+**Why it matters:** without a defined residual and a defined linear model, "trim converges" and "the eigenvalues match" can't be tested, and Jacobians taken at one azimuth would vary with it (#1). Without a gate that can run, M7 couldn't block anything.
+**Suggested resolution:** see D-035 (proposed).
+
