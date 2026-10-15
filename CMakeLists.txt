@@ -38,6 +38,7 @@ add_library(eyas STATIC
     src/util/parse.cpp
     src/util/table.cpp
     src/util/units.cpp
+    src/sim/build.cpp
     src/sim/executive.cpp
     src/sim/model.cpp
     src/sim/recorder.cpp)
