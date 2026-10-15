@@ -101,6 +101,7 @@ public:
 
 private:
     explicit Model(std::unique_ptr<Impl> impl);
+    TrimResult trim_from(const TrimCondition& condition, const TrimResult* start);
     void update_outputs() noexcept;
 
     std::unique_ptr<Impl> impl_;

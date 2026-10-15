@@ -51,6 +51,11 @@ RotorInfo rotor_info(const Executive& ex) {
     return r;
 }
 
+// |γ| = 90° to within the rounding of cos γ: the track is undefined.
+bool vertical(double flight_path_angle) {
+    return std::cos(flight_path_angle) <= 1e-12;
+}
+
 void check(const TrimCondition& c) {
     const double half_pi = 0.5 * std::numbers::pi;
     if (!std::isfinite(c.airspeed) || c.airspeed < 0.0) {
@@ -61,6 +66,11 @@ void check(const TrimCondition& c) {
     }
     if (!std::isfinite(c.sideslip) || std::abs(c.sideslip) >= half_pi) {
         throw InitError("trim: sideslip must be within ±90°, exclusive");
+    }
+    // In vertical flight the air velocity is along the body's vertical, so
+    // the sideslip follows from the attitude and can't be asked for.
+    if (vertical(c.flight_path_angle) && c.sideslip != 0.0) {
+        throw InitError("trim: sideslip must be 0 in vertical flight (|γ| = 90°)");
     }
     if (!std::isfinite(c.heading) || !std::isfinite(c.altitude) || !c.wind_n.allFinite()) {
         throw InitError("trim: heading, altitude and wind must be finite");
@@ -87,10 +97,9 @@ public:
           k2_(n_, 0.0),
           k3_(n_, 0.0),
           k4_(n_, 0.0) {
-        const RotorInfo r = rotor_info(ex);
-        period_ = r.omega > 0.0 ? 2.0 * std::numbers::pi / r.omega : 0.1;
+        period_ = trim_period(ex);
         weight_ = ex.airframe_mass().mass * units::kStandardGravity;
-        length_ = r.radius;
+        length_ = rotor_info(ex).radius;
         env_.isa_delta_T = c.isa_delta_T;
         env_.wind_n = c.wind_n;
         env_.ground_height = std::numeric_limits<double>::quiet_NaN();
@@ -296,7 +305,10 @@ bool trim_body_state(const TrimCondition& c, double pitch, double roll, double o
         const double B = C_bn(1, 1) * cg;
         const double C = std::sin(c.sideslip) + C_bn(1, 2) * sg;
         const double R = std::hypot(A, B);
-        double chi = c.heading;  // vertical flight: the track is undefined
+        double chi = c.heading;  // vertical flight: the track is undefined (check())
+        if (R <= 1e-12 && !vertical(c.flight_path_angle) && std::abs(C) > 1e-12) {
+            return false;  // body y axis vertical: no track changes v_air_b,y
+        }
         if (R > 1e-12) {
             const double ratio = C / R;
             if (std::abs(ratio) > 1.0) {
@@ -357,7 +369,10 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
     TrimResult result;
     VecX r;
     bool ok = p.residual(z, r);
-    Norms m = ok ? norms(r) : Norms{};
+    // A z with no valid residual has no residual norms either, not zero ones.
+    constexpr double nan = std::numeric_limits<double>::quiet_NaN();
+    constexpr Norms invalid{nan, nan, nan};
+    Norms m = ok ? norms(r) : invalid;
     int it = 0;
     const auto n = static_cast<Eigen::Index>(p.unknowns());
     // Newton with a finite-difference Jacobian, kept between iterations with
@@ -425,7 +440,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
     p.clear_unconverged();
     if (ok) {
         ok = p.residual(z, r);
-        m = norms(r);
+        m = ok ? norms(r) : invalid;
     }
     const Vec6 vib = ok ? p.vibration(z) : Vec6::Zero();
     (void)p.pack(z);
@@ -435,7 +450,10 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         x[body_layout::kVel + k] += vib(static_cast<Eigen::Index>(k));
         x[body_layout::kOmega + k] += vib(static_cast<Eigen::Index>(3 + k));
     }
-    result.converged = ok && converged(m, o) && p.evaluations_unconverged() == 0;
+    // A non-finite start state (e.g. from a singular coupled solve in the
+    // vibration offset) can't be flown on from, whatever the residuals say.
+    const bool finite = std::all_of(x.begin(), x.end(), [](double v) { return std::isfinite(v); });
+    result.converged = ok && finite && converged(m, o) && p.evaluations_unconverged() == 0;
     result.iterations = it;
     result.controls = Problem::controls(z);
     result.pitch = z(kPitch);

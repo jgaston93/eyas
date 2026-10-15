@@ -82,6 +82,21 @@ TEST(Trim, BodyStateHasTheConditionsAirVelocity) {
     EXPECT_GT(checked, 400);
 }
 
+// With the body y axis vertical (φ = 90°) no track changes v_air_b,y, so a
+// sideslip it doesn't already have has no body state; one it has (here 0 in
+// level flight) is met on the heading.
+TEST(Trim, BodyStateWithTheBodyYAxisVertical) {
+    TrimCondition c = level(60);
+    const double roll = 0.5 * std::numbers::pi;
+    BodyState b;
+    c.sideslip = 0.2;
+    EXPECT_FALSE(trim_body_state(c, 0.0, roll, 0.0, b));
+    c.sideslip = 0.0;
+    ASSERT_TRUE(trim_body_state(c, 0.0, roll, 0.0, b));
+    EXPECT_NEAR(air_velocity_b(b, c).y(), 0.0, 1e-9);
+    EXPECT_NEAR(air_velocity_b(b, c).norm(), c.airspeed, 1e-9);
+}
+
 // ---- T1: the UH-60A trims from hover to 150 kt ------------------------------------
 
 // Spec M7, D-035 T1: level flight at ISA sea level from 0 to 150 kt in 10 kt
@@ -224,8 +239,9 @@ TEST(Trim, Uh60aFliesOnFromTrim) {
     Model m = Model::from_file(test::uh60a_config_path());
     TrimResult prev;
     bool have = false;
-    const auto revolution_steps = [](int revs) {  // 1 ms steps nearest `revs` revolutions
-        return static_cast<int>(std::lround(revs * 2.0 * std::numbers::pi / 27.0 * 1000.0));
+    const double period = trim_period(uh60a_executive());  // [s]
+    const auto revolution_steps = [&](int revs) {          // 1 ms steps nearest `revs` revolutions
+        return static_cast<int>(std::lround(revs * period * 1000.0));
     };
     for (int kt = 0; kt <= 150; kt += 30) {
         const TrimCondition c = level(kt);
@@ -305,6 +321,10 @@ TEST(Trim, RejectsInvalidInputsAndLeavesTheModel) {
     bad = level(60);
     bad.sideslip = 0.5 * std::numbers::pi;
     EXPECT_THROW((void)m.trim(bad), InitError);
+    bad = level(10);
+    bad.flight_path_angle = 0.5 * std::numbers::pi;  // vertical: β follows from the attitude
+    bad.sideslip = 0.1;
+    EXPECT_THROW((void)m.trim(bad), InitError);
     bad = level(60);
     bad.isa_delta_T = -300.0;
     EXPECT_THROW((void)m.trim(bad), InitError);
@@ -325,6 +345,26 @@ TEST(Trim, UnconvergedTrimIsReported) {
     EXPECT_FALSE(r.converged);
     EXPECT_EQ(r.iterations, 0);
     EXPECT_GT(r.force_residual, 1.0);  // [N]
+}
+
+// A starting point whose attitude admits no track with the condition's
+// sideslip gives no residual at all: the result is unconverged with NaN
+// residuals, not zero ones, and the model is unchanged.
+TEST(Trim, StartWithNoValidResidualIsReported) {
+    Model m = Model::from_file(test::uh60a_config_path());
+    const std::vector<double> x0(m.state().begin(), m.state().end());
+    TrimCondition c = level(60);
+    c.sideslip = 0.5;  // sin β = 0.48 > cos φ = 0.17: no track
+    TrimResult start;
+    start.roll = 80.0 * kDeg;
+    start.component_states.assign(x0.size() - body_layout::kSize, 0.0);
+    const TrimResult r = m.trim(c, start);
+    EXPECT_FALSE(r.converged);
+    EXPECT_EQ(r.iterations, 0);
+    EXPECT_TRUE(std::isnan(r.force_residual));
+    EXPECT_TRUE(std::isnan(r.moment_residual));
+    EXPECT_TRUE(std::isnan(r.periodic_residual));
+    EXPECT_EQ(std::vector<double>(m.state().begin(), m.state().end()), x0);
 }
 
 }  // namespace

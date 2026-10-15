@@ -75,22 +75,27 @@ bool Model::reset(const BodyState& body) noexcept {
 }
 
 TrimResult Model::trim(const TrimCondition& condition) {
-    std::vector<double> x;
-    TrimResult r = solve_trim(impl_->executive, condition, nullptr, x);
-    if (r.converged && impl_->executive.restore(x, 0, 0)) {
-        outputs_.last_advance = AdvanceStatus{};
-        update_outputs();
-    }
-    return r;
+    return trim_from(condition, nullptr);
 }
 
 TrimResult Model::trim(const TrimCondition& condition, const TrimResult& start) {
+    return trim_from(condition, &start);
+}
+
+TrimResult Model::trim_from(const TrimCondition& condition, const TrimResult* start) {
     std::vector<double> x;
-    TrimResult r = solve_trim(impl_->executive, condition, &start, x);
-    if (r.converged && impl_->executive.restore(x, 0, 0)) {
-        outputs_.last_advance = AdvanceStatus{};
-        update_outputs();
+    TrimResult r = solve_trim(impl_->executive, condition, start, x);
+    if (!r.converged) {
+        return r;
     }
+    // solve_trim checks the state is finite, so restore() accepts it; if it
+    // ever doesn't, the model is unchanged and the trim must not claim success.
+    if (!impl_->executive.restore(x, 0, 0)) {
+        r.converged = false;
+        return r;
+    }
+    outputs_.last_advance = AdvanceStatus{};
+    update_outputs();
     return r;
 }
 
