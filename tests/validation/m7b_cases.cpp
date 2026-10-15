@@ -111,6 +111,7 @@ LinearModel around_free(const Executive& ex, const std::vector<std::vector<doubl
     std::vector<double> xd(ex.num_states());
     const auto n = static_cast<Eigen::Index>(rc.size());
     const LinearizeOptions o;
+    const std::vector<double> steps = perturbation_steps(rc, o);
     for (int j = 0; j < J; ++j) {
         const int s = first + j * every;
         const double t = s * dt;
@@ -126,19 +127,7 @@ LinearModel around_free(const Executive& ex, const std::vector<std::vector<doubl
         MatX A(n, n);
         MatX B(n, 4);
         for (Eigen::Index k = 0; k < n; ++k) {
-            const std::string& name = rc.names()[static_cast<std::size_t>(k)];
-            double h = o.step_other;
-            if (k < 3) {
-                h = o.step_velocity;
-            } else if (k < 6) {
-                h = o.step_rate;
-            } else if (k < 9) {
-                h = o.step_angle;
-            } else if (rc.with_height() && k == 9) {
-                h = o.step_height;
-            } else if (name.find(".beta_") != std::string::npos) {
-                h = name.ends_with("_dot") ? o.step_flap_rate : o.step_flap;
-            }
+            const double h = steps[static_cast<std::size_t>(k)];
             VecX xp = x0;
             VecX xm = x0;
             xp(k) += h;
@@ -397,7 +386,6 @@ void write_uh60a(const std::filesystem::path& dir) {
 void write_l4(const std::filesystem::path& dir) {
     std::ofstream out(dir / "m7b_l4.csv");
     out.precision(12);
-    out.precision(12);
     out << "# L4 fixtures against Padfield 3rd ed. closed forms, hover (M7b, D-035)\n"
         << "case,quantity,model,closed\n";
     const double rho = isa_atmosphere(0.0, 0.0).density;
@@ -411,6 +399,10 @@ void write_l4(const std::filesystem::path& dir) {
         const Executive ex = test::symmetric_hover_executive(f);
         std::vector<double> x;
         const TrimResult r = solve_trim(ex, hover, nullptr, x);
+        if (!r.converged) {
+            throw std::runtime_error("L4 trim did not converge (heave, mass " +
+                                     std::to_string(mass) + " kg)");
+        }
         LinearizeOptions o;
         o.azimuths = 16;
         o.height = false;
@@ -448,7 +440,12 @@ void write_l4(const std::filesystem::path& dir) {
         const Executive ex = test::symmetric_hover_executive(f);
         std::vector<double> x;
         const TrimResult r = solve_trim(ex, hover, nullptr, x);
+        if (!r.converged) {
+            throw std::runtime_error("L4 trim did not converge (stiffness " + std::to_string(Sb) +
+                                     ")");
+        }
         const test::QuasiSteady q = test::quasi_steady(ex, hover, r);
+        require_converged(q.unconverged, "quasi-steady derivatives", 0);
         const double direct = (Sb + 16.0 / gamma) / ((1.0 + Sb * Sb) * W);
         const double coupling = (Sb * 16.0 / gamma - 1.0) / ((1.0 + Sb * Sb) * W);
         LinearizeOptions o;

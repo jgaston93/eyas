@@ -89,12 +89,9 @@ public:
     Problem(const Executive& ex, const TrimCondition& c, const TrimOptions& o)
         : ex_(ex),
           c_(c),
-          steps_(o.steps_per_period),
           n_(ex.num_states()),
           nc_(n_ - body_layout::kSize),
-          period_(trim_period(ex)),
-          env_(trim_environment(c)),
-          held_(ex, env_, period_, steps_),
+          held_(ex, trim_environment(c), trim_period(ex), o.steps_per_period),
           x_(n_, 0.0) {
         weight_ = ex.airframe_mass().mass * units::kStandardGravity;
         length_ = rotor_info(ex).radius;
@@ -137,8 +134,9 @@ public:
     // weights, so it is the RK4 solution of İ = net.
     void hold(int periods, const Controls& u, Vec6& integral) {
         integral.setZero();
-        for (int s = 0; s < periods * steps_; ++s) {
-            hold_one_step(s % steps_, u, integral);
+        const int steps = held_.steps();
+        for (int s = 0; s < periods * steps; ++s) {
+            hold_one_step(s % steps, u, integral);
         }
     }
 
@@ -160,10 +158,12 @@ public:
         if (!pack(z)) {
             return mean;
         }
-        const double h = period_ / steps_;
+        const double period = held_.period();
+        const int steps = held_.steps();
+        const double h = period / steps;
         std::vector<double> xd(n_, 0.0);
         const auto accel = [&](double t) {
-            (void)ex_.derivatives(t, x_, u, env_, xd);
+            (void)ex_.derivatives(t, x_, u, held_.env(), xd);
             Vec6 a;
             for (int k = 0; k < 3; ++k) {
                 a(k) = xd[body_layout::kVel + static_cast<std::size_t>(k)];
@@ -173,12 +173,12 @@ public:
         };
         Vec6 a0 = accel(0.0);
         Vec6 ignored;
-        for (int s = 0; s < steps_; ++s) {
+        for (int s = 0; s < steps; ++s) {
             const Vec6 before = integral;
             hold_one_step(s, u, ignored);  // advances x_ by one step
-            const Vec6 a1 = accel(period_ * static_cast<double>(s + 1) / steps_);
+            const Vec6 a1 = accel(period * static_cast<double>(s + 1) / steps);
             integral += 0.5 * h * (a0 + a1);
-            mean += 0.5 * h * (before + integral) / period_;
+            mean += 0.5 * h * (before + integral) / period;
             a0 = a1;
         }
         return -mean;
@@ -191,7 +191,7 @@ public:
         }
         Vec6 integral;
         hold(1, controls(z), integral);
-        const Vec6 mean = integral / period_;
+        const Vec6 mean = integral / held_.period();
         r.resize(static_cast<Eigen::Index>(unknowns()));
         r.head<3>() = mean.head<3>() / weight_;
         r.segment<3>(3) = mean.tail<3>() / (weight_ * length_);
@@ -205,13 +205,10 @@ public:
 private:
     const Executive& ex_;
     TrimCondition c_;
-    int steps_;
     std::size_t n_;
     std::size_t nc_;
-    double period_ = 0.0;
     double weight_ = 0.0;
     double length_ = 1.0;
-    Environment env_;
     HeldIntegrator held_;
     std::vector<double> x_;
 };

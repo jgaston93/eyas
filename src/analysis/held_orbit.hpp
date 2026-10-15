@@ -24,6 +24,7 @@ public:
     // is the RK4 solution of İ = net. [s]
     void step(int s, const Controls& u, std::vector<double>& x, Vec6& integral);
 
+    const Environment& env() const noexcept { return env_; }
     double period() const noexcept { return period_; }
     int steps() const noexcept { return steps_; }
     // Evaluations in which some component's bounded iteration did not

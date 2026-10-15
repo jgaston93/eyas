@@ -46,7 +46,7 @@ std::string multiblade_name(int blades, int i) {
 // ---- Reduced coordinates -------------------------------------------------------
 
 ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height)
-    : ex_(ex), with_height_(with_height) {
+    : with_height_(with_height) {
     names_ = {"u", "v", "w", "p", "q", "r", "phi", "theta", "psi_h"};
     if (with_height_) {
         names_.emplace_back("h");
@@ -60,7 +60,7 @@ ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height)
         const auto* b = dynamic_cast<const BladeElementRotor*>(&c);
         if (b != nullptr && b->config().flap.has_value()) {
             Rotor r;
-            r.component = i;
+            r.rotor = b;
             r.full = off;
             r.reduced = names_.size();
             r.blades = b->config().num_blades;
@@ -82,9 +82,8 @@ ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height)
 }
 
 void ReducedCoordinates::basis(const Rotor& r, double t, int k, std::span<double> phi,
-                               std::span<double> dphi) const {
-    const auto& rotor = dynamic_cast<const BladeElementRotor&>(ex_.component(r.component));
-    const double psi = rotor.blade_azimuth(rotor.azimuth(t), k);
+                               std::span<double> dphi) {
+    const double psi = r.rotor->blade_azimuth(r.rotor->azimuth(t), k);
     const auto n_b = static_cast<std::size_t>(r.blades);
     phi[0] = 1.0;
     dphi[0] = 0.0;
@@ -104,6 +103,19 @@ void ReducedCoordinates::basis(const Rotor& r, double t, int k, std::span<double
             dphi[i] = n * std::cos(n * psi);
         }
     }
+}
+
+ReducedCoordinates::FlapKind ReducedCoordinates::flap_kind(std::size_t i) const noexcept {
+    for (const Rotor& r : rotors_) {
+        const auto n_b = static_cast<std::size_t>(r.blades);
+        if (i >= r.reduced && i < r.reduced + n_b) {
+            return FlapKind::coordinate;
+        }
+        if (i >= r.reduced + n_b && i < r.reduced + 2 * n_b) {
+            return FlapKind::rate;
+        }
+    }
+    return FlapKind::none;
 }
 
 void ReducedCoordinates::derivative(int blades, std::span<const double> q, std::span<double> out) {
@@ -266,8 +278,6 @@ VecX ReducedCoordinates::rates(double t, std::span<const double> x,
 
 // ---- Linearization --------------------------------------------------------------
 
-namespace {
-
 std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const LinearizeOptions& o) {
     std::vector<double> h(rc.size(), o.step_other);
     for (std::size_t i = 0; i < 3; ++i) {
@@ -279,15 +289,19 @@ std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const Linea
         h[ReducedCoordinates::kHeight] = o.step_height;
     }
     for (std::size_t i = rc.body_size(); i < rc.size(); ++i) {
-        const std::string& n = rc.names()[i];
-        if (n.find(".beta_") != std::string::npos) {
-            h[i] = n.ends_with("_dot") ? o.step_flap_rate : o.step_flap;
+        switch (rc.flap_kind(i)) {
+            case ReducedCoordinates::FlapKind::coordinate:
+                h[i] = o.step_flap;
+                break;
+            case ReducedCoordinates::FlapKind::rate:
+                h[i] = o.step_flap_rate;
+                break;
+            case ReducedCoordinates::FlapKind::none:
+                break;
         }
     }
     return h;
 }
-
-}  // namespace
 
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& o) {

@@ -3,6 +3,7 @@
 #include <array>
 #include <complex>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <span>
 #include <string>
@@ -17,6 +18,8 @@
 // of 2026-10-15, SPEC_REVIEW #1 and #29). Internal: used by the tests and
 // the validation generators. Init-time: allocates.
 namespace eyas {
+
+class BladeElementRotor;
 
 // Reduced coordinates. Body: u, v, w [m/s] (body axes), p, q, r [rad/s],
 // φ, θ, ψ_h [rad] (Padfield 3rd ed. Eqs. 3A.34–3A.37), then optionally the
@@ -44,6 +47,10 @@ public:
     std::size_t body_size() const noexcept { return with_height_ ? 10 : 9; }
     bool with_height() const noexcept { return with_height_; }
     const std::vector<std::string>& names() const noexcept { return names_; }
+    // Whether reduced coordinate i is a multiblade flap coordinate q, one of
+    // their rates q̇, or neither.
+    enum class FlapKind : std::uint8_t { none, coordinate, rate };
+    FlapKind flap_kind(std::size_t i) const noexcept;
 
     // Full state for reduced coordinates xr at time t [s]: the quaternion
     // from (φ, θ, ψ_h), z_n = z_ref − h, blade states from the multiblade
@@ -63,19 +70,18 @@ public:
 
 private:
     struct Rotor {
-        std::size_t component = 0;  // executive component index
-        std::size_t full = 0;       // first flap state in the full state
-        std::size_t reduced = 0;    // first multiblade coordinate
+        const BladeElementRotor* rotor = nullptr;  // in the executive, which must outlive this
+        std::size_t full = 0;                      // first flap state in the full state
+        std::size_t reduced = 0;                   // first multiblade coordinate
         int blades = 0;
         double omega = 0.0;  // [rad/s]
     };
     // Basis value φ_i and its azimuth derivative for blade k of rotor r at t.
-    void basis(const Rotor& r, double t, int k, std::span<double> phi,
-               std::span<double> dphi) const;
+    static void basis(const Rotor& r, double t, int k, std::span<double> phi,
+                      std::span<double> dphi);
     // (D q)_i: the coefficients of Σ_j q_j φ_j′ (cos nψ → −n sin nψ).
     static void derivative(int blades, std::span<const double> q, std::span<double> out);
 
-    const Executive& ex_;
     bool with_height_;
     std::vector<std::string> names_;
     std::vector<Rotor> rotors_;
@@ -117,6 +123,9 @@ struct LinearModel {
     // and in the perturbations about it.
     std::size_t unconverged = 0;
 };
+
+// The central-difference half-step of each coordinate of `rc`, by kind.
+std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const LinearizeOptions& o);
 
 // Linearizes `ex` about trim `r` for `c` along the held orbit (D-035).
 // Throws InitError if the trim doesn't fit `ex`.

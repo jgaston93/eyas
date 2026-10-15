@@ -408,6 +408,7 @@ TEST(Linearize, HoverRateDerivativesMatchPadfield) {
         const Executive ex = test::symmetric_hover_executive(f);
         const TrimResult r = trim(ex, level(0.0));
         const test::QuasiSteady q = test::quasi_steady(ex, level(0.0), r);
+        EXPECT_EQ(q.unconverged, 0U) << Sb;
         const double direct = (Sb + 16.0 / gamma) / ((1.0 + Sb * Sb) * W);
         const double coupling = (Sb * 16.0 / gamma - 1.0) / ((1.0 + Sb * Sb) * W);
         // Rotor 1's β1c and β1s are its reduced coordinates 1 and 2 after the body.

@@ -159,8 +159,9 @@ inline double l3_floor(double knots) {
 // the fuselage moves), from the held derivative function, and the held net
 // moment derivatives with that response.
 struct QuasiSteady {
-    Eigen::MatrixXd flap;    // rotor reduced coordinates × (p, q)
-    Eigen::MatrixXd moment;  // net (L, M, N) × (p, q) [N·m·s/rad]
+    Eigen::MatrixXd flap;         // rotor reduced coordinates × (p, q)
+    Eigen::MatrixXd moment;       // net (L, M, N) × (p, q) [N·m·s/rad]
+    std::size_t unconverged = 0;  // evaluations with an unconverged iteration (D-023)
 };
 
 inline QuasiSteady quasi_steady(const Executive& ex, const TrimCondition& c, const TrimResult& r) {
@@ -173,11 +174,14 @@ inline QuasiSteady quasi_steady(const Executive& ex, const TrimCondition& c, con
     const auto nr = static_cast<Eigen::Index>(rc.size() - 9);
     std::vector<double> x(ex.num_states());
     std::vector<double> xd(ex.num_states());
+    QuasiSteady q;
     const auto g = [&](const VecX& xr) {
         rc.to_full(0.0, xr, ref, x);
         std::fill(xd.begin(), xd.end(), 0.0);
         Vec6 net;
-        (void)ex.held_derivatives(0.0, x, r.controls, env, xd, net);
+        if (!ex.held_derivatives(0.0, x, r.controls, env, xd, net)) {
+            ++q.unconverged;
+        }
         VecX out(nr + 3);
         out.head(nr) = rc.rates(0.0, x, xd).tail(nr);
         out.tail(3) = net.tail<3>();
@@ -194,7 +198,6 @@ inline QuasiSteady quasi_steady(const Executive& ex, const TrimCondition& c, con
         xm(col) -= h;
         J.col(k) = (g(xp) - g(xm)) / (2.0 * h);
     }
-    QuasiSteady q;
     q.flap = -J.topLeftCorner(nr, nr).fullPivLu().solve(J.topRightCorner(nr, 2));
     q.moment = J.bottomRightCorner(3, 2) + J.bottomLeftCorner(3, nr) * q.flap;
     return q;
