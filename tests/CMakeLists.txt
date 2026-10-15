@@ -16,6 +16,7 @@ add_executable(eyas_unit_tests
     unit/test_eigen_smoke.cpp
     unit/test_executive.cpp
     unit/test_trim.cpp
+    unit/test_linearize.cpp
     unit/test_flap_anchors.cpp
     unit/test_flapping_rotor.cpp
     unit/test_geodesy.cpp
