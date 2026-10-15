@@ -30,19 +30,33 @@ private:
     double b_;
 };
 
+// The symmetric hover fixture's options. Defaults: the L2 fixture.
+struct SymmetricFixture {
+    int blades = 4;
+    double hinge_offset = 0.3;  // e [m]; 0: centre hinge (root cutout 0)
+    double spring = 0.0;        // K_β [N·m/rad]
+    InflowModel inflow = InflowModel::pitt_peters;
+    double cd0 = 0.01;                      // profile drag coefficient [-]
+    double hub_height = 1.5;                // [m] hub above the CG
+    double mass = 4000.0;                   // [kg] airframe
+    Vec3 inertia{3000.0, 10000.0, 9000.0};  // Ixx, Iyy, Izz [kg·m²], airframe, Ixz = 0
+};
+
 // One rotor of the symmetric hover fixture: the M4 anchor blade (γ ≈ 8,
-// linear airfoil with drag), N blades, a 0.3 m hinge, Pitt–Peters inflow,
-// the hub 1.5 m above the CG on a shaft along body z.
-inline BladeElementRotorConfig symmetric_rotor(int blades, RotationDirection direction) {
-    const double e = 0.3;
-    const auto airfoil = airfoil_from(linear_airfoil_csv(kLiftSlope, 0.01));
-    BladeElementRotorConfig c = flap_rotor(airfoil, {}, nonuniform_beads(8.0 - e, 12.0), e, 40);
-    c.num_blades = blades;
+// linear airfoil), N blades, Pitt–Peters or uniform inflow, the hub above
+// the CG on a shaft along body z, tip loss B = 1, root cutout at the hinge.
+inline BladeElementRotorConfig symmetric_rotor(const SymmetricFixture& f,
+                                               RotationDirection direction) {
+    const double e = f.hinge_offset;
+    const auto airfoil = airfoil_from(linear_airfoil_csv(kLiftSlope, f.cd0));
+    BladeElementRotorConfig c = flap_rotor(airfoil, {}, nonuniform_beads(8.0 - e, 12.0), e, 100);
+    c.num_blades = f.blades;
     c.direction = direction;
+    c.flap->spring = f.spring;
     c.twist = Table1D(Axis({0.0, 1.0}), {0.0, -8.0 * kDeg});
-    c.hub_position_b = Vec3(0.0, 0.0, -1.5);
+    c.hub_position_b = Vec3(0.0, 0.0, -f.hub_height);
     c.controls = std::make_shared<const LinearPitch>(0.0, 0.4, 0.1);
-    c.inflow = InflowModel::pitt_peters;
+    c.inflow = f.inflow;
     return c;
 }
 
@@ -53,15 +67,21 @@ inline BladeElementRotorConfig symmetric_rotor(int blades, RotationDirection dir
 // every blade sees the same conditions at every azimuth: the rotating-frame
 // equations have constant coefficients, so the multiblade ones do too
 // (Johnson 2013 pp. 556, 572).
-inline Executive symmetric_hover_executive(int blades = 4) {
+inline Executive symmetric_hover_executive(const SymmetricFixture& f) {
     ExecutiveConfig cfg;
-    cfg.mass = make_mass_properties(4000.0, 3000.0, 10000.0, 9000.0, 0.0);
+    cfg.mass = make_mass_properties(f.mass, f.inertia.x(), f.inertia.y(), f.inertia.z(), 0.0);
     std::vector<std::unique_ptr<DynamicComponent>> comps;
     comps.push_back(std::make_unique<BladeElementRotor>(
-        symmetric_rotor(blades, RotationDirection::counter_clockwise)));
+        symmetric_rotor(f, RotationDirection::counter_clockwise)));
     comps.push_back(
-        std::make_unique<BladeElementRotor>(symmetric_rotor(blades, RotationDirection::clockwise)));
+        std::make_unique<BladeElementRotor>(symmetric_rotor(f, RotationDirection::clockwise)));
     return Executive(cfg, std::move(comps));
+}
+
+inline Executive symmetric_hover_executive(int blades = 4) {
+    SymmetricFixture f;
+    f.blades = blades;
+    return symmetric_hover_executive(f);
 }
 
 // Flies `ex` free from x at t = 0 by RK4 with step dt [s], renormalizing the

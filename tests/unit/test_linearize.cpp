@@ -19,6 +19,7 @@
 #include "analysis/linearize.hpp"
 #include "analysis/trim.hpp"
 #include "core/attitude.hpp"
+#include "env/atmosphere.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/multiblade.hpp"
 #include "sim/build.hpp"
@@ -324,6 +325,155 @@ TEST(Linearize, FeedNothingStatesSplitTheEigenvalues) {
             }
             EXPECT_LT(best, 1e-8) << knots << " kt: " << z;
         }
+    }
+}
+
+// ---- L4: Padfield's closed forms on fixtures ------------------------------------
+
+// Gate L4 (D-035): hover heave damping against Padfield 3rd ed. Table 4.2,
+// Z_w = −ρ(ΩR)πR² (∂C_T/∂μ_z)/M_a with ∂C_T/∂μ_z = 2aσλ0/(16λ0 + aσ) per
+// rotor, on the symmetric fixture with the formula's assumptions: centre
+// hinge, no root cutout, B = 1, linear airfoil without drag, constant chord,
+// linear twist, Pitt–Peters inflow (its steady state is momentum theory).
+// M_a includes the blades. The condensed (quasi-static inflow) model's Z_w
+// must match to 0.5 % (measured 0.20 % and 0.09 % at the two weights: the
+// small-angle and coning terms the closed form drops). The condensed heave
+// root is Z_w (heave decouples in symmetric hover); the retained model's
+// heave root differs by the inflow lag (7 % and 14 %; VALIDATION.md M7b).
+TEST(Linearize, HoverHeaveDampingMatchesPadfield) {
+    for (const double mass : {4000.0, 2000.0}) {
+        test::SymmetricFixture f;
+        f.hinge_offset = 0.0;
+        f.cd0 = 0.0;
+        f.mass = mass;
+        const Executive ex = test::symmetric_hover_executive(f);
+        const TrimResult r = trim(ex, level(0.0));
+        LinearizeOptions o;
+        o.azimuths = 16;
+        o.height = false;
+        const LinearModel m = linearize(ex, level(0.0), r, o);
+        const CondensedModel cm = condense(m);
+        const auto& rotor = dynamic_cast<const BladeElementRotor&>(ex.component(0));
+        const BladeElementRotorConfig& cfg = rotor.config();
+        const double lambda0 = r.component_states[rotor.inflow_offset()];
+        const double a = test::kLiftSlope;
+        const double sigma = cfg.num_blades * cfg.chord(0.5) / (std::numbers::pi * cfg.radius);
+        const double Ma = mass + 2.0 * cfg.num_blades * cfg.flap->mass;
+        const double rho = isa_atmosphere(0.0, 0.0).density;
+        const double dct = 2.0 * a * sigma * lambda0 / (16.0 * lambda0 + a * sigma);
+        const double Zw = -rho * cfg.rotor_speed * cfg.radius * std::numbers::pi * cfg.radius *
+                          cfg.radius * 2.0 * dct / Ma;
+        EXPECT_NEAR(cm.A(2, 2) / Zw, 1.0, 5e-3) << mass;
+        const Eigen::VectorXcd ev = cm.A.eigenvalues();
+        double nearest = 1e300;
+        for (const auto& z : ev) {
+            nearest = std::min(nearest, std::abs(z - cm.A(2, 2)));
+        }
+        EXPECT_LT(nearest, 1e-9 * std::abs(Zw)) << mass;
+    }
+}
+
+// The quasi-steady response of the rotor states to steady p and q with the
+// body held (Padfield's quasi-steady derivatives: the disc settles before
+// the fuselage moves), from the held derivative function, and the held net
+// moment derivatives with that response.
+struct QuasiSteady {
+    MatX flap;    // rotor reduced coordinates × (p, q)
+    MatX moment;  // net (L, M, N) × (p, q) [N·m·s/rad]
+};
+
+QuasiSteady quasi_steady(const Executive& ex, const TrimCondition& c, const TrimResult& r) {
+    const RC rc(ex, false);
+    const std::vector<double> ref = held_orbit_start(ex, c, r);
+    const VecX x0 = rc.to_reduced(0.0, ref, ref);
+    const Environment env = trim_environment(c);
+    const auto nr = static_cast<Eigen::Index>(rc.size() - 9);
+    std::vector<double> x(ex.num_states());
+    std::vector<double> xd(ex.num_states());
+    const auto g = [&](const VecX& xr) {
+        rc.to_full(0.0, xr, ref, x);
+        std::fill(xd.begin(), xd.end(), 0.0);
+        Vec6 net;
+        (void)ex.held_derivatives(0.0, x, r.controls, env, xd, net);
+        VecX out(nr + 3);
+        out.head(nr) = rc.rates(0.0, x, xd).tail(nr);
+        out.tail(3) = net.tail<3>();
+        return out;
+    };
+    MatX J(nr + 3, nr + 2);
+    for (Eigen::Index k = 0; k < nr + 2; ++k) {
+        constexpr auto kP = static_cast<Eigen::Index>(RC::kP);
+        const Eigen::Index col = k < nr ? 9 + k : (k == nr ? kP : kP + 1);
+        const double h = 1e-6;
+        VecX xp = x0;
+        VecX xm = x0;
+        xp(col) += h;
+        xm(col) -= h;
+        J.col(k) = (g(xp) - g(xm)) / (2.0 * h);
+    }
+    QuasiSteady q;
+    q.flap = -J.topLeftCorner(nr, nr).fullPivLu().solve(J.topRightCorner(nr, 2));
+    q.moment = J.bottomRightCorner(3, 2) + J.bottomLeftCorner(3, nr) * q.flap;
+    return q;
+}
+
+// Gate L4 (D-035): hover flap-rate and rate-damping derivatives against
+// Padfield 3rd ed. on a centre-spring rotor with uniform inflow (the
+// symmetric fixture: centre hinge with spring K_β, no root cutout, B = 1,
+// linear airfoil without drag), counter-clockwise rotor:
+//   ∂β1c/∂q = ∂β1s/∂p = (S_β + 16/γ) / ((1 + S_β²) Ω)      (Eq. 4.84),
+//   ∂β1c/∂p = −∂β1s/∂q = (S_β 16/γ − 1) / ((1 + S_β²) Ω)   (Eq. 4.85),
+// S_β = 8(λ_β² − 1)/γ (Eq. 4.59), γ = ρacR⁴/I_β, quasi-steady with the body
+// held; and the condensed model's M_q against Eq. 4.81 with Eq. 4.84,
+// M_q I_yy = −Σ (N_b K_β/2 + T h_R) ∂β1c/∂q, on the stiff hub (S_β = 0.3)
+// with a heavy airframe (blade inertia and the acceleration coupling below
+// 0.2 %). Tolerances from the measured residuals: the flap derivatives
+// 0.5 % for every S_β (coning and small angles), gated at 1 %; M_q 1.1 % at
+// S_β = 0.3, gated at 2 %. Eq. 4.81 drops the in-plane rotor loads (Padfield
+// p. 197), which grow as the hub softens: 2.7 % at S_β = 0.15, and the sign
+// reverses at S_β = 0 (reported in VALIDATION.md M7b, not gated).
+TEST(Linearize, HoverRateDerivativesMatchPadfield) {
+    for (const double Sb : {0.0, 0.15, 0.3}) {
+        test::SymmetricFixture f;
+        f.hinge_offset = 0.0;
+        f.cd0 = 0.0;
+        f.inflow = InflowModel::uniform;
+        f.hub_height = 0.5;
+        f.inertia = Vec3(1e6, 1e6, 1e6);
+        const BladeElementRotorConfig cfg =
+            test::symmetric_rotor(f, RotationDirection::counter_clockwise);
+        const double rho = isa_atmosphere(0.0, 0.0).density;
+        const double W = cfg.rotor_speed;
+        const double Ib = cfg.flap->inertia;
+        const double gamma = rho * test::kLiftSlope * cfg.chord(0.5) * std::pow(cfg.radius, 4) / Ib;
+        f.spring = Sb * gamma * Ib * W * W / 8.0;
+        const Executive ex = test::symmetric_hover_executive(f);
+        const TrimResult r = trim(ex, level(0.0));
+        const QuasiSteady q = quasi_steady(ex, level(0.0), r);
+        const double direct = (Sb + 16.0 / gamma) / ((1.0 + Sb * Sb) * W);
+        const double coupling = (Sb * 16.0 / gamma - 1.0) / ((1.0 + Sb * Sb) * W);
+        // Rotor 1's β1c and β1s are its reduced coordinates 1 and 2 after the body.
+        EXPECT_NEAR(q.flap(1, 1) / direct, 1.0, 1e-2) << Sb;        // ∂β1c/∂q
+        EXPECT_NEAR(q.flap(2, 0) / direct, 1.0, 1e-2) << Sb;        // ∂β1s/∂p
+        EXPECT_NEAR(q.flap(1, 0), coupling, 1e-2 * direct) << Sb;   // ∂β1c/∂p
+        EXPECT_NEAR(q.flap(2, 1), -coupling, 1e-2 * direct) << Sb;  // ∂β1s/∂q
+        if (Sb < 0.3) {
+            continue;
+        }
+        LinearizeOptions o;
+        o.azimuths = 16;
+        o.height = false;
+        const CondensedModel cm = condense(linearize(ex, level(0.0), r, o));
+        const auto& rotor = dynamic_cast<const BladeElementRotor&>(ex.component(0));
+        const std::vector<double> x = held_orbit_start(ex, level(0.0), r);
+        const SimContext ctx = ex.context(0.0, x, r.controls, trim_environment(level(0.0)));
+        const double T = rotor
+                             .evaluate(ctx, std::span<const double>(x).subspan(
+                                                ex.component_offset(0), ex.component_size(0)))
+                             .thrust;
+        const double Mq = -2.0 * (cfg.num_blades * f.spring / 2.0 + T * f.hub_height) * direct;
+        EXPECT_NEAR(cm.A(4, 4) * f.inertia.y() / Mq, 1.0, 2e-2);
+        EXPECT_NEAR(cm.A(3, 3) * f.inertia.x() / Mq, 1.0, 2e-2);  // L_p: the same in hover
     }
 }
 
