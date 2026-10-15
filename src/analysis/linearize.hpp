@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <complex>
 #include <cstddef>
 #include <functional>
 #include <span>
@@ -168,6 +170,36 @@ struct FloquetModes {
 };
 FloquetModes floquet(const Eigen::MatrixXd& monodromy, double period,
                      const Eigen::VectorXcd& reference, double min_multiplier = 1e-6);
+
+// A mode of the condensed model: eigenvalue, undamped natural frequency
+// ω_n = |λ| [rad/s] and damping ratio ζ = −Re λ/|λ| (±1 for a real root),
+// its longitudinal share, and a label (Padfield 3rd ed. §4.3.2 names). The
+// label is a heuristic for reports, and only indicative where the modes
+// couple strongly (the UH-60 in hover). The eigenvector is weighted by
+// typical sizes (1 m/s, 0.1 rad/s, 0.1 rad) and split into longitudinal
+// (u, w, q, θ) and lateral (v, p, r, φ, ψ_h) shares. A pair oscillates if
+// ζ < 0.9. Longitudinal: phugoid (oscillating, ω_n < 1 rad/s) or short
+// period; heave, pitch or speed subsidence (w, q and θ, or u dominant).
+// Lateral: Dutch roll (oscillating, u > 15 m/s, ω_n ≥ 0.3 rad/s), lateral
+// phugoid (oscillating, u ≤ 15 m/s), lateral oscillation (other
+// oscillating); roll subsidence (p and φ dominant, ω_n > 0.5 rad/s), yaw
+// subsidence (r dominant, ω_n > 0.1 rad/s), spiral (other). ω_n < 1e-6:
+// heading (neutral).
+struct Mode {
+    std::complex<double> eigenvalue;
+    double frequency = 0.0;     // ω_n [rad/s]
+    double damping = 0.0;       // ζ [-]
+    double longitudinal = 0.0;  // weighted longitudinal share of the eigenvector [-]
+    std::string label;
+};
+
+// The modes of a condensed model about a trim with body x velocity u [m/s],
+// one per conjugate pair (Im λ ≥ 0), slowest first.
+std::vector<Mode> modes(const CondensedModel& m, double u);
+
+// Padfield's state ordering (3rd ed. Eq. 4.44): u, w, q, θ, v, p, φ, r, then
+// ψ_h, as indices into the condensed states (u, v, w, p, q, r, φ, θ, ψ_h).
+inline constexpr std::array<std::size_t, 9> kPadfieldOrder = {0, 2, 4, 7, 1, 3, 6, 5, 8};
 
 // The indices (into A) of the states removed by condense() as feeding
 // nothing: the largest set S of non-body states with A[i, j] = 0 exactly

@@ -477,6 +477,50 @@ TEST(Linearize, HoverRateDerivativesMatchPadfield) {
     }
 }
 
+// ---- Modes -----------------------------------------------------------------------
+
+// modes(): frequency and damping of each root, one per conjugate pair, and
+// the labels on decoupled synthetic models (states u v w p q r φ θ ψ_h).
+TEST(Linearize, ModesAndLabels) {
+    CondensedModel m;
+    m.A = MatX::Zero(9, 9);
+    m.A(2, 2) = -0.7;  // heave subsidence
+    m.A(3, 3) = -5.0;  // roll subsidence, φ̇ = p
+    m.A(6, 3) = 1.0;
+    m.A(0, 0) = -0.02;  // phugoid in u, θ: ω_n² = 9.81 × 0.02, lightly damped
+    m.A(0, 7) = -9.81;
+    m.A(7, 0) = 0.02;
+    m.A(5, 5) = -0.3;  // yaw subsidence
+    m.A(4, 4) = -1.2;  // pitch subsidence, θ coupled only through u
+    const std::vector<Mode> md = modes(m, 0.0);
+    const auto find = [&](const std::string& label) {
+        return std::count_if(md.begin(), md.end(), [&](const Mode& x) { return x.label == label; });
+    };
+    EXPECT_EQ(find("heave subsidence"), 1);
+    EXPECT_EQ(find("roll subsidence"), 1);
+    EXPECT_EQ(find("phugoid"), 1);
+    EXPECT_EQ(find("yaw subsidence"), 1);
+    EXPECT_EQ(find("pitch subsidence"), 1);
+    for (const Mode& x : md) {
+        EXPECT_GE(x.eigenvalue.imag(), 0.0);
+        EXPECT_NEAR(x.frequency, std::abs(x.eigenvalue), 1e-15);
+        if (x.label == "phugoid") {
+            // λ² + 0.02 λ + 9.81 × 0.02 = 0.
+            EXPECT_NEAR(x.frequency, std::sqrt(9.81 * 0.02), 1e-12);
+            EXPECT_NEAR(x.damping, 0.02 / (2.0 * std::sqrt(9.81 * 0.02)), 1e-12);
+        }
+        if (x.label == "heave subsidence") {
+            EXPECT_NEAR(x.eigenvalue.real(), -0.7, 1e-12);
+            EXPECT_NEAR(x.damping, 1.0, 1e-15);
+            EXPECT_GT(x.longitudinal, 0.99);
+        }
+    }
+    // Slowest first.
+    for (std::size_t i = 1; i < md.size(); ++i) {
+        EXPECT_LE(md[i - 1].frequency, md[i].frequency);
+    }
+}
+
 // ---- L3: linear against nonlinear ----------------------------------------------
 
 // One L3 case: a reduced body coordinate perturbed at t = 0, or a control

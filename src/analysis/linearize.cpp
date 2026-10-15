@@ -482,6 +482,62 @@ FloquetModes floquet(const MatX& monodromy, double period, const Eigen::VectorXc
     return out;
 }
 
+// ---- Modes -----------------------------------------------------------------------
+
+std::vector<Mode> modes(const CondensedModel& m, double u) {
+    const Eigen::EigenSolver<MatX> es(m.A);
+    // Weights: 1 m/s, 0.1 rad/s, 0.1 rad (states u v w p q r φ θ ψ_h).
+    const std::array<double, 9> w = {1.0, 1.0, 1.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0};
+    std::vector<Mode> out;
+    for (Eigen::Index i = 0; i < es.eigenvalues().size(); ++i) {
+        const std::complex<double> l = es.eigenvalues()(i);
+        if (l.imag() < 0.0) {
+            continue;
+        }
+        Mode md;
+        md.eigenvalue = l;
+        md.frequency = std::abs(l);
+        md.damping = md.frequency > 0.0 ? -l.real() / md.frequency : 0.0;
+        std::array<double, 9> e{};
+        for (std::size_t k = 0; k < 9; ++k) {
+            e[k] = std::norm(es.eigenvectors()(static_cast<Eigen::Index>(k), i) * w[k]);
+        }
+        const double lon = e[0] + e[2] + e[4] + e[7];
+        const double lat = e[1] + e[3] + e[5] + e[6] + e[8];
+        md.longitudinal = lon / (lon + lat);
+        const bool oscillatory = l.imag() > 1e-9 && md.damping < 0.9;
+        if (md.frequency < 1e-6) {
+            md.label = "heading";
+        } else if (lon >= lat) {
+            if (oscillatory) {
+                md.label = md.frequency < 1.0 ? "phugoid" : "short period";
+            } else if (e[2] >= std::max(e[4] + e[7], e[0])) {
+                md.label = "heave subsidence";
+            } else if (e[4] + e[7] >= e[0]) {
+                md.label = "pitch subsidence";
+            } else {
+                md.label = "speed subsidence";
+            }
+        } else if (oscillatory) {
+            if (u <= 15.0) {
+                md.label = "lateral phugoid";
+            } else {
+                md.label = md.frequency >= 0.3 ? "Dutch roll" : "lateral oscillation";
+            }
+        } else if (e[3] + e[6] >= e[5] && md.frequency > 0.5) {
+            md.label = "roll subsidence";
+        } else if (e[5] > e[3] + e[6] && md.frequency > 0.1) {
+            md.label = "yaw subsidence";
+        } else {
+            md.label = "spiral";
+        }
+        out.push_back(md);
+    }
+    std::sort(out.begin(), out.end(),
+              [](const Mode& a, const Mode& b) { return a.frequency < b.frequency; });
+    return out;
+}
+
 // ---- Condensation ---------------------------------------------------------------
 
 std::vector<std::size_t> feed_nothing_states(const MatX& A, std::size_t first) {
