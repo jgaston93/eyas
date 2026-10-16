@@ -737,6 +737,14 @@ With the stabilator held, against Sikorsky (rms; Eyas − GenHel at −3 / +3 th
 - *Collective in steep descent:* Eyas's collective falls less than GenHel's, by 3.4, 6.0 and 9.2 % at −3000 ft/min, growing with speed. `Open.`
 - *Lateral cyclic in steep climb:* Eyas moves right of GenHel by 3.2, 5.3 and 9.5 % at +3000 ft/min. `Open.`
 - These are trends at constant weight and density altitude of unknown value; the climb runs also sit at Eyas's level-flight sideslip, which differs from GenHel's (above).
+- *Investigated (2026-10-16), each by a probe at the climb conditions, stabilator held; Eyas − Sikorsky change from level at 60 / 100 / 137.5 kt:*
+  - *Inflow model:* uniform inflow in place of Pitt–Peters (GenHel's inflow has no first-harmonic terms, K_CM = K_CL = 0) removes the climb lateral drift at 60 kt (+3.2 → −0.2 %) but not at 100 and 137.5 kt (+4.1, +9.0 %), and leaves the descent collective (+3.8 / +5.8 / +9.0 %) and the power slope (+78 at 137.5 kt) unchanged.
+  - *Yawed-flow drag (D-039) off:* descent collective +3.2 / +4.6 / +7.0 %, power slope +60 at 137.5 kt: about a quarter of each, from physics Eyas keeps (Johnson 2013 §6.22–6.23).
+  - *Elastic twist (D-038) off:* no help (descent collective +10.1 % and power slope +97 at 137.5 kt).
+  - *Pitch attitude:* nudging the held stabilator ±2° in the −3000 ft/min descent moves the collective by only +0.15 and +0.24 % per degree of pitch at 100 and 137.5 kt (the trim compensates), so Eyas's ~0.5° pitch difference from GenHel explains about 0.1 % of the descent-collective gap.
+  - *Advancing tip near Mach 0.86 at 137.5 kt:* the near-sonic part of the disc (M > 0.8, α −3° to +1°) gives 26 % of the profile torque in the −3000 ft/min descent and 24 % in level flight; negative lift is 8 % against 4 % of the total lift. Nothing compressibility-related switches on in the descent, so it doesn't explain a descent-only gap.
+  - *Beyond the collective travel:* at 137.5 kt and +3000 ft/min Eyas's trim needs 105 % collective, past full up (the trim doesn't limit the controls); GenHel's curve is just under 100 % there. Eyas's lateral cyclic and power at that point come from a trim the aircraft can't fly; read the 137.5 kt climb end with that in mind.
+  - Still unexplained: the descent collective (Eyas falls 6–9 % less than GenHel at 100–137.5 kt; at 60 kt within tolerance), the climb lateral drift at 100–137.5 kt, and the power slope at 137.5 kt.
 
 ### The V1 gate
 
