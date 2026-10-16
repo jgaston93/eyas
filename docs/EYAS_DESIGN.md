@@ -632,6 +632,7 @@ Each milestone ends with all of its tests passing and a short entry in `VALIDATI
 - Ground effect.
 - Rotor-speed degree of freedom, with drivetrain inertia, engine and governor (needed for autorotation). This also completes Tier 4 of `AircraftState` (engine torque, NG, NP).
 - Dryden turbulence.
+- Rotor wake distortion in pitch and roll, for the off-axis (cross-coupled) response; model chosen from the literature (D-041).
 - **Accept:** each feature has its own validation entry against the reference model or published data, and the M7 regression still passes with the feature on and with it off.
 
 ### M10 — Elastic Blades (multibody target)
