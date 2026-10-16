@@ -775,7 +775,23 @@ Cruise main-rotor power is in D-039 (mean −45 hp against GenHel); with GenHel'
 - *On-axis, 1.5–12 rad/s (roll from lateral, pitch from longitudinal):* Eyas matches the flight data in both conditions: magnitude within 1.6 dB RMS, phase within 12° RMS. This is the band of the rotor-fuselage coupled roll and pitch response that flight control design works in.
 - *On-axis, below 1.5 rad/s (the whole-aircraft modes), open:* in hover, Eyas's pitch response is 3.7 dB too large on average from 0.56 rad/s (where the coherence first reaches 0.6) to 1.5 rad/s, with a higher peak near 0.7 rad/s. At 80 kt the magnitudes are close, but Eyas leads in phase: 27° on average in roll, below 1 rad/s, and 43° in pitch at 0.2–1 rad/s, up to 85°. The flight roll response stays flat in magnitude down to 0.1 rad/s; Eyas's falls by about 5 dB, with phase lead, as with a stronger roll restoring moment through sideslip. The likely suspects are the slow-mode derivatives: the speed and incidence stability in pitch, and the dihedral and weathercock stability in roll and yaw. The condensed-model modes against Padfield §4.3 (the rest of V2) are the next check.
 - *Off-axis (roll from longitudinal, pitch from lateral), known limitation:* Eyas misses badly in both conditions (phase off by 140–160° on average in hover; magnitude off by up to 13 dB in hover and 28 dB at 80 kt). This is the documented limitation of blade-element rotors with Pitt–Peters inflow. Fletcher (p. VII-4-3) writes that such models "predict the on-axis responses well to about 10 rad/sec but have deficiencies in their off-axis angular rate response prediction", reports the same for AH-64 and BO 105 models, and attributes it to the wake distortion in pitch and roll that Pitt–Peters doesn't model (p. VII-4-4, after Rosen). Padfield 3rd ed. §5.3.3 (p. 298) calls it "a common feature of current modelling standards". Fletcher's fix is an identified aerodynamic phase lag in the flapping equations; adopting a wake-distortion model would be a departure needing its own decision, not part of M7c.
-- *Not yet compared:* Fletcher's yaw and heave responses (Figs. 7 and 13; not digitized) and the Lock number and M_β/I_β against his Table 1.
+- *Not yet compared:* Fletcher's yaw and heave responses (Figs. 7 and 13; not digitized).
+
+### V2: rotor parameters against Fletcher's Table 1 (reported)
+
+Fletcher's Table 1 (p. VII-4-9, PDF p. 11; read from the scan at 400 dpi, clear) compares his hover-identified flapping parameters with theoretical values. His notation (p. VII-4-1) defines M_β and I_β as the blade's first and second flapwise mass moments, in slug·ft and slug·ft², so M_β/I_β is in 1/ft. He doesn't say how the theoretical values were computed.
+
+| | Eyas | Fletcher theoretical | Fletcher identified (hover) |
+|---|---|---|---|
+| M_β/I_β [1/ft] | 0.0573 | 0.0573 | 0.0321 |
+| γ, textbook form ρ a c R⁴/I_β | 10.1 | 8.06 | 8.62 |
+| γ, effective (Eyas's lifting span) | 7.87 | | |
+| δ3 [deg] | 0 | 0 | 7.84 |
+| aerodynamic phase lag ψ_a [deg] | none | n/a | 38.8 |
+
+- *M_β/I_β:* Eyas's blade is GenHel's (S_β = 86.7 slug·ft, I_β = 1512.6 slug·ft², CR-166309 p. 5.1-49), and its ratio equals Fletcher's theoretical value to the printed digits, so his theory starts from the same blade data. His identified value is 44 % lower; he calls it "reasonably close".
+- *Lock number:* Fletcher's 8.06 is the textbook form at sea level with Eyas's (GenHel's) chord, radius and I_β and a lift slope of 5.72/rad, i.e. 0.1/deg (1.4087 × 5.72). Eyas takes its lift slope from the SC1095 tables, which give 6.45/rad at low Mach rising to 6.96 at Mach 0.5. Weighted along the span by r(r − e)² at each section's hover Mach number, that is 7.20/rad, so the textbook form gives 10.1. But Eyas's blade lifts only from the 5.08 ft root cutout to the tip-loss radius (0.97 R) and flaps about a 1.25 ft hinge offset. The Lock number equivalent to the aerodynamic flap damping Eyas actually computes, γ_eff = 4ρ∫a(r) c r (r − e)² dr / I_β over that span, is 7.87. That is 2.4 % below Fletcher's theoretical value and 9 % below his identified one, within the 7 % spread between those two.
+- *δ3 and ψ_a:* Eyas, like GenHel, has no pitch-flap coupling. Fletcher identifies 7.84°, a stabilizing equivalent coupling that "contributes significantly to the measured response", and the 38.8° aerodynamic phase lag that stands in for the wake distortion (the off-axis limitation above). Both are identified equivalents, not measured hardware, so neither is adopted.
 
 ### V2: mode character (reported)
 
