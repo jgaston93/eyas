@@ -24,8 +24,9 @@ What it works out:
   offsets and gains of Eyas's linear control map. The travels in inches come from GenHel's
   cockpit section (Figs. 6.3.1 and 6.4.1, pp. 6.16-6.17; D-035). Collective, lateral and pedal
   fit the rigging exactly (checked here). The longitudinal stroke is given but its rows put
-  neutral cyclic in three places; neutral is their mean, and the values that depend on it
-  (the theta1s and theta1c offsets) are tagged !placeholder.
+  neutral cyclic in three places, 0.81 in apart. Neutral is the pinned row's estimate, the end
+  of that range nearest the fit to Ballin's GenHel longitudinal stick (D-035 M7c amendment;
+  the fit itself, 2.04 in, lies outside the range).
 """
 
 import argparse
@@ -179,7 +180,9 @@ def travels(rig, tv):
     close(a1s(xa_n - tv["A_PIN_IN"], xc_low), tv["A_PIN_A1S"], "lateral pinned")
 
     # Longitudinal, with the pedal at neutral: each row gives its own neutral cyclic. They
-    # disagree by up to 0.8 in (DATA_GAPS.md), so neutral is their mean.
+    # disagree by up to 0.8 in (DATA_GAPS.md). Fitted to Ballin's GenHel longitudinal stick
+    # (NASA TM-88360 Fig. B1(a)), neutral comes out at 2.04 in, beyond the largest estimate,
+    # so neutral is that estimate, the pinned row's (D-035 M7c amendment).
     kb = rig["KXBB1S"] * rig["SIGN_XB2"]
 
     def b1s_rest(xc_in):  # B1S with the stick at XB+2 = 0
@@ -188,7 +191,9 @@ def travels(rig, tv):
     est = [(tv["B_FWD_B1S"] - b1s_rest(xc_high)) / kb - tv["B_FWD_IN"],
            (tv["B_PIN_B1S"] - b1s_rest(xc_low)) / kb + tv["B_PIN_IN"],
            (tv["B_AFT_B1S"] - b1s_rest(xc_mid)) / kb + tv["B_AFT_IN"]]
-    xb_n = sum(est) / len(est)
+    xb_n = est[1]
+    if xb_n != max(est):
+        raise ValueError("control travels: the pinned row no longer gives the largest neutral")
     xb = (xb_n - 0.5 * tv["STROKE_B"], xb_n + 0.5 * tv["STROKE_B"])  # -1 = full aft
     return xc, xa, xb, xp, max(est) - min(est)
 
@@ -365,8 +370,8 @@ def build(variant=None):
 # Controls (D-034, D-035): stick and pedal travels from GenHel Figs. 6.3.1 and 6.4.1 (pp. 6.16-6.17):
 #   {trav}.
 # Collective, lateral and pedal fit the rigging exactly; the pedal uses its stroke with overtravel.
-# The longitudinal rows put neutral cyclic in three places {fmt(round(lon_spread, 3))} in apart; neutral is
-# their mean, so the theta1s and theta1c offsets are tagged !placeholder.
+# The longitudinal rows put neutral cyclic in three places {fmt(round(lon_spread, 3))} in apart; neutral is the
+# pinned row's, the end nearest the fit to Ballin's GenHel longitudinal stick (D-035 M7c amendment).
 {note}
 geodetic_origin: {{latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}}  # scenario, not aircraft data
 
@@ -403,7 +408,7 @@ components:
       dynamic_twist: {{gain_table: dynamic_twist_gain.csv, mode_table: dynamic_twist_mode.csv, lag: "0.01 s"}}  # D-038; lag numerical
       yawed_flow_drag: true  # D-039 (GenHel resolves its drag on the full segment velocity, p. 5.1-28)
     controls:
-{map_rows(main_map, "      ", (("theta1s", "offset"), ("theta1c", "offset")))}
+{map_rows(main_map, "      ")}
 
   - type: airframe_aero
     name: airframe

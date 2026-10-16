@@ -25,17 +25,14 @@ constexpr double kDeg = std::numbers::pi / 180.0;
 // ---- Config ------------------------------------------------------------------------
 
 // The config loads through the public API, with exactly the placeholders
-// D-034 and D-035 declare: the cyclic offsets (they depend on neutral
-// longitudinal cyclic, which GenHel's Fig. 6.3.1 leaves uncertain by 0.8 in)
-// and the strut top stops (D-032 item 6).
+// D-034 declares: the strut top stops (D-032 item 6). The cyclic offsets
+// were placeholders until M7c set neutral longitudinal cyclic (D-035 M7c
+// amendment).
 TEST(Uh60aAircraft, ConfigLoadsWithTheDeclaredPlaceholders) {
     const Model m = Model::from_file(test::uh60a_config_path());
     std::vector<std::string> p = m.placeholders();
     std::sort(p.begin(), p.end());
     std::vector<std::string> expect;
-    for (const char* r : {"theta1c", "theta1s"}) {
-        expect.push_back(std::string("components[0].controls.") + r + ".offset");
-    }
     for (const char* g : {"0", "1", "2"}) {
         expect.push_back(std::string("components[3].gears[") + g + "].strut.stop_damping");
         expect.push_back(std::string("components[3].gears[") + g + "].strut.stop_stiffness");
