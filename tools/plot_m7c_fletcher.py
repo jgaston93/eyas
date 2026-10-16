@@ -3,12 +3,14 @@ docs/VALIDATION.md (D-035 M7c amendment).
 
 Reads the CSV written by eyas_m7c_fletcher (Eyas's averaged linear model at Fletcher's
 conditions, with and without GenHel's primary servo) and Fletcher's digitized flight-data
-responses (data/uh60a/validation/fletcher_fig3.csv, fig4.csv; human-reviewed, DATA_GAPS.md).
-Writes one figure per condition (magnitude, phase and Fletcher's coherence for p and q per
-inch of lateral and longitudinal cyclic) and m7c_fletcher_differences.csv: Eyas minus flight
-at Fletcher's readings where the coherence is at least 0.6, up to 12 rad/s (mean, RMS,
-largest; magnitude in dB, phase in deg). Fletcher's phase curves sit on their own 360 deg
-branch, so Eyas's phase is moved by the whole turns that best align it over that band.
+responses (data/uh60a/validation/fletcher_fig3.csv, fig4, fig7, fig13; human-reviewed,
+DATA_GAPS.md). Writes one figure per condition (magnitude, phase and Fletcher's coherence for p
+and q per inch of lateral and longitudinal cyclic), one for r per inch of collective in both
+conditions (Figs. 7 and 13: no coherence panel, so every reading Fletcher drew up to 12 rad/s is
+compared), and m7c_fletcher_differences.csv: Eyas minus flight at Fletcher's readings where
+the coherence is at least 0.6, up to 12 rad/s (mean, RMS, largest; magnitude in dB, phase in
+deg). Fletcher's phase curves sit on their own 360 deg branch, so Eyas's phase is moved by the
+whole turns that best align it over that band.
 
     cmake --build --preset release
     ./build/release/tests/eyas_m7c_fletcher build/m7c_fletcher
@@ -154,6 +156,57 @@ def plot_condition(cond, fig_name, label, fl, ey, outdir, table):
     plt.close(fig)
 
 
+def plot_yaw(ey, outdir, table):
+    """r per inch of collective, hover and 80 kt, against Figs. 7 and 13."""
+    fig, axes = plt.subplots(2, 2, figsize=(11, 7), sharex=True)
+    for col, (cond, fig_name, label) in enumerate((("hover", "fig7", "hover"),
+                                                    ("80kt", "fig13", "80 kt"))):
+        fl = load_fletcher(fig_name)
+        mag, ph = fl[("r_col", "magnitude_db")], fl[("r_col", "phase_deg")]
+        e = ey[(cond, "r_col")]
+        lw_e = np.log10(e[:, 0])
+        m_ok, p_ok = mag[:, 0] <= W_MAX, ph[:, 0] <= W_MAX
+        shift = {}
+        for servo, (im, ip) in (("servo", (3, 4)), ("no_servo", (1, 2))):
+            em = np.interp(np.log10(mag[:, 0]), lw_e, e[:, im])
+            ep = np.interp(np.log10(ph[:, 0]), lw_e, e[:, ip])
+            shift[servo] = turns(ep[p_ok], ph[p_ok, 1])
+            for qty, d, data, ok in (("magnitude_db", em[m_ok] - mag[m_ok, 1], mag, m_ok),
+                                     ("phase_deg", ep[p_ok] + shift[servo] - ph[p_ok, 1], ph,
+                                      p_ok)):
+                lo = data[ok, 0]
+                table.append([cond, "r_col", servo, qty, int(ok.sum()), f"{lo.min():.2f}",
+                              f"{lo.max():.2f}", *(f"{v:.2f}" for v in stats(d))])
+        for row, (data, ie, ylab) in enumerate(((mag, (3, 1), "magnitude [dB, (rad/s)/in]"),
+                                                (ph, (4, 2), "phase [deg]"))):
+            ax = axes[row, col]
+            ax.axvspan(0.1, data[0, 0], color="0.88", lw=0, zorder=0)
+            ax.axvspan(min(data[-1, 0], W_MAX), 20.0, color="0.88", lw=0, zorder=0)
+            ax.plot(data[:, 0], data[:, 1], color="black", lw=1.4, label="flight (Fletcher)")
+            off = shift["servo"] if row == 1 else 0.0
+            off_ns = shift["no_servo"] if row == 1 else 0.0
+            ax.plot(e[:, 0], e[:, ie[0]] + off, color="tab:red", lw=1.6,
+                    label="Eyas with GenHel servo")
+            ax.plot(e[:, 0], e[:, ie[1]] + off_ns, color="tab:red", lw=1.0, ls="--",
+                    label="Eyas, no servo")
+            ax.axvline(W_MAX, color="tab:blue", lw=0.8, ls="--")
+            ax.set_xscale("log")
+            ax.set_xlim(0.1, 20)
+            ax.grid(True, which="both", lw=0.3, alpha=0.5)
+            if col == 0:
+                ax.set_ylabel(ylab)
+            if row == 0:
+                ax.set_title(f"r / δcol, {label} (Fletcher Fig. {fig_name[3:]})")
+            else:
+                ax.set_xlabel("frequency [rad/s]")
+    axes[0, 0].legend(fontsize=8, loc="lower left")
+    fig.suptitle("UH-60A yaw rate per inch of collective: Eyas against Fletcher's flight data; "
+                 "grey: no flight data or > 12 rad/s")
+    fig.tight_layout()
+    fig.savefig(outdir / "m7c_fletcher_yaw.png", dpi=110)
+    plt.close(fig)
+
+
 def main():
     if len(sys.argv) != 3:
         print(__doc__)
@@ -164,6 +217,7 @@ def main():
     table = []
     for cond, fig_name, label in CONDITIONS:
         plot_condition(cond, fig_name, label, load_fletcher(fig_name), ey, outdir, table)
+    plot_yaw(ey, outdir, table)
     with (outdir / "m7c_fletcher_differences.csv").open("w", newline="", encoding="utf-8") as f:
         f.write("# Eyas minus Fletcher's flight data where coherence >= 0.6 and w <= 12 rad/s "
                 "(tools/plot_m7c_fletcher.py)\n")
