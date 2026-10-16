@@ -58,8 +58,8 @@ public:
     // result depends only on its arguments (spec §5). Writes into internal
     // scratch buffers, which never affect results. Returns false if some
     // component's bounded iteration did not converge (D-023). [s]
-    bool derivatives(double t, std::span<const double> x, const Controls& controls,
-                     const Environment& env, std::span<double> xdot) const noexcept;
+    [[nodiscard]] bool derivatives(double t, std::span<const double> x, const Controls& controls,
+                                   const Environment& env, std::span<double> xdot) const noexcept;
 
     // The derivative function with the body held (D-035): a constraint keeps
     // the body acceleration at zero, so every component state moves with
@@ -71,9 +71,10 @@ public:
     // `component_loads` has one entry per component (config order), each
     // component's load0 goes there; any other size is ignored. Pure, like derivatives(). Returns
     // false if some component's bounded iteration did not converge (D-023). [s]
-    bool held_derivatives(double t, std::span<const double> x, const Controls& controls,
-                          const Environment& env, std::span<double> xdot, Vec6& net,
-                          std::span<Wrench> component_loads = {}) const noexcept;
+    [[nodiscard]] bool held_derivatives(double t, std::span<const double> x,
+                                        const Controls& controls, const Environment& env,
+                                        std::span<double> xdot, Vec6& net,
+                                        std::span<Wrench> component_loads = {}) const noexcept;
 
     // The context a derivative evaluation at (t, x) gives every component:
     // unit quaternion (D-014), atmosphere at the CG (D-016), ground plane

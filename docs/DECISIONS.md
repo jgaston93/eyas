@@ -72,7 +72,7 @@ Decisions and departures from `EYAS_DESIGN.md`, each with a date and rationale. 
 ## D-005 Timing budget defined per host frame (SPEC_REVIEW #5) — `Approved (2026-10-10)`
 **Decision:** Replace §7 rule 5. The rule becomes: worst-case `advance()` for a nominal host frame, i.e. worst-case `step()` × ceil(dt_host / dt_physics), must stay below 50% of `dt_host` on the target hardware. The benchmark reports per-`step()` and per-`advance()` mean, p99 and max.
 - At 60 Hz host and 1 kHz physics (17 sub-steps), that means worst-case `step()` ≲ 0.49 ms.
-- **Target hardware (spec §12 Q4, answered by the spec owner on 2026-10-10):** a Linux server running RHEL 8 or RHEL 9. This is a general-purpose Linux server, not an embedded RTOS. The budget is measured there, with the release build configuration.
+- **Target hardware (spec §12 Q4, answered by the spec owner on 2026-10-10):** a Linux server running RHEL 8 or RHEL 9 (since D-037, Eyas and its host run in a RHEL 9 container on it). This is a general-purpose Linux server, not an embedded RTOS. The budget is measured there, with the release build configuration.
 
 **Rationale:** The spec's per-`step()` rule allows an 8 ms step inside a 16.7 ms frame that contains about 17 steps.
 **Notes:**
@@ -649,3 +649,82 @@ Johnson (2013) has nothing specific. No source gives the fade width; c = 20° is
 - *Vibration start (addition):* the held trim's start state gets the zero-mean 4/rev velocity and rate oscillation implied by the free-body accelerations along the held orbit, so a free run starts on its vibration cycle. Without it the free body starts off the cycle by a constant rate and its damping turns that into a drift 30–100× larger. `TrimResult::vel_b` stays the mean velocity the condition asks for.
 - *Not in `TrimResult` yet:* the blade angles and main-rotor power. They are component-specific; the validation tools report them, and they join the API with the Tier 4 outputs (M8) if a host needs them.
 - *T2 bounds* come from the drift study: up to 60 kt the solver's tolerance, above it the held-body approximation (VALIDATION.md M7a).
+
+**Amendment (2026-10-15, before M7b; SPEC_REVIEW #29):** approved by the spec owner. It replaces the items below; the rest of D-035 stands.
+- *Coordinates:* the retained model adds height h (positive up; density through the ISA, D-015) to the body coordinates. This departs from Padfield's Eq. 4.44, which leaves height out (p. 183 notes the density change in climbing flight). It is needed so that L3's second-order check isn't spoiled by a first-order error (up to 0.24 % over 3 s). The condensed model drops h, keeping Padfield's 9 states. x_n and y_n stay out: they enter nothing while the ground is absent and the wind uniform.
+- *Periodic linear model (addition):* the per-azimuth multiblade matrices A_M(ψ_j), B_M(ψ_j) are kept as the periodic (LTP) linear model, alongside their average.
+- *State elimination:* a set of states whose columns are zero outside the set feeds no other state. The matrix is then block triangular, so the set can be removed without changing any other eigenvalue. These sets are removed before the condensation, and their own eigenvalues are reported. This replaces "identically zero row and column", which depends on finite-difference noise for the hover wake lags.
+- *Derivatives:* reported as Padfield reports them in App. 4B, i.e. the entries of A with the inertial and gravitational terms of Eq. 4.44 included (Padfield p. 187). The moment rows are the primed derivatives L′, N′ (Eqs. 4.47–4.48), which the coupled solve gives directly.
+- *L2 Floquet:*
+  - *Gate:* a symmetric hover fixture (shaft along gravity, no cyclic, no tail rotor or airframe, Pitt–Peters inflow, N_b = 4, β₀d included). There the rotating-frame equations have constant coefficients, so the multiblade equations do too (Johnson pp. 556, 572). The A_M(ψ_j) must agree at every azimuth, and the averaged eigenvalues must equal the Floquet exponents, both to finite-difference precision.
+  - *Reported (UH-60A):* the hover trim's cyclic flapping makes the coefficients periodic even in hover (mostly the 2/rev β₀d coupling; Johnson p. 557), so for the UH-60A, hover and forward flight alike, the variation of A_M around the revolution and the Floquet-to-averaged gap are reported against μ. Also reported: the gap's scaling with the periodic part scaled by s ∈ {1, ½, ¼}, expected second order since the first-order change of a simple Floquet exponent is the zero revolution mean of the periodic part (own perturbation argument, recorded in VALIDATION.md). Johnson (p. 757) asks for exactly this check of the constant-coefficient approximation.
+  - *Monodromy:* central differences of the reduced free flow map over one revolution (RK4 at T/256, height free, x_n and y_n held), independent of the sampled Jacobians. Modes with |Λ| < 1e-6 (the gear struts and the 0.01 s lags) aren't compared. The branch of ln Λ follows Johnson's rule (pp. 570–571): continuity from the averaged root, the frequency picked by the eigenvector's largest harmonic.
+- *L3 Linear against nonlinear:*
+  - *Gate, every T1 speed:* responses to small initial perturbations and control doublets through `Model::advance`, against the **periodic** linear model. The error's order, fitted as the log–log slope over at least three amplitudes, must be 2 within the fit's uncertainty.
+  - *Reported:* the averaged model against the same runs, with the error's first-order part against μ (up to 7.9 % at 150 kt in the probe).
+  - *Gate, hover only:* the averaged model, with a tolerance set from the measured gap (0.014 % in the probe).
+- *Reduced-coordinate check (gate, addition):* the reduced derivative function must equal the time derivative of the reduced coordinates along the free flow, to finite-difference precision. It checks the Euler-rate, height and multiblade terms, and caught a sign error in the planning probe.
+- *M7c consequence:* at high μ the averaged eigenvalues of some slow modes are about 10 % from the Floquet exponents (probe: 0.025 rad/s at 150 kt), so V2 reports the Floquet exponents alongside the averaged eigenvalues.
+
+## D-036 Flow-angle tables: a parabola through the three nodes around zero (SPEC_REVIEW #30) — `Approved (2026-10-15)` — departure from GenHel
+**Context:** SPEC_REVIEW #30. GenHel's linear interpolation puts a corner at zero angle in its even fuselage and empennage maps, where every straight-flight trim sits. That makes the model non-differentiable there and blocks D-035 L3.
+
+**Decision:**
+- Every airframe-aerodynamics table against a flow angle (the fuselage maps against α_WF and ψ_WF; each panel's c_l, c_d, dynamic-pressure ratio and wake angle) is read through `AngleTable`.
+- Where the table has a breakpoint at zero with symmetric neighbours ±a (all of the UH-60A's, a = 5°), the two segments next to zero use the parabola through the three nodes: f(x) = f(0) + o u + (e − f(0)) u², with u = x/a, e = (f(a) + f(−a))/2 and o = (f(a) − f(−a))/2. Elsewhere, and in tables without such a breakpoint, interpolation stays linear, as in GenHel.
+- Properties:
+  - it passes through every GenHel node;
+  - an odd table is unchanged (e = f(0) = 0);
+  - the odd part keeps its slope o/a through zero, and the even part is flat there;
+  - the only new slope changes are at the ±a nodes, where linear interpolation already had them.
+  `AngleTable::min_value()` includes the parabola's vertex for the dynamic-pressure-ratio check.
+- The GenHel reference used by the Layer-1 tests (`tests/support/genhel_airframe.hpp`) applies the same parabola to its own lookups, implemented independently on GenHel's printed maps, so those tests still check the production code against GenHel, with this departure.
+
+**Alternatives considered:**
+- *Keep the corners and weaken L3.* Average the ± responses to cancel the even part, and require only convergence. Rejected: the corner isn't physics, and the nonlinear model would keep a |β| coupling.
+- *Smooth interpolation everywhere (splines).* Rejected: it changes every value between nodes. The corner only matters where trims sit, i.e. at zero.
+
+**Effect (measured, VALIDATION.md M7b):**
+- *Linearization:* at the M7b trims the sideways-velocity and yaw-rate columns are now smooth (their one-sided differences converge as the step shrinks). L3's error shrinks with the amplitude at all speeds.
+- *M7a trims:* 0–150 kt, all converged; the largest changes are at 150 kt: collective 0.18 % of travel, pitch attitude 0.08°, roll 0.01°, main-rotor power 7.5 hp (1890 → 1882 hp), tail-rotor thrust 5 lbf.
+- *Validation entries:* VALIDATION.md M7a is regenerated with it. The M7c comparison with Ballin's GenHel trims lists D-036 among the explained departures.
+
+**Data note:** the fuselage lift-increment table header said "odd in PSIWF". That applied to the pitching-moment column only; the lift increment is printed for −30 to 30° and isn't symmetric. The header was corrected; no value changed.
+
+**Implementation notes (2026-10-15, M7b; VALIDATION.md M7b):**
+- *Coordinates:* `ReducedCoordinates` handles any blade count: β0, β_nc and β_ns, and β_d for even N_b (Johnson 2013 Eq. 15.77), with q̈ = a − 2Ω D q̇ − Ω² D² q, which reduces to Johnson's Eq. 15.80 for the flap equation. Flapping rotors are found by `dynamic_cast<BladeElementRotor>` and blade azimuths come from `blade_azimuth()`, so no §6 interface changed. ψ_h is taken within ±π of the reference heading.
+- *Held orbit:* the trim's held RK4 integrator moved to `analysis/held_orbit` and is shared; the linear models are taken about the mean body state (without the vibration offset).
+- *Floquet:* exponents are matched to the averaged roots nearest first, one to one, with the branch nearest to the matched root's frequency. That is Johnson's continuity rule (pp. 570–571) while gaps are small against root spacing. The monodromy starts at the held orbit's start.
+- *L3 as implemented (option A, approved 2026-10-15):*
+  - *Speeds:* hover, 60 and 150 kt in the test (first 0, 35, 60, 90, 120 and 150 kt; cut for CI time with D-037, since the generator covers the rest); every 10 kt in `eyas_m7b_cases`, reported.
+  - *Cases:* each body coordinate perturbed and each control given a 1 s sine doublet (continuous, so RK4 stays accurate), at four amplitudes halving from 0.0625 m/s, 0.005 rad/s, 0.0025 rad and 0.0025 of travel. These keep the largest clear of nearby map nodes: χ = −0.85° next to 0° in hover, a₁ = 0.12° next to 0° at 60 kt.
+  - *Steps:* both models step at T/256 up to 60 kt and T/512 above.
+  - *Criterion:* the relative error must fit c0 + c1 a to within 15 % beyond a noise allowance of half the limit. The leftover c0 must stay below 1e-4 up to 60 kt and 1e-3 above (measured ≤ 3.2e-5 and ≤ 5.4e-4).
+  - *Hover, averaged model:* gated at c0 < 2e-3 (measured 1.04e-3, for longitudinal cyclic). The probe's 0.014 % was for state perturbations only.
+  - *Why not "order 2 within the fit's uncertainty"* (the amendment's wording): the data are deterministic, so the fit has no statistical uncertainty, and part of the leftover is the held-body linearization. That part was measured (half the high-speed leftover; eigenvalues within 0.07 % to 120 kt and 0.4 % at 150 kt, with the free flight wandering by as much between revolutions) and approved as option A.
+- *30 kt:* GenHel's tail-rotor fin blockage has its breakpoint at exactly 30.0 kt (CR-166309 p. 5.4-2, "empirical and based on flight test data of other helicopters"; p. 5.4-12), a corner in airspeed. A 30.0 kt trim sits on it, and L3 there has a 12 % leftover. The corner isn't smoothed, because no source gives the shape (approved 2026-10-15), and 30 kt isn't an L3 gate speed. If M7c shows the aircraft's pedal smooth through 30 kt, that is the evidence to revisit it.
+- *L4 as implemented:*
+  - *Fixture:* the symmetric coaxial fixture with a centre hinge, no root cutout, B = 1, a linear airfoil without drag, and Pitt–Peters (heave) or uniform inflow (rate derivatives).
+  - *Rate derivatives:* quasi-steady with the body held (Padfield's definition: the disc settles before the fuselage moves).
+  - *M_q, L_p:* from the condensed model on a stiff hub (S_β = 0.3) over a heavy airframe (10⁶ kg·m²), so blade inertia and the acceleration coupling stay below 0.2 %. Eq. 4.81 drops the in-plane loads, which grow as the hub softens, so softer hubs are reported, not gated.
+- *Condensed outputs:* derivatives as Padfield's App. 4B plots them (gravity and kinematic terms included; moments primed), and modes with an eigenvector-based label (`modes()`). The label is a heuristic, indicative where modes couple strongly.
+- *Cost:* linearizing the UH-60A takes 25 ms (41 states, 64 azimuths) and its Floquet flow map 0.25 s (Release).
+
+## D-037 Deployment in a RHEL 9 container; RHEL 8 dropped from CI (refines D-005) — `Approved (2026-10-15)`
+**Context:** D-005 recorded the target as a Linux server running RHEL 8 or RHEL 9, so CI built and tested in Rocky Linux 8 (gcc-toolset-13) and 9 (system GCC 11). Eyas is an in-process library, so it must be built for the userspace the host simulator runs in: a RHEL 9 build (glibc 2.34) won't load into a host running natively on RHEL 8 (glibc 2.28). The deployment team (the spec owner) decided on 2026-10-15 to containerize the host.
+
+**Decision:**
+- Eyas and the host simulator always run in a RHEL 9 container, whether the server runs RHEL 8 or RHEL 9.
+- CI keeps the Rocky Linux 9 job (system GCC 11) and drops the Rocky Linux 8 job.
+- Configure still rejects GCC < 11 with instructions, which also covers anyone building elsewhere.
+- *Fidelity:* a container shares the host kernel and runs native code, so it changes neither speed nor results. A given binary gives bit-identical results on either host; determinism stays per build and compiler (D-005).
+- *Host-side setup:* real-time scheduling, CPU pinning and memory locking (D-005) need the container's privileges and cpusets, which is part of the host deployment, not Eyas.
+
+**CI changes made with it:**
+- ctest runs in parallel (`--parallel $(nproc)`), so a job takes about its longest test rather than the sum.
+- Compiled objects are cached with ccache through `actions/cache` (keys per job). ccache reuses an object only when the compiler, flags and preprocessed source match, so results are unchanged; the D-010 flags are untouched.
+- The L3 gate runs in hover, at 60 kt and at 150 kt. `eyas_m7b_cases` covers every 10 kt (VALIDATION.md M7b).
+- *Two tiers (approved 2026-10-15):*
+  - *Every push and PR (`ci.yml`):* every job runs every test, except that the ASan job skips the tests listed in `SLOW_TESTS`, which the sanitizers slow about 60×. These are L3 and the L4 rate derivatives, each about 15 min under ASan.
+  - *`full-verification.yml`, nightly on `main` and on demand:* every test under ASan, plus every validation generator and plot script, uploaded as an artifact for comparison with VALIDATION.md.
+  - *The trade:* a memory error that only a slow test reaches could merge and be caught by the next nightly run. The slow tests still run in every other build on every push, and the trim sweep flies the same components at every speed under ASan.

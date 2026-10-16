@@ -19,6 +19,7 @@
 #include "eyas/model.hpp"
 #include "sim/executive.hpp"
 #include "sim/recorder.hpp"
+#include "support/frame_status.hpp"
 #include "support/m2_fixtures.hpp"
 
 namespace {
@@ -102,10 +103,11 @@ void equilibrium(const std::filesystem::path& dir) {
     for (int i = 0; i <= 600; ++i) {
         if (i > 0) {
             for (int k = 0; k < 100; ++k) {
-                (void)tilted.advance(Controls{}, Environment{}, 1'000'000);
+                test::require_frame(tilted.advance(Controls{}, Environment{}, 1'000'000),
+                                    "m2_cases");
             }
             for (int k = 0; k < 6; ++k) {
-                (void)level.advance(hover, Environment{}, kFrameNs);
+                test::require_frame(level.advance(hover, Environment{}, kFrameNs), "m2_cases");
             }
         }
         const BodyState l = level.body_state();
@@ -126,7 +128,7 @@ void collective_step(const std::filesystem::path& dir) {
     Controls c;
     for (int i = 0; i < 180; ++i) {  // 3 s
         c.collective = m.outputs().sim_time_ns < 1'000'000'000 ? 0.5 : 0.6;
-        (void)m.advance(c, Environment{}, kFrameNs);
+        test::require_frame(m.advance(c, Environment{}, kFrameNs), "m2_cases");
         const BodyState b = m.body_state();
         const std::array<double, 4> row = {c.collective, b.vel_b.z(), b.pos_n.z(),
                                            m.outputs().altitude};

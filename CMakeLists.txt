@@ -19,6 +19,8 @@ include(EyasDependencies)
 
 add_library(eyas STATIC
     src/airframe/airframe_aero.cpp
+    src/analysis/held_orbit.cpp
+    src/analysis/linearize.cpp
     src/analysis/trim.cpp
     src/airframe/landing_gear.cpp
     src/core/attitude.cpp

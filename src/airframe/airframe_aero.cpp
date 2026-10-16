@@ -27,11 +27,37 @@ void validate_panel(const PanelConfig& p, const std::string& what) {
     if (p.schedule && !(p.schedule->min < p.schedule->max)) {
         throw InitError("airframe aero: the " + what + " schedule's min must be below its max");
     }
-    if (!(min_value(p.q_ratio) >= 0.0)) {
+    if (!(p.q_ratio.min_value() >= 0.0)) {
         throw InitError("airframe aero: the " + what +
                         " dynamic-pressure ratio must not be negative");
     }
 }
+
+}  // namespace
+
+AngleTable::AngleTable(Table1D table) : t_(std::move(table)) {
+    const std::span<const double> x = t_.x_axis().breakpoints();
+    for (std::size_t i = 1; i + 1 < x.size(); ++i) {
+        if (x[i] == 0.0 && std::abs(x[i - 1] + x[i + 1]) <= 1e-12 * x[i + 1]) {
+            smooth_ = true;
+            a_ = x[i + 1];
+            f0_ = t_(0.0);
+            e_ = 0.5 * (t_(a_) + t_(-a_));
+            o_ = 0.5 * (t_(a_) - t_(-a_));
+        }
+    }
+}
+
+double AngleTable::min_value() const noexcept {
+    double m = eyas::min_value(t_);
+    const double c = e_ - f0_;  // f = f0 + o u + c u², vertex at u = −o/(2c)
+    if (smooth_ && c > 0.0 && std::abs(o_) < 2.0 * c) {
+        m = std::min(m, f0_ - o_ * o_ / (4.0 * c));
+    }
+    return m;
+}
+
+namespace {
 
 // GenHel's wind-to-body matrix (CR-166309 pp. 5.2-9, 5.3-8, 5.3-12), applied
 // to a vector in wind axes (suffix w), with the flow's actual direction α' (D-030).

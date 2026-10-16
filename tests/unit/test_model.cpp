@@ -184,7 +184,7 @@ TEST(Model, ModelsSeeAtmosphereAtCgAltitude) {
     Environment env;
     env.isa_delta_T = 12.0;
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(0.0, ex.state(), Controls{}, env, xdot);
+    EXPECT_TRUE(ex.derivatives(0.0, ex.state(), Controls{}, env, xdot));
     const AirState expected = isa_atmosphere(1750.0, 12.0);
     EXPECT_EQ(probe->seen.altitude, 1750.0);
     EXPECT_EQ(probe->seen.density, expected.density);

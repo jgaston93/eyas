@@ -249,7 +249,7 @@ TEST(TailRotorWake, ThroughTheExecutive) {
     EXPECT_GT(std::abs(al.psi_wf), 1.0 * kDegree);
 
     std::vector<double> xdot(ex.num_states());
-    ex.derivatives(ctx.t, x, Controls{}, Environment{}, xdot);
+    EXPECT_TRUE(ex.derivatives(ctx.t, x, Controls{}, Environment{}, xdot));
     EXPECT_NEAR(xdot[i_tail], expect.lambda_dot, 1e-9 * std::abs(expect.lambda_dot) + 1e-12);
     EXPECT_NEAR(xdot[i_tail + 1], expect.sidewash_rate,
                 1e-9 * std::abs(expect.sidewash_rate) + 1e-12);
@@ -258,7 +258,7 @@ TEST(TailRotorWake, ThroughTheExecutive) {
     EXPECT_NE(x[i_tail + 1], 0.0);  // the wake states moved
 
     std::vector<double> again(ex.num_states());
-    ex.derivatives(ctx.t, x, Controls{}, Environment{}, again);
+    EXPECT_TRUE(ex.derivatives(ctx.t, x, Controls{}, Environment{}, again));
     EXPECT_EQ(xdot, again);
     const test::AllocationCounter count;
     (void)ex.advance(Controls{}, Environment{}, 16'666'667);

@@ -1,0 +1,92 @@
+name: Full verification
+
+# The slow end of verification, off the per-push path (D-037): every test
+# under ASan+UBSan, including the slow ones ci.yml skips there, and every
+# validation generator with its plots, uploaded as an artifact for
+# comparison with docs/VALIDATION.md. Nightly on main, and on demand from
+# the Actions tab.
+
+on:
+  schedule:
+    - cron: "23 7 * * *"  # daily, 07:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  asan:
+    name: Ubuntu GCC ASan+UBSan, all tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CC: gcc
+      CXX: g++
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Ninja and ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-ubuntu-gcc-asan-${{ github.sha }}
+          restore-keys: ccache-ubuntu-gcc-asan-
+      - name: Configure
+        run: >-
+          cmake --preset asan
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: cmake --build --preset asan
+      - name: Test (all, slow ones included)
+        run: ctest --preset asan --parallel "$(nproc)"
+
+  validation:
+    name: Validation generators and plots (Release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CC: gcc
+      CXX: g++
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Ninja and ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the plotting tools
+        run: pip install -r tools/requirements.txt
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-ubuntu-gcc-release-${{ github.sha }}
+          restore-keys: ccache-ubuntu-gcc-release-
+      - name: Configure
+        run: >-
+          cmake --preset release
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: cmake --build --preset release
+      # Each generator stops with an error if a case fails (an unconverged
+      # trim, a bad config); the numbers themselves are compared with
+      # VALIDATION.md by hand from the artifact.
+      - name: Run every generator and plot
+        run: |
+          set -e
+          for m in m1 m2 m3 m4 m5 m6 m6c m6d m7 m7b; do
+            echo "::group::$m"
+            ./build/release/tests/eyas_${m}_cases validation-output/data/$m
+            python tools/plot_${m}.py validation-output/data/$m validation-output/plots/$m
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: validation-output-${{ github.sha }}
+          path: validation-output
+          retention-days: 30

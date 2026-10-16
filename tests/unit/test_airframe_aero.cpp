@@ -614,8 +614,8 @@ TEST(AirframeAero, ThroughTheExecutive) {
     const std::span<const double> x = ex.state();
     std::vector<double> d1(ex.num_states());
     std::vector<double> d2(ex.num_states());
-    ex.derivatives(ex.sim_time(), x, Controls{}, Environment{}, d1);
-    ex.derivatives(ex.sim_time(), x, Controls{}, Environment{}, d2);
+    EXPECT_TRUE(ex.derivatives(ex.sim_time(), x, Controls{}, Environment{}, d1));
+    EXPECT_TRUE(ex.derivatives(ex.sim_time(), x, Controls{}, Environment{}, d2));
     EXPECT_EQ(d1, d2);
     // The lag states moved off zero: the wake is being tracked.
     const std::size_t i_aero = body_layout::kSize;
@@ -864,6 +864,71 @@ stabilator:
     std::string fin_scheduled = common;
     fin_scheduled.insert(fin_scheduled.find("fin:\n") + 5, schedule);
     EXPECT_THROW((void)AirframeAero::from_config(Config::from_string(fin_scheduled)), InitError);
+}
+
+}  // namespace
+}  // namespace eyas
+
+namespace eyas {
+namespace {
+
+// ---- Flow-angle tables smoothed at zero (D-036) -----------------------------------
+
+Table1D angle_table(std::vector<double> deg, std::vector<double> values) {
+    for (double& d : deg) {
+        d *= units::kDegree;
+    }
+    return Table1D(Axis(std::move(deg)), std::move(values));
+}
+
+// The parabola through the three nodes around zero: every node is kept,
+// outside ±a the table is linear as before, and at zero the slope is the
+// odd part's (o/a) from both sides, so an even table is flat there.
+TEST(AngleTable, ParabolaThroughTheNodesAroundZero) {
+    const Table1D t = angle_table({-10, -5, 0, 5, 10}, {4.0, 1.3, 0.2, 0.9, 3.7});
+    const AngleTable s(t);
+    const double a = 5.0 * units::kDegree;
+    for (const double x : t.x_axis().breakpoints()) {
+        EXPECT_DOUBLE_EQ(s(x), t(x)) << x;
+    }
+    for (const double deg : {-9.0, -6.0, 6.0, 7.5, 12.0}) {
+        EXPECT_DOUBLE_EQ(s(deg * units::kDegree), t(deg * units::kDegree)) << deg;
+    }
+    const double e = 0.5 * (0.9 + 1.3);
+    const double o = 0.5 * (0.9 - 1.3);
+    for (const double u : {-0.9, -0.3, 0.1, 0.6}) {
+        EXPECT_NEAR(s(u * a), 0.2 + o * u + (e - 0.2) * u * u, 1e-15) << u;
+    }
+    const double eps = 1e-7;
+    EXPECT_NEAR((s(eps) - s(-eps)) / (2.0 * eps), o / a, 1e-6);
+    // No corner at zero: the one-sided slopes differ only by the curvature
+    // term 2 (e − f(0)) eps / a², which vanishes with eps (a V would leave a
+    // fixed gap).
+    EXPECT_NEAR((s(eps) - s(0.0)) / eps - (s(0.0) - s(-eps)) / eps, 2.0 * (e - 0.2) * eps / (a * a),
+                1e-9);
+}
+
+// An odd table is unchanged; tables without a zero node, or with a zero node
+// between unequal neighbours, are the plain table.
+TEST(AngleTable, OddAndAsymmetricTablesAreUnchanged) {
+    const Table1D odd = angle_table({-10, -5, 0, 5, 10}, {-2.0, -1.1, 0.0, 1.1, 2.0});
+    const Table1D shifted = angle_table({-7, -2, 3, 8}, {1.0, 0.5, 0.7, 1.4});
+    const Table1D uneven = angle_table({-10, -5, 0, 4, 10}, {4.0, 1.3, 0.2, 0.9, 3.7});
+    for (const Table1D* t : {&odd, &shifted, &uneven}) {
+        const AngleTable s(*t);
+        for (double deg = -12.0; deg <= 12.0; deg += 0.37) {
+            EXPECT_NEAR(s(deg * units::kDegree), (*t)(deg * units::kDegree), 1e-15) << deg;
+        }
+    }
+}
+
+// min_value() includes the parabola's vertex when it dips below the nodes.
+TEST(AngleTable, MinimumIncludesTheVertex) {
+    const AngleTable s(angle_table({-5, 0, 5}, {1.0, 0.0, 0.2}));
+    // f = 0 − 0.4 u + 0.6 u²: vertex at u = 1/3, f = −1/15.
+    EXPECT_NEAR(s.min_value(), -1.0 / 15.0, 1e-15);
+    const AngleTable flat(angle_table({-5, 0, 5}, {0.64, 0.62, 0.64}));
+    EXPECT_DOUBLE_EQ(flat.min_value(), 0.62);
 }
 
 }  // namespace

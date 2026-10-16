@@ -6,11 +6,12 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 
 ---
 
-## 1. Linearization ignores rotor periodicity — `open`
+## 1. Linearization ignores rotor periodicity — `resolved → DECISIONS.md D-035 (2026-10-15)`
 **Spec:** §6.9, M7.
 **Problem:** With individual blade states retained, the coupled system is linear time-periodic (LTP), not LTI. Central-difference A/B matrices taken at one rotor azimuth depend on that azimuth. The spec does not mention a multiblade coordinate (Coleman) transform or azimuth averaging.
 **Why it matters:** M7 compares eigenvalues and derivatives against the reference model. Snapshot-azimuth Jacobians will not compare meaningfully.
 **Suggested resolution:** Transform blade states to multiblade coordinates, then average the Jacobians over one revolution (or N_b-per-rev samples) for the retained model. For the 6-DOF condensed model, condense using the revolution-averaged response.
+**Resolution:** D-035 and its amendment (#29), implemented in M7b. Multiblade coordinates, periodic and averaged models, Floquet exponents as the check on the averaging, and condensation of the averaged model.
 
 ## 2. Mass bookkeeping in the coupled solve — `resolved → DECISIONS.md D-002 (2026-10-10)`
 **Spec:** §5 (Coupling), §6.1.
@@ -255,3 +256,30 @@ Verification: the probe above, as a test (loads continuous as the x–z componen
 **Why it matters:** without a defined residual and a defined linear model, "trim converges" and "the eigenvalues match" can't be tested, and Jacobians taken at one azimuth would vary with it (#1). Without a gate that can run, M7 couldn't block anything.
 **Suggested resolution:** see D-035 (proposed).
 
+
+## 29. D-035's linearization gates L2 and L3 and its state elimination don't hold as written — `resolved → DECISIONS.md D-035 amendment (2026-10-15)`
+**Spec:** D-035 (Linearization, Acceptance L2 and L3), §6.9.
+**Problem:** found while planning M7b, then checked against Johnson (2013) and Padfield 3rd ed. and measured on the UH-60A. The measurements were taken with a scratch probe that used the trims of `solve_trim`, central differences of the free derivative function along the held orbit (1024 azimuths), the multiblade transform, and a monodromy matrix built from the sampled Jacobians (midpoint matrix exponentials; converged, since 512 azimuths change the gaps by under 3 %). The probe's reduced derivative function matches the time derivative of the reduced coordinates along the free flow to 1e-9. That check caught a sign error in the multiblade centrifugal term of a first probe run; the numbers here are from the corrected run.
+- *L3 can't show second-order convergence against the averaged model.* An exact linearization leaves an error of second order in the perturbation (Taylor), so halving the amplitude should quarter it. Two first-order errors stop that.
+  - *Averaging.* In forward flight the multiblade coefficients stay periodic (Johnson p. 557), and the averaged model drops that part. Over 3 s, sampled once a revolution, the averaged response differs from the periodic linear response by up to 0.014 % of the response in hover, 0.7 % at 60 kt, 4.8 % at 120 kt and 7.9 % at 150 kt.
+  - *Height.* D-035 drops position. A perturbed run changes altitude, so it also changes density and thrust. Over 3 s, leaving out the height column changes the response by up to 0.24 % (w, hover), at most 0.17 % elsewhere. Padfield's linear model (Eq. 4.44) leaves height out too; he notes that climbing flight isn't strictly a trim because the density changes (p. 183).
+- *L2's hover premise holds only for a symmetric rotor.* Johnson (pp. 556, 572) gives constant multiblade coefficients for a rotor in axial flow whose rotating-frame equations have constant coefficients. In the UH-60A hover trim the disc is tilted against the tail rotor (cyclic flapping), so each blade's equation still varies with azimuth. Around the revolution the body rows of the multiblade Jacobian vary by 9 % (Frobenius). Nearly all of it is in the differential-coning (β₀d) columns, whose mean is zero but whose 2/rev part is large. Johnson (p. 557) notes the (N/2)/rev harmonics in the β_{N/2} coupling of an even-bladed rotor; here they come from the trim flapping and centrifugal loads (the cos²ψ_k terms survive the (−1)^k sum). Without those columns the variation is 0.14 %. The averaged eigenvalues in the flight-dynamic band (|λ| < 3 rad/s) differ from the Floquet exponents by at most 1.2e-4 rad/s. That's small, but not finite-difference precision.
+- *The rule for dropping states is fragile.* D-035 drops states whose row and column are identically zero. In hover the wake-lag rows contain |u|, which central differences give as about 2e-8 rather than 0, while their columns are exactly zero (the wake term is proportional to u). Out-of-contact tire deflection and gear vertical-lag states have zero columns but nonzero diagonals (−1/G, −1/τ). A state set whose columns are zero outside the set feeds nothing else; the matrix is then block triangular, so removing it leaves every other eigenvalue unchanged. Measured: the full model's eigenvalues equal the reduced model's together with the dropped states' to 1e-10, at 0–150 kt.
+- *Size of the averaging error.* Johnson (p. 757) says the constant-coefficient approximation "should always be checked by comparing the exact and approximate solutions". The largest Floquet-to-averaged gap in the flight-dynamic band is 5.8e-4 rad/s at 60 kt, 2.9e-3 at 120 kt and 2.5e-2 at 150 kt (μ = 0.35), where two slow real roots differ by 10–11 % (−0.259 against −0.234, −0.128 against −0.143 rad/s). Scaling the periodic part by s = 1, ½, ¼ shrinks the gap by 3.8–4.9× per halving at every speed, hover included. This is the second-order behaviour that first-order perturbation theory predicts: the first-order change of a simple Floquet exponent is the revolution mean of the periodic part, which is zero (own derivation; it isn't in the reference library).
+
+**Why it matters:** as written, L3 fails in forward flight on a correct model, L2 fails in hover on a correct model, and the state elimination depends on finite-difference noise.
+**Suggested resolution:** see D-035 amendment (2026-10-15):
+- L3 compares against the periodic linear model at every speed; the averaged model is reported against it.
+- The retained model keeps height; the condensed model drops it, as Padfield does.
+- L2 gates exactly on a symmetric hover fixture and is reported on the UH-60A, with the s-scaling.
+- States are dropped on zero columns.
+
+## 30. The GenHel airframe tables make the model non-differentiable in straight flight — `resolved → DECISIONS.md D-036 (2026-10-15)`
+**Spec:** §6.6 (fuselage and empennage), §6.9; D-028, D-030, D-034; found in M7b (D-035 L3).
+**Problem:** GenHel's fuselage and empennage maps are tabulated every 5° and interpolated linearly (CR-166309 pp. 5.2-7, 5.3-8, 5.3-11), with the even maps looked up on |angle|. Where a map is even about zero, the interpolation draws a V with its corner at zero angle. The fuselage drag increment against sideslip is 0, 1, 4, 9, 16.3 ft² at 0, 5, 10, 15, 20°, nearly (ψ/5)², but it becomes |ψ|/5 ft²/deg next to zero. The fuselage lift increment and the fin's dynamic-pressure ratio against sideslip have the same V, and so do the stabilator's drag and dynamic-pressure ratio against angle of attack. Every straight-flight trim sits at zero fuselage sideslip, so it sits on the corners.
+- *Measured (M7b):* at the trim the forward and backward differences of the sideways-velocity and yaw-rate columns differ by a fixed amount however small the step: 4.5e-3 (hover), 1.2e-2 (60 kt) and 2.3e-2 (120 kt) in the body-acceleration rows, all from the airframe component. Every other column, and every other component, is smooth.
+- *Effect:* a perturbation to the left and one to the right see different slopes, so no linear model fits both. L3's error against the periodic linear model stopped shrinking with the amplitude at 1–3 % of the response in forward flight, worst for lateral perturbations.
+- *Physics:* the underlying quantities are smooth and even in the angle, flat at zero. The corner is an interpolation artifact. In the nonlinear simulation it gives lift and drag changes proportional to |β| instead of β², i.e. a small first-order heave and pitch disturbance at twice the Dutch-roll frequency.
+
+**Why it matters:** the linearization is ill-defined at every straight-flight trim, gate L3 can't pass, and the nonlinear model has a non-physical first-order coupling.
+**Suggested resolution:** see D-036.
