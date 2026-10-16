@@ -738,6 +738,10 @@ With the stabilator held, against Sikorsky (rms; Eyas − GenHel at −3 / +3 th
 - *Lateral cyclic in steep climb:* Eyas moves right of GenHel by 3.2, 5.3 and 9.5 % at +3000 ft/min. `Open.`
 - These are trends at constant weight and density altitude of unknown value; the climb runs also sit at Eyas's level-flight sideslip, which differs from GenHel's (above).
 
+### The V1 gate
+
+`BallinTrim.LevelFlightAgainstSikorskyGenHel` and `BallinTrim.ClimbAndDescentTrendsAgainstSikorskyGenHel` (`tests/unit/test_ballin_trim.cpp`; slow, about 30 s and 60 s in Debug) trim the Ballin aircraft and compare against the Sikorsky GenHel curves with a tolerance from the measured read-off: 1.75 % of the axis span plus the local slope times 1.5 kt (0.1 thousand ft/min for B2–B4); DECISIONS.md D-035. They gate the longitudinal cyclic (10–150 kt), lateral cyclic (10–110 kt), stabilator (10–150 kt) and pitch attitude (0–80 kt), all within tolerance, and track every open difference above (lateral cyclic above 110 kt, pitch about +0.5° from 90 kt, collective, sideslip, pedal, main-rotor power; the descent collective, climb lateral cyclic and power slope of B2–B4) at its recorded value, so a change either way fails the test. A deliberate change to one record was caught.
+
 ### Open: hover power
 
 Eyas 1537 hp main-rotor power at 0 kt against GenHel 1608 (B1(i)): induced 1210 hp equals ideal momentum (κ = 1.00), profile 325 hp, figure of merit 0.787.

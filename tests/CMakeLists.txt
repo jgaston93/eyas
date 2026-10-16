@@ -7,6 +7,7 @@ add_executable(eyas_unit_tests
     unit/test_atmosphere.cpp
     unit/test_bailey_rotor.cpp
     unit/test_attitude.cpp
+    unit/test_ballin_trim.cpp
     unit/test_axis.cpp
     unit/test_blade_element_rotor.cpp
     unit/test_config.cpp

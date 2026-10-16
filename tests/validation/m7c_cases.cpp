@@ -18,114 +18,19 @@
 //
 // Usage: eyas_m7c_cases <output-dir>
 
-#include <cmath>
-#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <iterator>
-#include <numbers>
-#include <regex>
-#include <sstream>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "airframe/airframe_aero.hpp"
-#include "analysis/trim.hpp"
-#include "rotor/blade_element_rotor.hpp"
-#include "support/m6d_fixtures.hpp"
-#include "util/units.hpp"
+#include "support/m7c_ballin.hpp"
 
 namespace {
 
 using namespace eyas;
-
-constexpr double kDeg = std::numbers::pi / 180.0;
-constexpr double kKnot = units::kKnot;
-constexpr double kFpm = units::kFoot / 60.0;         // [m/s] per ft/min
-constexpr double kHp = 745.69987158227022;           // [W]
-constexpr double kAltitude = 5250.0 * units::kFoot;  // [m] ISA: density altitude 5250 ft
-constexpr double kRollSwitch = 50.0;                 // [kt] zero roll from here up (Fig. B1(e)-(f))
-
-std::string ballin_config() {
-    return std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a_ballin.yaml";
-}
-
-// The Ballin aircraft with the stabilator held at `incidence_deg` (GenHel's
-// STBSET override) instead of its schedule: the config text with its table
-// paths made absolute, read from a string.
-test::Uh60aHarness fixed_stabilator(double incidence_deg) {
-    const std::filesystem::path path = ballin_config();
-    std::ifstream f(path);
-    std::stringstream ss;
-    ss << f.rdbuf();
-    std::string text = ss.str();
-    const std::string dir = path.parent_path().string() + "/";
-    text = std::regex_replace(text, std::regex(R"(([\s{:,])([A-Za-z0-9_][A-Za-z0-9_./-]*\.csv))"),
-                              "$1" + dir + "$2");
-    const std::regex schedule(R"(schedule: \{[^}]*\})");
-    if (std::distance(std::sregex_iterator(text.begin(), text.end(), schedule),
-                      std::sregex_iterator()) != 1) {
-        throw std::runtime_error("expected exactly one stabilator schedule in " + path.string());
-    }
-    std::ostringstream inc;
-    inc.precision(17);
-    inc << "incidence: \"" << incidence_deg << " deg\"";
-    text = std::regex_replace(text, schedule, inc.str());
-    return test::Uh60aHarness(Config::from_string(text, path.string() + " (stabilator held)"));
-}
-
-struct Averages {
-    double power = 0.0;       // [W] main rotor
-    double stabilator = 0.0;  // [rad]
-};
-
-// Loads averaged over the trimmed revolution with the body held (the trim's
-// own orbit, at its own step), as m7_cases.cpp.
-Averages revolution_average(const test::Uh60aHarness& ac, std::vector<double> x,
-                            const Controls& c) {
-    const auto& mr = ac.get<BladeElementRotor>("main_rotor");
-    const auto& af = ac.get<AirframeAero>("airframe");
-    const double T = trim_period(ac.executive());
-    const int N = 256;
-    Averages a;
-    double t = 0.0;
-    for (int k = 0; k < N; ++k) {
-        (void)ac.evaluate(t, x, c, Environment{});
-        const SimContext ctx = ac.context(t, x, c, Environment{});
-        a.power += mr.evaluate(ctx, ac.states(x, ac.index("main_rotor"))).power / N;
-        a.stabilator +=
-            af.evaluate(ctx, ac.states(x, ac.index("airframe"))).stabilator_incidence / N;
-        ac.hold(t, x, c, Environment{}, T / N, 1);
-    }
-    return a;
-}
-
-struct Point {
-    bool converged = false;
-    TrimResult trim;
-    double sideslip = 0.0;  // [rad]
-    std::vector<double> x;
-};
-
-// One trim: zero roll (sideslip solved) or the condition's sideslip.
-Point trim_at(const Executive& ex, const TrimCondition& c, bool zero_roll,
-              const TrimResult* start) {
-    Point p;
-    if (zero_roll) {
-        const RollTrimResult r = solve_trim_at_roll(ex, c, 0.0, start, p.x);
-        p.converged = r.converged;
-        p.trim = r.trim;
-        p.sideslip = r.sideslip;
-    } else {
-        p.trim = solve_trim(ex, c, start, p.x);
-        p.converged = p.trim.converged;
-        p.sideslip = c.sideslip;
-    }
-    return p;
-}
+using namespace eyas::test::ballin;
 
 const char* kHeader =
     "knots,rate_of_climb_fpm,constraint,converged,collective_pct,lat_cyclic_pct,"
@@ -136,25 +41,14 @@ void row(std::ofstream& out, const test::Uh60aHarness& ac, double kt, double fpm
          const char* constraint, const Point& p) {
     const Controls& u = p.trim.controls;
     const Averages a = revolution_average(ac, p.x, u);
-    out << kt << "," << fpm << "," << constraint << "," << p.converged << ","
-        << 100.0 * u.collective << "," << 50.0 * (1.0 + u.lat_cyclic) << ","
-        << 50.0 * (1.0 - u.lon_cyclic) << "," << 50.0 * (1.0 + u.pedal) << ","
+    out << kt << "," << fpm << "," << constraint << "," << p.converged << "," << collective_pct(u)
+        << "," << lat_pct(u) << "," << lon_pct(u) << "," << pedal_pct(u) << ","
         << p.trim.pitch / kDeg << "," << p.trim.roll / kDeg << "," << p.sideslip / kDeg << ","
         << a.stabilator / kDeg << "," << a.power / kHp << "\n";
 }
 
-TrimCondition condition(double kt, double fpm) {
-    TrimCondition c;
-    c.airspeed = kt * kKnot;
-    c.altitude = kAltitude;
-    if (fpm != 0.0) {
-        c.flight_path_angle = std::asin(fpm * kFpm / c.airspeed);
-    }
-    return c;
-}
-
 void write(const std::filesystem::path& dir) {
-    const test::Uh60aHarness ac(ballin_config());
+    const test::Uh60aHarness ac(config_path());
     const Executive& ex = ac.executive();
     const std::string comment =
         "# UH-60A at Ballin's App. B conditions (NASA TM-88360): uh60a_ballin.yaml, ISA 5250 ft "
