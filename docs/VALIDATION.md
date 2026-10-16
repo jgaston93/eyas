@@ -660,13 +660,13 @@ Tests: `tests/unit/test_linearize.cpp` (helpers in `tests/support/m7b_support.hp
 
 ## M7c — Validation against Ballin and Fletcher (in progress, 2026-10-16)
 
-Interim record of V1 (Ballin, NASA TM-88360, App. B Fig. B1; D-035 M7c amendment) so the investigations aren't repeated. The final M7c entry, with plots, comes at the milestone's end. Of the digitized Ballin panels only B1(f) sideslip and B1(i) main-rotor power are human-verified (DATA_GAPS.md); the other readings below are `UNVERIFIED`. Eyas runs are `uh60a_ballin.yaml` with D-038 and D-039, under GenHel's lateral constraint (zero roll from 50 kt).
+Interim record of V1 (Ballin, NASA TM-88360, App. B Fig. B1; D-035 M7c amendment) so the investigations aren't repeated. The final M7c entry, with plots, comes at the milestone's end. Eyas runs are `uh60a_ballin.yaml` with D-038 and D-039, under GenHel's lateral constraint (zero roll from 50 kt); D-040 (the stabilator schedule on equivalent airspeed) came after most of the sideslip work and moves the zero-roll sideslip by at most 0.04°, so those numbers stand; the tables it changes are updated. The digitized panels (Figs. B1–B4) are all human-reviewed (DATA_GAPS.md); the gate is against the Sikorsky GenHel curves (D-035).
 
 ### Open: Eyas trims with right sideslip at zero roll
 
 | kt | 60 | 80 | 100 | 120 | 140 | 160 |
 |---|---|---|---|---|---|---|
-| Eyas β [deg] | 5.88 | 4.02 | 3.30 | 3.10 | 3.15 | 3.39 |
+| Eyas β [deg] | 5.89 | 3.98 | 3.29 | 3.07 | 3.11 | 3.39 |
 | GenHel β [deg] (B1(f)) | 3.05 | 0.87 | −0.32 | −0.78 | −0.78 | −0.45 |
 
 Trimmed at the flight test's sideslip with roll free, Eyas rolls left where the test rolled right (test roll from B1(e), unverified):
@@ -683,7 +683,7 @@ Side-force budget at 100 kt, zero roll (β = 3.30°): main rotor −290 lbf, tai
 
 **Ruled out, each by a test:**
 - *Main-rotor side force against theory.* Split by term (scratch instrumentation, 60/100/140 kt): lift tilted in-plane by the inflow angle −278/−253/−289 lbf, lift along the flapped normal −34/−23/−60, drag terms −6/−13/−62. The blade inertial terms (Coriolis, centrifugal, flap acceleration) sum to |F_y| < 10 lbf: a periodic blade's mass centre has zero mean acceleration. The lift part against Johnson (2013) Eqs. 6.75 and 6.85 evaluated at Eyas's own flapping, pitch and inflow harmonics, in wind axes, scaled by Eyas's thrust (Y/T, so the lift slope cancels): the closed form and the numerical integral agree to 0.1 lbf; adding Eyas's twist table, elastic twist, tip loss, root cutout, hinge offset and Pitt–Peters harmonics gives −246/−254/−295 lbf against Eyas's −274/−294/−372. The 10–20 % rest is the nonlinear, Mach-dependent airfoil tables, and goes the way GenHel needs. Eq. 6.85 is a difference of terms of 1000–3000 lbf, so the side force is sensitive to the rotor state, not to the force integration.
-- *Lateral cyclic against GenHel.* θ1c computed for both models from all four plotted controls through the shared GenHel rigging (the offsets cancel, to the then-placeholder's ±0.2°): Eyas − GenHel within ±0.3° from 60 to 120 kt (+0.03° at 100 kt), −0.4 to −1.5° at 130–160 kt. Tilting the disc for 370 lbf would take about 1.3°. B1(b) overlay looks clean (pending its human check).
+- *Lateral cyclic against GenHel.* θ1c computed for both models from all four plotted controls through the shared GenHel rigging (the offsets cancel, to the then-placeholder's ±0.2°): Eyas − GenHel within ±0.25° from 60 to 110 kt (−0.13° at 100 kt; with D-040), −0.4 to −1.6° at 120–160 kt. Tilting the disc for 370 lbf would take about 1.3°.
 - *Wash-map inputs* (D-028; the maps use each model's own trimmed χ and a₁): a₁ ±1° and ±3°, χ ±2° and ±5°, wash ×0.9 and ×1.1 move β by ≤ 0.1°; removing the wash moves it 0.04° at 100 kt and 0.75° at 60 kt.
 - *Blade lag* (Eyas has none, D-026): a self-consistent rigid lag probe moves β by +0.2 to +0.4° (wrong way); closing the gap would need ~14× the self-consistent 1/rev lag.
 - *GenHel's inflow* (uniform with K_CM = K_CL = 0, as in the 1981 dataset): β +3.9°, worse. Uniform inflow: +4.15°.
@@ -692,13 +692,22 @@ Side-force budget at 100 kt, zero roll (β = 3.30°): main rotor −290 lbf, tai
 - *Fin* reproduces GenHel Table 3.5.9 (C_L(0) = −0.06, about +45 lbf at β_v = 0, 100 kt). *Fuselage:* the side-force table is antisymmetric and the yaw table has N(0) = 0, so neither model has a lateral offset. *DNQD = 0* (DATA_GAPS.md): moving 370 lbf of tail-rotor thrust at the 33 ft arm needs about 12 000 ft·lbf, N/q ≈ 400 ft³ at 100 kt, comparable to the yaw map's extremes at 70–90°: not plausible near β = 0.
 - *Tail rotor* against GenHel pp. 5.4-4 to 5.4-8 and *hub loads* against pp. 5.1-33 to 5.1-36: same equations; the 20° cant reading stands (DATA_GAPS.md). Yaw balance pins the tail-rotor thrust to within the main-rotor torque difference, a few % of ~28 000 ft·lbf over ~33 ft, i.e. 30–50 lbf of the 370.
 
-**Pedal gap explained.** GenHel − Eyas pedal at zero roll grows from +0.8 % (60 kt) to +7.8 % (150 kt). Eyas's own dPedal/dβ (−0.6 to −1.4 %/deg, from its zero-sideslip and zero-roll trims) times the sideslip difference, plus the collective-to-tail-rotor mixing (16° θ0 per unit collective), leaves a residual within ±0.5 % to 150 kt (+2.1 % at 160 kt). It follows from the sideslip and collective; it isn't a separate defect.
+**Pedal gap explained.** GenHel − Eyas pedal at zero roll grows from +0.8 % (60 kt) to +7.8 % (150 kt). Eyas's own dPedal/dβ (−0.6 to −1.4 %/deg, from its zero-sideslip and zero-roll trims) times the sideslip difference, plus the collective-to-tail-rotor mixing (16° θ0 per unit collective), leaves a residual within ±0.65 % at every speed to 160 kt (with D-040 and the corrected readings). It follows from the sideslip and collective; it isn't a separate defect.
 
 **Status:** unexplained, recorded open. Since the force integration matches theory and the lateral cyclic matches GenHel, the difference is in the rotor state GenHel trims to or in a term of GenHel's not visible from its equations as read; the flight test (which flew rolled right) is the referee. Not chased further in M7c.
 
-### Neutral longitudinal cyclic
+### Stabilator airspeed (D-040) and neutral longitudinal cyclic
 
-Fitted to Ballin's GenHel longitudinal stick (B1(a), human-reviewed): Eyas sat 4.7 % of travel forward of GenHel on average with neutral at the mean of GenHel's three Fig. 6.3.1 estimates. Removing it needs neutral at 2.06 in, 0.14 in beyond the estimates' range (1.10–1.91 in); the D-035 check fails, so neutral is set at 1.91 in and 1.4 % of the offset stays (DECISIONS.md D-035). The residual against speed after the full shift is 1.3 % rms, from −2.4 % at 30 kt to +2.6 % at 80 kt: a shape difference. With this neutral the cyclic offsets come out at −0.009° (θ1s) and +0.001° (θ1c), i.e. a centred stick gives a level swashplate. The trims are unchanged except for the longitudinal stick reading, which moves 3.3 % aft.
+**Stabilator.** Against Ballin's Sikorsky GenHel B1(h), Eyas's scheduled stabilator sat 1–4° low from 40 to 90 kt. GenHel's schedule (Fig. 5.1.7) evidently reads equivalent airspeed, as the aircraft's air-data sensors give it: fed GenHel's own collective, the schedule fits B1(h) to 0.61° rms on equivalent airspeed and 2.06° on true airspeed (5250 ft; at sea level they are the same). D-040 makes the change. Eyas − Sikorsky GenHel, 40–150 kt, rms (mean), before → after:
+
+| | stabilator [deg] | longitudinal cyclic [%] | pitch [deg] | lateral cyclic [%] |
+|---|---|---|---|---|
+| true airspeed | 2.13 (−1.91) | 2.10 (−1.74) | 0.92 (+0.91) | 2.73 (+1.76) |
+| equivalent airspeed | 0.77 (+0.06) | 0.57 (+0.14) | 0.40 (+0.27) | 2.43 (+1.37) |
+
+Collective, sideslip, pedal and main-rotor power move by under 0.2 %, 0.04° and 2 hp.
+
+**Neutral longitudinal cyclic.** Fitted to Ballin's GenHel longitudinal stick (B1(a), human-reviewed). Before D-040 the fit needed neutral at 2.06 in, 0.14 in beyond the range of GenHel's three Fig. 6.3.1 estimates (1.10–1.91 in), so the D-035 check failed; neutral was set at the pinned row's 1.91 in and 1.4 % of stick was recorded as an Eyas–GenHel pitch-trim difference. With D-040 the fit lands at 1.904 in, inside the range and 0.07 % of travel from 1.91 in; the check passes, and the residual is 0.64 % rms (largest 1.2 %), within the read-off accuracy: the 1.4 % was the stabilator's airspeed. With this neutral the cyclic offsets come out at −0.009° (θ1s) and +0.001° (θ1c), i.e. a centred stick gives a level swashplate.
 
 ### Open: hover power
 

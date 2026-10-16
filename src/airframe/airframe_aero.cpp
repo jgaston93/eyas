@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "env/atmosphere.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
@@ -224,9 +225,12 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
         const FlowAngles fa = flow_angles(v_b, sin_fade);
         out.stabilator_incidence = h.incidence;
         if (h.schedule) {
-            // GenHel Fig. 5.1.7, steady state (D-028).
-            out.stabilator_incidence = std::clamp(h.schedule->command(u, ctx.controls.collective),
-                                                  h.schedule->min, h.schedule->max);
+            // GenHel Fig. 5.1.7, steady state (D-028), on the equivalent
+            // airspeed u √(ρ/ρ0) the air-data sensors give (D-040).
+            const double u_eas = u * std::sqrt(rho / isa::kSeaLevelDensity);
+            out.stabilator_incidence =
+                std::clamp(h.schedule->command(u_eas, ctx.controls.collective), h.schedule->min,
+                           h.schedule->max);
         }
         out.alpha_h = out.stabilator_incidence + fa.alpha;
         const double qs = out.q_h * h.area;

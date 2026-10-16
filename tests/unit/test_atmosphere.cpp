@@ -77,6 +77,13 @@ TEST(Atmosphere, MatchesUssaGeopotentialAltitudeTable) {
 
 // USSA Eq. 18 at a hand-computed point: Z = 11 000 m gives
 // H = 6356766 × 11000 / 6367766 = 10980.9977... m'.
+// ρ0 from the sea-level constants through the equation of state (USSA
+// Eq. 42) is the standard's tabulated sea-level density, 1.2250 kg/m³.
+TEST(Atmosphere, SeaLevelDensityMatchesUssa) {
+    EXPECT_NEAR(isa::kSeaLevelDensity, 1.2250, 5e-5);
+    EXPECT_NEAR(isa::kSeaLevelDensity, isa_atmosphere(0.0, 0.0).density, 1e-12);
+}
+
 TEST(Atmosphere, GeopotentialAltitudeMatchesEq18) {
     EXPECT_NEAR(geopotential_altitude(11000.0), 69'924'426'000.0 / 6'367'766.0, 1e-9);
     EXPECT_EQ(geopotential_altitude(0.0), 0.0);
