@@ -1,0 +1,31 @@
+# Transcribed by eye from a rendered page image (200 dpi, rotated) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Figure 5.1.4 "Black Hawk pitch bias actuator", p. 5.5-10 (PDF p. 186,
+# page rotated), handwritten block diagram; text on pp. 5.5-2 and 5.5-3 (PDF pp. 178-179).
+# status: read with high confidence, not reviewed by a person (only doubtful readings are sent for
+# review); LMQQBA's unit is printed "%/SEC", likely deg/s (a pitch-rate limit). Not used in Eyas
+# yet: the dynamic AFCS is D-029's (before M8); in steady trim the PBA only moves the stick
+# (VALIDATION.md M7c).
+#
+# Signal flow as drawn (percent of longitudinal stick travel; + adds to XBSUM, i.e. aft stick):
+#   BATEMP = KTHBA*limit(THETAB, LMTHBA) + KQQBA*limit(QQP1+2, LMQQBA)
+#          + KVXBA*limit(VXBIKT + BIAS_VXBA, LMVXBA) + BIAS_BA
+#   zero-order hold, t = ZOH_BA
+#   actuator: e = BATEMP_held - PBA; PBA' = limit(GAIN_BA*e, RATE_BA); PBA = limit(integral, AUTH_BA)
+#   B1SBA = KPCDGP*PBA [deg]; XBBAS = B1SBA/KXBB1S [in] (control_rigging_5_5.txt), summed "+"
+#   with XBILS into XBSUM (Fig. 5.1.6(c)). To set the PBA to zero, KTHBA = KQQBA = KVXBA = 0.
+#   THETAB pitch attitude [deg] from the vertical gyro; QQP1+2 pitch rate from the rate gyro;
+#   VXBIKT airspeed [kt] (equivalent airspeed, D-040).
+#
+# name        value      unit       confidence
+LMTHBA        -20 20     deg        high
+KTHBA         -0.375     %/deg      high
+LMQQBA        -34.5 34.5 deg/s?     high (digits); printed "%/SEC"
+KQQBA         -0.13125   %/(deg/s)  high
+BIAS_VXBA     -80        kt         high
+LMVXBA        0 100      kt         high ("+100 / 0.0")
+KVXBA         0.0525     %/kt       high
+BIAS_BA       -4.9       %          high
+ZOH_BA        0.1        s          high
+GAIN_BA       10         1/s        high
+RATE_BA       -3 3       %/s        high (text p. 5.5-3: "+-3%/sec rate limit")
+AUTH_BA       -15 15     %          high (text p. 5.5-3: "+-15% authority limit")
