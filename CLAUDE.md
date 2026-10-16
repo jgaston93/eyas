@@ -41,6 +41,7 @@ The reference documents live outside this repo, in a local reference directory. 
 | Jacobs & Pinkerton, NACA TN 567 (1936) | Public, scanned with poor OCR. Series-230 airfoil tests; supporting only. |
 | Ballin, NASA TM-88360 (1987) | Public; text layer, plots scanned (read values from images). GenHel (Ames and Sikorsky) UH-60A trim against USAAEFA flight test (App. B) and step responses (App. D). M7 validation. |
 | Fletcher, 21st ERF (1995) Paper VII-4 | Public conference paper; UH-60 linear models identified from flight test, hover and 80 kt. M7 validation. Not NASA TM-110362, which carries a limited-distribution notice. |
+| Bailey, NACA Report 716 (1941) | Public NACA report, scanned with a rough OCR layer, so read from images. Simplified lifting-rotor theory (flapping, thrust, torque): the original of GenHel's tail-rotor model and of the tail-rotor torque in Ballin's App. A. M9. |
 
 **Reading scans:** poppler isn't installed, so the Read tool can't render PDFs. Use PyMuPDF (`python3 -I`, `import fitz`) to extract text or render a page with `page.get_pixmap(dpi=...)` (use `prerotate(90)` for rotated pages), then Read the PNG. For DjVu: search with `djvutxt --page=N`, render with `ddjvu -format=tiff -page=N`, convert to PNG with PyMuPDF.
 
