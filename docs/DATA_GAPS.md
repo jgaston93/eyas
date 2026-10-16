@@ -175,7 +175,7 @@ Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/re
 - The twist is added to θ_CUFF, the pitch at the blade cuff (p. 5.1-24), so in Eyas θ₀ is the cuff pitch.
 - Lift is looked up on α_trans, a swept-flow angle built from α and the yaw angle γ (p. 5.1-26, PDF p. 46). With cos γ = 1 every branch reduces to α_trans = α, which matches Eyas's omission of the radial velocity (D-024). Drag uses the actual α (p. 5.1-27).
 - The tip-loss factor multiplies lift only, by segment overlap with B·R (p. 5.1-27, PDF p. 47). This agrees with D-024, which keeps drag outboard of B·R.
-- C_d is reduced by a profile-drag correction ΔC_DMR (p. 5.1-27), one of the unreviewed constants on p. 5.1-49.
+- C_d is reduced by a profile-drag correction ΔC_DMR (p. 5.1-27: C_DY = C_DY − ΔC_DMR), one of the unreviewed constants on p. 5.1-49; parked (D-038).
 
 ## UH-60A flap constants (M4) — `VERIFIED by human review (2026-10-11)`; δ₀ meaning open (M9)
 **Source:** GenHel p. 5.1-49 (PDF p. 69), handwritten. **Confirmed by human review (2026-10-11):** K_β = 0 (flapping spring stiffness), K_β̇ = 0 ("Flapping damper rate", nomenclature p. 5.1-47, PDF p. 67), δ₃ = 0, δ₀ = 7 deg.
@@ -253,10 +253,10 @@ Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/re
     The readings are right (human review), so the longitudinal mismatch is in the figure, most likely an unstated pedal setting behind each row: with the pedal at neutral the rows put neutral cyclic at 1.10, 1.91 and 1.74 in forward of the rigging's zero (forward, pinned and aft rows), 0.81 in apart.
 - *Rotor-head pitch travel limits* (p. 5.5-20) — transcribed, not applied: GenHel adds them "for piloted simulation". Revisit in M8.
 
-## UH-60A main-rotor features not modelled (M6d) — deferred to M7 (D-034)
-- *Elastic twist* K_FP0 = −0.0003 − 0.0000044 (V_kt − 100), limited to [−0.00052, −0.0003] (p. 5.1-49; applied to the blade pitch on p. 5.1-24, through loads F_PDYMR not yet read). Eyas's blades are rigid. Symptom to look for in M7: trimmed collective or cyclic errors that grow with speed.
+## UH-60A main-rotor features not modelled (M6d) — elastic twist added (D-038); profile-drag correction parked; force filter deferred
+- *Elastic twist* K_FP0 = −0.0003 − 0.0000044 (V_kt − 100), limited to [−0.00052, −0.0003] (p. 5.1-49; applied to the blade pitch on pp. 5.1-24 and 5.1-25). **Added in M7c (D-038)**: the M7c preview showed the collective error growing with speed, and the twist closes most of it; transcription in `data/uh60a/genhel/dynamic_twist_5_1.txt`.
 - *Rotor force and moment filter* T_FILMR = 0.3 s (p. 5.1-36). Eyas couples the rotor exactly. Symptom: a response-phase mismatch in M7/M8.
-- *Profile-drag correction* ΔC_DMR = 0.002 (p. 5.1-49). Eyas uses the SC1095 tables as printed. Symptom: hover and cruise power low against the reference in M7.
+- *Profile-drag correction* ΔC_DMR = 0.002 (p. 5.1-49). GenHel subtracts it from the section drag (p. 5.1-27, C_DY = C_DY − ΔC_DMR). Eyas uses the SC1095 tables as printed. **Parked (D-038):** Eyas's power is already 5–10 % below GenHel's, so the correction can't explain that gap; decide once the gap's cause is found.
 
 ## UH-60A tail-rotor torque — `missing` (M6, M7)
 GenHel's tail rotor computes thrust only (p. 5.4-2) and gives no blade profile-drag coefficient, so Eyas's tail rotor has no torque in M6 (D-028). Its power is a sizable part of hover power, which matters for the M7 power comparison and the M9 drivetrain. Check whether GenHel's engine module (§5.6) accounts for tail-rotor power, and look for a public tail-rotor blade section or profile-drag value before M7.

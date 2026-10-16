@@ -53,6 +53,16 @@ private:
     std::vector<double> v_;
 };
 
+// A 1-D table read with its corners rounded (D-038): within δ_j of each
+// breakpoint x_j where the slope changes (the constant extension beyond the
+// ends counts as a piece), the parabola tangent to both neighbouring pieces
+// at x_j ± δ_j, δ_j = fraction × the shorter neighbouring segment, fraction
+// in (0, 0.5] so the bands don't overlap. The result is C¹ and equals the
+// linear table outside the bands; at x_j it differs from the node value by
+// (s_right − s_left) δ_j / 4. A trim on a breakpoint then has one slope
+// (as D-036 for the flow-angle tables).
+double rounded(const Table1D& t, double x, double fraction, TableCursor<1>& cursor) noexcept;
+
 // The smallest value the table can return: interpolation and the clamped
 // ends never go below the smallest node value.
 inline double min_value(const Table1D& t) noexcept {

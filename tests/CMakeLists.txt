@@ -12,6 +12,7 @@ add_executable(eyas_unit_tests
     unit/test_config.cpp
     unit/test_coupled_solve.cpp
     unit/test_coupling.cpp
+    unit/test_dynamic_twist.cpp
     unit/test_csv_table.cpp
     unit/test_eigen_smoke.cpp
     unit/test_executive.cpp

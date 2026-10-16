@@ -185,5 +185,40 @@ TEST(Table, LookupsDoNotAllocate) {
     EXPECT_TRUE(std::isfinite(sink));
 }
 
+// rounded() (D-038): C¹ through every corner, including the clamped ends;
+// equal to the linear table outside the bands; tangent to both pieces at the
+// band edges; the deviation at a corner is (s_r − s_l) δ / 4.
+TEST(Table, RoundedCornersAreSmoothAndLocal) {
+    // GenHel's K_FP0 schedule shape: flat, a ramp, flat beyond the end.
+    const Table1D t(Axis({0.0, 100.0, 150.0}), {-3.0, -3.0, -5.2});
+    const double f = 0.1;  // δ = 5 at both corners
+    TableCursor<1> c;
+    const double s = -2.2 / 50.0;  // ramp slope
+    // Outside the bands: exactly linear.
+    for (double x : {-10.0, 0.0, 50.0, 94.9, 105.1, 125.0, 144.9, 155.1, 400.0}) {
+        EXPECT_EQ(rounded(t, x, f, c), t(x)) << x;
+    }
+    // At the corners: the predicted deviation.
+    EXPECT_NEAR(rounded(t, 100.0, f, c) - t(100.0), (s - 0.0) * 5.0 / 4.0, 1e-14);
+    EXPECT_NEAR(rounded(t, 150.0, f, c) - t(150.0), (0.0 - s) * 5.0 / 4.0, 1e-14);
+    // C¹: value and slope continuous everywhere, checked by central
+    // differences across a fine sweep; slopes within the pieces' range. In a
+    // band the slope changes by |s| over 2δ = 10, so 0.001 |s| per 0.01 step;
+    // the bound is twice that (a corner would jump by |s|).
+    const double h = 1e-4;
+    double prev = (rounded(t, 80.0 + h, f, c) - rounded(t, 80.0 - h, f, c)) / (2 * h);
+    for (double x = 80.0; x <= 170.0; x += 0.01) {
+        const double d = (rounded(t, x + h, f, c) - rounded(t, x - h, f, c)) / (2 * h);
+        EXPECT_LE(std::abs(d - prev), 2e-3 * std::abs(s)) << x;
+        EXPECT_LE(d, 1e-9) << x;
+        EXPECT_GE(d, s - 1e-9) << x;
+        prev = d;
+    }
+    // A straight run has no corner; fraction 0 is the linear table.
+    const Table1D line(Axis({0.0, 1.0, 2.0}), {0.0, 1.0, 2.0});
+    EXPECT_EQ(rounded(line, 1.0, f, c), 1.0);
+    EXPECT_EQ(rounded(t, 100.0, 0.0, c), t(100.0));
+}
+
 }  // namespace
 }  // namespace eyas
