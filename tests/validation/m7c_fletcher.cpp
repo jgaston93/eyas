@@ -15,6 +15,11 @@
 // through GenHel's primary servo, 1/(0.00114 s^2 + 0.0473 s + 1)
 // (CR-166309 Figs. 5.1.6(a)-(c); control_rigging_5_5.txt).
 //
+// Also writes, at both conditions, the condensed 6-DOF model's modes and
+// derivatives (Padfield App. 4B form, as M7b) and the averaged model's roots
+// below 3 rad/s against the Floquet exponents of the free flow map (V2 mode
+// character).
+//
 // Usage: eyas_m7c_fletcher <output-dir>
 
 #include <array>
@@ -39,6 +44,11 @@ std::string fletcher_config() {
     return std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a_fletcher.yaml";
 }
 
+constexpr double kBand = 3.0;  // [rad/s] the flight-dynamic band of the Floquet comparison
+const std::array<const char*, 6> kRows = {"X", "Y", "Z", "L", "M", "N"};
+const std::array<const char*, 13> kCols = {"u",     "v",   "w",   "p",   "q",   "r",  "phi",
+                                           "theta", "psi", "col", "lat", "lon", "ped"};
+
 std::complex<double> servo(double w) {
     // GenHel primary servo, 1/(0.00114 s^2 + 0.0473 s + 1).
     const std::complex<double> s(0.0, w);
@@ -52,6 +62,19 @@ void write(const std::filesystem::path& dir) {
            "sea level, stabilator held (M7c, D-035 V2)\n";
     out << "condition,response,frequency_rad_s,magnitude_db,phase_deg,magnitude_db_servo,"
            "phase_deg_servo\n";
+    std::ofstream modes_csv(dir / "m7c_fletcher_modes.csv");
+    modes_csv.precision(12);
+    modes_csv << "# Condensed 6-DOF modes at Fletcher's conditions (M7c, D-035 V2)\n"
+              << "condition,label,re,im,wn,zeta,longitudinal\n";
+    std::ofstream der_csv(dir / "m7c_fletcher_derivatives.csv");
+    der_csv.precision(12);
+    der_csv << "# Condensed derivatives (Padfield App. 4B form: gravity and kinematics included; "
+               "L, N primed), SI, controls per unit of Controls (M7c, D-035 V2)\n"
+            << "condition,derivative,value\n";
+    std::ofstream floq_csv(dir / "m7c_fletcher_floquet.csv");
+    floq_csv.precision(12);
+    floq_csv << "# Averaged model against Floquet exponents of the free flow map, |lambda| < 3 "
+                "rad/s (M7c, D-035 V2)\ncondition,avg_re,avg_im,floq_re,floq_im,gap\n";
     struct Case {
         const char* name;
         double kt;
@@ -69,8 +92,39 @@ void write(const std::filesystem::path& dir) {
             throw std::runtime_error(std::string("trim did not converge: ") + cs.name);
         }
         const LinearModel m = linearize(ac.executive(), c, r);
+        if (m.unconverged != 0) {
+            throw std::runtime_error(std::string("linearize: unconverged evaluations: ") + cs.name);
+        }
         std::cout << cs.name << ": trimmed (pitch " << r.pitch / kDeg << " deg, roll "
                   << r.roll / kDeg << " deg), " << m.states.size() << " states\n";
+        const CondensedModel cm = condense(m);
+        for (const Mode& md : modes(cm, r.vel_b.x())) {
+            modes_csv << cs.name << "," << md.label << "," << md.eigenvalue.real() << ","
+                      << md.eigenvalue.imag() << "," << md.frequency << "," << md.damping << ","
+                      << md.longitudinal << "\n";
+        }
+        for (Eigen::Index row = 0; row < 6; ++row) {
+            for (Eigen::Index col = 0; col < 13; ++col) {
+                der_csv << cs.name << "," << kRows[static_cast<std::size_t>(row)] << "_"
+                        << kCols[static_cast<std::size_t>(col)] << ","
+                        << (col < 9 ? cm.A(row, col) : cm.B(row, col - 9)) << "\n";
+            }
+        }
+        const Eigen::VectorXcd lam = m.A.eigenvalues();
+        const Monodromy M = monodromy(ac.executive(), c, r);
+        if (M.unconverged != 0) {
+            throw std::runtime_error(std::string("monodromy: unconverged evaluations: ") + cs.name);
+        }
+        const FloquetModes f = floquet(M.matrix, m.period, lam);
+        for (Eigen::Index i = 0; i < f.exponents.size(); ++i) {
+            const auto k = f.match[static_cast<std::size_t>(i)];
+            if (k < 0 || std::abs(lam(k)) >= kBand || lam(k).imag() < 0.0) {
+                continue;
+            }
+            floq_csv << cs.name << "," << lam(k).real() << "," << lam(k).imag() << ","
+                     << f.exponents(i).real() << "," << f.exponents(i).imag() << ","
+                     << std::abs(f.exponents(i) - lam(k)) << "\n";
+        }
         // Controls units per inch: lateral and longitudinal ±1 over 10 in, collective 0..1
         // over 10 in; longitudinal sign flipped to aft positive.
         struct Resp {
