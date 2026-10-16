@@ -1,0 +1,261 @@
+"""Digitize Fletcher, 21st ERF (1995) Paper VII-4, Figs. 3 and 4 (flight-data frequency responses
+of the UH-60 in hover and at 80 kt) for M7c (D-035 V2).
+
+    .venv/bin/python -I tools/digitize_fletcher.py <ERF-1995-VII-4-Fletcher.pdf> <overlay dir>
+
+Writes data/uh60a/validation/fletcher_fig3.csv and fletcher_fig4.csv and, in <overlay dir>, one
+PNG per panel with the readings drawn over the scan, for human review. Readings need a person's
+check of the overlays before use (DATA_GAPS.md); a re-run needs a new review.
+
+Each figure has four responses (p and q to lateral and longitudinal cyclic), each in three panels:
+magnitude [dB of (rad/s)/in], phase [deg] and coherence, against frequency [rad/s] on a log axis
+from 0.1 (the y axis) to 20 (the end of the x axis). How a panel is read:
+- the y axis and x axis are snapped near the rough positions in the panel table (300 dpi), the
+  y ticks found near where the rough tick values put them, and a linear y map fitted to them
+  (it stops if fewer than three ticks are found or one is further than 3 px off the fit); x is
+  log, from the y axis (0.1) to the right end of the x axis (20), checked against the 1 and 10
+  rad/s ticks;
+- the axes, their tick stubs and the response label are masked, and the one curve is followed
+  column by column: the ink run nearest the previous reading (its end nearest, for the long
+  runs of a steep stretch), with the allowed jump growing while the curve has no ink;
+- readings are reported at 24 per decade where the curve has ink, flagged `gap` where filled
+  across a short break and `edge` within 12 px of the x axis (the tick stubs are masked there).
+"""
+
+import argparse
+import csv
+import math
+import sys
+from pathlib import Path
+
+import fitz
+import matplotlib
+import numpy as np
+
+matplotlib.use("Agg")
+import matplotlib.patheffects as pe  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "data" / "uh60a" / "validation"
+DPI = 300
+DARK = 140
+SOURCE = ("Fletcher, J. W., A Model Structure for Identification of Linear Models of the UH-60 "
+          "Helicopter in Hover and Forward Flight, 21st European Rotorcraft Forum (1995), "
+          "Paper VII-4")
+
+# Rough positions at 150 dpi (doubled below): column (x of the y axis, x of the 20 rad/s end) and
+# row (y of the top tick, y of the bottom tick); y values (top, bottom, step); label boxes (x0, y0,
+# x1, y1) at 150 dpi.
+FIG3 = dict(page=9, caption="Fig. 3, CIFER-identified frequency responses for UH-60 in hover",
+            cols={"L": (211, 636), "R": (711, 1133)},
+            rows=[(241, 383), (437, 578), (630, 772), (848, 992), (1046, 1189), (1240, 1385)])
+FIG4 = dict(page=10, caption="Fig. 4, CIFER-identified frequency responses for UH-60 in 80 knots "
+            "forward flight",
+            cols={"L": (188, 612), "R": (692, 1115)},
+            rows=[(198, 342), (392, 536), (588, 730), (806, 950), (1003, 1146), (1197, 1340)])
+
+MAG = (0.0, -60.0, 20.0)
+COH = (1.0, 0.0, 0.5)
+# (response, column, first row): the response's magnitude, phase and coherence rows
+RESPONSES = [("p_lat", "L", 0), ("p_lon", "R", 0), ("q_lat", "L", 3), ("q_lon", "R", 3)]
+PHASE = {
+    "fig3": {"p_lat": (-180.0, -540.0, 180.0), "p_lon": (0.0, -720.0, 180.0),
+             "q_lat": (-180.0, -540.0, 180.0), "q_lon": (90.0, -270.0, 180.0)},
+    "fig4": {"p_lat": (90.0, -270.0, 180.0), "p_lon": (90.0, -270.0, 180.0),
+             "q_lat": (-90.0, -450.0, 180.0), "q_lon": (90.0, -270.0, 180.0)},
+}
+LABELS = {  # response label boxes at 150 dpi, in the magnitude panel
+    "fig3": {"p_lat": (222, 228, 268, 285), "p_lon": (722, 228, 768, 285),
+             "q_lat": (222, 836, 268, 893), "q_lon": (722, 836, 768, 893)},
+    "fig4": {"p_lat": (200, 250, 250, 305), "p_lon": (715, 190, 770, 250),
+             "q_lat": (200, 865, 250, 930), "q_lon": (715, 865, 770, 930)},
+}
+
+
+def render(doc, page):
+    z = DPI / 72.0
+    pix = doc[page - 1].get_pixmap(matrix=fitz.Matrix(z, z), colorspace=fitz.csGRAY)
+    return np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width).copy()
+
+
+def runs(v):
+    d = np.diff(np.concatenate(([0], v.astype(np.int8), [0])))
+    return list(zip(np.flatnonzero(d == 1), np.flatnonzero(d == -1)))
+
+
+class PanelError(Exception):
+    pass
+
+
+def calibrate(dark, xa, xr, yt, yb, yv):
+    """Snap the axes; fit y on the ticks; x log from 0.1 (y axis) to 20 (x-axis end)."""
+    r = 16
+    x_ax = xa - r + int(np.argmax([dark[yt:yb, x].sum() for x in range(xa - r, xa + r)]))
+    y_ax = yb - r + int(np.argmax([dark[y, xa:xr].sum() for y in range(yb - r, yb + r)]))
+    # the x axis's right end: last dark column on the axis line near the rough end
+    line = dark[y_ax - 1:y_ax + 2, xr - 40:xr + 40].any(axis=0)
+    ends = np.flatnonzero(line)
+    if len(ends) == 0:
+        raise PanelError("x axis end not found")
+    x_end = xr - 40 + int(ends[-1])
+    top, bot, step = yv
+    values = np.arange(top, bot - 1e-9, -step) if top > bot else np.arange(top, bot + 1e-9, step)
+    ypix = np.linspace(yt, yb, len(values))
+    found = []
+    for v, py in zip(values, ypix):
+        best = None
+        for y in range(int(py) - 10, int(py) + 11):
+            stub = dark[y, x_ax - 16:x_ax - 2].sum()
+            if stub >= 8 and (best is None or stub > best[1]):
+                best = (y, stub)
+        if best is not None:
+            found.append((v, float(best[0])))
+    if len(found) < 3:
+        raise PanelError(f"only {len(found)} y ticks found")
+    v_, y_ = np.array(found).T
+    c = np.polyfit(y_, v_, 1)
+    res = np.abs(np.polyval(c, y_) - v_) / abs(c[0])
+    if res.max() > 3.0:
+        raise PanelError(f"y tick off the fit by {res.max():.1f} px")
+    xcoef = (x_ax, x_end)  # log10(w) = -1 + (x - x_ax) / (x_end - x_ax) * (log10(20) + 1)
+    return x_ax, y_ax, x_end, c, xcoef
+
+
+def to_w(px, xcoef):
+    x0, x1 = xcoef
+    return 10.0 ** (-1.0 + (px - x0) / (x1 - x0) * (math.log10(20.0) + 1.0))
+
+
+def to_px(w, xcoef):
+    x0, x1 = xcoef
+    return x0 + (math.log10(w) + 1.0) / (math.log10(20.0) + 1.0) * (x1 - x0)
+
+
+def follow(ink, x_from, x_to, max_jump=20):
+    n = x_to - x_from
+    y = np.full(n, np.nan)
+    last = None
+    missing = 0
+    for i in range(n):
+        rs = runs(ink[:, x_from + i])
+        if not rs:
+            missing += 1
+            continue
+        if last is None:
+            s, e = max(rs, key=lambda r: r[1] - r[0])
+            y[i] = (s + e - 1) / 2.0
+        else:
+            reach = max_jump + 2 * missing
+            best = None
+            for s, e in rs:
+                if e - s > 12:  # a steep stretch: its end nearest the previous reading
+                    cand = (s if abs(s - last) < abs(e - 1 - last) else e - 1)
+                else:
+                    cand = (s + e - 1) / 2.0
+                d = abs(cand - last)
+                if d <= reach and (best is None or d < best[0]):
+                    best = (d, cand)
+            if best is None:
+                missing += 1
+                continue
+            y[i] = best[1]
+        last = y[i]
+        missing = 0
+    return y
+
+
+def digitize_panel(img, x_ax_r, x_r, yt, yb, yv, label, overlay):
+    dark = img < DARK
+    x_ax, y_ax, x_end, ycoef, xcoef = calibrate(dark, x_ax_r, x_r, yt, yb, yv)
+    ink = np.zeros_like(dark)
+    y0, y1 = int(yt - 14), int(y_ax - 12)
+    ink[y0:y1, x_ax + 5:x_end + 2] = dark[y0:y1, x_ax + 5:x_end + 2]
+    if label is not None:
+        a, b, c, d = (2 * v for v in label)
+        ink[b:d, a:c] = False
+    y = follow(ink, x_ax + 5, x_end + 1)
+    ok = ~np.isnan(y)
+    idx = np.flatnonzero(ok)
+    filled = np.zeros(len(y), dtype=bool)
+    for a, b in zip(idx[:-1], idx[1:]):
+        if 1 < b - a <= 25:
+            y[a + 1:b] = np.interp(np.arange(a + 1, b), [a, b], [y[a], y[b]])
+            filled[a + 1:b] = True
+    rows = []
+    for k in range(-24, int(24 * math.log10(20.0)) + 1):
+        w = 10.0 ** (k / 24.0)
+        px = to_px(w, xcoef) - (x_ax + 5)
+        i = int(round(px))
+        if not (0 <= i < len(y)) or np.isnan(y[i]):
+            continue
+        flag = "gap" if filled[i] else ("edge" if y[i] > y_ax - 24 else "")
+        rows.append((w, float(np.polyval(ycoef, y[i])), flag))
+    # overlay
+    x0, x1 = x_ax - 90, x_end + 30
+    yy0, yy1 = int(yt - 40), int(y_ax + 30)
+    fig = plt.figure(figsize=((x1 - x0) / 100, (yy1 - yy0) / 100), dpi=100)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.imshow(img[yy0:yy1, x0:x1], cmap="gray", extent=(x0, x1, yy1, yy0))
+    inv_y = lambda v: (v - ycoef[1]) / ycoef[0]  # noqa: E731
+    for w, v, flag in rows:
+        ax.plot(to_px(w, xcoef), inv_y(v), "x", ms=9, mew=2.2,
+                color="magenta" if flag else "tab:red",
+                path_effects=[pe.withStroke(linewidth=4, foreground="white")])
+    top, bot, step = yv
+    for v in (np.arange(bot, top + 1e-9, step) if top > bot else np.arange(top, bot + 1e-9, step)):
+        ax.axhline(inv_y(v), color="orange", lw=0.5, alpha=0.7)
+    for w in (1.0, 10.0):
+        ax.axvline(to_px(w, xcoef), color="orange", lw=0.5, alpha=0.7)
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(yy1, yy0)
+    ax.axis("off")
+    fig.savefig(overlay)
+    plt.close(fig)
+    return rows
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("pdf", type=Path)
+    parser.add_argument("overlays", type=Path)
+    args = parser.parse_args()
+    args.overlays.mkdir(parents=True, exist_ok=True)
+    doc = fitz.open(args.pdf)
+    failed = 0
+    for name, spec in (("fig3", FIG3), ("fig4", FIG4)):
+        img = render(doc, spec["page"])
+        out = []
+        for resp, col, r0 in RESPONSES:
+            xa, xr = (2 * v for v in spec["cols"][col])
+            for kind, row, yv in (("magnitude_db", r0, MAG), ("phase_deg", r0 + 1, PHASE[name][resp]),
+                                  ("coherence", r0 + 2, COH)):
+                yt, yb = (2 * v for v in spec["rows"][row])
+                label = LABELS[name][resp] if kind == "magnitude_db" else None
+                path = args.overlays / f"fletcher_{name}_{resp}_{kind}.png"
+                try:
+                    rows = digitize_panel(img, xa, xr, yt, yb, yv, label, path)
+                except PanelError as e:
+                    print(f"{name} {resp} {kind}: FAILED: {e}", file=sys.stderr)
+                    failed += 1
+                    continue
+                print(f"{name} {resp} {kind}: {len(rows)} readings")
+                out += [(resp, kind, w, v, flag) for w, v, flag in rows]
+        path = OUT / f"fletcher_{name}.csv"
+        with path.open("w", newline="", encoding="utf-8") as f:
+            f.write(f"# source: {SOURCE}, {spec['caption']} (p. VII-4-{spec['page'] - 2}, PDF p. "
+                    f"{spec['page']}); flight data. Digitized from the scan at {DPI} dpi by "
+                    "tools/digitize_fletcher.py.\n")
+            f.write("# status: UNVERIFIED - needs human review of the overlays (DATA_GAPS.md)\n")
+            f.write("# Responses: p_lat = p/delta_lat etc.; magnitude in dB of (rad/s)/in, phase in "
+                    "deg, frequency in rad/s.\n")
+            w = csv.writer(f, lineterminator="\n")
+            w.writerow(["response", "quantity", "frequency_rad_s", "value", "flag"])
+            for resp, kind, fw, v, flag in out:
+                w.writerow([resp, kind, f"{fw:.4f}", f"{v:.3f}", flag])
+        print(f"wrote {path.relative_to(ROOT)}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

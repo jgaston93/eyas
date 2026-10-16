@@ -113,11 +113,11 @@ inline Averages revolution_average(const Uh60aHarness& ac, std::vector<double> x
     return a;
 }
 
-// The Ballin aircraft with the stabilator held at `incidence_deg` (GenHel's
-// STBSET override) instead of its schedule: the config text with its table
-// paths made absolute, read from a string.
-inline Uh60aHarness fixed_stabilator(double incidence_deg) {
-    const std::filesystem::path path = config_path();
+// The Ballin aircraft (or the config at `path`) with the stabilator held at
+// `incidence_deg` (GenHel's STBSET override) instead of its schedule: the
+// config text with its table paths made absolute, read from a string.
+inline Uh60aHarness fixed_stabilator(double incidence_deg,
+                                     const std::filesystem::path& path = config_path()) {
     std::ifstream f(path);
     std::stringstream ss;
     ss << f.rdbuf();
