@@ -713,6 +713,31 @@ Collective, sideslip, pedal and main-rotor power move by under 0.2 %, 0.04° and
 
 GenHel's PBA (Fig. 5.1.4) settles to −0.375 %/deg of pitch attitude plus 0.0525 %/kt above 80 kt, less 4.9 %, in percent of longitudinal stick travel, and in a trim it moves only the stick (the blade pitch, and so the trimmed state, are the same). With it on, Eyas's stick would sit 4.3 % aft of the Sikorsky GenHel curve with a 1.75 % rms shape error; with it off, −0.07 % and 0.64 %. The flight test agrees (off −0.4 %, on −4.4 %). V1 compares with it off (DECISIONS.md D-035).
 
+### Climbs and descents (Figs. B2–B4)
+
+Ballin's B2–B4 give no weight, CG or density altitude, and their level points differ from B1's (DATA_GAPS.md), so only the **change from level flight** against climb rate is compared, Eyas at B1's conditions. Sikorsky's GenHel held the stabilator at its level-flight value for each speed in these runs (Ballin p. 10); `eyas_m7c_cases` now writes both Eyas variants, `fixed_stabilator` (held at Eyas's own level incidence, through GenHel's STBSET override) and `genhel` (scheduled). Against the Sikorsky curves, holding the stabilator halves the longitudinal and pitch errors, as expected:
+
+| rms of Eyas − Sikorsky change from level, −3 to +3 thousand ft/min | 60 kt | 100 kt | 137.5 kt |
+|---|---|---|---|
+| longitudinal cyclic [%], held / scheduled | 2.4 / 4.0 | 3.3 / 6.7 | 2.7 / 6.7 |
+| pitch attitude [deg], held / scheduled | 0.26 / 0.84 | 0.38 / 1.05 | 0.69 / 1.39 |
+
+With the stabilator held, against Sikorsky (rms; Eyas − GenHel at −3 / +3 thousand ft/min):
+
+| | 60 kt | 100 kt | 137.5 kt |
+|---|---|---|---|
+| collective [%] | 1.4 (+3.4 / +0.4) | 2.5 (+6.0 / −0.3) | 3.7 (+9.2 / +1.4) |
+| longitudinal cyclic [%] | 2.4 (−3.7 / +3.1) | 3.3 (−4.9 / +6.1) | 2.7 (−5.6 / +2.5) |
+| lateral cyclic [%] | 1.6 (+0.7 / +3.2) | 2.7 (−2.4 / +5.3) | 4.6 (−5.0 / +9.5) |
+| pedal [%] | 0.6 | 1.8 | 1.8 |
+| pitch attitude [deg] | 0.26 | 0.38 | 0.69 |
+| main-rotor power [hp] | 69 | 54 | 97 |
+
+- *Power against climb rate* (slope over ±2000 ft/min, hp per 1000 ft/min): Eyas 465 / 479 / 521, Sikorsky 445 / 469 / 447, Ames 441 / 455 / 447, flight test 414 / 483 / 368 (four points each); W·V_c at 16 000 lbf is 485. At 60 and 100 kt Eyas is within 2–4 % of GenHel, so the unknown weight of B2–B4 can't be far from B1's; at 137.5 kt Eyas's slope is 14 % above GenHel's and above W·V_c. `Open.`
+- *Collective in steep descent:* Eyas's collective falls less than GenHel's, by 3.4, 6.0 and 9.2 % at −3000 ft/min, growing with speed. `Open.`
+- *Lateral cyclic in steep climb:* Eyas moves right of GenHel by 3.2, 5.3 and 9.5 % at +3000 ft/min. `Open.`
+- These are trends at constant weight and density altitude of unknown value; the climb runs also sit at Eyas's level-flight sideslip, which differs from GenHel's (above).
+
 ### Open: hover power
 
 Eyas 1537 hp main-rotor power at 0 kt against GenHel 1608 (B1(i)): induced 1210 hp equals ideal momentum (κ = 1.00), profile 325 hp, figure of merit 0.787.

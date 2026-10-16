@@ -14,6 +14,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "airframe/airframe_aero.hpp"
@@ -68,8 +69,11 @@ struct Travels {
 class Uh60aHarness {
 public:
     explicit Uh60aHarness(const std::string& path = uh60a_config_path())
-        : cfg_(Config::from_file(path)),
-          ex_(build_executive(cfg_, read_origin(cfg_).origin().altitude)) {}
+        : Uh60aHarness(Config::from_file(path)) {}
+    // From a config already read (e.g. edited text through Config::from_string,
+    // with absolute table paths).
+    explicit Uh60aHarness(Config cfg)
+        : cfg_(std::move(cfg)), ex_(build_executive(cfg_, read_origin(cfg_).origin().altitude)) {}
 
     const Config& config() const { return cfg_; }
     const Executive& executive() const { return ex_; }

@@ -7,7 +7,10 @@
 //   50 kt, zero roll from 50 kt up (sideslip solved); and, for comparison,
 //   zero sideslip at every speed;
 // - climb and descent at 60, 100 and 137.5 kt (Figs. B2-B4), -3000 to
-//   +3000 ft/min in 500 ft/min steps, at zero roll.
+//   +3000 ft/min in 500 ft/min steps, at zero roll: with the stabilator on its
+//   schedule ("genhel", as Ames's GenHel), and held at Eyas's level-flight
+//   incidence for the speed ("fixed_stabilator", as Sikorsky's GenHel in
+//   Ballin's Figs. B2-B4, p. 10).
 // The aircraft is data/uh60a/uh60a_ballin.yaml (16000 lbm, CG FS 351.0 in,
 // WL 231.5 in) at 5250 ft in the ISA (density altitude 5250 ft). Controls
 // are written in Ballin's percent scales: longitudinal 0 = full forward,
@@ -20,8 +23,13 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <numbers>
+#include <regex>
+#include <sstream>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "airframe/airframe_aero.hpp"
@@ -43,6 +51,30 @@ constexpr double kRollSwitch = 50.0;                 // [kt] zero roll from here
 
 std::string ballin_config() {
     return std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a_ballin.yaml";
+}
+
+// The Ballin aircraft with the stabilator held at `incidence_deg` (GenHel's
+// STBSET override) instead of its schedule: the config text with its table
+// paths made absolute, read from a string.
+test::Uh60aHarness fixed_stabilator(double incidence_deg) {
+    const std::filesystem::path path = ballin_config();
+    std::ifstream f(path);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    std::string text = ss.str();
+    const std::string dir = path.parent_path().string() + "/";
+    text = std::regex_replace(text, std::regex(R"(([\s{:,])([A-Za-z0-9_][A-Za-z0-9_./-]*\.csv))"),
+                              "$1" + dir + "$2");
+    const std::regex schedule(R"(schedule: \{[^}]*\})");
+    if (std::distance(std::sregex_iterator(text.begin(), text.end(), schedule),
+                      std::sregex_iterator()) != 1) {
+        throw std::runtime_error("expected exactly one stabilator schedule in " + path.string());
+    }
+    std::ostringstream inc;
+    inc.precision(17);
+    inc << "incidence: \"" << incidence_deg << " deg\"";
+    text = std::regex_replace(text, schedule, inc.str());
+    return test::Uh60aHarness(Config::from_string(text, path.string() + " (stabilator held)"));
 }
 
 struct Averages {
@@ -159,19 +191,26 @@ void write(const std::filesystem::path& dir) {
         // Start from the level trim nearest in speed, then step outwards in rate.
         const auto near = static_cast<std::size_t>(std::lround(kt / 10.0));
         Point level0 = trim_at(ex, condition(kt, 0.0), true, &genhel[near].trim);
-        row(climb, ac, kt, 0.0, "genhel", level0);
-        for (double sign : {1.0, -1.0}) {
-            Point last = level0;
-            for (int k = 1; k <= 6; ++k) {
-                const double fpm = sign * 500.0 * k;
-                TrimCondition c = condition(kt, fpm);
-                c.sideslip = last.sideslip;
-                Point p = trim_at(ex, c, true, &last.trim);
-                row(climb, ac, kt, fpm, "genhel", p);
-                std::cout << kt << " kt, " << fpm
-                          << " ft/min: " << (p.converged ? "converged" : "NOT converged") << "\n";
-                if (p.converged) {
-                    last = p;
+        const double level_stab = revolution_average(ac, level0.x, level0.trim.controls).stabilator;
+        const test::Uh60aHarness held = fixed_stabilator(level_stab / kDeg);
+        for (const auto& [name, h] :
+             {std::pair<const char*, const test::Uh60aHarness*>{"genhel", &ac},
+              {"fixed_stabilator", &held}}) {
+            const Point start = trim_at(h->executive(), condition(kt, 0.0), true, &level0.trim);
+            row(climb, *h, kt, 0.0, name, start);
+            for (double sign : {1.0, -1.0}) {
+                Point last = start;
+                for (int k = 1; k <= 6; ++k) {
+                    const double fpm = sign * 500.0 * k;
+                    TrimCondition c = condition(kt, fpm);
+                    c.sideslip = last.sideslip;
+                    Point p = trim_at(h->executive(), c, true, &last.trim);
+                    row(climb, *h, kt, fpm, name, p);
+                    std::cout << kt << " kt, " << fpm << " ft/min (" << name
+                              << "): " << (p.converged ? "converged" : "NOT converged") << "\n";
+                    if (p.converged) {
+                        last = p;
+                    }
                 }
             }
         }
