@@ -49,6 +49,7 @@ components:
         inertia: "1512.6 slug*ft^2"
         delta3: "0 deg"
       dynamic_twist: {gain_table: dynamic_twist_gain.csv, mode_table: dynamic_twist_mode.csv, lag: "0.01 s"}  # D-038; lag numerical
+      yawed_flow_drag: true  # D-039 (GenHel resolves its drag on the full segment velocity, p. 5.1-28)
     controls:
       theta0: {offset: "9.9 deg", collective: "16.0 deg"}
       theta1s: {offset: !placeholder "0.9039886515 deg", collective: "-4.142331285 deg", lon_cyclic: "-13.94770409 deg", lat_cyclic: "-1.347915037 deg", pedal: "-4.312071778 deg"}

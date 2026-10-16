@@ -230,6 +230,11 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
         const double lambda_h = lambda.l1s * sp + lambda.l1c * cp;
         const double a_P = -v0.dot(n) + tip_speed_ * cb * (lambda.l0 + e / c.radius * lambda_h);
         const double b_P = -v1.dot(n) + omega * cb * cb * lambda_h;
+        // The air's velocity relative to the blade along the span, outward
+        // positive (Johnson 2013 u_R; D-039): −v·e_s plus the induced
+        // velocity's component, v_i e_z·e_s = −sin β v_i. Affine in ρ too.
+        const double a_S = -v0.dot(e_s) - sb * tip_speed_ * (lambda.l0 + e / c.radius * lambda_h);
+        const double b_S = -v1.dot(e_s) - sb * omega * cb * lambda_h;
         // Padfield 3rd ed. Eq. 3.59, with pitch–flap coupling −tan δ₃ β
         // (Johnson 2013 §6.18); twist is added per element (spec §6.3).
         const double theta =
@@ -239,6 +244,8 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
         double f_n = 0.0;   // Σ force along n [N]
         double rf_t = 0.0;  // Σ ρ × force along e_t [N·m]
         double rf_n = 0.0;  // Σ ρ × force along n [N·m]
+        double f_s = 0.0;   // Σ radial drag along e_s [N] (D-039)
+        double rf_s = 0.0;  // Σ ρ × radial drag [N·m]
         TableCursor<2>* cursor = cursors_.data() + static_cast<std::size_t>(blade) * n_el;
         for (std::size_t j = 0; j < n_el; ++j) {
             const BladeElement& el = elements_[j];
@@ -262,24 +269,37 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
             // and lift direction l = (−U_P e_t − U_T n)/U,
             //   dF = ½ρU²c dr (C_l l + C_d d).
             const double q = 0.5 * k.rho * el.chord * el.dr * u;
-            const double dft = q * (-cl * u_p - coef.cd * u_t);
-            const double dfn = q * (-cl * u_t + coef.cd * u_p);
+            // Yawed-flow drag (Johnson 2013 Eqs. 6.397–6.399; D-039): the drag
+            // force is ½ρc dr c_d W along the full relative wind (−u_T e_t +
+            // u_P n + u_R e_s), W² = U² + u_R²; without it, W = U and u_R = 0.
+            double q_d = q;
+            if (c.yawed_flow_drag) {
+                const double u_r = a_S + b_S * rho_j;
+                q_d = 0.5 * k.rho * el.chord * el.dr * std::sqrt(u * u + u_r * u_r);
+                const double dfs = q_d * coef.cd * u_r;
+                f_s += dfs;
+                rf_s += rho_j * dfs;
+            }
+            const double dft = -q * cl * u_p - q_d * coef.cd * u_t;
+            const double dfn = -q * cl * u_t + q_d * coef.cd * u_p;
             f_t += dft;
             f_n += dfn;
             rf_t += rho_j * dft;
             rf_n += rho_j * dfn;
         }
-        const Vec3 F = f_t * e_t + f_n * n;
+        const Vec3 F = f_t * e_t + f_n * n + f_s * e_s;
         out.F_h += F;
         // GenHel's F_PDYMR, the blade's force in blade span axes (p. 5.1-24).
         out.blade_force += std::hypot(f_t, f_n);
-        // About the hub center: Σ (e e_r + ρ e_s) × dF.
+        // About the hub center: Σ (e e_r + ρ e_s) × dF (radial drag along e_s
+        // has no moment about the hinge line, only through e e_r).
         out.M_h += (e * e_r).cross(F) + e_s.cross(rf_t * e_t + rf_n * n);
         // About the hinge, positive flap up: −Σ ρ n·dF (D-026).
         out.flap_moment[static_cast<std::size_t>(blade)] = -rf_n;
         // Σ dF_up r for the Pitt–Peters loads (D-027): dF_up = −cos β dF·n
-        // (e_t is in the hub plane), r = e + ρ cos β.
-        const double fr_up = -cb * (e * f_n + cb * rf_n);
+        // + sin β dF·e_s (e_t is in the hub plane; e_s·(−e_z) = sin β),
+        // r = e + ρ cos β.
+        const double fr_up = -cb * (e * f_n + cb * rf_n) + sb * (e * f_s + cb * rf_s);
         out.c1s += fr_up * sp;
         out.c1c += fr_up * cp;
     }
@@ -723,11 +743,13 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
 
     const Config blade = node.child("blade");
     blade.allow_keys({"root_cutout", "tip_loss", "chord", "chord_table", "twist", "twist_table",
-                      "airfoil", "elements", "spacing", "flap", "dynamic_twist"});
+                      "airfoil", "elements", "spacing", "flap", "dynamic_twist",
+                      "yawed_flow_drag"});
     c.root_cutout = blade.quantity("root_cutout", Dimension::length);
     c.tip_loss = blade.number("tip_loss");
     c.chord = read_spanwise(blade, "chord", Dimension::length, false);
     c.twist = read_spanwise(blade, "twist", Dimension::angle, true);
+    c.yawed_flow_drag = blade.contains("yawed_flow_drag") && blade.boolean("yawed_flow_drag");
     if (blade.contains("dynamic_twist")) {
         // Elastic twist (D-038): gain_table (columns airspeed and gain),
         // mode or mode_table (against r/R), lag.

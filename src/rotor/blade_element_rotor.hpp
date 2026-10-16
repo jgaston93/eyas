@@ -116,6 +116,12 @@ struct BladeElementRotorConfig {
     std::optional<FlapHinge> flap;  // none: M3 rotor, flapping held at zero
     InflowModel inflow = InflowModel::uniform;
     std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
+    // Yawed-flow drag (Johnson 2013 §6.22–6.23; D-039): the section drag acts
+    // along the full local flow, spanwise component u_R included, with
+    // magnitude ½ρc W² c_d, W² = U² + u_R², so a radial drag force appears
+    // and the in-plane drag grows by W/U. Lift is unaffected (independence
+    // principle, linear range). Off: drag from U = √(u_T² + u_P²) only.
+    bool yawed_flow_drag = false;
 };
 
 inline constexpr int kMaxBlades = 64;

@@ -401,6 +401,7 @@ components:
         inertia: "{fmt(mr["I_B"])} slug*ft^2"
         delta3: "{fmt(mr["DELTA_3"])} deg"
       dynamic_twist: {{gain_table: dynamic_twist_gain.csv, mode_table: dynamic_twist_mode.csv, lag: "0.01 s"}}  # D-038; lag numerical
+      yawed_flow_drag: true  # D-039 (GenHel resolves its drag on the full segment velocity, p. 5.1-28)
     controls:
 {map_rows(main_map, "      ", (("theta1s", "offset"), ("theta1c", "offset")))}
 
