@@ -1,7 +1,7 @@
 """Plots and difference tables for the M7c entry in docs/VALIDATION.md (D-035 V1).
 
 Reads the CSVs written by eyas_m7c_cases and Ballin's digitized App. B plots
-(data/uh60a/validation/ballin_b*.csv, UNVERIFIED until the overlays are reviewed), and writes
+(data/uh60a/validation/ballin_b*.csv, human-reviewed, DATA_GAPS.md), and writes
 one figure per Ballin figure (Eyas over GenHel and flight test) and m7c_differences.csv:
 Eyas minus Sikorsky GenHel at the curve samples, and Eyas minus flight test at the test
 points, per quantity (mean, RMS, largest).

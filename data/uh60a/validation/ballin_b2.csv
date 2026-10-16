@@ -1,15 +1,15 @@
 # source: Ballin, M. G., Validation of a Real-Time Engineering Simulation of the UH-60A Helicopter, NASA TM-88360 (1987), App. B, Fig. B2, steady-climb and descent trim, 60 knots (p. 30). Digitized from the NASA scan at 300 dpi by tools/digitize_ballin.py.
-# status: UNVERIFIED - needs human review of the overlays (DATA_GAPS.md)
+# status: VERIFIED by human review of the overlays (2026-10-16, DATA_GAPS.md); a re-run changes readings and needs a new review
 # Series: sikorsky_genhel (solid), ames_genhel (dashed), aefa_test (circles, USAAEFA flight test). Flags: merged, gap, overlap, weak (tool docstring).
 panel,quantity,unit,x_quantity,x_unit,series,x,y,flag
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-3.000,2.811,end
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-3.000,2.803,end
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.750,6.072,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.500,9.330,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.250,12.598,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.000,15.791,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.750,18.918,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.500,22.044,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.250,25.669,gap
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.250,25.207,gap
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.000,28.255,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.750,31.595,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.500,34.791,merged
@@ -22,19 +22,19 @@ collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhe
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,1.250,56.541,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,1.500,59.355,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,1.750,62.261,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,2.000,65.417,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,2.250,68.110,merged
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,2.000,65.208,
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,2.250,67.937,
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,2.500,70.300,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,2.750,73.395,merged
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,2.750,73.064,
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,sikorsky_genhel,3.000,75.825,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-3.000,2.811,end
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-3.000,2.803,end
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-2.750,6.072,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-2.500,9.330,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-2.250,12.598,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-2.000,15.791,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-1.750,18.918,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-1.500,22.044,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-1.250,25.669,gap
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-1.250,25.207,gap
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-1.000,28.255,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-0.750,31.595,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,-0.500,34.791,merged
@@ -47,10 +47,10 @@ collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,1.
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,1.250,56.541,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,1.500,59.355,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,1.750,62.261,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,2.000,65.417,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,2.250,68.110,merged
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,2.000,65.627,
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,2.250,68.325,
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,2.500,70.300,merged
-collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,2.750,73.395,merged
+collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,2.750,73.725,
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,ames_genhel,3.000,75.825,merged
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,aefa_test,-2.557,14.896,
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,aefa_test,-1.609,16.061,
@@ -59,16 +59,16 @@ collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,aefa_test,0.51
 collective,collective,% (100 = full up),rate_of_climb,1000 ft/min,aefa_test,3.303,77.931,
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-2.750,-2.775,
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-2.500,-1.803,
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-2.250,-0.718,gap
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-2.000,0.377,merged
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-1.750,1.399,merged
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-1.500,2.397,merged
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-1.250,3.267,gap
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-2.250,-0.769,gap
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-2.000,0.230,
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-1.750,1.333,
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-1.500,2.337,
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-1.250,3.354,gap
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-1.000,4.410,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-0.750,5.496,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-0.500,6.622,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,-0.250,7.746,merged
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,8.850,gap
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,8.857,gap
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,0.250,9.971,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,0.500,11.134,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,0.750,12.261,merged
@@ -84,15 +84,15 @@ power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,sikorsky_genhel,3.000,22
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-2.750,-2.229,
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-2.500,-1.309,
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-2.250,-0.501,
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-2.000,0.377,merged
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-1.750,1.399,merged
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-1.500,2.397,merged
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-1.250,3.267,gap
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-2.000,0.523,
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-1.750,1.465,
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-1.500,2.467,
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-1.250,3.384,gap
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-1.000,4.410,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-0.750,5.496,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-0.500,6.622,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,-0.250,7.746,merged
-power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,0.000,8.850,gap
+power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,0.000,8.857,gap
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,0.250,9.971,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,0.500,11.134,merged
 power,main_rotor_power,hp/100,rate_of_climb,1000 ft/min,ames_genhel,0.750,12.261,merged
@@ -123,17 +123,17 @@ pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.50
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.250,52.217,merged
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,50.436,merged
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.250,48.571,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.500,47.085,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.750,44.676,merged
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.500,46.800,
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.750,44.676,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.000,42.740,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.250,40.695,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.500,38.650,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.750,36.506,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.000,34.326,
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.250,31.792,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.500,29.792,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.750,27.368,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,3.000,24.798,merged
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.250,31.792,
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.500,29.792,
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.750,27.368,
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,3.000,24.798,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-2.750,68.138,merged
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-2.500,66.671,merged
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-2.250,65.126,merged
@@ -147,17 +147,17 @@ pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-0.500,54
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-0.250,52.217,merged
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.000,50.436,merged
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.250,48.571,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.500,47.085,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.750,44.676,merged
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.500,47.369,
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.750,45.970,gap
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.000,44.755,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.250,43.419,
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.500,42.108,gap
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.500,42.018,gap
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.750,40.764,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.000,39.439,
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.250,31.792,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.500,29.792,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.750,27.368,merged
-pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,3.000,24.798,merged
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.250,37.868,
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.500,36.495,
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.750,34.896,gap
+pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,3.000,33.323,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,aefa_test,-2.525,47.085,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,aefa_test,-1.684,46.606,
 pedal,pedal,% (100 = full right),rate_of_climb,1000 ft/min,aefa_test,-1.239,46.666,
@@ -167,14 +167,14 @@ pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.500,1.118,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.250,0.716,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.000,0.360,merged
-pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.750,0.104,gap
+pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.750,0.026,gap
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.500,-0.373,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.250,-0.661,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-1.000,-0.870,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.750,-0.975,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.500,-0.998,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.250,-0.923,merged
-pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,-0.787,gap
+pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,-0.792,gap
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,0.250,-0.593,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,0.500,-0.347,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,sikorsky_genhel,0.750,-0.216,gap
@@ -191,24 +191,24 @@ pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-2.75
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-2.500,1.118,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-2.250,0.716,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-2.000,0.360,merged
-pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-1.750,0.104,gap
+pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-1.750,0.026,gap
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-1.500,-0.373,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-1.250,-0.661,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-1.000,-0.870,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-0.750,-0.975,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-0.500,-0.998,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,-0.250,-0.923,merged
-pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,0.000,-0.787,gap
+pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,0.000,-0.792,gap
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,0.250,-0.593,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,0.500,-0.347,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,0.750,-0.216,gap
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,1.000,0.360,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,1.250,0.670,merged
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,1.500,0.942,merged
-pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,1.750,1.126,gap
+pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,1.750,1.266,gap
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,2.000,1.539,
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,2.250,1.957,
-pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,2.500,2.379,gap
+pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,2.500,2.392,gap
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,2.750,2.852,
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,ames_genhel,3.000,3.333,
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,aefa_test,-2.536,2.062,
@@ -216,7 +216,7 @@ pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,aefa_test,-1.624,
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,aefa_test,-1.219,1.174,
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,aefa_test,0.472,-1.924,
 pitch,pitch_attitude,deg (+ nose up),rate_of_climb,1000 ft/min,aefa_test,3.266,-0.122,
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-3.000,47.090,end
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-3.000,47.176,end
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.750,46.985,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.500,46.985,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.250,47.141,merged
@@ -228,20 +228,20 @@ lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_g
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.750,48.668,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.500,49.029,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.250,49.299,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,49.781,gap
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,49.828,gap
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.250,50.140,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.500,50.308,gap
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.500,50.618,gap
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,0.750,51.116,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.000,51.390,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.250,51.928,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.500,52.244,merged
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.250,51.615,
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.500,51.823,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,1.750,52.244,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.000,52.875,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.250,53.295,merged
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.000,52.455,
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.250,53.295,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.500,53.505,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,2.750,53.716,
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,3.000,54.098,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-3.000,47.090,end
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,sikorsky_genhel,3.000,54.098,
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-3.000,47.176,end
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-2.750,46.985,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-2.500,46.985,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-2.250,47.141,merged
@@ -253,25 +253,24 @@ lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhe
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-0.750,48.668,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-0.500,49.029,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,-0.250,49.299,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.000,49.781,gap
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.000,49.828,gap
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.250,50.140,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.500,50.308,gap
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.500,50.603,gap
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,0.750,51.116,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.000,51.390,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.250,51.928,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.500,52.244,merged
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.250,52.241,
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.500,52.664,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,1.750,52.244,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.000,52.875,merged
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.250,53.295,merged
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.000,53.294,
+lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.250,54.059,gap
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.500,54.662,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,2.750,55.143,
-lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,ames_genhel,3.000,54.098,merged
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,aefa_test,-2.583,43.052,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,aefa_test,-1.562,44.735,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,aefa_test,-1.228,43.068,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,aefa_test,0.447,51.387,
 lateral,lateral_cyclic,% (100 = full right),rate_of_climb,1000 ft/min,aefa_test,3.224,52.938,
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,-3.000,51.500,end
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,-3.000,51.460,end
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.750,52.665,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.500,53.749,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,-2.250,54.646,merged
@@ -283,12 +282,12 @@ longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.750,55.632,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.500,55.004,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,-0.250,54.167,merged
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,53.103,gap
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,0.000,53.055,gap
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,0.250,52.075,merged
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,0.500,50.824,gap
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,0.500,50.964,gap
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,0.750,49.983,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,1.000,49.041,merged
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,1.250,48.309,merged
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,1.250,48.309,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,1.500,46.635,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,1.750,45.589,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,2.000,44.540,
@@ -296,8 +295,7 @@ longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,2.500,42.262,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,2.750,41.175,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,3.000,40.088,
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,sikorsky_genhel,3.250,54.759,gap
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,-3.000,51.500,end
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,-3.000,51.460,end
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,-2.750,52.665,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,-2.500,53.749,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,-2.250,54.646,merged
@@ -309,20 +307,19 @@ longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,-0.750,55.632,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,-0.500,55.004,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,-0.250,54.167,merged
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,0.000,53.103,gap
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,0.000,53.055,gap
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,0.250,52.075,merged
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,0.500,50.824,gap
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,0.500,50.964,gap
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,0.750,49.983,merged
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,1.000,49.041,merged
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,1.250,48.309,merged
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,1.250,48.688,gap
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,1.500,48.277,gap
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,1.750,47.890,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,2.000,47.370,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,2.250,47.010,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,2.500,46.635,
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,2.750,46.137,gap
+longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,2.750,46.171,gap
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,3.000,45.798,
-longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,ames_genhel,3.250,54.759,gap
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,aefa_test,-2.493,45.531,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,aefa_test,-1.634,45.526,
 longitudinal,longitudinal_cyclic,% (0 = full forward),rate_of_climb,1000 ft/min,aefa_test,-1.253,48.432,

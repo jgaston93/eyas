@@ -698,7 +698,7 @@ Side-force budget at 100 kt, zero roll (β = 3.30°): main rotor −290 lbf, tai
 
 ### Neutral longitudinal cyclic
 
-Fitted to Ballin's GenHel longitudinal stick (B1(a), human-reviewed): Eyas sat 4.6 % of travel forward of GenHel on average with neutral at the mean of GenHel's three Fig. 6.3.1 estimates. Removing it needs neutral at 2.04 in, 0.13 in beyond the estimates' range (1.10–1.91 in); the D-035 check fails, so neutral is set at 1.91 in and 1.3 % of the offset stays (DECISIONS.md D-035). The residual against speed after the full shift is 1.4 % rms, largest (+2.8 %) at 70–80 kt: a shape difference. With this neutral the cyclic offsets come out at −0.009° (θ1s) and +0.001° (θ1c), i.e. a centred stick gives a level swashplate. The trims are unchanged except for the longitudinal stick reading, which moves 3.3 % aft.
+Fitted to Ballin's GenHel longitudinal stick (B1(a), human-reviewed): Eyas sat 4.7 % of travel forward of GenHel on average with neutral at the mean of GenHel's three Fig. 6.3.1 estimates. Removing it needs neutral at 2.06 in, 0.14 in beyond the estimates' range (1.10–1.91 in); the D-035 check fails, so neutral is set at 1.91 in and 1.4 % of the offset stays (DECISIONS.md D-035). The residual against speed after the full shift is 1.3 % rms, from −2.4 % at 30 kt to +2.6 % at 80 kt: a shape difference. With this neutral the cyclic offsets come out at −0.009° (θ1s) and +0.001° (θ1c), i.e. a centred stick gives a level swashplate. The trims are unchanged except for the longitudinal stick reading, which moves 3.3 % aft.
 
 ### Open: hover power
 
