@@ -4,8 +4,8 @@ of the UH-60 in hover and at 80 kt) for M7c (D-035 V2).
     .venv/bin/python -I tools/digitize_fletcher.py <ERF-1995-VII-4-Fletcher.pdf> <overlay dir>
 
 Writes data/uh60a/validation/fletcher_fig3.csv and fletcher_fig4.csv and, in <overlay dir>, one
-PNG per panel with the readings drawn over the scan, for human review. Readings need a person's
-check of the overlays before use (DATA_GAPS.md); a re-run needs a new review.
+PNG per panel with the readings drawn over the scan, for human review. The readings were
+reviewed by a person (DATA_GAPS.md); a re-run that changes them needs a new review.
 
 Each figure has four responses (p and q to lateral and longitudinal cyclic), each in three panels:
 magnitude [dB of (rad/s)/in], phase [deg] and coherence, against frequency [rad/s] on a log axis
@@ -18,8 +18,14 @@ from 0.1 (the y axis) to 20 (the end of the x axis). How a panel is read:
 - the axes, their tick stubs and the response label are masked, and the one curve is followed
   column by column: the ink run nearest the previous reading (its end nearest, for the long
   runs of a steep stretch), with the allowed jump growing while the curve has no ink;
-- readings are reported at 24 per decade where the curve has ink, flagged `gap` where filled
-  across a short break and `edge` within 12 px of the x axis (the tick stubs are masked there).
+- the ink is masked from 5 px above the x axis down (the axis line and the specks along it), and
+  in a 7 px strip at each printed x tick up to 14 px above it;
+- readings are reported at 24 per decade where the curve has ink, plus wherever the straight
+  line between two readings strays more than REFINE_DEV px from the traced curve or the curve
+  rises more than REFINE_STEP px between them (the steep stretches, peaks and notches); flagged
+  `gap` where filled across a short break and `edge` within 12 px of the x axis;
+- a coherence curve that runs into the x axis line (no ink above the mask between two readings
+  within 12 px of the axis) is read as 0, flagged `axis`: it lies on the line, within its width.
 """
 
 import argparse
@@ -54,6 +60,12 @@ FIG4 = dict(page=10, caption="Fig. 4, CIFER-identified frequency responses for U
             "forward flight",
             cols={"L": (188, 612), "R": (692, 1115)},
             rows=[(198, 342), (392, 536), (588, 730), (806, 950), (1003, 1146), (1197, 1340)])
+
+REFINE_DEV = 2.5  # px, about the curve's line width
+REFINE_STEP = 12.0  # px
+AXIS_BAND = 12  # px above the x axis counted as on it (flags `edge`, `axis`)
+# printed x ticks [rad/s]
+X_TICKS = [k * 10.0 ** e for e in (-1, 0) for k in range(1, 10)] + [10.0, 20.0]
 
 MAG = (0.0, -60.0, 20.0)
 COH = (1.0, 0.0, 0.5)
@@ -132,45 +144,90 @@ def to_px(w, xcoef):
     return x0 + (math.log10(w) + 1.0) / (math.log10(20.0) + 1.0) * (x1 - x0)
 
 
+def ink_runs(col):
+    """The column's ink runs, joined across gaps of up to 3 px (the scan's hatching)."""
+    out = []
+    for s, e in runs(col):
+        if out and s - out[-1][1] <= 3:
+            out[-1] = (out[-1][0], e)
+        else:
+            out.append((s, e))
+    return out
+
+
+def dist_to(v, rs):
+    """Distance [px] from row v to the nearest of the runs rs (0 inside one)."""
+    return min((0.0 if s <= v <= e - 1 else min(abs(s - v), abs(e - 1 - v)) for s, e in rs),
+               default=math.inf)
+
+
 def follow(ink, x_from, x_to, max_jump=20):
+    """Follow the one curve column by column, on the run connected to the previous column's
+    (else the nearest within reach). A long run (a steep stretch, a spike or a notch) is read
+    at the end where the curve leaves it, half a line width in: the end nearer the ink of the
+    first of the next six columns that tells them apart, else the end further from the
+    previous reading."""
     n = x_to - x_from
     y = np.full(n, np.nan)
-    last = None
+    last = prev = None
     missing = 0
     for i in range(n):
-        rs = runs(ink[:, x_from + i])
+        rs = ink_runs(ink[:, x_from + i])
         if not rs:
             missing += 1
             continue
         if last is None:
-            s, e = max(rs, key=lambda r: r[1] - r[0])
-            y[i] = (s + e - 1) / 2.0
+            run = max(rs, key=lambda r: r[1] - r[0])
         else:
+            linked = [r for r in rs if r[0] <= prev[1] and r[1] >= prev[0]] if missing == 0 else []
             reach = max_jump + 2 * missing
-            best = None
-            for s, e in rs:
-                if e - s > 12:  # a steep stretch: its end nearest the previous reading
-                    cand = (s if abs(s - last) < abs(e - 1 - last) else e - 1)
-                else:
-                    cand = (s + e - 1) / 2.0
-                d = abs(cand - last)
-                if d <= reach and (best is None or d < best[0]):
-                    best = (d, cand)
-            if best is None:
+            cands = linked or [r for r in rs if dist_to(last, [r]) <= reach]
+            if not cands:
                 missing += 1
                 continue
-            y[i] = best[1]
-        last = y[i]
+            run = min(cands, key=lambda r: dist_to(last, [r]))
+        s, e = run
+        if e - s > 12 and last is not None:
+            y[i] = s + 2 if abs(s - last) > abs(e - 1 - last) else e - 3
+            for j in range(i + 1, min(i + 7, n)):
+                ahead = ink_runs(ink[:, x_from + j])
+                dt, db = dist_to(s, ahead), dist_to(e - 1, ahead)
+                if abs(dt - db) > 2:
+                    y[i] = s + 2 if dt < db else e - 3
+                    break
+        else:
+            y[i] = (s + e - 1) / 2.0
+        last, prev = y[i], run
         missing = 0
     return y
 
 
-def digitize_panel(img, x_ax_r, x_r, yt, yb, yv, label, overlay):
+def refine(y, a, b, keep):
+    """Add columns between kept columns a and b until the straight line between neighbours
+    follows the traced curve (REFINE_DEV) and no step is steeper than REFINE_STEP."""
+    if b - a < 2:
+        return
+    chord = np.linspace(y[a], y[b], b - a + 1)
+    dev = np.abs(y[a:b + 1] - chord)
+    k = int(np.argmax(dev))
+    if dev[k] <= REFINE_DEV:
+        if abs(y[b] - y[a]) <= REFINE_STEP:
+            return
+        k = 1 + int(np.argmin(np.abs(y[a + 1:b] - (y[a] + y[b]) / 2.0)))
+    keep.add(a + k)
+    refine(y, a, a + k, keep)
+    refine(y, a + k, b, keep)
+
+
+def digitize_panel(img, x_ax_r, x_r, yt, yb, yv, label, coherence=False):
     dark = img < DARK
     x_ax, y_ax, x_end, ycoef, xcoef = calibrate(dark, x_ax_r, x_r, yt, yb, yv)
     ink = np.zeros_like(dark)
-    y0, y1 = int(yt - 14), int(y_ax - 12)
+    y0, y1 = int(yt - 14), int(y_ax - 5)
     ink[y0:y1, x_ax + 5:x_end + 2] = dark[y0:y1, x_ax + 5:x_end + 2]
+    for w in X_TICKS:
+        x = int(round(to_px(w, xcoef)))
+        ink[y_ax - 14:y1, x - 3:x + 4] = False
     if label is not None:
         a, b, c, d = (2 * v for v in label)
         ink[b:d, a:c] = False
@@ -178,28 +235,77 @@ def digitize_panel(img, x_ax_r, x_r, yt, yb, yv, label, overlay):
     ok = ~np.isnan(y)
     idx = np.flatnonzero(ok)
     filled = np.zeros(len(y), dtype=bool)
+    on_axis = np.zeros(len(y), dtype=bool)
+    near = lambda i: y[i] > y_ax - AXIS_BAND  # noqa: E731
     for a, b in zip(idx[:-1], idx[1:]):
         if 1 < b - a <= 25:
             y[a + 1:b] = np.interp(np.arange(a + 1, b), [a, b], [y[a], y[b]])
             filled[a + 1:b] = True
-    rows = []
+        elif b - a > 25 and coherence and near(a) and near(b):
+            y[a + 1:b] = y_ax
+            on_axis[a + 1:b] = True
+    n = len(y)
+    keep = set()
     for k in range(-24, int(24 * math.log10(20.0)) + 1):
-        w = 10.0 ** (k / 24.0)
-        px = to_px(w, xcoef) - (x_ax + 5)
-        i = int(round(px))
-        if not (0 <= i < len(y)) or np.isnan(y[i]):
-            continue
-        flag = "gap" if filled[i] else ("edge" if y[i] > y_ax - 24 else "")
-        rows.append((w, float(np.polyval(ycoef, y[i])), flag))
-    # overlay
+        i = int(round(to_px(10.0 ** (k / 24.0), xcoef) - (x_ax + 5)))
+        if 0 <= i < n and not np.isnan(y[i]):
+            keep.add(i)
+    valid = ~np.isnan(y)
+    starts = np.flatnonzero(valid & ~np.concatenate(([False], valid[:-1])))
+    ends = np.flatnonzero(valid & ~np.concatenate((valid[1:], [False])))
+    keep.update(starts.tolist() + ends.tolist())
+    for s, e in zip(starts, ends):
+        cols = sorted(i for i in keep if s <= i <= e)
+        for a, b in zip(cols[:-1], cols[1:]):
+            refine(y, a, b, keep)
+    rows = []
+    for i in sorted(keep):
+        if on_axis[i]:
+            flag = "axis"
+        else:
+            flag = "gap" if filled[i] else ("edge" if near(i) else "")
+        rows.append((to_w(x_ax + 5 + i, xcoef), float(np.polyval(ycoef, y[i])), flag))
+    return rows, (img, x_ax, y_ax, x_end, yt, ycoef, xcoef, yv)
+
+
+def unused_spans(coherence):
+    """Frequency spans [rad/s] left out of the comparison: all but the readings with coherence at
+    least 0.6 up to 12 rad/s, each reading's span reaching halfway (in log frequency) to its
+    neighbours, and no further than 0.75 of a grid step (readings snap to pixel columns, so
+    neighbouring grid readings can sit a little more than a step apart)."""
+    half = 10.0 ** (0.75 / 24.0)
+    ws = [w for w, _, _ in coherence]
+    used = []
+    for k, (w, v, _) in enumerate(coherence):
+        if v >= 0.6 and w <= 12.0:
+            lo = max(w / half, math.sqrt(ws[k - 1] * w)) if k > 0 else w / half
+            hi = min(w * half, math.sqrt(ws[k + 1] * w)) if k + 1 < len(ws) else w * half
+            used.append((lo, hi))
+    spans, start = [], 0.1
+    for a, b in used:
+        if a > start * 1.0001:
+            spans.append((start, a))
+        start = max(start, b)
+    spans.append((start, 20.0))
+    return spans
+
+
+def draw_overlay(panel, rows, spans, overlay):
+    """The readings over the scan, for review: the unused spans greyed, the frequency axis
+    labelled (Fletcher labels only the bottom panels) and the 12 rad/s limit dashed."""
+    img, x_ax, y_ax, x_end, yt, ycoef, xcoef, yv = panel
     x0, x1 = x_ax - 90, x_end + 30
-    yy0, yy1 = int(yt - 40), int(y_ax + 30)
+    yy0, yy1 = int(yt - 40), int(y_ax + 62)
     fig = plt.figure(figsize=((x1 - x0) / 100, (yy1 - yy0) / 100), dpi=100)
     ax = fig.add_axes([0, 0, 1, 1])
     ax.imshow(img[yy0:yy1, x0:x1], cmap="gray", extent=(x0, x1, yy1, yy0))
+    ax.add_patch(plt.Rectangle((x0, y_ax + 14), x1 - x0, yy1 - y_ax - 14, color="white", zorder=2))
+    for a, b in spans:
+        ax.axvspan(to_px(a, xcoef), to_px(b, xcoef), ymin=(yy1 - y_ax) / (yy1 - yy0), color="0.55",
+                   alpha=0.35, lw=0, zorder=1)
     inv_y = lambda v: (v - ycoef[1]) / ycoef[0]  # noqa: E731
     for w, v, flag in rows:
-        ax.plot(to_px(w, xcoef), inv_y(v), "x", ms=9, mew=2.2,
+        ax.plot(to_px(w, xcoef), inv_y(v), "x", ms=7, mew=1.8, zorder=3,
                 color="magenta" if flag else "tab:red",
                 path_effects=[pe.withStroke(linewidth=4, foreground="white")])
     top, bot, step = yv
@@ -207,12 +313,17 @@ def digitize_panel(img, x_ax_r, x_r, yt, yb, yv, label, overlay):
         ax.axhline(inv_y(v), color="orange", lw=0.5, alpha=0.7)
     for w in (1.0, 10.0):
         ax.axvline(to_px(w, xcoef), color="orange", lw=0.5, alpha=0.7)
+    ax.axvline(to_px(12.0, xcoef), ymax=(yy1 - y_ax) / (yy1 - yy0) + (y_ax - yy0) / (yy1 - yy0),
+               color="tab:blue", lw=1.2, ls="--", zorder=2)
+    for w in (0.1, 0.2, 0.5, 1, 2, 5, 10, 12, 20):
+        ax.text(to_px(w, xcoef), y_ax + 22, f"{w:g}", ha="center", va="top", fontsize=13, zorder=4,
+                color="tab:blue" if w == 12 else "black")
+    ax.text(x0 + 4, y_ax + 22, "rad/s", ha="left", va="top", fontsize=11, color="0.35", zorder=4)
     ax.set_xlim(x0, x1)
     ax.set_ylim(yy1, yy0)
     ax.axis("off")
     fig.savefig(overlay)
     plt.close(fig)
-    return rows
 
 
 def main():
@@ -228,25 +339,33 @@ def main():
         out = []
         for resp, col, r0 in RESPONSES:
             xa, xr = (2 * v for v in spec["cols"][col])
+            panels = {}
             for kind, row, yv in (("magnitude_db", r0, MAG), ("phase_deg", r0 + 1, PHASE[name][resp]),
                                   ("coherence", r0 + 2, COH)):
                 yt, yb = (2 * v for v in spec["rows"][row])
                 label = LABELS[name][resp] if kind == "magnitude_db" else None
-                path = args.overlays / f"fletcher_{name}_{resp}_{kind}.png"
                 try:
-                    rows = digitize_panel(img, xa, xr, yt, yb, yv, label, path)
+                    rows, panel = digitize_panel(img, xa, xr, yt, yb, yv, label,
+                                                 coherence=kind == "coherence")
                 except PanelError as e:
                     print(f"{name} {resp} {kind}: FAILED: {e}", file=sys.stderr)
                     failed += 1
                     continue
                 print(f"{name} {resp} {kind}: {len(rows)} readings")
                 out += [(resp, kind, w, v, flag) for w, v, flag in rows]
+                panels[kind] = (rows, panel)
+            spans = (unused_spans(panels["coherence"][0]) if "coherence" in panels
+                     else [(12.0, 20.0)])
+            for kind, (rows, panel) in panels.items():
+                path = args.overlays / f"fletcher_{name}_{resp}_{kind}.png"
+                draw_overlay(panel, rows, spans, path)
         path = OUT / f"fletcher_{name}.csv"
         with path.open("w", newline="", encoding="utf-8") as f:
             f.write(f"# source: {SOURCE}, {spec['caption']} (p. VII-4-{spec['page'] - 2}, PDF p. "
                     f"{spec['page']}); flight data. Digitized from the scan at {DPI} dpi by "
                     "tools/digitize_fletcher.py.\n")
-            f.write("# status: UNVERIFIED - needs human review of the overlays (DATA_GAPS.md)\n")
+            f.write("# status: VERIFIED by human review of the overlays (2026-10-16, "
+                    "DATA_GAPS.md); a re-run changes readings and needs a new review\n")
             f.write("# Responses: p_lat = p/delta_lat etc.; magnitude in dB of (rad/s)/in, phase in "
                     "deg, frequency in rad/s.\n")
             w = csv.writer(f, lineterminator="\n")
