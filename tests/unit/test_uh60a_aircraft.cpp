@@ -80,6 +80,19 @@ TEST(Uh60aAircraft, MassSplitKeepsGenHelsWeightAndCg) {
     EXPECT_NEAR(up_shaft.y(), 0.0, 1e-15);
 }
 
+// Fletcher (21st ERF 1995, Paper VII-4, Table 1, p. VII-4-9) lists the
+// theoretical flap parameters his identification started from: blade mass
+// moment ratio M_β/I_β = 0.0573 [1/ft] and pitch–flap coupling 0. The rotor
+// as loaded must have them (D-035 M7c amendment, V2). His theoretical Lock
+// number, 8.06, assumes a lift slope the paper doesn't give (5.72 /rad at
+// sea level); VALIDATION.md M7c reports Eyas's against it.
+TEST(Uh60aAircraft, FlapParametersAreFletchersTheoreticalOnes) {
+    const Uh60aHarness ac;
+    const auto& flap = *ac.get<BladeElementRotor>("main_rotor").config().flap;
+    EXPECT_NEAR(flap.first_moment / flap.inertia * units::kFoot, 0.0573, 5e-5);
+    EXPECT_EQ(flap.delta3, 0.0);
+}
+
 // The main wheels are mirrored about the centreline with the brakes on the
 // matching sides: GenHel's Y_RMGA = BLMGA/12 is body y, positive to
 // starboard (p. 5.7-9), and p. 5.7-10's Y_LMGA = Y_RMGA has lost its minus

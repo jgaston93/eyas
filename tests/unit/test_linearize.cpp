@@ -26,6 +26,7 @@
 #include "support/m6d_fixtures.hpp"
 #include "support/m7_fixtures.hpp"
 #include "support/m7b_support.hpp"
+#include "util/error.hpp"
 #include "util/units.hpp"
 
 namespace eyas {
@@ -481,6 +482,37 @@ TEST(Linearize, ModesAndLabels) {
 }
 
 // ---- L3: linear against nonlinear ----------------------------------------------
+
+// The frequency response is the transfer function on the imaginary axis:
+// against the closed forms of a first-order roll response, p/δ = L_δ/(iω −
+// L_p) from ṗ − L_p p = L_δ δ (Padfield 3rd ed. Eq. 6.2), and a second-order system, x/u =
+// ω_n²/(ω_n² − ω² + 2iζω_nω), over three decades; and it refuses ω on an eigenvalue.
+TEST(Linearize, FrequencyResponseMatchesClosedForms) {
+    const double Lp = -3.5;
+    const double Ld = 0.8;
+    const double wn = 2.3;
+    const double zeta = 0.15;
+    MatX A1(1, 1);
+    A1 << Lp;
+    MatX B1(1, 1);
+    B1 << Ld;
+    MatX A2(2, 2);
+    A2 << 0.0, 1.0, -wn * wn, -2.0 * zeta * wn;
+    MatX B2(2, 1);
+    B2 << 0.0, wn * wn;
+    for (double w = 0.01; w <= 10.0; w *= 1.2) {
+        const std::complex<double> iw(0.0, w);
+        const Eigen::MatrixXcd H1 = frequency_response(A1, B1, w);
+        EXPECT_NEAR(std::abs(H1(0, 0) - Ld / (iw - Lp)), 0.0, 1e-14);
+        const Eigen::MatrixXcd H2 = frequency_response(A2, B2, w);
+        const std::complex<double> x = wn * wn / (wn * wn - w * w + 2.0 * zeta * wn * iw);
+        EXPECT_NEAR(std::abs(H2(0, 0) - x), 0.0, 1e-12 * std::abs(x));
+        EXPECT_NEAR(std::abs(H2(1, 0) - iw * x), 0.0, 1e-12 * std::abs(iw * x));
+    }
+    MatX A0 = MatX::Zero(1, 1);
+    EXPECT_THROW((void)frequency_response(A0, B1, 0.0), InitError);
+    EXPECT_THROW((void)frequency_response(A2, B1, 1.0), InitError);
+}
 
 // Gate L3 (D-035 amendment, option A of 2026-10-15): small initial
 // perturbations of each body coordinate and small control doublets, flown

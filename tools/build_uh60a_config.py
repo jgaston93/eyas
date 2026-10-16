@@ -1,10 +1,11 @@
 """Build the UH-60A aircraft config data/uh60a/uh60a.yaml from the GenHel transcriptions.
 
 Reads the as-printed constants in data/uh60a/genhel/ (GenHel, NASA CR-166309) and writes the
-whole-aircraft config the model loads (DECISIONS.md D-034):
+whole-aircraft config the model loads (DECISIONS.md D-034), plus the validation variants at
+the weight and CG of a published test (D-035 M7c amendment; VARIANTS below):
 
-    python3 tools/build_uh60a_config.py            # write the config
-    python3 tools/build_uh60a_config.py --check    # fail if the config is stale
+    python3 tools/build_uh60a_config.py            # write the configs
+    python3 tools/build_uh60a_config.py --check    # fail if a config is stale
 
 What it works out:
 - Mass split (D-002, D-032 item 7). GenHel's WEIGHT and CG (p. 5.1-49) are the whole
@@ -34,6 +35,21 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "data" / "uh60a" / "genhel"
 DATA = ROOT / "data" / "uh60a"
 OUT = DATA / "uh60a.yaml"
+
+# Validation variants: GenHel's aircraft at another gross weight and CG. Only WEIGHT and the CG
+# change; the mass split (D-034 item 2) and every position follow. The inertias stay GenHel's
+# motion-module values (D-002): neither source gives the test aircraft's for its trims.
+# Each entry: file -> (weight [lbm], FS, BL, WL [in], source line). None keeps GenHel's value.
+VARIANTS = {
+    "uh60a_ballin.yaml": (
+        16000.0, 351.0, None, 231.5,
+        "Ballin, NASA TM-88360 (1987), Fig. B1 (p. 28): gross weight 16000 lb, CG station "
+        "351.0 in, CG waterline 231.5 in (the level-flight and climb trims of App. B)"),
+    "uh60a_fletcher.yaml": (
+        14350.0, 360.0, None, None,
+        "Fletcher, 21st ERF (1995) Paper VII-4, p. VII-4-6: takeoff gross weight approximately "
+        "14,350 lb, CG at station 360; no waterline given, so GenHel's WLCG is kept (DATA_GAPS.md)"),
+}
 
 SLUG_LBM = 32.17404855643044  # lbm per slug (g0 / ft)
 LBF_LBM = 1.0                 # a GenHel weight in lb is the same number in lbm
@@ -236,8 +252,17 @@ def map_rows(rows, indent, placeholders=()):
     return "\n".join(lines)
 
 
-def build():
+def build(variant=None):
+    """Config text: GenHel's aircraft, or a VARIANTS entry's weight and CG."""
     mr = constants("main_rotor_constants_5_1_5.txt")
+    note = ""
+    if variant is not None:
+        weight, fs, bl, wl, source = VARIANTS[variant]
+        for key, v in (("WEIGHT", weight), ("FSCG", fs), ("BLCG", bl), ("WLCG", wl)):
+            if v is not None:
+                mr[key] = v
+        note = (f"#\n# Validation variant ({variant}): WEIGHT and CG from {source}.\n"
+                f"# Inertias are GenHel's (D-002); not for use as the aircraft's own data.\n")
     tr = constants("tail_rotor_constants_5_4_5.txt")
     af = constants("airframe_constants_5_2_5_3.txt")
     mp = constants("mass_properties_5_10.txt")
@@ -319,7 +344,7 @@ def build():
 # Collective, lateral and pedal fit the rigging exactly; the pedal uses its stroke with overtravel.
 # The longitudinal rows put neutral cyclic in three places {fmt(round(lon_spread, 3))} in apart; neutral is
 # their mean, so the theta1s and theta1c offsets are tagged !placeholder.
-
+{note}
 geodetic_origin: {{latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}}  # scenario, not aircraft data
 
 airframe:
@@ -442,16 +467,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="fail if the config is stale")
     args = parser.parse_args()
-    text = build()
-    if args.check:
-        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
-            print(f"{OUT.relative_to(ROOT)} is stale; run tools/build_uh60a_config.py",
-                  file=sys.stderr)
-            return 1
-        return 0
-    OUT.write_text(text, encoding="utf-8")
-    print(f"wrote {OUT.relative_to(ROOT)}")
-    return 0
+    outputs = [(OUT, build())] + [(DATA / name, build(name)) for name in VARIANTS]
+    stale = 0
+    for path, text in outputs:
+        if args.check:
+            if not path.exists() or path.read_text(encoding="utf-8") != text:
+                print(f"{path.relative_to(ROOT)} is stale; run tools/build_uh60a_config.py",
+                      file=sys.stderr)
+                stale = 1
+            continue
+        path.write_text(text, encoding="utf-8")
+        print(f"wrote {path.relative_to(ROOT)}")
+    return stale
 
 
 if __name__ == "__main__":

@@ -481,6 +481,21 @@ FloquetModes floquet(const MatX& monodromy, double period, const Eigen::VectorXc
 
 // ---- Modes -----------------------------------------------------------------------
 
+Eigen::MatrixXcd frequency_response(const Eigen::MatrixXd& A, const Eigen::MatrixXd& B,
+                                    double omega) {
+    if (A.rows() != A.cols() || B.rows() != A.rows() || !std::isfinite(omega)) {
+        throw InitError("frequency response: A must be square, B fit it, and ω be finite");
+    }
+    const Eigen::Index n = A.rows();
+    const Eigen::MatrixXcd M = std::complex<double>(0.0, omega) * Eigen::MatrixXcd::Identity(n, n) -
+                               A.cast<std::complex<double>>();
+    const Eigen::FullPivLU<Eigen::MatrixXcd> lu(M);
+    if (!lu.isInvertible()) {
+        throw InitError("frequency response: iωI − A is singular (ω on an eigenvalue)");
+    }
+    return lu.solve(B.cast<std::complex<double>>());
+}
+
 std::vector<Mode> modes(const CondensedModel& m, double u) {
     const Eigen::EigenSolver<MatX> es(m.A);
     // Weights: 1 m/s, 0.1 rad/s, 0.1 rad (states u v w p q r φ θ ψ_h).
