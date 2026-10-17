@@ -15,7 +15,6 @@
 // condition; the restore is not timed.
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -24,6 +23,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -121,9 +121,11 @@ std::vector<Case> make_cases(Model& m) {
     return cases;
 }
 
-void busy(const std::atomic<bool>& stop) {
+// One busy thread of host load. std::jthread asks it to stop when it is
+// destroyed, on every way out of run(), exceptions included.
+void busy(const std::stop_token& stop) {
     volatile double x = 1.0;
-    while (!stop.load(std::memory_order_relaxed)) {
+    while (!stop.stop_requested()) {
         x = std::sqrt(x * 1.000001 + 1.0);
     }
 }
@@ -139,11 +141,10 @@ int run(const Options& opt) {
     const std::int64_t steps_per_frame = (frame_ns + step_ns - 1) / step_ns;  // ceil
     const auto restore_every = static_cast<int>(5'000'000'000 / frame_ns);    // 5 s of frames
 
-    std::atomic<bool> stop{false};
     std::vector<std::jthread> load;
     load.reserve(static_cast<std::size_t>(opt.load));
     for (int i = 0; i < opt.load; ++i) {
-        load.emplace_back([&stop] { busy(stop); });
+        load.emplace_back([](const std::stop_token& stop) { busy(stop); });
     }
 
     std::ofstream csv;
@@ -218,7 +219,6 @@ int run(const Options& opt) {
             }
         }
     }
-    stop = true;
     return pass ? 0 : 3;
 }
 

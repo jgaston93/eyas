@@ -26,6 +26,8 @@ namespace eyas {
 
 // A saved simulation state for snapshot()/restore(). Create it with
 // Model::make_snapshot(), which sizes it once; reusing it never allocates.
+// It also holds the controls and environment the outputs were evaluated
+// with, so a restore gives back the same outputs (D-043).
 class Snapshot {
 public:
     Snapshot() = default;
@@ -35,6 +37,8 @@ private:
     std::vector<double> x_;
     std::int64_t n_steps_ = 0;
     std::int64_t remainder_ns_ = 0;
+    Controls controls_;
+    Environment env_;
 };
 
 class Model {
@@ -62,7 +66,11 @@ public:
 
     // Starts again from `body` at t = 0, with every other state at its initial
     // value. Returns false, changing nothing, if `body` is not finite or its
-    // quaternion is zero; the quaternion is normalized.
+    // quaternion is zero; the quaternion is normalized. Until the next
+    // advance(), the Tier 2–4 outputs are evaluated with the controls and
+    // environment of the last advance() or trim() (D-043): e.g. reset onto
+    // the ground after flying with no ground reads no weight on wheels until
+    // then.
     bool reset(const BodyState& body) noexcept;
 
     // Init-time (allocates; spec §6.8, D-035): trims for steady straight
@@ -79,7 +87,9 @@ public:
     Snapshot make_snapshot() const;
     // Saves into / restores from a buffer from make_snapshot(). Return false,
     // changing nothing, if the buffer doesn't fit this model or (restore)
-    // holds a non-finite state or a zero quaternion.
+    // holds a non-finite state or a zero quaternion. A restore also brings
+    // back the controls and environment current at the snapshot, so the
+    // outputs equal those at the snapshot.
     bool snapshot(Snapshot& out) const noexcept;
     bool restore(const Snapshot& in) noexcept;
 

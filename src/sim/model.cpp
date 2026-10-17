@@ -171,6 +171,8 @@ bool Model::snapshot(Snapshot& out) const noexcept {
     std::copy(x.begin(), x.end(), out.x_.begin());
     out.n_steps_ = ex.n_steps();
     out.remainder_ns_ = ex.remainder_ns();
+    out.controls_ = impl_->controls;
+    out.env_ = impl_->env;
     return true;
 }
 
@@ -178,6 +180,9 @@ bool Model::restore(const Snapshot& in) noexcept {
     if (!impl_->executive.restore(in.x_, in.n_steps_, in.remainder_ns_)) {
         return false;
     }
+    // The outputs' inputs too, so they come back as they were (D-043).
+    impl_->controls = in.controls_;
+    impl_->env = in.env_;
     outputs_.last_advance = AdvanceStatus{};
     update_outputs();
     return true;
@@ -233,8 +238,8 @@ void Model::update_outputs() noexcept {
     o.specific_force_b = o.accel_b - C_nb.transpose() * Vec3(0.0, 0.0, g0);
     o.load_factor = -o.specific_force_b.z() / g0;
     o.ground_speed = std::hypot(o.vel_n.x(), o.vel_n.y());
-    o.track = o.ground_speed >= 1e-6 ? wrap_2pi(std::atan2(o.vel_n.y(), o.vel_n.x()))
-                                     : std::numeric_limits<double>::quiet_NaN();
+    o.track = o.ground_speed > 0.0 ? wrap_2pi(std::atan2(o.vel_n.y(), o.vel_n.x()))
+                                   : std::numeric_limits<double>::quiet_NaN();
 
     // Tier 3 (Gracey, NASA RP-1046, Ch. III)
     const AirState& air = ctx.air;

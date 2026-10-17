@@ -33,6 +33,11 @@ struct HeldOrbitDrift {
     std::size_t unconverged = 0;     // evaluations with an unconverged iteration (D-023)
 };
 
+// The UH-60A's rotor period T [s] (trim_period), without trimming.
+inline double uh60a_period() {
+    return trim_period(Uh60aHarness().executive());
+}
+
 inline HeldOrbitDrift held_orbit_drift(double kt, int revolutions, int steps = 256) {
     const Uh60aHarness ac;
     const Executive& ex = ac.executive();

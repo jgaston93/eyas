@@ -12,6 +12,8 @@
 #include "eyas/model.hpp"
 #include "rotor/bailey_rotor.hpp"
 #include "rotor/blade_element_rotor.hpp"
+#include "support/alloc_counter.hpp"
+#include "support/bit_identical.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "util/units.hpp"
 
@@ -246,6 +248,43 @@ airframe:
     EXPECT_EQ(o.true_airspeed, 0.0);
     EXPECT_EQ(o.sideslip, 0.0);
     EXPECT_NEAR(o.pressure_altitude, geopotential_altitude(500.0), 1e-6);
+}
+
+// restore() brings back the controls and environment of the snapshot, so the
+// outputs right after it are those at the snapshot, bit for bit, even after
+// flying in another environment (D-043); restoring allocates nothing.
+TEST(Outputs, RestoreBringsBackTheOutputs) {
+    Model m = Model::from_file(test::uh60a_config_path());
+    Controls c;
+    c.collective = 0.2;
+    c.pedal = 0.5;
+    c.brake_left = 1.0;
+    c.brake_right = 1.0;
+    Environment ground;
+    ground.ground_height = 0.0;
+    BodyState s;
+    s.pos_n = Vec3(0.0, 0.0, -2.2);
+    ASSERT_TRUE(m.reset(s));
+    for (int f = 0; f < 120; ++f) {
+        (void)m.advance(c, ground, 16'666'667);
+    }
+    ASSERT_TRUE(m.outputs().weight_on_wheels);
+    Snapshot snap = m.make_snapshot();
+    ASSERT_TRUE(m.snapshot(snap));
+    const std::vector<double> before = test::physical_outputs(m.outputs());
+
+    Environment air;  // no ground, a wind, a hot day
+    air.wind_n = Vec3(5.0, -3.0, 0.0);
+    air.isa_delta_T = 20.0;
+    (void)m.advance(Controls{}, air, 16'666'667);
+    ASSERT_FALSE(m.outputs().weight_on_wheels);
+    {
+        const test::AllocationCounter count;
+        ASSERT_TRUE(m.restore(snap));
+        EXPECT_EQ(count.count(), 0U);
+    }
+    EXPECT_TRUE(m.outputs().weight_on_wheels);
+    EXPECT_TRUE(test::bit_identical(test::physical_outputs(m.outputs()), before));
 }
 
 }  // namespace

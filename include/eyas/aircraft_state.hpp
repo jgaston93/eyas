@@ -9,8 +9,9 @@
 // existing fields never change meaning, units or frame. Tiers 2–4 (D-043) are
 // evaluated once per advance() at its final state, with that call's controls
 // and environment (after trim(): the trimmed controls and the condition's
-// environment; reset() and restore() keep the last ones). "The CG" is the
-// airframe CG (D-002).
+// environment; restore() brings back those of the snapshot; reset() keeps
+// the last ones until the next advance()). "The CG" is the airframe CG
+// (D-002).
 namespace eyas {
 
 namespace detail {
@@ -47,7 +48,9 @@ struct AircraftState {
     double load_factor = 0.0;   // n_z [-] = −specific_force_b.z / g0; 1 in level flight
     double ground_speed = 0.0;  // [m/s] horizontal inertial speed
     // [rad] [0, 2π), from north: direction of the horizontal inertial
-    // velocity; NaN when the ground speed is below 1e-6 m/s.
+    // velocity; NaN at zero ground speed. Reported at any ground speed, so it
+    // is noise at low speed (a hover's 4/rev vibration moves the CG by
+    // ~1e-6 m/s): a display blanks it below its own threshold (D-043).
     double track = detail::kNan;
 
     // ---- Tier 3: air data (M8a, D-043) ---------------------------------------

@@ -30,7 +30,7 @@ void write(const std::filesystem::path& dir, int minutes) {
         f.precision(17);
         for (const double kt : {0.0, 120.0}) {
             // Revolutions covering `seconds` at the trim period.
-            const double T = test::held_orbit_drift(kt, 0).period;
+            const double T = test::uh60a_period();
             const int revs = static_cast<int>(seconds / T);
             const test::HeldOrbitDrift d = test::held_orbit_drift(kt, revs);
             if (!d.converged) {

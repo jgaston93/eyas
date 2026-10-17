@@ -24,53 +24,8 @@ namespace eyas {
 namespace {
 
 using test::bit_identical;
+using test::physical_outputs;
 constexpr std::int64_t kStepNs = 1'000'000;  // the UH-60A config's physics step
-
-// Every physical output field (Tiers 1–4), in a fixed order. Excludes the
-// per-call diagnostics, last_advance and quat_norm_error, which by design
-// describe the call that produced them.
-std::vector<double> physical_outputs(const AircraftState& o) {
-    std::vector<double> v = {static_cast<double>(o.sim_time_ns),
-                             o.sim_time,
-                             o.latitude,
-                             o.longitude,
-                             o.altitude,
-                             o.q_nb.w(),
-                             o.q_nb.x(),
-                             o.q_nb.y(),
-                             o.q_nb.z(),
-                             o.roll,
-                             o.pitch,
-                             o.heading,
-                             o.load_factor,
-                             o.ground_speed,
-                             o.track,
-                             o.true_airspeed,
-                             o.equivalent_airspeed,
-                             o.calibrated_airspeed,
-                             o.indicated_airspeed,
-                             o.angle_of_attack,
-                             o.sideslip,
-                             o.pressure_altitude,
-                             o.vertical_speed,
-                             o.outside_air_temperature,
-                             o.rotor_speed_percent,
-                             o.main_rotor_thrust,
-                             o.main_rotor_torque,
-                             o.main_rotor_power,
-                             o.coning,
-                             o.flap_1c,
-                             o.flap_1s,
-                             o.main_rotor_azimuth,
-                             o.tail_rotor_thrust,
-                             o.tail_rotor_azimuth,
-                             o.weight_on_wheels ? 1.0 : 0.0};
-    for (const Vec3* w :
-         {&o.pos_n, &o.vel_n, &o.vel_b, &o.omega_b, &o.accel_b, &o.specific_force_b}) {
-        v.insert(v.end(), w->data(), w->data() + 3);
-    }
-    return v;
-}
 
 // A 60 kt trim, flown with a longitudinal doublet: the control of host
 // frame f, whose sub-steps start at sim time t0 [s].
@@ -172,7 +127,7 @@ TEST(RealTime, ZeroAllocationInFlight) {
 TEST(RealTime, HeldOrbitRepeatsFor60s) {
     for (const double kt : {0.0, 120.0}) {
         SCOPED_TRACE(kt);
-        const double T = test::held_orbit_drift(kt, 0).period;
+        const double T = test::uh60a_period();
         const test::HeldOrbitDrift d = test::held_orbit_drift(kt, static_cast<int>(60.0 / T));
         ASSERT_TRUE(d.converged);
         EXPECT_EQ(d.unconverged, 0U);
