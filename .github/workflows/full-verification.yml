@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install Ninja and ccache
-        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache libglfw3-dev libgl-dev
       - name: Restore the compiler cache
         uses: actions/cache@v4
         with:
@@ -55,7 +55,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install Ninja and ccache
-        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache libglfw3-dev libgl-dev
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

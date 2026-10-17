@@ -1,0 +1,158 @@
+<?xml version="1.0"?>
+<!--
+  Eyas pilot station: the raw axes and buttons of FlightGear's joystick[0], sent to the station for its fg input (examples/pilot_station, D-044).
+  Copy into $FG_ROOT/Protocol/ and run FlightGear as examples/README.md shows.
+  The field order must match parse_ctrl() in fg_link.cpp.
+-->
+<PropertyList>
+ <generic>
+  <output>
+   <line_separator>newline</line_separator>
+   <var_separator>,</var_separator>
+   <chunk>
+    <name>axis 0</name>
+    <type>float</type>
+    <format>%f</format>
+    <node>/devices/status/joysticks/joystick[0]/axis[0]</node>
+   </chunk>
+   <chunk>
+    <name>axis 1</name>
+    <type>float</type>
+    <format>%f</format>
+    <node>/devices/status/joysticks/joystick[0]/axis[1]</node>
+   </chunk>
+   <chunk>
+    <name>axis 2</name>
+    <type>float</type>
+    <format>%f</format>
+    <node>/devices/status/joysticks/joystick[0]/axis[2]</node>
+   </chunk>
+   <chunk>
+    <name>axis 3</name>
+    <type>float</type>
+    <format>%f</format>
+    <node>/devices/status/joysticks/joystick[0]/axis[3]</node>
+   </chunk>
+   <chunk>
+    <name>axis 4</name>
+    <type>float</type>
+    <format>%f</format>
+    <node>/devices/status/joysticks/joystick[0]/axis[4]</node>
+   </chunk>
+   <chunk>
+    <name>axis 5</name>
+    <type>float</type>
+    <format>%f</format>
+    <node>/devices/status/joysticks/joystick[0]/axis[5]</node>
+   </chunk>
+   <chunk>
+    <name>axis 6</name>
+    <type>float</type>
+    <format>%f</format>
+    <node>/devices/status/joysticks/joystick[0]/axis[6]</node>
+   </chunk>
+   <chunk>
+    <name>axis 7</name>
+    <type>float</type>
+    <format>%f</format>
+    <node>/devices/status/joysticks/joystick[0]/axis[7]</node>
+   </chunk>
+   <chunk>
+    <name>button 0</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[0]</node>
+   </chunk>
+   <chunk>
+    <name>button 1</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[1]</node>
+   </chunk>
+   <chunk>
+    <name>button 2</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[2]</node>
+   </chunk>
+   <chunk>
+    <name>button 3</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[3]</node>
+   </chunk>
+   <chunk>
+    <name>button 4</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[4]</node>
+   </chunk>
+   <chunk>
+    <name>button 5</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[5]</node>
+   </chunk>
+   <chunk>
+    <name>button 6</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[6]</node>
+   </chunk>
+   <chunk>
+    <name>button 7</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[7]</node>
+   </chunk>
+   <chunk>
+    <name>button 8</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[8]</node>
+   </chunk>
+   <chunk>
+    <name>button 9</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[9]</node>
+   </chunk>
+   <chunk>
+    <name>button 10</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[10]</node>
+   </chunk>
+   <chunk>
+    <name>button 11</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[11]</node>
+   </chunk>
+   <chunk>
+    <name>button 12</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[12]</node>
+   </chunk>
+   <chunk>
+    <name>button 13</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[13]</node>
+   </chunk>
+   <chunk>
+    <name>button 14</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[14]</node>
+   </chunk>
+   <chunk>
+    <name>button 15</name>
+    <type>int</type>
+    <format>%d</format>
+    <node>/devices/status/joysticks/joystick[0]/button[15]</node>
+   </chunk>
+  </output>
+ </generic>
+</PropertyList>

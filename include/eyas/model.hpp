@@ -47,6 +47,11 @@ public:
     // naming the file and key on any error.
     static Model from_file(const std::filesystem::path& path);
     static Model from_string(std::string_view yaml, std::string_view origin = "<string>");
+    // As from_file, with `origin` in place of the config's geodetic_origin,
+    // which is scenario data, not aircraft data (D-044): the host places the
+    // aircraft, e.g. at its airport. Throws InitError if the origin is not
+    // finite, |latitude| > 89 deg or |longitude| > 180 deg (D-017).
+    static Model from_file(const std::filesystem::path& path, const GeodeticOrigin& origin);
 
     // Movable, not copyable. A moved-from Model may only be destroyed or
     // assigned to.

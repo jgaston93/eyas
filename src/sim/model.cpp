@@ -50,9 +50,14 @@ struct Model::Impl {
 
 namespace {
 
-std::unique_ptr<Model::Impl> build(const Config& config) {
+// `origin`, when given, replaces the config's geodetic_origin, which is then
+// not read (D-044).
+std::unique_ptr<Model::Impl> build(const Config& config, const GeodeticOrigin* origin) {
     config.allow_keys({"simulation", "geodetic_origin", "airframe", "components", "force_models"});
-    FlatEarthMap map = read_origin(config);
+    FlatEarthMap map =
+        origin == nullptr
+            ? read_origin(config)
+            : FlatEarthMap(GeodeticPosition{origin->latitude, origin->longitude, origin->altitude});
     const double origin_altitude = map.origin().altitude;
     Executive executive = build_executive(config, origin_altitude);
     // Read after the build, so that placeholder data files noted by the
@@ -94,11 +99,15 @@ Model& Model::operator=(Model&&) noexcept = default;
 Model::~Model() = default;
 
 Model Model::from_file(const std::filesystem::path& path) {
-    return Model(build(Config::from_file(path)));
+    return Model(build(Config::from_file(path), nullptr));
+}
+
+Model Model::from_file(const std::filesystem::path& path, const GeodeticOrigin& origin) {
+    return Model(build(Config::from_file(path), &origin));
 }
 
 Model Model::from_string(std::string_view yaml, std::string_view origin) {
-    return Model(build(Config::from_string(yaml, origin)));
+    return Model(build(Config::from_string(yaml, origin), nullptr));
 }
 
 const std::vector<std::string>& Model::placeholders() const noexcept {

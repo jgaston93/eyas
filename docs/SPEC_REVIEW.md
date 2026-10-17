@@ -313,3 +313,16 @@ Verification: the probe above, as a test (loads continuous as the x–z componen
 
 **Why it matters:** a host can't tell that outputs came from an unconverged solve. D-023 judged that harmless (slightly wrong loads, not a fault), but asked to revisit it with Tier 5.
 **Suggested resolution:** add the output evaluation to the executive's count now, or when Tier 5 is settled. Decide whether `AircraftState` Tier 5 carries a count of unconverged evaluations per `advance()`, with the M8e reconciliation of the host's output list.
+
+## 34. A crash diverges to finite garbage before it is flagged — `open (M8e, with the Tier 5 diagnostics)`
+**Spec:** §6.10 (`AdvanceStatus`), §7; D-014, D-032.
+**Problem:** found flying the M8b pilot station hands-off (`--start hover --input none`).
+- The trimmed bare UH-60A holds its hover for about 50 s. The instability then grows, as expected without an AFCS, and at 85.2 s the aircraft meets the ground rolled 72° and descending at 11 m/s.
+- One gear touches at 85.23 s. Within three 60 Hz frames, before any step turns non-finite, the state reaches a height of −1.3e15 m, a vertical speed of 3e39 m/s and a coning of 4.6e14 rad.
+- Only then does a sub-step go non-finite. D-014 discards it, keeping the last good state, which is already garbage, so the host sees it with no flag until the step that overflows.
+- GenHel's gear is a landing-gear model: vertical struts with tyres, valid near level. A wheel struck at 72° of roll is far outside it, and its stiff contact then outruns RK4 at 1 ms. The model isn't wrong to fail here; the problem is that the failure is silent until it overflows.
+
+**Why it matters:** a host shows the aircraft at absurd positions for a frame or more, and a host's crash logic (or the M8e piloted evaluation) can't rely on `non_finite` alone.
+**Suggested resolution:** decide in M8e with the host's crash handling and the Tier 5 diagnostics. Options:
+- an `AdvanceStatus` flag when a component leaves its validity envelope (the gear beyond its stops or its attitude range, the inflow beyond its bounds), raised before the state diverges;
+- or a documented host rule that a crash is the host's to detect from the outputs (attitude and load factor with weight on wheels), as the M8b station does (D-044).

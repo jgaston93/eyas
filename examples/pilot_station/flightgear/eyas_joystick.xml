@@ -1,0 +1,345 @@
+<?xml version="1.0"?>
+<!--
+  Eyas pilot station: makes FlightGear publish joystick 0's raw axes and
+  buttons under /devices/status/joysticks/joystick[0], which eyas_ctrl.xml
+  sends to the station for its fg input (examples/pilot_station, D-044).
+  It replaces FlightGear's own bindings for that device while it is loaded:
+  with the null FDM they fly nothing anyway. Load it with the config option
+  (see examples/README.md); it is not a file for Input/Joysticks.
+-->
+<PropertyList>
+ <input>
+  <joysticks>
+   <js n="0">
+    <axis n="0">
+     <desc>Eyas raw axis 0</desc>
+     <binding>
+      <command>property-scale</command>
+      <property>/devices/status/joysticks/joystick[0]/axis[0]</property>
+      <factor type="double">1</factor>
+      <offset type="double">0</offset>
+     </binding>
+    </axis>
+    <axis n="1">
+     <desc>Eyas raw axis 1</desc>
+     <binding>
+      <command>property-scale</command>
+      <property>/devices/status/joysticks/joystick[0]/axis[1]</property>
+      <factor type="double">1</factor>
+      <offset type="double">0</offset>
+     </binding>
+    </axis>
+    <axis n="2">
+     <desc>Eyas raw axis 2</desc>
+     <binding>
+      <command>property-scale</command>
+      <property>/devices/status/joysticks/joystick[0]/axis[2]</property>
+      <factor type="double">1</factor>
+      <offset type="double">0</offset>
+     </binding>
+    </axis>
+    <axis n="3">
+     <desc>Eyas raw axis 3</desc>
+     <binding>
+      <command>property-scale</command>
+      <property>/devices/status/joysticks/joystick[0]/axis[3]</property>
+      <factor type="double">1</factor>
+      <offset type="double">0</offset>
+     </binding>
+    </axis>
+    <axis n="4">
+     <desc>Eyas raw axis 4</desc>
+     <binding>
+      <command>property-scale</command>
+      <property>/devices/status/joysticks/joystick[0]/axis[4]</property>
+      <factor type="double">1</factor>
+      <offset type="double">0</offset>
+     </binding>
+    </axis>
+    <axis n="5">
+     <desc>Eyas raw axis 5</desc>
+     <binding>
+      <command>property-scale</command>
+      <property>/devices/status/joysticks/joystick[0]/axis[5]</property>
+      <factor type="double">1</factor>
+      <offset type="double">0</offset>
+     </binding>
+    </axis>
+    <axis n="6">
+     <desc>Eyas raw axis 6</desc>
+     <binding>
+      <command>property-scale</command>
+      <property>/devices/status/joysticks/joystick[0]/axis[6]</property>
+      <factor type="double">1</factor>
+      <offset type="double">0</offset>
+     </binding>
+    </axis>
+    <axis n="7">
+     <desc>Eyas raw axis 7</desc>
+     <binding>
+      <command>property-scale</command>
+      <property>/devices/status/joysticks/joystick[0]/axis[7]</property>
+      <factor type="double">1</factor>
+      <offset type="double">0</offset>
+     </binding>
+    </axis>
+    <button n="0">
+     <desc>Eyas raw button 0</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[0]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[0]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="1">
+     <desc>Eyas raw button 1</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[1]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[1]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="2">
+     <desc>Eyas raw button 2</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[2]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[2]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="3">
+     <desc>Eyas raw button 3</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[3]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[3]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="4">
+     <desc>Eyas raw button 4</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[4]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[4]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="5">
+     <desc>Eyas raw button 5</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[5]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[5]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="6">
+     <desc>Eyas raw button 6</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[6]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[6]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="7">
+     <desc>Eyas raw button 7</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[7]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[7]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="8">
+     <desc>Eyas raw button 8</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[8]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[8]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="9">
+     <desc>Eyas raw button 9</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[9]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[9]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="10">
+     <desc>Eyas raw button 10</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[10]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[10]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="11">
+     <desc>Eyas raw button 11</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[11]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[11]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="12">
+     <desc>Eyas raw button 12</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[12]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[12]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="13">
+     <desc>Eyas raw button 13</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[13]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[13]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="14">
+     <desc>Eyas raw button 14</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[14]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[14]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+    <button n="15">
+     <desc>Eyas raw button 15</desc>
+     <repeatable type="bool">false</repeatable>
+     <binding>
+      <command>property-assign</command>
+      <property>/devices/status/joysticks/joystick[0]/button[15]</property>
+      <value type="int">1</value>
+     </binding>
+     <mod-up>
+      <binding>
+       <command>property-assign</command>
+       <property>/devices/status/joysticks/joystick[0]/button[15]</property>
+       <value type="int">0</value>
+      </binding>
+     </mod-up>
+    </button>
+   </js>
+  </joysticks>
+ </input>
+</PropertyList>
