@@ -13,11 +13,25 @@
 // computed the same way in both programs.
 namespace station {
 
-inline constexpr int kMaxAxes = 8;
-inline constexpr int kMaxButtons = 16;
+// Up to kMaxDevices devices at once (a HOTAS is two: stick and throttle),
+// each with up to kAxesPerDevice axes and kButtonsPerDevice buttons. They
+// are stored flat, device by device: axis i of device d is axes[d *
+// kAxesPerDevice + i], and the same for buttons. Map files write them d:i.
+inline constexpr int kMaxDevices = 4;
+inline constexpr int kAxesPerDevice = 12;
+inline constexpr int kButtonsPerDevice = 32;
+inline constexpr int kMaxAxes = kMaxDevices * kAxesPerDevice;
+inline constexpr int kMaxButtons = kMaxDevices * kButtonsPerDevice;
 
-// One device sample. Axes in [-1, 1] as the device reports them; buttons
-// pressed or not. Devices with fewer axes or buttons leave the rest at 0.
+constexpr int axis_index(int device, int axis) noexcept {
+    return device * kAxesPerDevice + axis;
+}
+constexpr int button_index(int device, int button) noexcept {
+    return device * kButtonsPerDevice + button;
+}
+
+// One sample of every device. Axes in [-1, 1] as the device reports them;
+// buttons pressed or not. Absent devices, axes and buttons stay at 0.
 struct RawInput {
     std::array<double, kMaxAxes> axes{};
     std::array<bool, kMaxButtons> buttons{};
@@ -29,7 +43,7 @@ enum class AxisMode {
 };
 
 struct AxisMap {
-    int axis = -1;           // RawInput axis index; < 0: unmapped (control stays at its trim)
+    int axis = -1;           // flat RawInput axis index; < 0: unmapped (control stays at its trim)
     bool invert = false;     // flip the device's sign before anything else
     double deadband = 0.05;  // [-] of the axis travel, removed and the rest rescaled to [-1, 1]
     double expo = 0.0;       // [0, 1] blend of a cubic: 0 linear, 1 pure cubic
@@ -46,6 +60,7 @@ struct ControlsMapConfig {
     AxisMap lat_cyclic;
     AxisMap lon_cyclic;
     AxisMap pedal;
+    // Flat RawInput button indices; < 0: none.
     int trim_button = -1;        // held: force trim release (cyclic and pedal)
     int trim_reset_button = -1;  // pressed: trim points back to the start controls
     int brake_button = -1;       // pressed: toggles the wheel brakes, set or released

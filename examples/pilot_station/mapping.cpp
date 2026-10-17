@@ -152,6 +152,34 @@ bool to_bool(std::string_view v, std::string_view origin, int line) {
     fail(origin, line, "expected true or false, got '" + std::string(v) + "'");
 }
 
+// "d:i" (device d, index i) or "i" (device 0) into a flat index, or −1
+// for "-1" (none).
+int to_index(std::string_view v, int per_device, std::string_view what, std::string_view origin,
+             int line) {
+    const auto colon = v.find(':');
+    const int device =
+        colon == std::string_view::npos ? 0 : to_int(v.substr(0, colon), origin, line);
+    const int index =
+        to_int(colon == std::string_view::npos ? v : v.substr(colon + 1), origin, line);
+    if (colon == std::string_view::npos && index == -1) {
+        return -1;
+    }
+    if (device < 0 || device >= kMaxDevices || index < 0 || index >= per_device) {
+        fail(origin, line,
+             std::string(what) + " must be <device>:<index> with device 0-" +
+                 std::to_string(kMaxDevices - 1) + " and index 0-" +
+                 std::to_string(per_device - 1) + ", or -1 for none; got '" + std::string(v) + "'");
+    }
+    return device * per_device + index;
+}
+
+std::string index_text(int flat, int per_device) {
+    if (flat < 0) {
+        return "-1";
+    }
+    return std::to_string(flat / per_device) + ":" + std::to_string(flat % per_device);
+}
+
 AxisMap* control(ControlsMapConfig& m, std::string_view name) {
     if (name == "collective") {
         return &m.collective;
@@ -190,11 +218,11 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
         const std::string_view key = trim(line.substr(0, eq));
         const std::string_view value = trim(line.substr(eq + 1));
         if (key == "trim_button") {
-            m.trim_button = to_int(value, origin, n);
+            m.trim_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "trim_reset_button") {
-            m.trim_reset_button = to_int(value, origin, n);
+            m.trim_reset_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "brake_button") {
-            m.brake_button = to_int(value, origin, n);
+            m.brake_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "recentre") {
             m.recentre = to_double(value, origin, n);
         } else {
@@ -205,7 +233,7 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
             }
             const std::string_view field = key.substr(dot + 1);
             if (field == "axis") {
-                a->axis = to_int(value, origin, n);
+                a->axis = to_index(value, kAxesPerDevice, "an axis", origin, n);
             } else if (field == "invert") {
                 a->invert = to_bool(value, origin, n);
             } else if (field == "deadband") {
@@ -225,14 +253,6 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
             } else {
                 fail(origin, n, "unknown key '" + std::string(key) + "'");
             }
-            if (a->axis >= kMaxAxes) {
-                fail(origin, n, "axis must be below " + std::to_string(kMaxAxes));
-            }
-        }
-        for (const int b : {m.trim_button, m.trim_reset_button, m.brake_button}) {
-            if (b >= kMaxButtons) {
-                fail(origin, n, "buttons must be below " + std::to_string(kMaxButtons));
-            }
         }
     }
     return m;
@@ -250,7 +270,7 @@ ControlsMapConfig read_map_file(const std::string& path, const ControlsMapConfig
 
 void write_map(std::ostream& out, const ControlsMapConfig& map) {
     const auto write_axis = [&](std::string_view name, const AxisMap& a) {
-        out << name << ".axis = " << a.axis << '\n'
+        out << name << ".axis = " << index_text(a.axis, kAxesPerDevice) << '\n'
             << name << ".invert = " << (a.invert ? "true" : "false") << '\n'
             << name << ".deadband = " << a.deadband << '\n'
             << name << ".expo = " << a.expo << '\n'
@@ -262,9 +282,9 @@ void write_map(std::ostream& out, const ControlsMapConfig& map) {
     write_axis("lat_cyclic", map.lat_cyclic);
     write_axis("lon_cyclic", map.lon_cyclic);
     write_axis("pedal", map.pedal);
-    out << "trim_button = " << map.trim_button << '\n'
-        << "trim_reset_button = " << map.trim_reset_button << '\n'
-        << "brake_button = " << map.brake_button << '\n'
+    out << "trim_button = " << index_text(map.trim_button, kButtonsPerDevice) << '\n'
+        << "trim_reset_button = " << index_text(map.trim_reset_button, kButtonsPerDevice) << '\n'
+        << "brake_button = " << index_text(map.brake_button, kButtonsPerDevice) << '\n'
         << "recentre = " << map.recentre << '\n';
 }
 

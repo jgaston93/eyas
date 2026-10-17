@@ -62,7 +62,9 @@ bool parse_ctrl(std::span<const char> line, RawInput& out) noexcept {
         --end;
     }
     RawInput r;
-    for (int i = 0; i < kMaxAxes + kMaxButtons; ++i) {
+    // Device by device: its axes, then its buttons (eyas_ctrl.xml's order).
+    constexpr int kPerDevice = kAxesPerDevice + kButtonsPerDevice;
+    for (int i = 0; i < kMaxDevices * kPerDevice; ++i) {
         if (i > 0) {
             if (p == end || *p != ',') {
                 return false;
@@ -75,10 +77,13 @@ bool parse_ctrl(std::span<const char> line, RawInput& out) noexcept {
             return false;
         }
         p = q;
-        if (i < kMaxAxes) {
-            r.axes[static_cast<std::size_t>(i)] = v;
+        const int device = i / kPerDevice;
+        const int k = i % kPerDevice;
+        if (k < kAxesPerDevice) {
+            r.axes[static_cast<std::size_t>(axis_index(device, k))] = v;
         } else {
-            r.buttons[static_cast<std::size_t>(i - kMaxAxes)] = v != 0.0;
+            r.buttons[static_cast<std::size_t>(button_index(device, k - kAxesPerDevice))] =
+                v != 0.0;
         }
     }
     if (p != end) {
@@ -90,13 +95,20 @@ bool parse_ctrl(std::span<const char> line, RawInput& out) noexcept {
 
 std::size_t encode_ctrl(const RawInput& in, std::span<char> buf) noexcept {
     std::size_t used = 0;
-    for (int i = 0; i < kMaxAxes + kMaxButtons; ++i) {
+    constexpr int kPerDevice = kAxesPerDevice + kButtonsPerDevice;
+    for (int i = 0; i < kMaxDevices * kPerDevice; ++i) {
+        const int device = i / kPerDevice;
+        const int k = i % kPerDevice;
+        const char* sep = i > 0 ? "," : "";
         const int n =
-            i < kMaxAxes
-                ? std::snprintf(buf.data() + used, buf.size() - used, "%s%.6f", i > 0 ? "," : "",
-                                in.axes[static_cast<std::size_t>(i)])
-                : std::snprintf(buf.data() + used, buf.size() - used, ",%d",
-                                in.buttons[static_cast<std::size_t>(i - kMaxAxes)] ? 1 : 0);
+            k < kAxesPerDevice
+                ? std::snprintf(buf.data() + used, buf.size() - used, "%s%.6f", sep,
+                                in.axes[static_cast<std::size_t>(axis_index(device, k))])
+                : std::snprintf(
+                      buf.data() + used, buf.size() - used, "%s%d", sep,
+                      in.buttons[static_cast<std::size_t>(button_index(device, k - kAxesPerDevice))]
+                          ? 1
+                          : 0);
         if (n <= 0 || used + static_cast<std::size_t>(n) >= buf.size()) {
             return 0;
         }

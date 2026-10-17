@@ -123,9 +123,13 @@ passthrough into WSL2.
        --input fg --listen 5502
    ```
 
-The HUD's top line counts the control lines received (`FG out in N`). The
-`fg` map assumes an Xbox pad as FlightGear numbers it on Windows (axes 0 and 1
-the left stick, 3 and 4 the right stick's Y and X). FlightGear's built-in web
+The HUD's top line counts the control lines received (`FG out in N`).
+FlightGear forwards joysticks 0 to 3, so a HOTAS stick and throttle work
+together. A map file names each axis and button as `device:index`, the
+device being FlightGear's joystick number: its log lists the devices in
+order ("Looking for bindings for joystick ..."), and the order can change
+when devices are re-plugged. The built-in `fg` map assumes an Xbox pad as
+joystick 0 (axes 0 and 1 the left stick, 3 and 4 the right stick's Y and X). FlightGear's built-in web
 server (`--httpd=5480`) shows the raw values at
 `/json/devices/status/joysticks/joystick` as you move the sticks; correct the
 map with `--map` if the numbers differ. If FlightGear lists more than one

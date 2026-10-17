@@ -239,7 +239,8 @@ TEST(StationMapping, BadLinesNameFileAndLine) {
     const ControlsMapConfig base;
     for (const char* text :
          {"collective.axis = x\n", "nonsense\n", "yaw.axis = 1\n", "pedal.mode = sideways\n",
-          "pedal.axis = 8\n", "\ntrim_button = 16\n", "pedal.invert = maybe\n"}) {
+          "pedal.axis = 12\n", "pedal.axis = 4:0\n", "pedal.axis = 1:-2\n", "\ntrim_button = 32\n",
+          "brake_button = 0:x\n", "pedal.invert = maybe\n"}) {
         try {
             (void)parse_map(text, base, "bad.map");
             ADD_FAILURE() << "accepted: " << text;
@@ -248,6 +249,14 @@ TEST(StationMapping, BadLinesNameFileAndLine) {
         }
     }
     EXPECT_THROW((void)parse_source("wheel"), std::runtime_error);
+    // device:index, a plain index on device 0, and -1 for none.
+    const ControlsMapConfig m = parse_map(
+        "collective.axis = 2:1\nlat_cyclic.axis = 5\npedal.axis = -1\ntrim_button = 1:31\n", base,
+        "ok.map");
+    EXPECT_EQ(m.collective.axis, axis_index(2, 1));
+    EXPECT_EQ(m.lat_cyclic.axis, axis_index(0, 5));
+    EXPECT_EQ(m.pedal.axis, -1);
+    EXPECT_EQ(m.trim_button, button_index(1, 31));
     EXPECT_EQ(parse_source("fg"), InputSource::flightgear);
 }
 
@@ -260,7 +269,7 @@ TEST(StationFlightGear, ControlLineRoundTrips) {
     }
     in.buttons[0] = true;
     in.buttons[15] = true;
-    std::array<char, 512> buf{};
+    std::array<char, 4096> buf{};
     const std::size_t n = encode_ctrl(in, buf);
     ASSERT_GT(n, 0U);
     EXPECT_EQ(buf[n - 1], '\n');
@@ -273,15 +282,26 @@ TEST(StationFlightGear, ControlLineRoundTrips) {
 TEST(StationFlightGear, MalformedControlLinesAreRejected) {
     RawInput out;
     out.axes[0] = 0.7;
-    const std::string good = "0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1";
+    // A line as FlightGear writes it: per device, its axes then its buttons.
+    std::string good;
+    for (int d = 0; d < kMaxDevices; ++d) {
+        for (int i = 0; i < kAxesPerDevice; ++i) {
+            good += (good.empty() ? "" : ",") + std::to_string(0.01 * (d * 100 + i));
+        }
+        for (int i = 0; i < kButtonsPerDevice; ++i) {
+            good += (d == 2 && i == 5) ? ",1" : ",0";
+        }
+    }
     ASSERT_TRUE(parse_ctrl(std::span<const char>(good.data(), good.size()), out));
-    EXPECT_EQ(out.axes[7], 0.8);
-    EXPECT_TRUE(out.buttons[15]);
+    EXPECT_EQ(out.axes[static_cast<std::size_t>(axis_index(1, 3))], 1.03);
+    EXPECT_EQ(out.axes[static_cast<std::size_t>(axis_index(2, 0))], 2.0);
+    EXPECT_TRUE(out.buttons[static_cast<std::size_t>(button_index(2, 5))]);
+    EXPECT_FALSE(out.buttons[static_cast<std::size_t>(button_index(1, 5))]);
     const RawInput before = out;
     for (const std::string& bad : {good.substr(0, good.size() - 2),  // short
                                    good + ",0",                      // long
-                                   std::string("0.1,x") + good.substr(5), std::string(""),
-                                   std::string("nan") + good.substr(3), good + " "}) {
+                                   std::string("0.1,x") + good.substr(8), std::string(""),
+                                   std::string("nan") + good.substr(8), good + " "}) {
         EXPECT_FALSE(parse_ctrl(std::span<const char>(bad.data(), bad.size()), out)) << bad;
         EXPECT_EQ(out.axes, before.axes);
     }
@@ -344,12 +364,24 @@ int count(const std::string& text, const std::string& what) {
 }
 
 TEST(StationFlightGear, ProtocolFilesMatchTheCode) {
-    for (const auto& [file, chunks] :
-         {std::pair{"eyas_fdm.xml", kFdmFields}, {"eyas_ctrl.xml", kMaxAxes + kMaxButtons}}) {
+    for (const auto& [file, chunks] : {std::pair{"eyas_fdm.xml", kFdmFields},
+                                       {"eyas_ctrl.xml", kMaxAxes + kMaxButtons},
+                                       {"eyas_joystick.xml", 0}}) {
         const std::string text = read_file(std::string(EYAS_STATION_FG_DIR) + "/" + file);
         ASSERT_FALSE(text.empty()) << file;
         EXPECT_EQ(count(text, "<chunk>"), chunks) << file;
         EXPECT_EQ(count(text, "</chunk>"), chunks) << file;
+        if (std::string(file) == "eyas_joystick.xml") {
+            // It publishes every axis and button eyas_ctrl.xml sends.
+            EXPECT_EQ(count(text, "<js n="), kMaxDevices);
+            EXPECT_EQ(count(text, "<axis n="), kMaxAxes);
+            EXPECT_EQ(count(text, "<button n="), kMaxButtons);
+            for (int d = 0; d < kMaxDevices; ++d) {
+                EXPECT_EQ(count(text, "/devices/status/joysticks/joystick[" + std::to_string(d) +
+                                          "]/button["),
+                          2 * kButtonsPerDevice);  // press and release
+            }
+        }
         for (auto b = text.find("<!--"); b != std::string::npos; b = text.find("<!--", b + 4)) {
             const auto e = text.find("-->", b + 4);
             ASSERT_NE(e, std::string::npos) << file;
@@ -385,7 +417,7 @@ TEST(StationFlightGear, LinkSendsAndReceivesOverLoopback) {
     eyas::AircraftState s;
     s.latitude = 0.6;
     link.send(s);
-    std::array<char, 2048> buf{};
+    std::array<char, 4096> buf{};
     const ssize_t got = ::recv(fg, buf.data(), buf.size(), 0);
     ASSERT_GT(got, 0);
     EXPECT_EQ(fields(buf.data(), static_cast<std::size_t>(got)).size(),

@@ -13,11 +13,12 @@
 // --fdm=null and two generic protocols whose files are in flightgear/:
 //   eyas_fdm  (FG input)  one ASCII line per frame: the pose and the values
 //                         FG's displays and animations read;
-//   eyas_ctrl (FG output) one ASCII line per FG frame: joystick[0]'s raw
-//                         axes and buttons, for --input fg. FlightGear
-//                         doesn't publish raw joystick values itself:
-//                         eyas_joystick.xml, loaded with --config, binds
-//                         them to the properties eyas_ctrl sends.
+//   eyas_ctrl (FG output) one ASCII line per FG frame: the raw axes and
+//                         buttons of joysticks 0..kMaxDevices-1, for --input
+//                         fg. FlightGear doesn't publish raw joystick values
+//                         itself: eyas_joystick.xml, loaded with --config,
+//                         binds them to the properties eyas_ctrl sends.
+// tools/build_fg_station_files.py writes the three files.
 // The field order here and in those files must match; both are listed in
 // encode_fdm() and parse_ctrl().
 //
@@ -31,9 +32,10 @@ std::size_t encode_fdm(const eyas::AircraftState& s, std::span<char> buf) noexce
 // The number of fields in an eyas_fdm line, for the tests.
 inline constexpr int kFdmFields = 22;
 
-// Parses one eyas_ctrl line: kMaxAxes axes (floats) then kMaxButtons
-// buttons (0 or 1), comma separated, an optional trailing newline. Returns
-// false, leaving `out` unchanged, on any malformed line.
+// Parses one eyas_ctrl line: for each of kMaxDevices devices, its
+// kAxesPerDevice axes (floats) then its kButtonsPerDevice buttons (0 or 1),
+// comma separated, an optional trailing newline. Returns false, leaving
+// `out` unchanged, on any malformed line.
 bool parse_ctrl(std::span<const char> line, RawInput& out) noexcept;
 
 // Writes one eyas_ctrl line, as FG would; for the tests and for a loopback.
@@ -74,7 +76,7 @@ private:
     int bound_port_ = -1;
     std::int64_t received_ = 0;
     std::int64_t rejected_ = 0;
-    std::array<char, 2048> buf_{};
+    std::array<char, 4096> buf_{};
 };
 
 }  // namespace station

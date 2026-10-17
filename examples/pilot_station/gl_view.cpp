@@ -202,10 +202,10 @@ void GlView::Impl::read_device(RawInput& raw) {
     if (source == InputSource::gamepad) {
         GLFWgamepadstate st{};
         if (glfwGetGamepadState(joystick, &st) == GLFW_TRUE) {
-            for (int i = 0; i <= GLFW_GAMEPAD_AXIS_LAST && i < kMaxAxes; ++i) {
+            for (int i = 0; i <= GLFW_GAMEPAD_AXIS_LAST && i < kAxesPerDevice; ++i) {
                 raw.axes[static_cast<std::size_t>(i)] = static_cast<double>(st.axes[i]);
             }
-            for (int i = 0; i <= GLFW_GAMEPAD_BUTTON_LAST && i < kMaxButtons; ++i) {
+            for (int i = 0; i <= GLFW_GAMEPAD_BUTTON_LAST && i < kButtonsPerDevice; ++i) {
                 raw.buttons[static_cast<std::size_t>(i)] = st.buttons[i] == GLFW_PRESS;
             }
         }
@@ -213,11 +213,11 @@ void GlView::Impl::read_device(RawInput& raw) {
     }
     int n = 0;
     const float* axes = glfwGetJoystickAxes(joystick, &n);
-    for (int i = 0; axes != nullptr && i < n && i < kMaxAxes; ++i) {
+    for (int i = 0; axes != nullptr && i < n && i < kAxesPerDevice; ++i) {
         raw.axes[static_cast<std::size_t>(i)] = static_cast<double>(axes[i]);
     }
     const unsigned char* buttons = glfwGetJoystickButtons(joystick, &n);
-    for (int i = 0; buttons != nullptr && i < n && i < kMaxButtons; ++i) {
+    for (int i = 0; buttons != nullptr && i < n && i < kButtonsPerDevice; ++i) {
         raw.buttons[static_cast<std::size_t>(i)] = buttons[i] == GLFW_PRESS;
     }
 }
