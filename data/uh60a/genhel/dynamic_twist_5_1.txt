@@ -5,14 +5,18 @@
 #     F_P0 = (1/b_s)(b/b_s) sum over the NBS = 4 blades: the mean over blades (b = b_s = 4)
 #     MODESP = MODE_A + MODE_B sin[90 (y2 + xi)], y2 + xi = r/R (p. 5.1-39)
 #     theta_DYTIP = K_FP0 F_P0 + K_FPC F_PC cos(psi + delta) + K_FPS F_PS sin(psi + delta)
-#     THDYMR = theta_DYTIP MODESP [deg]
+#     THDYMR = theta_DYTIP MODESP (no unit printed)
 #   p. 5.1-25 (PDF p. 45): segment pitch theta = THOAMR + THDYMR + preset twist
 #   p. 5.1-49 (PDF p. 69): K_FP0 = -.0003 - (.0000044)(V_KT - 100), -.00052 <= K_FP0 <= -.0003;
 #     K_FPC = K_FPS = 0 (main_rotor_constants_5_1_5.txt)
-# Units of K_FP0: not printed; deg per lb, since THDYMR is in deg and F_P0 in lb (in rad per lb
-# the tip twist would be about -69 deg). Check: the formula reaches the lower limit, -0.00052,
-# at exactly 150 kt, as printed.
-# status: read with high confidence, not reviewed by a person. Used by DECISIONS.md D-038.
+# Units of K_FP0: printed on neither p. 5.1-24 nor p. 5.1-49 (rechecked 2026-10-17); inferred
+# deg per lbf. THDYMR adds to THOAMR, which is in deg (its 57.3 beta and 57.3 delta terms,
+# p. 5.1-24), and F_P0 is in lbf (p. 5.1-45). Checks: in rad per lbf the tip twist would be
+# about -69 deg; in deg per lbf it is -1.28 deg at 100 kt (D-038); the formula reaches the lower
+# limit, -0.00052, at exactly 150 kt, as printed; and the Ames and Sikorsky GenHel collective
+# curves of Ballin's Fig. B1 coincide where the twist moves Eyas's collective by 7-11 % (D-035).
+# status: digits read with high confidence, not reviewed by a person; unit inferred as above.
+# Used by DECISIONS.md D-038.
 #
 # name        value        unit      note
 MODE_A        0.28         -         MODESP at the root (r/R = 0)

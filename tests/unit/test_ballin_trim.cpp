@@ -16,6 +16,12 @@
 // recorded value within the same tolerance, so it fails if an open difference
 // grows (a new defect) or shrinks (a fix: update the record and VALIDATION.md).
 // No tolerance is widened to make a quantity pass.
+//
+// The longitudinal stick's mean offset is not tested against GenHel: neutral
+// longitudinal cyclic was chosen from GenHel's three Fig. 6.3.1 estimates by
+// the fit to this same curve (D-035 M7c amendment), so B1(a) gates the shape
+// against speed only, its mean removed. The mean is tracked at its recorded
+// value, a calibration, not a validation.
 
 #include <array>
 #include <cmath>
@@ -165,6 +171,12 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
     bool have = false;
     int gated = 0;
     int tracked = 0;
+    struct Reading {
+        int kt;
+        double d;
+        double tol;
+    };
+    std::vector<Reading> lon;  // panel a, gated after the loop with its mean removed
     for (int kt = 0; kt <= 160; kt += 10) {
         Point p = genhel_trim(ac.executive(), kt, 0.0, have ? &last : nullptr);
         ASSERT_TRUE(p.converged) << kt << " kt";
@@ -177,6 +189,10 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
             }
             const double d = q.eyas(p, a) - g;
             const double tol = kSpanTerm * q.span + std::abs(c.slope(kt, 5.0)) * kKtReadOff;
+            if (std::string(q.panel) == "a") {
+                lon.push_back({kt, d, tol});
+                continue;
+            }
             const auto& open = b1_open();
             const auto it = open.find(q.panel);
             if (it != open.end() && it->second.contains(kt)) {
@@ -193,6 +209,22 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
         }
         last = p;
         have = true;
+    }
+    // Longitudinal stick: the shape gated, the calibrated mean tracked (header).
+    constexpr double kLonMeanRecord = 0.07;  // [%] Eyas − GenHel, recorded 2026-10-17
+    ASSERT_GT(lon.size(), 10U);
+    double mean = 0.0;
+    for (const Reading& r : lon) {
+        mean += r.d / static_cast<double>(lon.size());
+    }
+    EXPECT_NEAR(mean, kLonMeanRecord, kSpanTerm * 100.0)
+        << "longitudinal cyclic: the calibrated mean offset changed (record " << kLonMeanRecord
+        << " %); update this record and VALIDATION.md M7c";
+    for (const Reading& r : lon) {
+        EXPECT_LE(std::abs(r.d - mean), r.tol)
+            << "longitudinal cyclic at " << r.kt << " kt: Eyas − Sikorsky GenHel = " << r.d << ", "
+            << r.d - mean << " about the mean, beyond the read-off tolerance " << r.tol;
+        ++gated;
     }
     EXPECT_GT(gated, 40);  // the gate covers what it should
     EXPECT_EQ(tracked, 72);

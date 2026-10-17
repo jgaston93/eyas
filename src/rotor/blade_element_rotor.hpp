@@ -89,7 +89,7 @@ struct DynamicTwist {
     double lag = 0.0;                            // τ [s], positive
     // The gain table is read with its corners rounded over this fraction of
     // the shorter neighbouring segment (rounded(); D-038): GenHel's schedule
-    // has corners at 100 and 150 kt, where trims sit.
+    // has corners at 100 and 150 kt, where trims sit. In (0, 0.5], checked.
     double gain_corner_fraction = 0.1;
 };
 

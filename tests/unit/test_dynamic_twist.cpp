@@ -11,6 +11,7 @@
 
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <numbers>
 #include <regex>
 #include <span>
@@ -125,6 +126,21 @@ TEST(DynamicTwist, RejectsANonPositiveLag) {
         twist(Table1D(Axis({0.0, 1.0}), {-1e-6, -1e-6}), Table1D(Axis({0.0, 1.0}), {0.28, 1.0}));
     c.dynamic_twist->lag = 0.0;
     EXPECT_THROW(BladeElementRotor{c}, InitError);
+}
+
+// Beyond 0.5 the rounding bands of neighbouring corners overlap and the gain
+// jumps between parabolas; at 0 nothing is rounded (D-038).
+TEST(DynamicTwist, RejectsACornerFractionOutsideTheRange) {
+    const auto syn = airfoil_from(synthetic_airfoil_csv());
+    BladeElementRotorConfig c = test_rotor(syn, pitch(12.0, 0.0, 0.0), 12);
+    c.dynamic_twist =
+        twist(Table1D(Axis({0.0, 1.0}), {-1e-6, -1e-6}), Table1D(Axis({0.0, 1.0}), {0.28, 1.0}));
+    for (const double f : {0.0, 0.51, -0.1, std::numeric_limits<double>::quiet_NaN()}) {
+        c.dynamic_twist->gain_corner_fraction = f;
+        EXPECT_THROW(BladeElementRotor{c}, InitError) << f;
+    }
+    c.dynamic_twist->gain_corner_fraction = 0.5;
+    EXPECT_NO_THROW(BladeElementRotor{c});
 }
 
 // ---- The UH-60A ---------------------------------------------------------------------

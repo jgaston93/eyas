@@ -95,6 +95,11 @@ void validate(const BladeElementRotorConfig& c) {
         (!(c.dynamic_twist->lag > 0.0) || !std::isfinite(c.dynamic_twist->lag))) {
         fail("dynamic_twist: lag must be positive and finite");
     }
+    // rounded() is C¹ only while the bands of neighbouring corners don't overlap.
+    if (c.dynamic_twist && (!(c.dynamic_twist->gain_corner_fraction > 0.0) ||
+                            !(c.dynamic_twist->gain_corner_fraction <= 0.5))) {
+        fail("dynamic_twist: gain_corner_fraction must be in (0, 0.5]");
+    }
 }
 
 }  // namespace
