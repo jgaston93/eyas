@@ -7,10 +7,12 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <numbers>
 #include <stdexcept>
 #include <system_error>
@@ -210,6 +212,9 @@ bool FgLink::poll(RawInput& out) noexcept {
             ++received_;
         } else {
             ++rejected_;
+            const std::size_t k = std::min(static_cast<std::size_t>(n), last_rejected_.size() - 1);
+            std::memcpy(last_rejected_.data(), buf_.data(), k);
+            last_rejected_[k] = '\0';
         }
     }
     return got;

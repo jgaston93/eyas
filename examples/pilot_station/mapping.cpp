@@ -225,6 +225,8 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
             m.brake_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "recentre") {
             m.recentre = to_double(value, origin, n);
+        } else if (key == "pickup") {
+            m.pickup = to_double(value, origin, n);
         } else {
             const auto dot = key.find('.');
             AxisMap* a = dot == std::string_view::npos ? nullptr : control(m, key.substr(0, dot));
@@ -285,7 +287,8 @@ void write_map(std::ostream& out, const ControlsMapConfig& map) {
     out << "trim_button = " << index_text(map.trim_button, kButtonsPerDevice) << '\n'
         << "trim_reset_button = " << index_text(map.trim_reset_button, kButtonsPerDevice) << '\n'
         << "brake_button = " << index_text(map.brake_button, kButtonsPerDevice) << '\n'
-        << "recentre = " << map.recentre << '\n';
+        << "recentre = " << map.recentre << '\n'
+        << "pickup = " << map.pickup << '\n';
 }
 
 }  // namespace station

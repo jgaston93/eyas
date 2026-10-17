@@ -64,12 +64,15 @@ Station::Station(const StationOptions& options)
         starts_.push_back(std::move(p));
     }
 
-    // The pad: M8a's parked case (D-042 (d)): dropped from 2.2 m onto the
-    // gear, brakes set, collective 0.2, pedal 0.5, and flown for the 40 s
-    // that case takes to settle (|v| < 1e-3 m/s from then on).
-    eyas::Controls parked;
+    // The pad: as M8a's parked case (D-042 (d)), dropped from 2.2 m onto the
+    // gear, brakes set, collective 0.2, and flown for the 40 s that case takes
+    // to settle (|v| < 1e-3 m/s from then on). The cyclic and pedal are the
+    // hover trim's, not the parked case's half right pedal: they are the
+    // offsets the pilot's centred stick and twist fly from, and a lift-off
+    // needs about the hover's (with half right pedal it spun at once, found
+    // flying the X-56).
+    eyas::Controls parked = starts_.front().controls;  // the hover trim
     parked.collective = 0.2;
-    parked.pedal = 0.5;
     parked.brake_left = 1.0;
     parked.brake_right = 1.0;
     eyas::BodyState drop;

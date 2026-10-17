@@ -1,0 +1,34 @@
+# Logitech/Saitek X-56 Rhino HOTAS through FlightGear (--input fg --map ...).
+# Devices are FlightGear's joystick numbers, as its log lists them ("Looking
+# for bindings for joystick ..."): here 1 is the stick and 2 the throttle (0
+# was a gamepad). If the order changes after re-plugging, change the device
+# numbers below. Read from a live session, 2026-10-17.
+
+# Cyclic: stick X (+ right) and Y (+ aft as the device reports it).
+lat_cyclic.axis = 1:0
+lat_cyclic.deadband = 0.02
+lat_cyclic.expo = 0.2
+lon_cyclic.axis = 1:1
+lon_cyclic.invert = true
+lon_cyclic.deadband = 0.02
+lon_cyclic.expo = 0.2
+
+# Pedals: stick twist, spring-centred; wider deadband against twisting by
+# accident while moving the cyclic.
+pedal.axis = 1:3
+pedal.deadband = 0.10
+pedal.expo = 0.3
+
+# Collective: the throttle lever (both levers read alike; axis 0 is the
+# left), as a lever: idle = full down. The device reads +1 at idle.
+collective.axis = 2:0
+collective.mode = absolute
+collective.invert = true
+collective.deadband = 0
+collective.expo = 0
+collective.gain = 1
+
+# Buttons: stick trigger = trim release, throttle E = brakes, G = trim reset.
+trim_button = 1:0
+brake_button = 2:0
+trim_reset_button = 2:2

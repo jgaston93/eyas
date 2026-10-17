@@ -13,7 +13,7 @@
 // comment. Keys are `<control>.<field>` for the controls collective,
 // lat_cyclic, lon_cyclic and pedal, with the AxisMap fields axis, invert
 // (true/false), deadband, expo, mode (absolute/rate) and gain, plus
-// trim_button, trim_reset_button, brake_button and recentre. Axes and
+// trim_button, trim_reset_button, brake_button, recentre and pickup. Axes and
 // buttons are written <device>:<index> (FlightGear's joystick number, or 0
 // for a GLFW device); a plain index means device 0, and -1 none. A file
 // overrides the input source's defaults key by key; `--print-map` writes

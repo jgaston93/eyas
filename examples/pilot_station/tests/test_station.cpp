@@ -105,6 +105,7 @@ TEST(StationControls, ControlsStayInTheirRanges) {
     eyas::Controls s = start_controls();
     s.lat_cyclic = 0.8;
     ControlsMap m(cfg, s);
+    (void)m.update(axes(0.0, 0.0, -0.2), 0.1);  // collective lever picked up at its start
     const double ulp = 2.0 * std::numeric_limits<double>::epsilon();
     for (const double v : {-1.0, 1.0}) {
         const eyas::Controls c = m.update(axes(v, -v, v), 0.1);
@@ -115,13 +116,43 @@ TEST(StationControls, ControlsStayInTheirRanges) {
 }
 
 // An absolute collective is a lever: its middle is mid travel, whatever the start.
+// (After pickup: see LeverCollectiveWaitsForPickup.)
 TEST(StationControls, AbsoluteCollectiveIsALever) {
     ControlsMapConfig cfg;
     cfg.collective = absolute(0);
     ControlsMap m(cfg, start_controls());
+    (void)m.update(axes(-0.2), 0.1);  // lever at 0.4 = the start: picked up
+    ASSERT_FALSE(m.collective_held());
     EXPECT_DOUBLE_EQ(m.update(axes(-1.0), 0.1).collective, 0.0);
     EXPECT_DOUBLE_EQ(m.update(axes(0.0), 0.1).collective, 0.5);
     EXPECT_DOUBLE_EQ(m.update(axes(1.0), 0.1).collective, 1.0);
+}
+
+// Pickup (found flying the X-56): after a start, a lever collective holds
+// the start value whatever the lever says, until the lever is brought to it
+// or passes it, so an untouched or misplaced lever never jumps the
+// collective. A start re-arms it.
+TEST(StationControls, LeverCollectiveWaitsForPickup) {
+    ControlsMapConfig cfg;
+    cfg.collective = absolute(0);
+    ControlsMap m(cfg, start_controls());  // start collective 0.4
+    EXPECT_TRUE(m.collective_held());
+    EXPECT_EQ(m.update(axes(0.0), 0.1).collective, 0.4);  // lever at 0.5: held
+    EXPECT_DOUBLE_EQ(m.collective_lever(), 0.5);
+    EXPECT_EQ(m.update(axes(0.1), 0.1).collective, 0.4);  // further away: held
+    EXPECT_TRUE(m.collective_held());
+    // Lowered past 0.4 in one sample (0.55 -> 0.3): picked up, follows.
+    EXPECT_DOUBLE_EQ(m.update(axes(-0.4), 0.1).collective, 0.3);
+    EXPECT_FALSE(m.collective_held());
+    EXPECT_DOUBLE_EQ(m.update(axes(0.6), 0.1).collective, 0.8);
+    // Within the pickup band (2 % of travel) also takes over.
+    m.restart(start_controls());
+    EXPECT_DOUBLE_EQ(m.update(axes(-0.17), 0.1).collective, 0.415);  // 1.5 % away: taken
+    EXPECT_FALSE(m.collective_held());
+    // Unrelated: a rate collective never waits.
+    cfg.collective.mode = AxisMode::rate;
+    ControlsMap r(cfg, start_controls());
+    EXPECT_FALSE(r.collective_held());
 }
 
 // Rate mode integrates exactly for a constant input and holds when centred.
@@ -233,6 +264,7 @@ TEST(StationMapping, WrittenMapReadsBack) {
         EXPECT_EQ(m.trim_reset_button, r.trim_reset_button);
         EXPECT_EQ(m.brake_button, r.brake_button);
         EXPECT_EQ(m.recentre, r.recentre);
+        EXPECT_EQ(m.pickup, r.pickup);
     }
 }
 

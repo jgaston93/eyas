@@ -29,7 +29,10 @@ struct ViewCommands {
 struct HudInfo {
     const eyas::AircraftState* state = nullptr;
     eyas::Controls applied;
-    eyas::Controls trim_point;   // start + the force-trim point
+    eyas::Controls trim_point;  // start + the force-trim point
+    // A lever collective waiting for pickup, and where the lever is.
+    bool collective_held = false;
+    double collective_lever = 0.0;
     double ground_height = 0.0;  // [m] MSL
     std::string_view source;
     std::string_view start;

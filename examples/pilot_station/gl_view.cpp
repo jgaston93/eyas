@@ -714,11 +714,25 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     glColor3f(0.8F, 0.8F, 0.8F);
     glVertex2d(cx - 60, py);
     glVertex2d(cx + 60, py);
+    glColor3f(0.4F, 1.0F, 0.4F);  // the trim point: where a centred twist puts the pedal
+    glVertex2d(cx + 60.0 * hud.trim_point.pedal, py - 9);
+    glVertex2d(cx + 60.0 * hud.trim_point.pedal, py + 9);
     glColor3f(1.0F, 1.0F, 0.3F);
     glVertex2d(cx + 60.0 * hud.applied.pedal, py - 6);
     glVertex2d(cx + 60.0 * hud.applied.pedal, py + 6);
     glEnd();
     text(colx - 6, cy + 64, 1.2, "COLL");
+    if (hud.collective_held) {
+        // Where the lever is, against the held collective (pickup).
+        const double ly = cy + 60 - 120.0 * hud.collective_lever;
+        glBegin(GL_LINES);
+        glColor3f(1.0F, 0.4F, 0.3F);
+        glVertex2d(colx - 6, ly);
+        glVertex2d(colx + 20, ly);
+        glEnd();
+        text(w / 2.0 - 300, 180, 2.2, "COLL SYNC - bring the throttle to the yellow bar", 1.0F,
+             0.6F, 0.3F);
+    }
     (void)std::snprintf(b.data(), b.size(), "col %.3f lat %+.3f lon %+.3f ped %+.3f",
                         hud.applied.collective, hud.applied.lat_cyclic, hud.applied.lon_cyclic,
                         hud.applied.pedal);

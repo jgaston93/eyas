@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace station {
 
@@ -29,6 +30,10 @@ void ControlsMap::restart(const eyas::Controls& start) noexcept {
     latched_ = {};
     trim_held_ = false;
     brakes_ = start.brake_left > 0.5 || start.brake_right > 0.5;
+    // A lever holds the start until it is brought to it (pickup).
+    lever_held_ = true;
+    lever_prev_ = std::numeric_limits<double>::quiet_NaN();
+    lever_target_ = 0.0;
 }
 
 namespace {
@@ -74,7 +79,25 @@ void ControlsMap::update_channel(const AxisMap& m, const Channel& ch, const RawI
             d = *ch.latched ? *ch.trim : *ch.trim + m.gain * half * s;
         } else {
             // A lever: its middle is the middle of the control's range.
-            d = 0.5 * (ch.lo + ch.hi) + m.gain * half * s - ch.start;
+            const double target =
+                std::clamp(0.5 * (ch.lo + ch.hi) + m.gain * half * s - ch.start, dlo, dhi);
+            *ch.lever_target = target;
+            if (*ch.lever_held) {
+                // Pickup: hold the control until the lever reaches it, or
+                // passes it between two samples, so a start never jumps the
+                // control to wherever the lever happens to be.
+                const double gap = target - d;
+                const double prev_gap = *ch.lever_prev - d;  // NaN before the first sample
+                const bool near = std::abs(gap) <= config_.pickup * (ch.hi - ch.lo);
+                const bool crossed = prev_gap * gap < 0.0;
+                if (near || crossed) {
+                    *ch.lever_held = false;
+                }
+            }
+            *ch.lever_prev = target;
+            if (!*ch.lever_held) {
+                d = target;
+            }
         }
     }
     *ch.delta = std::clamp(d, dlo, dhi);
@@ -100,7 +123,7 @@ eyas::Controls ControlsMap::update(const RawInput& in, double dt) noexcept {
 
     update_channel(config_.collective,
                    {&delta_.collective, &trim_.collective, latched_.data(), 0.0, 1.0,
-                    start_.collective, false},
+                    start_.collective, false, &lever_held_, &lever_prev_, &lever_target_},
                    in, dt, released);
     update_channel(config_.lat_cyclic,
                    {&delta_.lat_cyclic, &trim_.lat_cyclic, latched_.data() + 1, -1.0, 1.0,

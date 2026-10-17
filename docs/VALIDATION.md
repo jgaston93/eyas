@@ -1003,7 +1003,7 @@ M8b is the second M8 stage (D-042): a pilot station in `examples/pilot_station/`
 - It records each flight as an `eyas_drive` control file.
 - It adds one library call, `Model::from_file(path, GeodeticOrigin)`, so the host places the aircraft (D-044).
 
-Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (27 cases), and the smoke tests `ExampleStation.RecordingReplaysExactly` and `ExampleStation.ScriptRunsFromTheStartPoint`.
+Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (28 cases), and the smoke tests `ExampleStation.RecordingReplaysExactly` and `ExampleStation.ScriptRunsFromTheStartPoint`.
 
 | Check | Status | Evidence |
 |---|---|---|
@@ -1054,3 +1054,19 @@ That impact is what exposed SPEC_REVIEW #34: the state diverged to finite garbag
 All are fixed with tests (D-044 verification). Two points weren't acted on as stated:
 - *The socket error text read after `freeaddrinfo()`:* theoretical, since glibc ≥ 2.33 leaves `errno` alone there. It was tidied anyway.
 - *A `from_string` overload with an origin:* left out, since no caller needs it yet.
+
+**First flights with a HOTAS (2026-10-17; developer, not a pilot evaluation).** A Logitech/Saitek X-56 (stick and throttle) on Windows, through FlightGear (`maps/x56_fg.map`), in five flights from the pad, the longest about 4 min, up to 145 kt.
+- *Before the fixes:*
+  - FlightGear forwarded only one device, so several-device support and the `device:index` map syntax were added.
+  - The first lift-off jumped the collective from 0.2 to 0.5. The untouched throttle reads 0 (mid travel) until it moves, because FlightGear doesn't report an axis before then. This led to lever pickup (COLL SYNC).
+  - The pad's half right pedal, from the parked case, spun the aircraft at lift-off. The pad now starts at the hover trim's pedal and cyclic.
+- *The station:*
+  - In the last flight the worst `advance()` was 0.68 ms.
+  - There was one overrun over the session (the first frame), with FlightGear rendering on the same machine.
+  - It received 80 445 control lines from FlightGear and rejected 156 (0.2 %); the newest good line is used, so no input was lost. A 30-s capture afterwards had no bad line, so the cause is not yet known. The station now prints the last rejected line at exit.
+- *What the developer reported:* "during forward flight it felt like the nose wanted to keep going up". The recording agrees with the model's trims. The forward cyclic held at 100–130 kt was +0.31 to +0.39, against level-flight trims of +0.22 (100 kt) to +0.32 (140 kt), more when accelerating or descending. The model needs about 0.2 more forward stick between 60 and 80 kt, from the stabilator schedule (D-040). Its trimmed stick matches GenHel to within 1 % of travel (M7c). Other contributors:
+  - flapback with speed (Padfield p. 189);
+  - the bare aircraft's pitch instability: the unstable phugoid and M_w > 0 (M7c modes);
+  - the missing pitch bias actuator and SAS (M8c, D-029).
+
+  Nothing points to a fault; re-check after M8c. The open 80 kt speed-stability gap (M_u < 0, D-041) tends to pitch the nose down rather than up, so it isn't this.

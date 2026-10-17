@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <string_view>
 
 #include "controls_map.hpp"
 #include "eyas/aircraft_state.hpp"
@@ -69,6 +70,8 @@ public:
 
     std::int64_t lines_received() const noexcept { return received_; }
     std::int64_t lines_rejected() const noexcept { return rejected_; }
+    // The start of the last rejected line, for diagnosis (empty if none).
+    std::string_view last_rejected() const noexcept { return last_rejected_.data(); }
 
 private:
     int send_fd_ = -1;
@@ -77,6 +80,7 @@ private:
     std::int64_t received_ = 0;
     std::int64_t rejected_ = 0;
     std::array<char, 4096> buf_{};
+    std::array<char, 160> last_rejected_{};
 };
 
 }  // namespace station

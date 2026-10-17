@@ -69,6 +69,10 @@ struct ControlsMapConfig {
     // stick returns into its deadband), so letting go of the stick doesn't
     // move the control; resuming then moves it by at most gain × recentre.
     double recentre = 0.02;
+    // A lever collective takes over once within this fraction of its travel
+    // of the held value (or when it passes it): pickup, so that a start
+    // doesn't jump the collective to the lever.
+    double pickup = 0.02;
 };
 
 // Increments from the start controls (start + delta = applied).
@@ -100,6 +104,14 @@ public:
     const ControlDeltas& trim_points() const noexcept { return trim_; }
     const eyas::Controls& start() const noexcept { return start_; }
     bool trim_held() const noexcept { return trim_held_; }
+    // An absolute collective (a lever) holds the start value after each
+    // start until the lever is brought to it (pickup). While held, the HUD
+    // shows where the lever is: collective_lever() (applied units).
+    bool collective_held() const noexcept {
+        return config_.collective.axis >= 0 && config_.collective.mode == AxisMode::absolute &&
+               lever_held_;
+    }
+    double collective_lever() const noexcept { return start_.collective + lever_target_; }
     bool brakes_set() const noexcept { return brakes_; }
 
 private:
@@ -111,6 +123,10 @@ private:
         double hi;
         double start;
         bool trimmable;  // follows the force trim (cyclic, pedal)
+        // For a lever (absolute, not trimmable): the pickup state.
+        bool* lever_held = nullptr;
+        double* lever_prev = nullptr;
+        double* lever_target = nullptr;
     };
     // Writes through `ch`'s pointers into this map's state.
     void update_channel(const AxisMap& m, const Channel& ch, const RawInput& in, double dt,
@@ -125,6 +141,9 @@ private:
     bool brakes_ = false;
     bool brake_was_pressed_ = false;
     bool reset_was_pressed_ = false;
+    bool lever_held_ = true;
+    double lever_prev_ = 0.0;
+    double lever_target_ = 0.0;
 };
 
 // The applied controls for a delta: start + delta, the sum eyas_drive makes,

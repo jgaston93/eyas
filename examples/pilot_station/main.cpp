@@ -386,6 +386,8 @@ int run(const Options& opt) {
             hud.state = &st.outputs();
             hud.applied = applied;
             hud.trim_point = station::apply(map.start(), map.trim_points());
+            hud.collective_held = map.collective_held();
+            hud.collective_lever = map.collective_lever();
             hud.ground_height = st.ground_height();
             hud.source = station::source_name(opt.input);
             hud.start = st.starts()[current].name;
@@ -435,6 +437,9 @@ int run(const Options& opt) {
                   << fg.lines_rejected() << ')';
     }
     std::cerr << '\n';
+    if (fg.lines_rejected() > 0) {
+        std::cerr << "last rejected FlightGear line (start): " << fg.last_rejected() << '\n';
+    }
     if (faulted) {
         return 1;
     }

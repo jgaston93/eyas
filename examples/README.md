@@ -140,3 +140,29 @@ map with `--map` if the numbers differ. If FlightGear lists more than one
 joystick, the stick must be its joystick 0. Eyas's ground is flat at the origin's altitude, so where
 FlightGear's terrain isn't flat the aircraft can look slightly sunk or
 afloat.
+
+### Flying with a HOTAS (X-56) through FlightGear
+
+`pilot_station/maps/x56_fg.map` maps a Logitech/Saitek X-56 Rhino:
+- the stick's X and Y to the cyclic and its twist to the pedals (wider
+  deadband, against twisting by accident);
+- the throttle lever to the collective;
+- the stick trigger to trim release;
+- throttle E to the brakes and throttle G to trim reset.
+
+It assumes FlightGear numbers the stick 1 and the throttle 2 (another device
+was 0); edit the device numbers if its log lists them differently.
+
+```bash
+./build/release/examples/eyas_pilot_station --config data/uh60a/uh60a.yaml \
+    --origin 37.6188,-122.3756,4 --fg <Windows address>:5501 \
+    --input fg --listen 5502 --map examples/pilot_station/maps/x56_fg.map --start pad
+```
+
+- **Collective sync:** after every start the collective holds its start value
+  (COLL SYNC on the HUD) until the throttle's red tick is brought to the
+  yellow bar. FlightGear doesn't report an axis until it moves, and a lever
+  that doesn't match would otherwise jump the collective.
+- **Trim:** steady the aircraft, press and release the trigger, let the stick
+  centre. Re-trim every 10-20 kt as speed changes; G returns to the start's
+  trim. The bare UH-60A still drifts away within seconds (no AFCS until M8c).
