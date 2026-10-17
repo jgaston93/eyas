@@ -76,6 +76,15 @@ public:
                                         std::span<double> xdot, Vec6& net,
                                         std::span<Wrench> component_loads = {}) const noexcept;
 
+    // The body acceleration a = [v̇_b; ω̇_b] [m/s², rad/s²] (body axes) that
+    // derivatives() solves for at the current state and sim time, for the
+    // outputs (D-043). Afterwards the coupling store holds this evaluation's
+    // outputs, so component queries through context(sim_time(), state(), ...)
+    // read consistent coupled inputs. Changes no state. Returns false if
+    // some component's bounded iteration did not converge (D-023).
+    [[nodiscard]] bool body_acceleration(const Controls& controls, const Environment& env,
+                                         Vec6& a) const noexcept;
+
     // The context a derivative evaluation at (t, x) gives every component:
     // unit quaternion (D-014), atmosphere at the CG (D-016), ground plane
     // (D-033), and the coupling store (D-003). The store holds the outputs of

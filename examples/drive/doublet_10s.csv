@@ -1,0 +1,8 @@
+time_s,d_collective,d_lat_cyclic,d_lon_cyclic,d_pedal
+# A 1-s longitudinal doublet (spec §10 standard maneuver): ±3 % of
+# longitudinal stick about trim, forward first, starting at 1 s; 10 s in all.
+0.0,0,0,0,0
+1.0,0,0,0.03,0
+1.5,0,0,-0.03,0
+2.0,0,0,0,0
+10.0,0,0,0,0

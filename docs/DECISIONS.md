@@ -803,3 +803,65 @@ Johnson (2013) has nothing specific. No source gives the fade width; c = 20° is
 - *Rotor wake distortion in pitch and roll* (the off-axis response in V2: Fletcher, 21st ERF 1995, pp. VII-4-3 and VII-4-4; Padfield 3rd ed. §5.3.3, p. 298): added to M9's fidelity upgrades (spec §9), toggleable like the others. The model is chosen from the literature at M9. Fletcher's identified aerodynamic phase lag (38.8° in hover, 15.1° at 80 kt) is a fitted equivalent, not a model, and is not adopted. Validation: Fletcher's off-axis flight data (Figs. 3, 4; reviewed).
 - *Parked, unexplained:* the sideslip at zero roll and the B2–B4 climb and descent residuals (V1); the 80 kt longitudinal slow modes (M_u < 0 from the held stabilator in the rotor downwash) and the 80 kt yaw response to collective (V2). Revisit when either (a) the USAAEFA flight-test report (Project 79-24, DATA_GAPS.md) is obtained, which may also settle the pedal percent scale, the B2–B4 conditions and Ballin's waterline datum, or (b) M8's piloted evaluation shows one of them in the handling, whichever comes first.
 - *Already placed* (unchanged): the hover yaw response to collective and the tail-rotor torque to M9's rotor-speed and drivetrain work; blade lag to M9; steady turns and Ballin's App. D step responses to M8 or later (D-035); the pitch bias actuator's dynamic law with the AFCS before M8 (D-029).
+
+## D-042 M8 staging and acceptance: the long-run and timing criteria restated (spec §9 M8) — `Approved (2026-10-17)` — departure from the spec's acceptance criteria (D-007 style)
+**Context:** spec §9 M8 bundles the library finish, output tiers, host integration and piloted evaluation, and states two loose criteria: "a 30-minute run is free of drift and NaNs" and "the timing budget is met". The bare UH-60A is unstable (M7c modes), so a free 30-minute flight without an AFCS diverges whatever the integrator does, and "drift" is undefined. Two earlier decisions add work before pilots fly: the dynamic AFCS (D-029) and a vortex-ring correction (SPEC_REVIEW #21).
+
+**Decision:**
+- *Staging.* M8 is done in five stages, one PR each:
+  - M8a: library finish (this entry): decoupling tests, benchmark, output Tiers 2–4 (D-043), examples;
+  - M8b: a desktop pilot station (`examples/pilot_station/`);
+  - M8c: the AFCS (D-029);
+  - M8d: the vortex-ring correction (SPEC_REVIEW #21);
+  - M8e: the benchmark on the RHEL 9 target, host adapter support, and the piloted evaluation.
+- *"Free of drift and NaNs" becomes four checks*, each a 60-s unit gate and a 30-min validation run (`tests/validation/m8a_cases.cpp`, nightly):
+  - **(a) Free flight with the AFCS on, 30 min:** finite, sim time exact, quaternion norm error < 1e-12 per step. Added in M8c.
+  - **(b) The held periodic orbit at hover and 120 kt** (`analysis/held_orbit`, RK4 at T/256 from the trim's orbit start): every component state comes back to its start within the trim's own periodicity tolerance (`TrimOptions::periodic_tol`, 1e-8 in each state's units), with no secular trend: over the last 50 revolutions the deviation moves by < 1e-12.
+  - **(c) The M2 dummy-rotor equilibrium:** exact, every state unchanged to the bit, and sim time exact.
+  - **(d) The free UH-60A parked on its gear**, brakes set, collective 0.2, pedal 0.5, dropped from 2.2 m. The aircraft is free and stable here, so it tests the whole model without an AFCS. Once settled (from 40 s), the CG moves < 1 mm and the attitude < 1e-4 rad, with |v| < 1e-3 m/s, all states finite and the quaternion norm error < 1e-12.
+- *The timing verdict is the measured worst `advance()` of a nominal host frame, against 50 % of the frame* (D-005's rule). The benchmark (`bench/eyas_bench`) also reports the worst `step()` × steps per frame, but for information only. That product bounds `advance()` only while step times are set by arithmetic. Under load, the worst single step is a scheduler preemption (measured up to 6 ms), which doesn't recur in every step of a frame. Measured on the development machine now; on the RHEL 9 target in M8e, with the host's thread priority and CPU placement (D-005: scheduling is the host's job).
+
+**Rationale:**
+- (b) is the long-run statement that has meaning for an unstable vehicle: the rotor states on a held body must neither drift nor wander off their periodic orbit.
+- (d) is the only free whole-aircraft equilibrium that is stable without an AFCS.
+- (a) waits for the AFCS.
+- The step product overstates the frame time under load by about 10×. The measured frame time is what the host sees.
+
+**Verification:** `RealTime.HeldOrbitRepeatsFor60s`, `RealTime.ParkedAircraftSettlesFor60s`, `Model.LevelEquilibriumIsExactFor60s` (60-s gates; the first two are in CI's `SLOW_TESTS`); the 30-min runs and the benchmark are in VALIDATION.md M8a.
+
+## D-043 Output Tiers 2–4 and how they are evaluated (spec §6.10, M8) — `Approved (2026-10-17)` — interface addition (public `AircraftState`, internal executive)
+**Decision:**
+- *Fields* (`include/eyas/aircraft_state.hpp`; additive only, existing fields unchanged; each documented there with unit and frame):
+  - **Tier 2:** `pos_n`, `vel_n`, `vel_b`, `omega_b`, `accel_b` (v̇_b + ω × v_b), `specific_force_b` (accel_b − g), `load_factor` (−f_z / g0), `ground_speed`, `track` (NaN below 1e-6 m/s). True heading is Tier 1's `heading`.
+  - **Tier 3:** `true_airspeed`, `equivalent_airspeed`, `calibrated_airspeed`, `indicated_airspeed` (= calibrated: no position-error data, DATA_GAPS.md), `angle_of_attack`, `sideslip`, `pressure_altitude`, `vertical_speed`, `outside_air_temperature`.
+  - **Tier 4:** `rotor_speed_percent` (100 while Ω is fixed, until M9), main-rotor `thrust`, `torque` and `power`, `coning`, `flap_1c` and `flap_1s` (multiblade, Padfield 3rd ed. Eqs. 3.42–3.45), `main_rotor_azimuth`, `tail_rotor_thrust`, `tail_rotor_azimuth` (Ω_TR t, for display), `weight_on_wheels`.
+- *Air data* follow Gracey, *Measurement of Aircraft Speed and Altitude*, NASA RP-1046 (1980), Ch. III, read from the page images:
+  - impact pressure, Eq. 3.14 (subsonic);
+  - calibrated airspeed, Eq. 3.16 solved for V_c;
+  - equivalent airspeed, Eq. 3.20;
+  - pressure altitude in geopotential altitude, since altimeters are calibrated in geopotential feet (p. 12): the closed-form inverse of USSA Eqs. 33a/33b on a standard day (`src/env/atmosphere`, `src/env/air_data`).
+  - The air-relative velocity is v_b − C_bn wind_n at the airframe CG. The pitot-static system is ideal: no position or instrument error.
+- *Where each value comes from:*
+  - The main rotor is the config's first blade-element rotor, the tail rotor its first Bailey rotor. The coaxial M7 test fixture shows that "first" matters: a config with two blade-element rotors reports the first.
+  - Fields of a component the config lacks are NaN, and `weight_on_wheels` is false.
+  - Rigid blades report zero flapping.
+- *Evaluation:*
+  - Once per `advance()`, `reset()`, `restore()` and `trim()`, at the final state, never inside the RK4 stages.
+  - New internal `Executive::body_acceleration()` repeats the evaluation `derivatives()` makes and returns the solved body acceleration. It leaves the coupling store consistent, so the components' existing queries (`BladeElementRotor::evaluate`, `BaileyRotor::evaluate`, `LandingGear::gear_state`) give the Tier 4 values for that state.
+  - It is pure, so the trajectory is unchanged (bit-identical to before).
+  - No §6 interface changes: `Model` finds the components by type once, at build.
+  - The outputs use the controls and environment of the last `advance()` that ran. After `trim()` they use the trimmed controls and the condition's environment; `reset()` and `restore()` keep the last ones.
+- *Cost:* about one derivative evaluation and one blade-element pass per `advance()` call: 4.8 µs on the development machine (Release). That is about 2 % of a 60 Hz frame (17 steps). A host calling at every 1 ms step pays it every step, +37 % per call (13 → 18 µs; M6d's cost line), still 1.8 % of the step. If that ever matters, the evaluation can move into `outputs()` with a cache, without changing the API.
+
+**Verification:** `tests/unit/test_air_data.cpp`:
+- Gracey Table A13 (book p. 246), 20 entries from 0 to 40 000 ft at V_c = 100–300 kt, to 0.05 kt;
+- USSA Table I pressures;
+- the low-speed limit q_c → ½ρV²(1 + M²/4).
+
+`tests/unit/test_outputs.cpp`: every field against a hand computation from the state, at:
+- a 100 kt trim on an ISA + 15 K day in a crosswind;
+- a 5° climb;
+- a hover (yaw balance: tail-rotor thrust × arm against main-rotor torque within 15 %; the canted tail rotor's lift);
+- on the ground (weight on wheels).
+
+Also: accel_b against a central difference of the flown velocity (< 5e-3 m/s²); the mean load factor over a revolution of level flight equals 1 within 2e-3. `RealTime.*`: all outputs bit-identical across host rates, and zero allocation.

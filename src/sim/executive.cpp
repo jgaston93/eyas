@@ -272,6 +272,15 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     return converged;
 }
 
+bool Executive::body_acceleration(const Controls& controls, const Environment& env,
+                                  Vec6& a) const noexcept {
+    Mat66 A;
+    Vec6 rhs;
+    const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {});
+    a = A.partialPivLu().solve(rhs);
+    return converged;
+}
+
 bool Executive::held_derivatives(double t, std::span<const double> x, const Controls& controls,
                                  const Environment& env, std::span<double> xdot, Vec6& net,
                                  std::span<Wrench> component_loads) const noexcept {

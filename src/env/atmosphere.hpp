@@ -58,4 +58,11 @@ double geopotential_altitude(double altitude) noexcept;
 // sound), with T_M = T below 80 km (p. 9).
 AirState isa_atmosphere(double altitude, double delta_T) noexcept;
 
+// Pressure altitude [m'] of static pressure P [Pa]: the geopotential altitude
+// at which the standard atmosphere (ΔT = 0) has pressure P. Altimeters are
+// calibrated in geopotential altitude (Gracey, NASA RP-1046, p. 12). The
+// inverse of USSA Eqs. 33a (layer 0) and 33b (layer 1), extended beyond them
+// as isa_atmosphere() is; NaN for P ≤ 0 or NaN.
+double pressure_altitude(double pressure) noexcept;
+
 }  // namespace eyas

@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <memory>
 #include <random>
@@ -17,6 +16,7 @@
 #include "core/rigid_body.hpp"
 #include "sim/executive.hpp"
 #include "support/alloc_counter.hpp"
+#include "support/bit_identical.hpp"
 #include "util/error.hpp"
 
 namespace eyas {
@@ -71,9 +71,7 @@ Executive make_full() {
     return ex;
 }
 
-bool bit_identical(const std::vector<double>& a, const std::vector<double>& b) {
-    return a.size() == b.size() && std::memcmp(a.data(), b.data(), a.size() * sizeof(double)) == 0;
-}
+using test::bit_identical;
 
 // ---- Construction ---------------------------------------------------------
 
