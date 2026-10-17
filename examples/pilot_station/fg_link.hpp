@@ -49,8 +49,12 @@ public:
     ~FgLink();
 
     // `host:port` FG listens on for eyas_fdm (empty: don't send). `listen_port`
-    // receives eyas_ctrl (0: don't receive).
+    // receives eyas_ctrl: kNoListen doesn't receive, 0 takes any free port
+    // (see bound_port()), 1–65535 that port; anything else throws.
     void open(const std::string& fg_address, int listen_port);
+    static constexpr int kNoListen = -1;
+    // The UDP port receiving eyas_ctrl, or −1 when not receiving.
+    int bound_port() const noexcept { return bound_port_; }
 
     bool sending() const noexcept { return send_fd_ >= 0; }
     bool receiving() const noexcept { return recv_fd_ >= 0; }
@@ -67,6 +71,7 @@ public:
 private:
     int send_fd_ = -1;
     int recv_fd_ = -1;
+    int bound_port_ = -1;
     std::int64_t received_ = 0;
     std::int64_t rejected_ = 0;
     std::array<char, 2048> buf_{};

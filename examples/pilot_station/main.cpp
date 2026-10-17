@@ -46,6 +46,7 @@
 #include <vector>
 
 #include "common/control_file.hpp"
+#include "common/frames.hpp"
 #include "common/origin.hpp"
 #include "controls_map.hpp"
 #include "eyas/error.hpp"
@@ -71,7 +72,7 @@ struct Options {
     std::string controls;
     std::string start = "hover";
     std::string fg;
-    int listen = 0;
+    int listen = station::FgLink::kNoListen;
     std::string record;
     std::string out;
     double duration = -1.0;  // [s]; < 0: until quit
@@ -115,12 +116,18 @@ Options parse(int argc, char** argv) {
             opt.station.origin = examples::parse_origin(opt.origin_text);
         } else if (a == "--hover-height") {
             opt.station.hover_height = std::stod(value());
+            if (!(opt.station.hover_height > 0.0)) {
+                throw UsageError("--hover-height must be positive");
+            }
         } else if (a == "--rate") {
             opt.station.rate = std::stoi(value());
         } else if (a == "--fg") {
             opt.fg = value();
         } else if (a == "--listen") {
             opt.listen = std::stoi(value());
+            if (opt.listen < 1 || opt.listen > 65535) {
+                throw UsageError("--listen: a UDP port, 1-65535");
+            }
         } else if (a == "--record") {
             opt.record = value();
         } else if (a == "--out") {
@@ -162,7 +169,7 @@ Options parse(int argc, char** argv) {
     if ((opt.input == InputSource::script) != !opt.controls.empty()) {
         throw UsageError("--input script and --controls go together");
     }
-    if (opt.input == InputSource::flightgear && opt.listen <= 0) {
+    if (opt.input == InputSource::flightgear && opt.listen == station::FgLink::kNoListen) {
         throw UsageError("--input fg needs --listen <port>");
     }
     const bool needs_window = opt.input == InputSource::gamepad ||
@@ -253,7 +260,7 @@ int run(const Options& opt) {
     const std::int64_t frame_ns = st.frame_ns();
     const double dt = static_cast<double>(frame_ns) * 1e-9;
     const std::int64_t frame_limit =
-        opt.duration < 0.0 ? -1 : static_cast<std::int64_t>(std::llround(opt.duration / dt));
+        opt.duration < 0.0 ? -1 : examples::frames_for(opt.duration, frame_ns);
 
     using Clock = std::chrono::steady_clock;
     const auto period = std::chrono::nanoseconds(frame_ns);
@@ -303,7 +310,7 @@ int run(const Options& opt) {
             }
         }
         if (!paused && !st.crashed()) {
-            const double t = st.outputs().sim_time;
+            const double t = st.flight_time();  // scripts and recordings run from the start
             station::ControlDeltas d;
             if (opt.input == InputSource::script) {
                 applied = schedule.at(st.starts()[current].controls, t);

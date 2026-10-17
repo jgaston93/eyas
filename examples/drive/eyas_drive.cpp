@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "common/control_file.hpp"
+#include "common/frames.hpp"
 #include "common/origin.hpp"
 #include "common/state_csv.hpp"
 #include "eyas/model.hpp"
@@ -138,9 +139,8 @@ int run(const Options& opt) {
 
     // Nominal integer frame period (D-006): the remainder carry keeps Eyas's
     // clock exact over any number of frames.
-    const std::int64_t frame_ns = (1'000'000'000 + opt.rate / 2) / opt.rate;
-    const auto frames =
-        static_cast<std::int64_t>(std::llround(duration * 1e9 / static_cast<double>(frame_ns)));
+    const std::int64_t frame_ns = examples::nominal_frame_ns(opt.rate);
+    const std::int64_t frames = examples::frames_for(duration, frame_ns);
     examples::ControlSchedule schedule(rows);
     for (std::int64_t f = 0; f < frames; ++f) {
         const eyas::Controls c = schedule.at(trim.controls, model.outputs().sim_time);

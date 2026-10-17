@@ -12,8 +12,14 @@ namespace examples {
 
 // Parses "<latitude deg>,<longitude deg>,<altitude m MSL>" (e.g. the
 // --origin option) into a GeodeticOrigin [rad, rad, m]. Init time: throws
-// std::runtime_error. Eyas checks the range when it builds the model.
+// std::runtime_error, also on any whitespace. Eyas checks the range when it
+// builds the model.
 inline eyas::GeodeticOrigin parse_origin(const std::string& text) {
+    // No whitespace, so the text goes into a replay command as one argument.
+    if (text.find_first_of(" \t\r\n") != std::string::npos) {
+        throw std::runtime_error("--origin: no spaces allowed (<lat>,<lon>,<alt>), got '" + text +
+                                 "'");
+    }
     std::istringstream s(text);
     double lat = 0.0;
     double lon = 0.0;

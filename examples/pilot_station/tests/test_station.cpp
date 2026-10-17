@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -21,9 +22,12 @@
 
 #include <gtest/gtest.h>
 
+#include "common/frames.hpp"
+#include "common/origin.hpp"
 #include "controls_map.hpp"
 #include "fg_link.hpp"
 #include "mapping.hpp"
+#include "recorder.hpp"
 #include "station.hpp"
 #include "support/alloc_counter.hpp"
 
@@ -356,22 +360,26 @@ TEST(StationFlightGear, ProtocolFilesMatchTheCode) {
 }
 
 // The link over loopback: an FdmLine reaches a listener, and a control line
-// sent to the station's port is read back.
+// sent to the station's port is read back. Both ends take free ports from
+// the system, so concurrent test runs can't collide (code review).
 TEST(StationFlightGear, LinkSendsAndReceivesOverLoopback) {
-    constexpr int kFgPort = 45601;
-    constexpr int kStationPort = 45602;
     const int fg = ::socket(AF_INET, SOCK_DGRAM, 0);
     ASSERT_GE(fg, 0);
     sockaddr_in a{};
     a.sin_family = AF_INET;
     a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    a.sin_port = htons(kFgPort);
+    a.sin_port = 0;
     ASSERT_EQ(::bind(fg, reinterpret_cast<const sockaddr*>(&a), sizeof a), 0);
+    socklen_t len = sizeof a;
+    ASSERT_EQ(::getsockname(fg, reinterpret_cast<sockaddr*>(&a), &len), 0);
+    const int kFgPort = ntohs(a.sin_port);
     timeval tv{1, 0};
     ASSERT_EQ(::setsockopt(fg, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv), 0);
 
     FgLink link;
-    link.open("127.0.0.1:" + std::to_string(kFgPort), kStationPort);
+    link.open("127.0.0.1:" + std::to_string(kFgPort), 0);
+    const int kStationPort = link.bound_port();
+    ASSERT_GT(kStationPort, 0);
     ASSERT_TRUE(link.sending());
     ASSERT_TRUE(link.receiving());
     eyas::AircraftState s;
@@ -387,7 +395,7 @@ TEST(StationFlightGear, LinkSendsAndReceivesOverLoopback) {
     in.axes[3] = -0.5;
     in.buttons[1] = true;
     const std::size_t n = encode_ctrl(in, buf);
-    a.sin_port = htons(kStationPort);
+    a.sin_port = htons(static_cast<std::uint16_t>(kStationPort));
     for (int i = 0; i < 2; ++i) {  // the newest of two lines wins
         in.axes[4] = i;
         const std::size_t m = encode_ctrl(in, buf);
@@ -495,7 +503,7 @@ TEST(StationRealTime, FramePathDoesNotAllocate) {
     ASSERT_TRUE(st.start(1));
     ControlsMap map(default_map(InputSource::gamepad), st.starts()[1].controls);
     FgLink link;
-    link.open("127.0.0.1:45603", 45604);
+    link.open("127.0.0.1:9", 0);  // the discard port; nothing listens there
     RawInput in = axes(0.1, -0.2, 0.05, 0.1);
     (void)st.frame(map.update(in, 1.0 / 60.0));  // warm up
     eyas::test::AllocationCounter count;
@@ -507,6 +515,87 @@ TEST(StationRealTime, FramePathDoesNotAllocate) {
     }
     EXPECT_EQ(count.count(), 0U);
     EXPECT_FALSE(st.faulted());
+}
+
+// ---- Code-review fixes --------------------------------------------------------------
+
+TEST(StationFlightGear, ListenPortMustBeAUdpPort) {
+    FgLink a;
+    EXPECT_THROW(a.open("", 70000), std::runtime_error);  // would have wrapped to 4464
+    FgLink b;
+    EXPECT_THROW(b.open("", -5), std::runtime_error);
+    FgLink c;
+    c.open("", FgLink::kNoListen);
+    EXPECT_FALSE(c.receiving());
+    EXPECT_EQ(c.bound_port(), -1);
+}
+
+// Shared with eyas_drive, so both fly the same frames for any duration
+// (the two formulas used to differ at 50 Hz and 100 Hz).
+TEST(StationFrames, FrameArithmeticIsShared) {
+    EXPECT_EQ(examples::nominal_frame_ns(60), 16'666'667);
+    EXPECT_EQ(examples::nominal_frame_ns(50), 20'000'000);
+    EXPECT_EQ(examples::frames_for(10.0, 16'666'667), 600);
+    EXPECT_EQ(examples::frames_for(0.29, 20'000'000), 15);  // 14.5 frames: rounds up
+}
+
+// No whitespace in --origin: it goes into the replay command as one argument.
+TEST(StationFrames, OriginTextHasNoSpaces) {
+    EXPECT_NO_THROW((void)examples::parse_origin("51.47,-0.45,25"));
+    EXPECT_THROW((void)examples::parse_origin("51.47, -0.45, 25"), std::runtime_error);
+    EXPECT_THROW((void)examples::parse_origin("51.47,-0.45"), std::runtime_error);
+}
+
+TEST(StationRecorder, ShellQuoteOnlyWhenNeeded) {
+    EXPECT_EQ(shell_quote("data/uh60a/uh60a.yaml"), "data/uh60a/uh60a.yaml");
+    EXPECT_EQ(shell_quote("51.47,-0.45,25"), "51.47,-0.45,25");
+    EXPECT_EQ(shell_quote("my flights/a.csv"), "'my flights/a.csv'");
+    EXPECT_EQ(shell_quote("it's"), "'it'\\''s'");
+    EXPECT_EQ(shell_quote(""), "''");
+}
+
+// Scripts and recordings run from the start point: the pad's snapshot
+// carries 40 s of settling, the trims start at 0 (code review).
+TEST(StationStarts, FlightTimeRunsFromTheStartPoint) {
+    Station& st = uh60a();
+    ASSERT_TRUE(st.start(0));
+    EXPECT_GT(st.outputs().sim_time, 39.0);
+    EXPECT_EQ(st.flight_time(), 0.0);
+    (void)st.frame(st.starts()[0].controls);
+    EXPECT_NEAR(st.flight_time(), 0.016, 1e-12);  // 16 whole 1 ms steps (D-006)
+    ASSERT_TRUE(st.start(2));
+    (void)st.frame(st.starts()[2].controls);
+    EXPECT_EQ(st.flight_time(), st.outputs().sim_time);  // exactly, for replay
+}
+
+TEST(StationStarts, HoverHeightMustClearTheGear) {
+    StationOptions o;
+    o.config = EYAS_UH60A_CONFIG;
+    o.hover_height = 0.0;
+    EXPECT_THROW(Station{o}, std::runtime_error);
+    o.hover_height = 0.5;  // the trim converges, but the gear is in the ground
+    EXPECT_THROW(Station{o}, std::runtime_error);
+}
+
+// A change of brakes marks the rest of the recording as not replayable.
+TEST(StationRecorder, BrakeChangeIsMarked) {
+    Station& st = uh60a();
+    ASSERT_TRUE(st.start(1));
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "eyas_station_brakes.csv").string();
+    {
+        Recorder rec(path, "", "cfg.yaml", "", 60);
+        rec.begin(st, st.outputs());
+        eyas::Controls c = st.starts()[1].controls;
+        rec.frame(0.0, {}, c, st.outputs());
+        c.brake_left = c.brake_right = 1.0;
+        rec.frame(0.5, {}, c, st.outputs());
+        rec.frame(0.6, {}, c, st.outputs());
+        rec.end();
+    }
+    const std::string text = read_file(path);
+    EXPECT_EQ(count(text, "# Replay: eyas_drive "), 1);
+    EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s"), 1);
 }
 
 }  // namespace

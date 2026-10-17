@@ -79,6 +79,13 @@ if(EYAS_BUILD_TESTS)
                 -DWORK=${CMAKE_CURRENT_BINARY_DIR}/station_replay
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/check_replay.cmake)
 
+    add_test(NAME ExampleStation.ScriptRunsFromTheStartPoint
+        COMMAND ${CMAKE_COMMAND}
+                -DSTATION=$<TARGET_FILE:eyas_pilot_station> -DCONFIG=${EYAS_UH60A_CONFIG}
+                -DCONTROLS=${CMAKE_CURRENT_SOURCE_DIR}/drive/doublet_10s.csv
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/station_pad_script
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/check_pad_script.cmake)
+
     add_executable(eyas_station_tests
         pilot_station/tests/test_station.cpp
         ${PROJECT_SOURCE_DIR}/tests/support/alloc_counter.cpp)

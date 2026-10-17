@@ -1003,12 +1003,12 @@ M8b is the second M8 stage (D-042): a pilot station in `examples/pilot_station/`
 - It records each flight as an `eyas_drive` control file.
 - It adds one library call, `Model::from_file(path, GeodeticOrigin)`, so the host places the aircraft (D-044).
 
-Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (19 cases), and the smoke test `ExampleStation.RecordingReplaysExactly`.
+Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (26 cases), and the smoke tests `ExampleStation.RecordingReplaysExactly` and `ExampleStation.ScriptRunsFromTheStartPoint`.
 
 | Check | Status | Evidence |
 |---|---|---|
-| The host's origin replaces the config's, and nothing else | ✅ | With the config's own origin passed in, 60 frames are bit-identical to `from_file(path)`. Another origin moves Tier 1 by the D-017 map from it; invalid origins throw. |
-| A recorded flight replays exactly | ✅ | `ExampleStation.RecordingReplaysExactly`: the station flies the 10-s doublet headless from the 60 kt start at another origin (51.47° N, 0.45° W, 25 m), recording it; `eyas_drive` runs the command in the recording's header; the two state histories (602 lines, every `AircraftState` field at 17 digits) are byte-identical. |
+| The host's origin replaces the config's, and nothing else | ✅ | With the config's own origin passed in, 60 frames are bit-identical to `from_file(path)`. Another origin moves Tier 1 by the D-017 map from it; invalid origins throw. The config's block stays optional under an override, but an invalid one is rejected by both calls. |
+| A recorded flight replays exactly (from an airborne start, brakes unchanged) | ✅ | `ExampleStation.RecordingReplaysExactly`: the station flies the 10-s doublet headless from the 60 kt start at another origin (51.47° N, 0.45° W, 25 m), recording it; `eyas_drive` runs the command in the recording's header; the two state histories (602 lines, every `AircraftState` field at 17 digits) are byte-identical. |
 | Control mapping and force trim | ✅ | `StationControls.*`: deadband and expo; absolute axes from the start; the lever collective; rate integration (exact to 1e-14 for a constant input); every control within its D-024 range to an ulp; force trim holds the release point while the stick returns, then flies about it; trim reset; brake toggle. |
 | FlightGear link | ✅ (pose and lines, live); stick values pending a person at the pad | `StationFlightGear.*`: the control line round-trips; short, long, non-numeric and NaN lines are rejected; the FDM line has the protocol's 22 fields in FlightGear units; the three FlightGear files are well-formed and match the code's field counts; a UDP loopback through `FgLink` delivers an FDM line and reads back the newest control line. Live run below. |
 | Crash handling | ✅ | `StationStarts.CrashFreezesUntilRestart`: collective down from the 100 ft hover; the station calls the crash, stops advancing, and a start clears it (D-044, SPEC_REVIEW #34). |
@@ -1039,3 +1039,18 @@ Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/u
 - at 85 s it meets the ground rolled 72°.
 
 That impact is what exposed SPEC_REVIEW #34: the state diverged to finite garbage within three frames of the gear touching. The station's crash rule now stops it at the touch.
+
+**Code review fixes (2026-10-17).** The review's findings were each checked by reproduction before fixing:
+- a script flown from the pad skipped every row before 40 s;
+- brake changes weren't recorded, though the header promised an exact replay;
+- the station and `eyas_drive` counted frames with different formulas, and kept two copies of the frame period (853 durations disagreed at 50 Hz and 1704 at 100 Hz in a sweep from 0.001 to 200 s; none at 60 Hz);
+- an `--origin` with spaces broke the replay command;
+- `--listen 70000` bound port 4464;
+- a negative `--hover-height` crashed on the first frame;
+- fixed test ports collided with another process holding them;
+- the origin override accepted a misspelled origin block that plain `from_file` rejects;
+- the heavy tests ran under ASan (58–81 s each).
+
+All are fixed with tests (D-044 verification). Two points weren't acted on as stated:
+- *The socket error text read after `freeaddrinfo()`:* theoretical, since glibc ≥ 2.33 leaves `errno` alone there. It was tidied anyway.
+- *A `from_string` overload with an origin:* left out, since no caller needs it yet.

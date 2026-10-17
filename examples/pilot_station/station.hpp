@@ -15,8 +15,10 @@ namespace station {
 struct StationOptions {
     std::string config;                          // aircraft YAML
     std::optional<eyas::GeodeticOrigin> origin;  // replaces the config's (D-044)
-    double hover_height = 30.48;                 // [m] above the ground: airborne starts' height
-    int rate = 60;                               // [Hz] host frame rate
+    // [m] above the ground: the airborne starts' height. Must be positive and
+    // leave the gear clear of the ground (checked at init).
+    double hover_height = 30.48;
+    int rate = 60;  // [Hz] host frame rate
 };
 
 // A place to fly from, prepared at init so a reposition is a restore()
@@ -56,6 +58,10 @@ public:
     bool crashed() const noexcept { return crashed_; }
 
     const eyas::AircraftState& outputs() const noexcept { return model_.outputs(); }
+    // [s] sim time since the current start point: what scripts and
+    // recordings are timed by. The pad's snapshot carries 40 s of settling;
+    // the trims start at 0, so for them it equals the sim time exactly.
+    double flight_time() const noexcept { return model_.outputs().sim_time - start_time_; }
     const eyas::Environment& environment() const noexcept { return env_; }
     const std::vector<StartPoint>& starts() const noexcept { return starts_; }
     std::size_t current_start() const noexcept { return current_; }
@@ -72,12 +78,6 @@ public:
     std::int64_t frames() const noexcept { return frames_; }
     bool faulted() const noexcept { return faulted_; }
 
-    // The nominal integer frame period for a host rate (D-006), as eyas_drive
-    // computes it, so a recorded run replays with the same frames.
-    static std::int64_t nominal_frame_ns(int rate) noexcept {
-        return (1'000'000'000 + rate / 2) / rate;
-    }
-
 private:
     eyas::Model model_;
     eyas::GeodeticOrigin origin_;
@@ -85,6 +85,7 @@ private:
     std::int64_t frame_ns_;
     std::vector<StartPoint> starts_;
     std::size_t current_ = 0;
+    double start_time_ = 0.0;  // [s] sim time at the current start
     std::int64_t worst_ns_ = 0;
     std::int64_t last_ns_ = 0;
     std::int64_t frames_ = 0;

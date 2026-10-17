@@ -50,10 +50,14 @@ struct Model::Impl {
 
 namespace {
 
-// `origin`, when given, replaces the config's geodetic_origin, which is then
-// not read (D-044).
+// `origin`, when given, replaces the config's geodetic_origin (D-044). The
+// config's block is then optional, but still checked when present, so a
+// file is valid or invalid the same way whichever call loads it.
 std::unique_ptr<Model::Impl> build(const Config& config, const GeodeticOrigin* origin) {
     config.allow_keys({"simulation", "geodetic_origin", "airframe", "components", "force_models"});
+    if (origin != nullptr && config.contains("geodetic_origin")) {
+        (void)read_origin(config);
+    }
     FlatEarthMap map =
         origin == nullptr
             ? read_origin(config)

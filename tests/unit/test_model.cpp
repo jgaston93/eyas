@@ -162,9 +162,10 @@ TEST(Model, Tier1PoseMatchesStateAfterResetAndAdvance) {
 
 // ---- Geodetic origin override (D-044) ------------------------------------------------
 
-std::filesystem::path write_test_config(const std::string& name) {
+std::filesystem::path write_test_config(const std::string& name,
+                                        const std::string& yaml = test_yaml()) {
     const std::filesystem::path p = std::filesystem::temp_directory_path() / name;
-    std::ofstream(p) << test_yaml();
+    std::ofstream(p) << yaml;
     return p;
 }
 
@@ -205,6 +206,26 @@ TEST(Model, OriginOverrideReachesThePose) {
     EXPECT_EQ(m.outputs().latitude, g.latitude);
     EXPECT_EQ(m.outputs().longitude, g.longitude);
     EXPECT_EQ(m.outputs().altitude, 75.0);
+}
+
+// With an override the config's own block is optional, but when present it
+// is checked as plain from_file checks it: the same file is valid or invalid
+// whichever call loads it (code review).
+TEST(Model, OriginOverrideStillChecksTheConfigsBlock) {
+    const GeodeticOrigin o{51.47 * units::kDegree, -0.45 * units::kDegree, 25.0};
+    std::string typo = test_yaml();
+    typo.replace(typo.find("  latitude:"), 11, "  lattitude:");
+    const std::filesystem::path bad = write_test_config("eyas_origin_typo.yaml", typo);
+    EXPECT_THROW((void)Model::from_file(bad), InitError);
+    EXPECT_THROW((void)Model::from_file(bad, o), InitError);
+
+    std::string none = test_yaml();
+    const auto b = none.find("geodetic_origin:");
+    none.erase(b, none.find("airframe:") - b);
+    const std::filesystem::path without = write_test_config("eyas_origin_none.yaml", none);
+    EXPECT_THROW((void)Model::from_file(without), InitError);
+    const Model m = Model::from_file(without, o);
+    EXPECT_EQ(m.outputs().latitude, o.latitude);
 }
 
 TEST(Model, InvalidOriginOverrideThrows) {

@@ -136,13 +136,18 @@ void FgLink::open(const std::string& fg_address, int listen_port) {
         send_fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
         const bool ok = send_fd_ >= 0 && ::connect(send_fd_, res->ai_addr, res->ai_addrlen) == 0 &&
                         ::fcntl(send_fd_, F_SETFL, O_NONBLOCK) == 0;
+        const int err = errno;  // before freeaddrinfo() can change it
         ::freeaddrinfo(res);
         if (!ok) {
             throw std::runtime_error("--fg: cannot open a UDP socket to " + fg_address + ": " +
-                                     std::generic_category().message(errno));
+                                     std::generic_category().message(err));
         }
     }
-    if (listen_port > 0) {
+    if (listen_port != kNoListen && (listen_port < 0 || listen_port > 65535)) {
+        throw std::runtime_error("--listen: " + std::to_string(listen_port) +
+                                 " is not a UDP port (1-65535)");
+    }
+    if (listen_port >= 0) {
         recv_fd_ = ::socket(AF_INET, SOCK_DGRAM, 0);
         sockaddr_in a{};
         a.sin_family = AF_INET;
@@ -156,6 +161,14 @@ void FgLink::open(const std::string& fg_address, int listen_port) {
                                      std::to_string(listen_port) + ": " +
                                      std::generic_category().message(errno));
         }
+        sockaddr_in got{};
+        socklen_t len = sizeof got;
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): the sockets API
+        if (::getsockname(recv_fd_, reinterpret_cast<sockaddr*>(&got), &len) != 0) {
+            throw std::runtime_error("--listen: cannot read the bound port: " +
+                                     std::generic_category().message(errno));
+        }
+        bound_port_ = ntohs(got.sin_port);
     }
 }
 

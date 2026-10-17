@@ -6,6 +6,8 @@
 #include <numbers>
 #include <stdexcept>
 
+#include "common/frames.hpp"
+
 namespace station {
 
 namespace {
@@ -20,9 +22,12 @@ eyas::Model build(const StationOptions& o) {
 }  // namespace
 
 Station::Station(const StationOptions& options)
-    : model_(build(options)), frame_ns_(nominal_frame_ns(std::max(options.rate, 1))) {
+    : model_(build(options)), frame_ns_(examples::nominal_frame_ns(std::max(options.rate, 1))) {
     if (options.rate < 1) {
         throw std::runtime_error("the host rate must be positive");
+    }
+    if (!(options.hover_height > 0.0)) {
+        throw std::runtime_error("--hover-height must be positive");
     }
     // A new model sits at the NED origin, so its pose is the origin.
     const eyas::AircraftState& o = model_.outputs();
@@ -45,6 +50,13 @@ Station::Station(const StationOptions& options)
         StartPoint p;
         p.name = kt == 0.0 ? "hover" : std::to_string(static_cast<int>(kt));
         p.snap = model_.make_snapshot();
+        // The trim knows no ground (its outputs have none): one frame over
+        // the real ground shows whether the gear clears it at this height.
+        (void)model_.advance(r.controls, env_, frame_ns_);
+        if (model_.outputs().weight_on_wheels || model_.outputs().altitude < env_.ground_height) {
+            throw std::runtime_error("--hover-height " + std::to_string(options.hover_height) +
+                                     " m puts the gear on the ground at the trimmed attitude");
+        }
         p.controls = r.controls;
         p.replayable = true;
         p.trim_speed_kt = kt;
@@ -87,6 +99,7 @@ bool Station::start(std::size_t index) noexcept {
         return false;
     }
     current_ = index;
+    start_time_ = model_.outputs().sim_time;
     worst_ns_ = 0;
     last_ns_ = 0;
     frames_ = 0;

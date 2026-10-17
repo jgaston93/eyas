@@ -79,9 +79,11 @@ in its own window (GLFW and OpenGL 2.1; built when both are found, otherwise
 - **Keys:** Esc quit, P pause, R restart, 1–4 start on the pad, in a hover,
   at 60 kt or at 120 kt (100 ft above the ground; `--hover-height`), V view
   (chase, eye at the CG, ground observer), H help.
-- **Recording:** `--record` writes an `eyas_drive` control file whose header
-  gives the exact `eyas_drive` command that replays the flight from an
-  airborne start (bit for bit); `--out` writes the state history.
+- **Recording:** `--record` writes an `eyas_drive` control file, timed from
+  the start point, whose header gives the exact `eyas_drive` command that
+  replays the flight from an airborne start (bit for bit). `eyas_drive` has
+  no brake input, so if the brakes change the file says from when it no
+  longer replays. `--out` writes the state history.
 - The bare UH-60A has no AFCS yet (M8c), so it is unstable and hard to hover.
 
 ### FlightGear as the out-the-window view
