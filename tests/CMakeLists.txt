@@ -4,6 +4,7 @@ add_executable(eyas_unit_tests
     support/alloc_counter.cpp
     unit/test_alloc_counter.cpp
     unit/test_airframe_aero.cpp
+    unit/test_air_data.cpp
     unit/test_atmosphere.cpp
     unit/test_bailey_rotor.cpp
     unit/test_attitude.cpp
@@ -24,7 +25,9 @@ add_executable(eyas_unit_tests
     unit/test_geodesy.cpp
     unit/test_landing_gear.cpp
     unit/test_model.cpp
+    unit/test_outputs.cpp
     unit/test_pitt_peters.cpp
+    unit/test_realtime.cpp
     unit/test_recorder.cpp
     unit/test_rotor_inputs.cpp
     unit/test_rigid_body.cpp
@@ -124,3 +127,10 @@ target_include_directories(eyas_m7c_fletcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(eyas_m7c_fletcher PRIVATE eyas_internal)
 target_compile_definitions(eyas_m7c_fletcher PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m7c_fletcher)
+
+# Writes the M8a long-run data (D-042; VALIDATION.md; tools/plot_m8a.py).
+add_executable(eyas_m8a_cases validation/m8a_cases.cpp)
+target_include_directories(eyas_m8a_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m8a_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m8a_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m8a_cases)

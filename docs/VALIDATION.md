@@ -928,3 +928,68 @@ Fletcher's Table 1 (p. VII-4-9, PDF p. 11; read from the scan at 400 dpi, clear)
   - *Where M_u comes from* (scratch probe, quasi-steady: body held at the trim state with u or w perturbed by ±0.25 m/s, component states settled for 3 s, loads averaged over a revolution; the components sum to the condensed M_u with an effective inertia of 51 950 kg·m², I_yy being 52 210): in N·m per m/s, main rotor +317 (flapback, stabilizing, as Padfield p. 189 describes), stabilator −577, tail rotor −108, fuselage −72. For M_w: main rotor +1919, fuselage +1017 (both destabilizing), stabilator −2037, tail rotor −149.
   - *Why the stabilator is speed-destabilizing:* held at 4° trailing edge down, it carries a 345 N download in a rotor downwash of about 5.6 m/s, twice the momentum induced velocity (a developed wake). Its angle of attack rises 0.0050 rad per m/s of speed: 0.0024 because the same downflow is a smaller angle at higher speed, and 0.0034 because the wash weakens. The local downflow falls by 0.13 m/s per m/s, where momentum theory (wash ∝ 1/V) gives 0.136. This is Padfield's Eq. 4.62 (p. 191), α_tp = α_f − λ_tp/μ: the downwash angle at the tail shrinks with speed. A fixed tail's own contribution, proportional to its trim load (p. 189), would be +145 N·m per m/s. So Eyas's wash follows simple wake theory, and the speed instability is that theory applied to a held stabilator, not a code or data quirk. Whether the real aircraft's tail sees as much downwash at 80 kt is what the flight data question.
   - *Not one derivative:* shifting M_u, M_w or both in the condensed model doesn't reconcile the 80 kt pitch response below 1.5 rad/s (best phase 31° RMS with M_u made positive, but magnitude 5.3 dB RMS against 3.6 now). Fletcher reports the same for the blade-element model he compares at 80 kt: "the mismatch between BE model A and the flight test data below 3 rad/sec... the errors are very significant" (p. VII-4-11). Parked (D-041); a multi-parameter identification against the flight data is beyond M7c.
+
+## M8a — Library finish: decoupling, timing, outputs, examples (2026-10-17)
+
+M8a is the first of five M8 stages (D-042). It adds:
+- host-rate decoupling tests on the full UH-60A;
+- the timing benchmark (`bench/eyas_bench`);
+- the long-run checks that replace "free of drift and NaNs" (D-042);
+- output Tiers 2–4 (D-043; air data from Gracey, NASA RP-1046);
+- a scripted driver and a reference adapter in `examples/`.
+
+Tests: `tests/unit/test_realtime.cpp`, `test_outputs.cpp`, `test_air_data.cpp`; smoke tests `ExampleDrive.*`, `ExampleAdapter.Flies5s`, `Bench.Smoke`. Data from `eyas_m8a_cases` and `eyas_bench`, plots from `tools/plot_m8a.py`.
+
+| Acceptance criterion | Status | Evidence |
+|---|---|---|
+| 60 Hz host against 1 kHz physics, bit-identical (spec) | ✅ | `RealTime.HostRateDecoupling`: the UH-60A trimmed at 60 kt, then 5 s with a ±3 % longitudinal doublet. 60 Hz frames (16 666 667 ns) against 1 kHz calls with each frame's control on its sub-steps: after every frame the full state and every physical output field (Tiers 1–4) are identical to the bit. |
+| Jittered host frames, same total (spec) | ✅ | `RealTime.JitteredHostRate`: 1–40 ms frames, not whole steps (seeded), same test; the sub-step count is floor(Σ dt / step) after every frame (D-006). |
+| Determinism; no allocation (spec §7) | ✅ | The two above, plus `RealTime.ZeroAllocationInFlight`: 120 frames of `advance()` and `outputs()` with the Tier 2–4 evaluation in flight allocate nothing. On the ground: `Uh60aAircraft.RealTimeRules`, which now includes the outputs. |
+| 30-min run free of drift and NaNs (spec; D-042 (b)–(d)) | ✅ | See the long runs below. (a), free flight with the AFCS on, comes in M8c. |
+| Timing budget (spec §7, D-005, D-042) | ✅ here; RHEL target in M8e | See timing below: worst `advance()` 0.65 ms idle against the 8.33 ms budget (8 %). Under full CPU load at equal priority, up to 7.8 ms (93 %) from scheduling. |
+| Output Tiers 2–4 (spec §6.10, D-043) | ✅ | `Outputs.*`: hand computation of every field at three trims and on the ground; Gracey's Table A13 for the airspeed relation (`AirData.MatchesGraceyTableA13`, 20 entries to 0.05 kt; one printed entry is a misprint, confirmed by review, DATA_GAPS.md). |
+| Reference adapter and test driver in `examples/` (spec) | ✅ | `ExampleDrive.Doublet10s`: trims at 60 kt, flies the 10-s doublet at 60 Hz, 601 rows, all finite. `ExampleAdapter.Flies5s`: a toy host interface in feet, knots and degrees, with an `EyasAdapter` behind it; the host code names the flight model in one line. |
+| Earlier results unchanged | ✅ | The outputs evaluation is pure: `eyas_m6d_cases`, `eyas_m7_cases` and `eyas_m7c_cases` write byte-identical files on `main` and on this branch (Release, GCC 13.3), except M6d's timing line (below). |
+| Swapping adapters needs no host change (spec) | M8e | The host team's acceptance; the example shows the pattern. |
+
+**The long runs (D-042), 30 min of simulated time each, from `eyas_m8a_cases` (74 s in Release).**
+
+![Held orbit](validation/m8/m8a_held_orbit.png)
+
+- *(b) The held periodic orbit:* hover and 120 kt, 7734 revolutions each. The rotor, inflow and other component states come back to the trim's start within 1.4e-9 (hover) and 2.6e-10 (120 kt), in each state's own units. The deviation settles within the first few revolutions and stays constant to the last digit printed for half an hour: the orbit is stable and there is no secular drift.
+  - A first attempt started the orbit from the state `Model::trim` installs, which includes the airframe's 4/rev vibration. Holding the body at that vibrating state gives a different orbit (deviation 5e-5 in hover, 7e-3 rad/s in a flap rate at 120 kt, also constant). The check uses `held_orbit_start()`, the trim's own orbit.
+- *(c) The M2 dummy-rotor equilibrium:* every state unchanged to the bit for 30 min; sim time exact at every second.
+
+![Parked](validation/m8/m8a_parked.png)
+
+- *(d) The free UH-60A parked on its gear,* brakes set, dropped from 2.2 m:
+  - It lands at 0.27 s and settles within about 40 s.
+  - From then to 30 min, the CG stays within 3 µm of its 60-s position, and the attitude within 5e-6 rad.
+  - What is left is the rotor's 4/rev vibration on the tyres and struts: |v| ≈ 2e-5 m/s, |ω| ≈ 2e-4 rad/s.
+  - The quaternion norm error before renormalization is 2.2e-16 per step.
+
+**Timing (`eyas_bench`, Release, GCC 13.3, AMD Ryzen 7 9800X3D, 16 hardware threads, WSL2; the development machine, not the target).** 3600 frames at 60 Hz per case. A step is 1 ms of physics, a frame 17 steps plus the output evaluation. [µs]:
+
+| Case | step() mean / p99 / max, idle | advance() mean / p99 / max, idle | advance() max, 15 busy threads | advance() max, 16 busy threads |
+|---|---|---|---|---|
+| Hover | 12.5 / 24.4 / 183 | 213 / 278 / 648 | 5183 | 6203 |
+| 120 kt | 12.3 / 24.1 / 232 | 211 / 312 / 477 | 4790 | 4320 |
+| Ground | 12.8 / 25.0 / 124 | 217 / 262 / 498 | 7777 | 4603 |
+
+![Timing](validation/m8/m8a_bench.png)
+
+- *Idle:*
+  - A frame takes 0.21 ms on average, 2.6 % of the 60 Hz frame. Its worst case is 0.65 ms, 8 % of the 8.33 ms budget.
+  - The output evaluation costs about 5 µs per `advance()` call (D-043), within the frame-to-frame noise here (17 × 12.5 µs = 213 µs; frames 211–217 µs). Called once per 1 ms step, as the M6d cost line does, it shows: 13 µs per call on `main` against 18 µs now.
+- *Under load* (N threads spinning at the same priority):
+  - The mean frame rises to about 0.33 ms, from shared cores and caches.
+  - The worst frames rise to 4–8 ms. That is the scheduler preempting the simulation thread for a time slice, not Eyas's arithmetic: the worst `step()` reaches 3–6 ms under load, against 0.2 ms idle.
+  - Here the D-005 budget is just met (93 % in the ground case with 15 busy threads).
+  - This is D-005's point that scheduling jitter is the host's job. Thread priority (SCHED_FIFO), a reserved core or the RHEL real-time kernel would remove it. **For M8e:** measure on the RHEL 9 target with the host's real thread setup, not with equal-priority spinners.
+- *Why the verdict is the measured frame (D-042):* worst `step()` × 17 would give 90 ms under load, but a preemption doesn't recur in each of a frame's steps; idle, the product (3.9 ms) still bounds the measured frame.
+
+**Air data.** Gracey, NASA RP-1046 (1980), Ch. III (read from page images: Eqs. 3.14, 3.16, 3.20 on book pp. 15–16; "altimeters are calibrated in geopotential feet", p. 12; Table A13, p. 246):
+- The calibrated airspeed inverts Eq. 3.16 exactly.
+- Run backwards from Table A13's true airspeeds, it gives the table's calibrated airspeed within its rounding (0.05 kt) at every entry used from sea level to 40 000 ft, both ISA layers. The exception is V_c = 100 kt at 20 000 ft, printed 137.2 kt, which is above V_c/√σ = 137.0 kt and so can't be right; the equations give 136.5 kt. A person confirmed the page prints 137.2, so it is a misprint in the source (DATA_GAPS.md).
+- On the UH-60A at 1000 m, ISA + 15 K and 100 kt: V_c exceeds V_e by under 1 %; the pressure altitude is below the geopotential altitude, as on any hot day.
+- The adapter example at 60 kt TAS and 1000 ft shows 59.1 kt IAS and 1000 ft pressure altitude.

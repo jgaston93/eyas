@@ -11,6 +11,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(EYAS_BUILD_TESTS "Build the Eyas unit tests" ${PROJECT_IS_TOP_LEVEL})
+option(EYAS_BUILD_BENCH "Build the timing benchmark" ${PROJECT_IS_TOP_LEVEL})
+option(EYAS_BUILD_EXAMPLES "Build the examples (driver, adapter)" ${PROJECT_IS_TOP_LEVEL})
 option(EYAS_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
@@ -26,6 +28,7 @@ add_library(eyas STATIC
     src/core/attitude.cpp
     src/core/coupling.cpp
     src/core/rigid_body.cpp
+    src/env/air_data.cpp
     src/env/atmosphere.cpp
     src/env/geodesy.cpp
     src/rotor/airfoil.cpp
@@ -69,4 +72,10 @@ eyas_target_defaults(eyas)
 if(EYAS_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+if(EYAS_BUILD_BENCH)
+    add_subdirectory(bench)
+endif()
+if(EYAS_BUILD_EXAMPLES)
+    add_subdirectory(examples)
 endif()

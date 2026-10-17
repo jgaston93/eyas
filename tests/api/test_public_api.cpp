@@ -1,6 +1,7 @@
 // Uses Eyas the way a host does: only include/eyas is on the include path
 // (D-020). That this file compiles is the main check; the tests confirm the
 // API is usable on its own.
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -42,6 +43,25 @@ TEST(PublicApi, ModelIsMovable) {
     EXPECT_EQ(b.advance(eyas::Controls{}, eyas::Environment{}, 1'000'000).substeps, 1);
     a = std::move(b);
     EXPECT_EQ(a.outputs().sim_time_ns, 1'000'000);
+}
+
+// Output Tiers 2–4 (D-043) are reachable from the public headers alone. With
+// no rotor or gear, Tier 4 is NaN; the falling airframe reads one g down
+// and no specific force.
+TEST(PublicApi, OutputTiers) {
+    eyas::Model m = eyas::Model::from_string(kYaml);
+    (void)m.advance(eyas::Controls{}, eyas::Environment{}, 100'000'000);
+    const eyas::AircraftState& o = m.outputs();
+    EXPECT_GT(o.vel_n.z(), 0.0);  // falling: NED z down
+    EXPECT_NEAR(o.vertical_speed, -o.vel_n.z(), 1e-12);
+    EXPECT_NEAR(o.accel_b.z(), 9.80665, 1e-9);
+    EXPECT_NEAR(o.load_factor, 0.0, 1e-9);
+    EXPECT_NEAR(o.true_airspeed, o.vel_b.norm(), 1e-12);
+    EXPECT_GT(o.pressure_altitude, 0.0);
+    EXPECT_GT(o.outside_air_temperature, 280.0);
+    EXPECT_TRUE(std::isnan(o.main_rotor_thrust));
+    EXPECT_TRUE(std::isnan(o.rotor_speed_percent));
+    EXPECT_FALSE(o.weight_on_wheels);
 }
 
 TEST(PublicApi, InitErrorIsCatchable) {

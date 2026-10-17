@@ -295,3 +295,21 @@ Verification: the probe above, as a test (loads continuous as the x–z componen
 
 **Why it matters:** V2 has no data to compare against as written, and V1 compares against trims made under a different lateral constraint unless Eyas trims the same way.
 **Suggested resolution:** see the D-035 amendment (M7c): V2 redefined around what Fletcher publishes; V1 on Figs. B1–B4 at Ballin's weight, CG and density altitude, under GenHel's lateral constraint; turns and App. D deferred.
+
+## 32. The Tier 4 outputs are tied to concrete component types and recompute the step's loads — `open (M9 or the tiltrotor work)`
+**Spec:** §6.10 (`AircraftState` Tier 4), §6 (component interfaces); D-043.
+**Problem:** found in the M8a code review.
+- `Model` finds the main rotor, the tail rotor and the gear by `dynamic_cast` to `BladeElementRotor`, `BaileyRotor` and `LandingGear`, and reads their loads through type-specific queries. A new rotor model (M9's variable-Ω rotor, a tiltrotor's proprotors, a second main rotor) leaves its Tier 4 fields NaN, or picks a rotor by config order, until `Model` is edited.
+- The output evaluation repeats the main-rotor blade-element pass, the tail-rotor and the gear evaluations that the final derivative evaluation has just done: about 4.8 µs per `advance()` call (D-043), 2 % of a 60 Hz frame but +37 % for a host calling every 1 ms step.
+
+**Why it matters:** fine for the UH-60A, but it doesn't scale to the vehicles D-011 keeps open, and it costs a 1 kHz host time inside the D-005 budget.
+**Suggested resolution:** components declare named outputs with a role (main-rotor thrust, torque, power, flapping; tail-rotor thrust; gear normal load), published during the evaluation like the D-003 coupling outputs, and `Model` maps roles to Tier 4 fields. Changes the §6 interfaces, so propose in DECISIONS when M9 or the tiltrotor needs it.
+
+## 33. Unconverged bounded iterations are invisible to the host, and the output evaluation's aren't counted — `open (M8, with the Tier 5 diagnostics)`
+**Spec:** §7 rule 3; D-023 ("revisit when Tier 5 diagnostics are finalized (M8)"); D-043.
+**Problem:** found in the M8a code review.
+- D-023 counts unconverged derivative evaluations in the executive (`Executive::unconverged_evaluations()`), not in `AdvanceStatus` or `AircraftState`.
+- The M8a output evaluation discards its convergence flag, so it isn't even counted. The UH-60A uses Pitt–Peters inflow, whose output evaluation has no iteration, so only a config with uniform inflow is affected.
+
+**Why it matters:** a host can't tell that outputs came from an unconverged solve. D-023 judged that harmless (slightly wrong loads, not a fault), but asked to revisit it with Tier 5.
+**Suggested resolution:** add the output evaluation to the executive's count now, or when Tier 5 is settled. Decide whether `AircraftState` Tier 5 carries a count of unconverged evaluations per `advance()`, with the M8e reconciliation of the host's output list.
