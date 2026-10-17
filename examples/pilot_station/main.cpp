@@ -10,6 +10,7 @@
 //       [--fg <host:port>] [--listen <port>]
 //       [--record <csv>] [--out <csv>] [--duration <s>] [--headless] [--no-pace]
 //       [--view chase|cg|observer] [--screenshot <ppm>] [--no-help]
+//       [--input-timeout <ms>]
 //
 // It flies the aircraft at a fixed host rate (default 60 Hz), paced to the
 // wall clock, from the chosen input, and shows it in a window and/or sends
@@ -24,6 +25,10 @@
 // --no-pace runs as fast as it can, for tests. --duration stops after that
 // much sim time from the start (default: until the window closes).
 // --screenshot saves the last frame drawn (a binary PPM), for the docs.
+//
+// With a live device (gamepad, joystick or FlightGear's stick), the flight
+// pauses while the input is stale: no sample for --input-timeout (default
+// 250 ms) or no device connected. It resumes when samples return.
 //
 // A crash (Station::crashed(): a failed frame, a wheel down at more than 30°
 // of bank or pitch, more than 10 g, or the CG below the ground) freezes the
@@ -54,6 +59,7 @@
 #include "mapping.hpp"
 #include "recorder.hpp"
 #include "station.hpp"
+#include "watchdog.hpp"
 #ifdef EYAS_STATION_GL
 #include "gl_view.hpp"
 #endif
@@ -81,6 +87,7 @@ struct Options {
     int view = 0;
     std::string screenshot;
     bool help = true;
+    int input_timeout_ms = 250;
 };
 
 struct UsageError : std::runtime_error {
@@ -153,6 +160,11 @@ Options parse(int argc, char** argv) {
             opt.screenshot = value();
         } else if (a == "--no-help") {
             opt.help = false;
+        } else if (a == "--input-timeout") {
+            opt.input_timeout_ms = std::stoi(value());
+            if (opt.input_timeout_ms < 1) {
+                throw UsageError("--input-timeout: milliseconds, at least 1");
+            }
         } else {
             throw UsageError("unknown option " + std::string(a));
         }
@@ -277,6 +289,11 @@ int run(const Options& opt) {
     const bool view_open = false;
 #endif
     station::RawInput raw;
+    // Devices that can go quiet or away pause the flight when they do.
+    const bool live_input = opt.input == InputSource::flightgear ||
+                            opt.input == InputSource::gamepad || opt.input == InputSource::joystick;
+    station::InputWatchdog watchdog(std::chrono::milliseconds(opt.input_timeout_ms));
+    bool reported_stale = false;
 
     for (;;) {
         bool quit = false;
@@ -292,8 +309,29 @@ int run(const Options& opt) {
             }
         }
 #endif
+        const auto polled = std::chrono::steady_clock::now();
         if (opt.input == InputSource::flightgear) {
-            (void)fg.poll(raw);  // keeps the newest line; the last one holds otherwise
+            // Keeps the newest line; a gap past the timeout pauses the flight.
+            if (fg.poll(raw)) {
+                watchdog.fresh(polled);
+            }
+        }
+#ifdef EYAS_STATION_GL
+        if (view && (opt.input == InputSource::gamepad || opt.input == InputSource::joystick) &&
+            view->device_connected()) {
+            watchdog.fresh(polled);
+        }
+#endif
+        const bool input_stale = live_input && watchdog.stale(polled);
+        if (input_stale != reported_stale) {
+            if (!input_stale) {
+                std::cerr << "input back: flying\n";
+            } else if (watchdog.seen()) {
+                std::cerr << "input lost: paused\n";
+            } else {
+                std::cerr << "waiting for input: paused\n";
+            }
+            reported_stale = input_stale;
         }
         const bool last_frame = frame_limit >= 0 && frames_flown + 1 >= frame_limit;
         if (quit || (frame_limit >= 0 && frames_flown >= frame_limit)) {
@@ -309,7 +347,7 @@ int run(const Options& opt) {
                 break;
             }
         }
-        if (!paused && !st.crashed()) {
+        if (!paused && !input_stale && !st.crashed()) {
             const double t = st.flight_time();  // scripts and recordings run from the start
             station::ControlDeltas d;
             if (opt.input == InputSource::script) {
@@ -352,6 +390,8 @@ int run(const Options& opt) {
             hud.source = station::source_name(opt.input);
             hud.start = st.starts()[current].name;
             hud.paused = paused;
+            hud.input_waiting = input_stale && !watchdog.seen();
+            hud.input_lost = input_stale && watchdog.seen();
             hud.trim_held = map.trim_held();
             hud.faulted = st.faulted();
             hud.crashed = st.crashed();

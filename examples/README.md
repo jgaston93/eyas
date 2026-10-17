@@ -84,6 +84,10 @@ in its own window (GLFW and OpenGL 2.1; built when both are found, otherwise
   replays the flight from an airborne start (bit for bit). `eyas_drive` has
   no brake input, so if the brakes change the file says from when it no
   longer replays. `--out` writes the state history.
+- **Input loss:** with a gamepad, joystick or FlightGear's sticks, the
+  flight pauses (INPUT LOST) when no sample arrives for 250 ms
+  (`--input-timeout`) or the device disconnects, and resumes when input
+  returns.
 - The bare UH-60A has no AFCS yet (M8c), so it is unstable and hard to hover.
 
 ### FlightGear as the out-the-window view

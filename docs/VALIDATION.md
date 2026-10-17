@@ -1003,7 +1003,7 @@ M8b is the second M8 stage (D-042): a pilot station in `examples/pilot_station/`
 - It records each flight as an `eyas_drive` control file.
 - It adds one library call, `Model::from_file(path, GeodeticOrigin)`, so the host places the aircraft (D-044).
 
-Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (26 cases), and the smoke tests `ExampleStation.RecordingReplaysExactly` and `ExampleStation.ScriptRunsFromTheStartPoint`.
+Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (27 cases), and the smoke tests `ExampleStation.RecordingReplaysExactly` and `ExampleStation.ScriptRunsFromTheStartPoint`.
 
 | Check | Status | Evidence |
 |---|---|---|

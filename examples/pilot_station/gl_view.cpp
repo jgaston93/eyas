@@ -170,6 +170,10 @@ std::string_view GlView::device() const noexcept {
     return impl_->device;
 }
 
+bool GlView::device_connected() const noexcept {
+    return impl_->joystick >= 0;
+}
+
 void GlView::Impl::find_device() {
     joystick = -1;
     device.clear();
@@ -611,6 +615,11 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
                         hud.paused ? "PAUSED " : "", hud.trim_held ? "TRIM " : "",
                         hud.recording_segment > 0 ? "REC" : "");
     text(10, 8, 1.4, b.data());
+    if (hud.input_lost) {
+        text(w / 2.0 - 280, 140, 3.0, "INPUT LOST - paused until it returns", 1.0F, 0.35F, 0.25F);
+    } else if (hud.input_waiting) {
+        text(w / 2.0 - 200, 140, 3.0, "WAITING FOR INPUT", 1.0F, 0.85F, 0.3F);
+    }
     if (hud.crashed) {
         text(w / 2.0 - 250, 100, 3.0, "CRASHED - R or 1-4 to fly again", 1.0F, 0.35F, 0.25F);
     }

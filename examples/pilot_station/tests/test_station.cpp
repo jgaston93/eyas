@@ -30,6 +30,7 @@
 #include "recorder.hpp"
 #include "station.hpp"
 #include "support/alloc_counter.hpp"
+#include "watchdog.hpp"
 
 namespace station {
 namespace {
@@ -628,6 +629,23 @@ TEST(StationRecorder, BrakeChangeIsMarked) {
     const std::string text = read_file(path);
     EXPECT_EQ(count(text, "# Replay: eyas_drive "), 1);
     EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s"), 1);
+}
+
+// The input watchdog: stale until the first sample, fresh within the
+// timeout, stale again after a gap longer than it, fresh when samples return.
+TEST(StationInput, WatchdogPausesOnAGap) {
+    using namespace std::chrono_literals;
+    const InputWatchdog::Clock::time_point t0{};
+    InputWatchdog w(250ms);
+    EXPECT_TRUE(w.stale(t0));
+    EXPECT_FALSE(w.seen());
+    w.fresh(t0 + 1s);
+    EXPECT_FALSE(w.stale(t0 + 1s));
+    EXPECT_FALSE(w.stale(t0 + 1s + 250ms));  // at the timeout: still fresh
+    EXPECT_TRUE(w.stale(t0 + 1s + 251ms));
+    EXPECT_TRUE(w.seen());
+    w.fresh(t0 + 2s);
+    EXPECT_FALSE(w.stale(t0 + 2s + 100ms));
 }
 
 }  // namespace

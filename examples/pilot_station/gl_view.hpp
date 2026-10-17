@@ -37,6 +37,10 @@ struct HudInfo {
     bool trim_held = false;
     bool faulted = false;
     bool crashed = false;
+    // The input is stale (no sample within the timeout, or no device):
+    // waiting = none yet, lost = it stopped. The station is paused meanwhile.
+    bool input_waiting = false;
+    bool input_lost = false;
     double realtime_ratio = 1.0;  // sim time / wall time over the last second
     double advance_us = 0.0;
     double worst_advance_us = 0.0;
@@ -68,6 +72,9 @@ public:
     void set_camera(int camera) noexcept;
     // The name of the device being read, or a note that none is connected.
     std::string_view device() const noexcept;
+    // For the gamepad and joystick sources: whether the device was there at
+    // the last poll().
+    bool device_connected() const noexcept;
 
     struct Impl;
 
