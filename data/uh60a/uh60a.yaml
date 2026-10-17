@@ -11,10 +11,10 @@
 # Positions: x = -(FS - FS_cg), y = -(BL - BL_cg) (buttlines positive to port), z = -(WL - WL_cg).
 #
 # Controls (D-034, D-035): stick and pedal travels from GenHel Figs. 6.3.1 and 6.4.1 (pp. 6.16-6.17):
-#   collective 0..10.0 in, lat_cyclic 0..10.0 in, lon_cyclic -3.4157..6.5843 in, pedal 0..5.38 in.
+#   collective 0..10.0 in, lat_cyclic 0..10.0 in, lon_cyclic -3.0885..6.9115 in, pedal 0..5.38 in.
 # Collective, lateral and pedal fit the rigging exactly; the pedal uses its stroke with overtravel.
-# The longitudinal rows put neutral cyclic in three places 0.812 in apart; neutral is
-# their mean, so the theta1s and theta1c offsets are tagged !placeholder.
+# The longitudinal rows put neutral cyclic in three places 0.812 in apart; neutral is the
+# pinned row's, the end nearest the fit to Ballin's GenHel longitudinal stick (D-035 M7c amendment).
 
 geodetic_origin: {latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}  # scenario, not aircraft data
 
@@ -48,10 +48,12 @@ components:
         first_moment: "86.7 slug*ft"
         inertia: "1512.6 slug*ft^2"
         delta3: "0 deg"
+      dynamic_twist: {gain_table: dynamic_twist_gain.csv, mode_table: dynamic_twist_mode.csv, lag: "0.01 s"}  # D-038; lag numerical
+      yawed_flow_drag: true  # D-039 (GenHel resolves its drag on the full segment velocity, p. 5.1-28)
     controls:
       theta0: {offset: "9.9 deg", collective: "16.0 deg"}
-      theta1s: {offset: !placeholder "0.9039886515 deg", collective: "-4.142331285 deg", lon_cyclic: "-13.94770409 deg", lat_cyclic: "-1.347915037 deg", pedal: "-4.312071778 deg"}
-      theta1c: {offset: !placeholder "-0.15452161 deg", collective: "3.305191602 deg", lon_cyclic: "2.384124721 deg", lat_cyclic: "-7.885627753 deg", pedal: "0.7370759273 deg"}
+      theta1s: {offset: "-0.008575620181 deg", collective: "-4.142331285 deg", lon_cyclic: "-13.94770409 deg", lat_cyclic: "-1.347915037 deg", pedal: "-4.312071778 deg"}
+      theta1c: {offset: "0.001465857602 deg", collective: "3.305191602 deg", lon_cyclic: "2.384124721 deg", lat_cyclic: "-7.885627753 deg", pedal: "0.7370759273 deg"}
 
   - type: airframe_aero
     name: airframe

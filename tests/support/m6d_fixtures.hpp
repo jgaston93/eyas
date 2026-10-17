@@ -14,6 +14,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "airframe/airframe_aero.hpp"
@@ -46,15 +47,13 @@ inline constexpr double kWLCG = 248.2;            // [in]
 struct Travels {
     static double xc(double c) { return 10.0 * c; }       // stroke 10.0 in, 0 = full down
     static double xa(double l) { return 5.0 + 5.0 * l; }  // stroke 10.0 in, neutral 5.0 in
-    // Stroke 10.0 in about neutral cyclic, the mean of the three neutrals the
-    // figure's rows imply (pedal at neutral; they spread by 0.81 in, DATA_GAPS.md).
+    // Stroke 10.0 in about neutral cyclic. The figure's three rows imply three
+    // neutrals (pedal at neutral; they spread by 0.81 in, DATA_GAPS.md); neutral
+    // is the pinned row's, the largest, the end nearest the fit to Ballin's
+    // GenHel longitudinal stick (D-035 M7c amendment).
     static double xb2(double f) {
-        const double b_rest_high = 0.29 * 16.0 - 0.2936 * -5.539 * kXpNeutral - 9.7754;
-        const double b_rest_mid = 0.29 * 8.0 - 0.2936 * -5.539 * kXpNeutral - 9.7754;
         const double b_rest_low = -0.2936 * -5.539 * kXpNeutral - 9.7754;
-        const double neutral = ((16.5 - b_rest_high) / 2.83 - 5.0 + (-11.0 - b_rest_low) / 2.83 +
-                                3.89 + (-12.3 - b_rest_mid) / 2.83 + 5.0) /
-                               3.0;
+        const double neutral = (-11.0 - b_rest_low) / 2.83 + 3.89;
         return neutral + 5.0 * f;
     }
     // Stroke with overtravel 5.38 in about the pinned pedal, which gives 15.0°
@@ -70,8 +69,11 @@ struct Travels {
 class Uh60aHarness {
 public:
     explicit Uh60aHarness(const std::string& path = uh60a_config_path())
-        : cfg_(Config::from_file(path)),
-          ex_(build_executive(cfg_, read_origin(cfg_).origin().altitude)) {}
+        : Uh60aHarness(Config::from_file(path)) {}
+    // From a config already read (e.g. edited text through Config::from_string,
+    // with absolute table paths).
+    explicit Uh60aHarness(Config cfg)
+        : cfg_(std::move(cfg)), ex_(build_executive(cfg_, read_origin(cfg_).origin().altitude)) {}
 
     const Config& config() const { return cfg_; }
     const Executive& executive() const { return ex_; }

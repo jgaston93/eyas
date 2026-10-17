@@ -283,3 +283,15 @@ Verification: the probe above, as a test (loads continuous as the x–z componen
 
 **Why it matters:** the linearization is ill-defined at every straight-flight trim, gate L3 can't pass, and the nonlinear model has a non-physical first-order coupling.
 **Suggested resolution:** see D-036.
+
+## 31. D-035's V1 and V2 don't match what Ballin and Fletcher publish — `resolved → DECISIONS.md D-035 amendment (M7c, 2026-10-15)`
+**Spec:** D-035 (Acceptance V1, V2), M7; D-029, D-034 item 5.
+**Problem:** found while planning M7c, by reading the two sources D-035 names.
+- *Fletcher (21st ERF, 1995, Paper VII-4) prints no derivatives.* It gives Table 1 (identified against theoretical Lock number 8.62 / 8.06, M_β/I_β 0.0321 / 0.0573, pitch–flap coupling 7.84° / 0, aerodynamic phase lag 38.8°), Table 2 (the same at 80 kt), and Bode plots of flight data, the identified model and two linearized blade-element models (Figs. 3–14). V2's "derivatives … against the identified models" can't be done from it.
+- *Ballin (NASA TM-88360, 1987) App. B has no sideslip sweep.* It has level flight (Fig. B1, 0–160 kt), climbs and descents at 60, 100 and 137.5 kt (Figs. B2–B4) and steady coordinated turns at 60 and 100 kt (Fig. B5). Eyas's trim is straight flight only (§6.8; D-035 leaves turns as an additive field).
+- *Ballin's lateral trim constraint changes with speed.* In Fig. B1(e) the GenHel roll curve starts near −2.3° in hover and reaches 0 at about 50 kt, then stays on 0; the GenHel sideslip curve in B1(f) starts at 50 kt (about +5°) and decays to about −1° at high speed. So GenHel appears to trim at zero sideslip (roll solved) below about 50 kt and at zero roll (sideslip solved) from 50 kt up. `TrimCondition` always fixes β and solves φ. (Interpretation of a plot, including the 50 kt switch: `VERIFIED by human review (2026-10-15)`.)
+- *App. D step responses* (17 cases, SAS, FPS and pitch bias actuator off, stabilator fixed) need states Eyas doesn't have yet: lag (D-026), rotor speed and engine (M9), and the dynamic AFCS (D-029, before M8).
+- *Pitch bias actuator in the trims.* Ballin says it was centred and locked for the transient responses (p. 9, App. C) but says nothing about the static trims; D-029 asks for its steady-state part before the trim comparison.
+
+**Why it matters:** V2 has no data to compare against as written, and V1 compares against trims made under a different lateral constraint unless Eyas trims the same way.
+**Suggested resolution:** see the D-035 amendment (M7c): V2 redefined around what Fletcher publishes; V1 on Figs. B1–B4 at Ballin's weight, CG and density altitude, under GenHel's lateral constraint; turns and App. D deferred.

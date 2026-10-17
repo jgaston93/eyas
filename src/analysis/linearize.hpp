@@ -213,6 +213,15 @@ struct Mode {
 // one per conjugate pair (Im λ ≥ 0), slowest first.
 std::vector<Mode> modes(const CondensedModel& m, double u);
 
+// Frequency response of ẋ = A x + B u at ω [rad/s]: H(iω) = (iωI − A)⁻¹ B,
+// states by inputs, in the units of x per unit of u (the Laplace transfer
+// function of the state-space model on the imaginary axis, s = iω). For the
+// constant-coefficient models (the averaged
+// retained model or the condensed one). Throws InitError if iωI − A is
+// singular (ω on an eigenvalue) or the sizes don't fit.
+Eigen::MatrixXcd frequency_response(const Eigen::MatrixXd& A, const Eigen::MatrixXd& B,
+                                    double omega);
+
 // Padfield's state ordering (3rd ed. Eq. 4.44): u, w, q, θ, v, p, φ, r, then
 // ψ_h, as indices into the condensed states (u, v, w, p, q, r, φ, θ, ψ_h).
 inline constexpr std::array<std::size_t, 9> kPadfieldOrder = {0, 2, 4, 7, 1, 3, 6, 5, 8};

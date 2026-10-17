@@ -7,11 +7,13 @@ add_executable(eyas_unit_tests
     unit/test_atmosphere.cpp
     unit/test_bailey_rotor.cpp
     unit/test_attitude.cpp
+    unit/test_ballin_trim.cpp
     unit/test_axis.cpp
     unit/test_blade_element_rotor.cpp
     unit/test_config.cpp
     unit/test_coupled_solve.cpp
     unit/test_coupling.cpp
+    unit/test_dynamic_twist.cpp
     unit/test_csv_table.cpp
     unit/test_eigen_smoke.cpp
     unit/test_executive.cpp
@@ -29,6 +31,7 @@ add_executable(eyas_unit_tests
     unit/test_table.cpp
     unit/test_tail_rotor_wake.cpp
     unit/test_units.cpp
+    unit/test_yawed_flow.cpp
     unit/test_uh60a_data.cpp
     unit/test_uh60a_aircraft.cpp)
 target_include_directories(eyas_unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -109,3 +112,15 @@ target_include_directories(eyas_m7b_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m7b_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_m7b_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m7b_cases)
+
+add_executable(eyas_m7c_cases validation/m7c_cases.cpp)
+target_include_directories(eyas_m7c_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m7c_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m7c_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m7c_cases)
+
+add_executable(eyas_m7c_fletcher validation/m7c_fletcher.cpp)
+target_include_directories(eyas_m7c_fletcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m7c_fletcher PRIVATE eyas_internal)
+target_compile_definitions(eyas_m7c_fletcher PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m7c_fletcher)

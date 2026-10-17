@@ -367,5 +367,54 @@ TEST(Trim, StartWithNoValidResidualIsReported) {
     EXPECT_EQ(std::vector<double>(m.state().begin(), m.state().end()), x0);
 }
 
+// ---- Trim at a given roll angle (D-035 M7c amendment) ------------------------------
+
+// The roll-constrained trim inverts the sideslip-constrained one: asking for
+// the roll that a β = 0 trim gives, from a start 3° away, must return β = 0
+// and the same trim; and the returned trim is solve_trim's at the returned β.
+TEST(TrimAtRoll, InvertsTheSideslipTrim) {
+    const Executive ex = uh60a_executive();
+    std::vector<double> x;
+    const TrimResult ref = solve_trim(ex, level(80), nullptr, x);
+    ASSERT_TRUE(ref.converged);
+    TrimCondition c = level(80);
+    c.sideslip = 3.0 * kDeg;
+    const RollTrimResult r = solve_trim_at_roll(ex, c, ref.roll, &ref, x);
+    ASSERT_TRUE(r.converged);
+    EXPECT_NEAR(r.trim.roll, ref.roll, 1e-8);
+    EXPECT_NEAR(r.sideslip, 0.0, 1e-6);
+    EXPECT_NEAR(r.trim.pitch, ref.pitch, 1e-6);
+    EXPECT_NEAR(r.trim.controls.pedal, ref.controls.pedal, 1e-6);
+    EXPECT_NEAR(r.trim.controls.lat_cyclic, ref.controls.lat_cyclic, 1e-6);
+    EXPECT_LE(r.iterations, 10);
+}
+
+// Zero roll, as GenHel trims above about 50 kt: φ = 0 to the tolerance with
+// every inner residual converged, and solve_trim at the returned β agrees.
+TEST(TrimAtRoll, ZeroRollIsReached) {
+    const Executive ex = uh60a_executive();
+    std::vector<double> x;
+    const RollTrimResult r = solve_trim_at_roll(ex, level(100), 0.0, nullptr, x);
+    ASSERT_TRUE(r.converged);
+    EXPECT_LE(std::abs(r.trim.roll), 1e-8);
+    EXPECT_LT(std::abs(r.sideslip), 20.0 * kDeg);
+    TrimCondition c = level(100);
+    c.sideslip = r.sideslip;
+    std::vector<double> y;
+    const TrimResult again = solve_trim(ex, c, &r.trim, y);
+    ASSERT_TRUE(again.converged);
+    EXPECT_NEAR(again.roll, 0.0, 1e-7);
+}
+
+// Where sideslip is undefined the roll-constrained trim refuses.
+TEST(TrimAtRoll, RejectsUndefinedSideslip) {
+    const Executive ex = uh60a_executive();
+    std::vector<double> x;
+    EXPECT_THROW((void)solve_trim_at_roll(ex, level(0), 0.0, nullptr, x), InitError);
+    TrimCondition up = level(10);
+    up.flight_path_angle = 0.5 * std::numbers::pi;
+    EXPECT_THROW((void)solve_trim_at_roll(ex, up, 0.0, nullptr, x), InitError);
+}
+
 }  // namespace
 }  // namespace eyas

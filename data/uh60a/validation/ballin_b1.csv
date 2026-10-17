@@ -1,0 +1,593 @@
+# source: Ballin, M. G., Validation of a Real-Time Engineering Simulation of the UH-60A Helicopter, NASA TM-88360 (1987), App. B, Fig. B1, UH-60A level-flight static trim (pp. 28-29); 16000 lb, CG FS 351.0 in, WL 231.5 in, density altitude 5250 ft. Digitized from the NASA scan at 300 dpi by tools/digitize_ballin.py.
+# status: VERIFIED by human review of the overlays (2026-10-16, DATA_GAPS.md); a re-run changes readings and needs a new review
+# Series: sikorsky_genhel (solid), ames_genhel (dashed), aefa_test (circles, USAAEFA flight test). Flags: merged, gap, overlap, weak (tool docstring).
+panel,quantity,unit,x_quantity,x_unit,series,x,y,flag
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,5.000,55.208,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,10.000,53.223,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,15.000,51.682,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,20.000,51.025,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,25.000,51.868,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,30.000,53.363,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,35.000,55.069,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,40.000,55.932,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,45.000,56.100,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,50.000,55.803,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,55.000,55.193,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,60.000,54.347,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,65.000,53.193,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,70.000,51.868,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,75.000,50.244,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,80.000,47.414,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,85.000,45.113,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,90.000,43.123,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,95.000,42.183,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,100.000,41.534,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,105.000,40.783,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,110.000,40.290,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,115.000,40.167,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,120.000,40.290,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,125.000,40.414,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,130.000,39.920,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,135.000,38.764,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,140.000,37.570,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,145.000,36.103,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,150.000,34.502,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,sikorsky_genhel,155.000,32.531,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,5.000,55.208,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,10.000,53.223,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,15.000,51.682,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,20.000,51.025,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,25.000,51.868,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,30.000,53.596,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,35.000,55.069,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,40.000,54.455,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,45.000,54.593,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,50.000,54.744,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,55.000,54.279,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,60.000,53.474,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,65.000,52.514,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,70.000,51.868,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,75.000,50.381,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,80.000,47.414,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,85.000,45.113,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,90.000,43.123,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,95.000,42.183,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,100.000,41.534,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,105.000,40.783,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,110.000,40.290,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,115.000,40.167,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,120.000,40.290,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,125.000,40.414,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,130.000,39.920,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,135.000,38.764,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,140.000,37.570,gap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,145.000,36.103,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,150.000,34.502,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,ames_genhel,155.000,32.531,merged
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,20.438,52.915,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,29.850,56.005,overlap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,31.889,57.564,overlap
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,50.592,51.252,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,73.072,48.222,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,95.794,41.325,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,118.093,35.949,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,140.081,35.962,
+a,longitudinal_cyclic,% (0 = full forward),true_airspeed,kt,aefa_test,161.904,31.986,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,5.000,48.653,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,10.000,47.665,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,15.000,46.489,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,20.000,44.962,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,25.000,43.942,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,30.000,43.364,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,35.000,42.909,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,40.000,43.496,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,45.000,44.716,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,50.000,45.828,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,55.000,47.542,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,60.000,48.673,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,65.000,49.631,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,70.000,50.733,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,75.000,51.684,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,80.000,51.843,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,85.000,52.458,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,90.000,52.949,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,95.000,53.771,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,100.000,54.178,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,105.000,54.547,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,110.000,55.038,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,115.000,55.215,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,120.000,55.424,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,125.000,55.530,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,130.000,55.530,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,135.000,55.530,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,140.000,55.415,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,145.000,55.419,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,150.000,55.284,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,sikorsky_genhel,155.000,55.038,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,5.000,49.381,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,10.000,48.698,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,15.000,47.367,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,20.000,44.962,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,25.000,43.942,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,30.000,43.364,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,35.000,42.909,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,40.000,44.216,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,45.000,44.716,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,50.000,45.828,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,55.000,47.542,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,60.000,48.673,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,65.000,49.631,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,70.000,50.733,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,75.000,51.684,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,80.000,51.843,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,85.000,52.458,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,90.000,52.949,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,95.000,53.720,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,100.000,54.178,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,105.000,54.981,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,110.000,55.326,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,115.000,55.481,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,120.000,56.007,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,125.000,55.530,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,130.000,55.530,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,135.000,55.530,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,140.000,55.415,gap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,145.000,55.419,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,150.000,55.284,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,ames_genhel,155.000,55.038,merged
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,21.304,51.229,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,29.980,57.373,overlap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,32.385,56.359,overlap
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,50.221,48.631,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,72.240,48.986,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,95.761,52.366,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,117.923,54.670,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,139.574,56.614,
+b,lateral_cyclic,% (100 = full right),true_airspeed,kt,aefa_test,162.654,55.699,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,5.000,57.128,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,10.000,56.275,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,15.000,54.793,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,20.000,53.374,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,25.000,51.033,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,30.000,49.263,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,35.000,46.766,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,40.000,45.352,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,45.000,44.529,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,50.000,42.835,gap
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,55.000,42.012,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,60.000,42.135,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,65.000,41.708,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,70.000,41.629,gap
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,75.000,42.039,gap
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,80.000,42.872,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,85.000,43.487,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,90.000,44.716,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,95.000,45.922,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,100.000,47.952,gap
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,105.000,50.022,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,110.000,52.301,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,115.000,55.097,gap
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,120.000,58.479,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,125.000,60.937,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,130.000,64.275,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,135.000,67.883,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,140.000,71.808,gap
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,145.000,75.760,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,150.000,80.059,merged
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,155.000,84.773,
+c,collective,% (100 = full up),true_airspeed,kt,sikorsky_genhel,160.000,89.610,
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,5.000,57.128,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,10.000,56.640,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,15.000,55.486,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,20.000,53.662,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,25.000,51.033,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,30.000,49.263,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,35.000,47.522,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,40.000,46.045,
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,45.000,43.906,
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,50.000,42.766,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,55.000,42.012,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,60.000,42.441,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,65.000,41.708,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,70.000,41.528,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,75.000,41.847,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,80.000,42.872,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,85.000,43.487,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,90.000,44.716,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,95.000,45.922,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,100.000,47.952,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,105.000,50.022,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,110.000,52.301,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,115.000,55.097,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,120.000,58.479,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,125.000,60.937,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,130.000,64.275,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,135.000,67.883,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,140.000,71.808,gap
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,145.000,75.760,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,150.000,80.059,merged
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,155.000,87.846,
+c,collective,% (100 = full up),true_airspeed,kt,ames_genhel,160.000,96.696,
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,21.389,61.775,
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,29.316,63.318,overlap
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,31.456,64.870,overlap
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,49.529,42.534,
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,72.247,41.503,
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,99.549,45.308,
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,117.851,55.107,
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,140.014,72.243,
+c,collective,% (100 = full up),true_airspeed,kt,aefa_test,162.661,93.203,
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,-0.000,2.347,end
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,5.000,3.115,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,10.000,3.801,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,15.000,4.139,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,20.000,3.915,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,25.000,3.037,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,30.000,2.029,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,35.000,0.938,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,40.000,-0.279,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,45.000,-0.676,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,50.000,-0.842,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,55.000,-0.825,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,60.000,-0.662,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,65.000,-0.410,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,70.000,0.009,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,75.000,0.386,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,80.000,0.597,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,85.000,0.646,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,90.000,0.585,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,95.000,0.292,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,100.000,-0.019,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,105.000,-0.308,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,110.000,-0.677,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,115.000,-1.157,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,120.000,-1.439,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,125.000,-1.806,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,130.000,-2.154,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,135.000,-2.523,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,140.000,-2.798,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,145.000,-3.254,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,150.000,-3.640,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,sikorsky_genhel,155.000,-3.846,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,-0.000,2.347,end
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,5.000,3.115,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,10.000,3.801,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,15.000,4.139,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,20.000,3.915,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,25.000,3.037,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,30.000,2.029,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,35.000,0.938,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,40.000,-0.279,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,45.000,-0.676,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,50.000,-0.842,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,55.000,-0.825,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,60.000,-0.662,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,65.000,-0.410,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,70.000,0.009,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,75.000,0.386,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,80.000,0.597,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,85.000,0.646,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,90.000,0.585,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,95.000,0.292,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,100.000,-0.019,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,105.000,-0.308,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,110.000,-0.677,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,115.000,-1.157,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,120.000,-1.439,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,125.000,-1.806,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,130.000,-2.154,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,135.000,-2.523,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,140.000,-2.798,gap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,145.000,-3.254,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,150.000,-3.640,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,ames_genhel,155.000,-3.846,merged
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,21.496,2.456,
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,29.622,1.348,overlap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,31.802,0.866,overlap
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,49.633,-0.682,
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,70.187,-0.190,
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,95.044,-0.006,
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,117.014,-0.466,
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,139.344,-3.604,
+d,pitch_attitude,deg (+ nose up),true_airspeed,kt,aefa_test,162.117,-5.969,
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,-0.000,-2.339,end
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,5.000,-2.315,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,10.000,-2.223,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,15.000,-2.070,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,20.000,-1.855,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,25.000,-1.609,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,30.000,-1.358,gap
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,35.000,-1.120,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,40.000,-0.688,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,sikorsky_genhel,45.000,-0.381,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,-0.000,-2.339,end
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,5.000,-2.315,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,10.000,-2.223,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,15.000,-2.070,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,20.000,-1.855,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,25.000,-1.609,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,30.000,-1.358,gap
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,35.000,-1.120,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,40.000,-0.688,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,ames_genhel,45.000,-0.381,merged
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,21.824,-0.601,
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,29.935,-2.719,
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,31.674,-0.739,
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,48.956,-0.237,
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,71.904,0.080,
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,95.146,0.755,
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,117.503,1.664,
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,139.741,1.462,
+e,roll_angle,deg (+ right),true_airspeed,kt,aefa_test,162.657,-0.848,
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,50.000,4.688,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,55.000,3.791,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,60.000,3.054,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,65.000,2.396,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,70.000,1.847,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,75.000,1.301,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,80.000,0.869,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,85.000,0.502,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,90.000,0.201,gap
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,95.000,-0.089,gap
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,100.000,-0.323,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,105.000,-0.414,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,110.000,-0.452,
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,115.000,-0.659,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,120.000,-0.781,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,125.000,-0.842,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,130.000,-0.781,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,135.000,-0.842,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,140.000,-0.781,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,145.000,-0.750,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,150.000,-0.720,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,155.000,-0.536,merged
+f,sideslip,deg (+ right),true_airspeed,kt,sikorsky_genhel,160.000,-0.445,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,50.000,4.688,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,55.000,3.791,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,60.000,3.054,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,65.000,2.396,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,70.000,1.847,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,75.000,1.301,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,80.000,0.869,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,85.000,0.502,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,90.000,0.201,gap
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,95.000,-0.089,gap
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,100.000,-0.323,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,105.000,-0.414,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,110.000,-0.682,
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,115.000,-0.659,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,120.000,-0.781,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,125.000,-0.842,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,130.000,-0.781,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,135.000,-0.842,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,140.000,-0.781,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,145.000,-0.750,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,150.000,-0.720,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,155.000,-0.536,merged
+f,sideslip,deg (+ right),true_airspeed,kt,ames_genhel,160.000,-0.445,merged
+f,sideslip,deg (+ right),true_airspeed,kt,aefa_test,49.402,0.930,
+f,sideslip,deg (+ right),true_airspeed,kt,aefa_test,72.561,0.397,
+f,sideslip,deg (+ right),true_airspeed,kt,aefa_test,95.430,0.770,
+f,sideslip,deg (+ right),true_airspeed,kt,aefa_test,117.801,1.071,
+f,sideslip,deg (+ right),true_airspeed,kt,aefa_test,139.790,0.620,
+f,sideslip,deg (+ right),true_airspeed,kt,aefa_test,163.919,-1.331,
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,-0.000,31.185,end
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,5.000,32.238,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,10.000,33.763,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,15.000,35.720,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,20.000,38.415,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,25.000,41.860,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,30.000,44.542,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,35.000,46.390,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,40.000,47.867,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,45.000,49.098,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,50.000,50.082,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,55.000,50.820,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,60.000,51.805,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,65.000,52.949,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,70.000,54.266,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,75.000,55.509,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,80.000,56.727,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,85.000,57.822,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,90.000,58.942,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,95.000,59.927,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,100.000,60.911,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,105.000,61.896,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,110.000,63.003,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,115.000,63.865,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,120.000,64.628,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,125.000,65.588,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,130.000,66.326,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,135.000,66.818,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,140.000,67.409,merged
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,145.000,67.808,
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,150.000,68.295,
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,155.000,68.541,
+g,pedal,% (100 = full right),true_airspeed,kt,sikorsky_genhel,160.000,68.591,
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,-0.000,31.185,end
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,5.000,32.238,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,10.000,33.763,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,15.000,35.720,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,20.000,38.415,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,25.000,41.860,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,30.000,44.542,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,35.000,46.390,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,40.000,47.867,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,45.000,49.098,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,50.000,50.082,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,55.000,50.820,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,60.000,51.805,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,65.000,52.949,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,70.000,54.266,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,75.000,55.509,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,80.000,56.727,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,85.000,57.822,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,90.000,58.942,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,95.000,59.927,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,100.000,60.911,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,105.000,61.896,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,110.000,63.003,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,115.000,63.865,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,120.000,64.628,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,125.000,65.588,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,130.000,66.326,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,135.000,66.818,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,140.000,67.409,merged
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,145.000,69.028,
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,150.000,69.636,gap
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,155.000,70.264,
+g,pedal,% (100 = full right),true_airspeed,kt,ames_genhel,160.000,70.756,
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,21.781,28.524,
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,29.831,28.898,overlap
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,31.759,26.593,overlap
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,49.738,40.803,
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,72.372,48.920,
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,95.730,51.097,
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,117.559,52.420,
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,139.927,52.051,
+g,pedal,% (100 = full right),true_airspeed,kt,aefa_test,162.821,59.287,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,5.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,10.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,15.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,20.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,25.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,30.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,35.000,38.487,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,40.000,36.788,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,45.000,33.957,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,50.000,30.458,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,55.000,26.267,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,60.000,21.730,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,65.000,17.500,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,70.000,14.097,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,75.000,11.252,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,80.000,8.720,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,85.000,6.302,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,90.000,5.351,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,95.000,4.034,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,100.000,3.568,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,105.000,3.355,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,110.000,3.321,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,115.000,3.321,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,120.000,3.199,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,125.000,3.077,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,130.000,2.955,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,135.000,2.710,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,140.000,2.466,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,145.000,2.105,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,150.000,1.709,gap
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,sikorsky_genhel,155.000,1.182,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,5.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,10.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,15.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,20.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,25.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,30.000,38.895,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,35.000,38.487,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,40.000,36.788,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,45.000,33.957,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,50.000,30.458,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,55.000,26.267,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,60.000,21.730,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,65.000,17.500,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,70.000,14.097,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,75.000,11.252,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,80.000,9.453,gap
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,85.000,7.296,gap
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,90.000,5.363,gap
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,95.000,4.034,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,100.000,3.931,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,105.000,3.355,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,110.000,3.321,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,115.000,3.321,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,120.000,3.199,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,125.000,3.077,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,130.000,2.955,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,135.000,2.710,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,140.000,2.466,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,145.000,2.105,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,150.000,1.709,gap
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,ames_genhel,155.000,1.182,merged
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,21.334,44.433,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,28.632,44.580,overlap
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,31.650,44.563,overlap
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,49.389,40.525,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,72.139,19.630,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,95.768,7.881,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,117.416,5.559,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,139.309,6.659,
+h,stabilator_incidence,deg (+ trailing edge down),true_airspeed,kt,aefa_test,162.052,4.483,
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,-0.000,1609.834,end
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,5.000,1576.540,
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,10.000,1535.717,
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,15.000,1479.523,
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,20.000,1402.607,
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,25.000,1314.093,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,30.000,1217.004,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,35.000,1138.411,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,40.000,1056.635,
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,45.000,1023.779,
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,50.000,973.742,gap
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,55.000,944.777,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,60.000,930.169,
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,65.000,906.595,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,70.000,906.340,gap
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,75.000,913.759,gap
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,80.000,930.371,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,85.000,952.588,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,90.000,979.544,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,95.000,1017.311,gap
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,100.000,1056.378,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,105.000,1105.552,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,110.000,1167.574,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,115.000,1236.979,gap
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,120.000,1327.944,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,125.000,1394.448,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,130.000,1494.460,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,135.000,1594.622,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,140.000,1702.821,gap
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,145.000,1814.346,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,150.000,1947.055,merged
+i,main_rotor_power,hp,true_airspeed,kt,sikorsky_genhel,155.000,2069.029,
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,-0.000,1601.523,end
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,5.000,1590.393,
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,10.000,1552.080,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,15.000,1494.151,
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,20.000,1417.023,
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,25.000,1314.093,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,30.000,1217.004,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,35.000,1142.442,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,40.000,1084.268,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,45.000,1009.070,
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,50.000,963.786,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,55.000,944.777,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,60.000,939.070,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,65.000,906.595,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,70.000,906.340,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,75.000,913.759,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,80.000,930.371,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,85.000,952.588,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,90.000,979.544,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,95.000,1017.311,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,100.000,1056.378,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,105.000,1105.552,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,110.000,1167.574,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,115.000,1236.979,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,120.000,1327.944,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,125.000,1394.448,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,130.000,1494.460,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,135.000,1594.622,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,140.000,1702.821,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,145.000,1814.346,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,150.000,1947.055,merged
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,155.000,2080.485,gap
+i,main_rotor_power,hp,true_airspeed,kt,ames_genhel,160.000,2264.465,
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,21.292,1627.255,
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,30.145,1670.367,overlap
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,32.138,1716.441,overlap
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,50.492,944.969,
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,72.287,920.382,
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,96.145,994.143,
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,118.091,1245.390,
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,139.703,1694.408,
+i,main_rotor_power,hp,true_airspeed,kt,aefa_test,162.651,2525.444,

@@ -113,11 +113,12 @@ struct FuselageTables {
 // its angle is β_V = atan(V_Y/√(V_X² + V_Z²)) + incidence.
 // The stabilator's incidence schedule (GenHel Fig. 5.1.7, steady state:
 // airspeed lag settled, no pitch-rate or lateral-acceleration feedback, servo
-// at unit gain; D-028): i = clamp(command(u, collective), min, max), with u
-// the body x velocity relative to the air. The dynamic law is the AFCS's
-// (D-029).
+// at unit gain; D-028): i = clamp(command(u_e, collective), min, max), with
+// u_e = u √(ρ/ρ0) the equivalent airspeed of the body x velocity relative to
+// the air, u, as the aircraft's air-data sensors give it (D-040). The dynamic
+// law is the AFCS's (D-029).
 struct IncidenceSchedule {
-    // [rad] against airspeed u [m/s] and collective [0, 1].
+    // [rad] against equivalent airspeed u_e [m/s] and collective [0, 1].
     Table2D command{Axis({0.0, 1.0}), Axis({0.0, 1.0}), {0.0, 0.0, 0.0, 0.0}};
     double min = 0.0;  // [rad] travel limits
     double max = 0.0;

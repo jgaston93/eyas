@@ -657,3 +657,274 @@ Tests: `tests/unit/test_linearize.cpp` (helpers in `tests/support/m7b_support.hp
 **Cost.** Linearizing the UH-60A (41 states, 64 azimuths) takes 25 ms, condensing 0.02 ms, and the Floquet flow map 0.25 s (Release, GCC 13.3, WSL2).
 
 **Builds:** all 295 tests pass with GCC 13.3 (Debug) and Clang 18.1 (Debug), and all 294 in a Rocky Linux 9 container (GCC 11, Release; the CI job rehearsed in Docker with ccache). The new and changed tests (linearization, trim, airframe, tail-rotor wake; 43) pass under ASan+UBSan. clang-format is clean, and clang-tidy is clean on the changed `src/` files.
+
+## M7c — Validation against Ballin and Fletcher (done, 2026-10-17)
+
+M7c compares the UH-60A with published data (D-035 M7c amendment). It closes M7 (D-035):
+- **V1:** trims against Ballin, NASA TM-88360, App. B: GenHel (Sikorsky and Ames) and the USAAEFA flight test. Level flight is Fig. B1; climb and descent are Figs. B2–B4.
+- **V2:** linear models against Fletcher's flight-identified UH-60 data, 21st ERF 1995 Paper VII-4.
+
+Every digitized figure is human-reviewed (DATA_GAPS.md).
+
+Eyas runs:
+- *V1:* `uh60a_ballin.yaml`, 16 000 lbf, 5250 ft, with D-038 to D-040 and under GenHel's lateral constraint (zero roll from 50 kt). The V1 gate is against the Sikorsky GenHel curves (D-035).
+- *V2:* `uh60a_fletcher.yaml`, 14 350 lbm, ISA sea level. The averaged linear model is used, with GenHel's primary servo.
+
+Data and plots:
+- `eyas_m7c_cases` with `tools/plot_m7c.py` (V1);
+- `eyas_m7c_fletcher` with `tools/plot_m7c_fletcher.py` (V2).
+
+Both run in the nightly verification (D-037).
+
+| Item (D-035 M7c amendment) | Status | Evidence |
+|---|---|---|
+| **V1 gate**: longitudinal cyclic (10–150 kt, shape only: its mean set neutral cyclic), lateral cyclic (10–110 kt), stabilator (10–150 kt), pitch attitude (0–80 kt) against Sikorsky GenHel | ✅ | `BallinTrim.LevelFlightAgainstSikorskyGenHel`. The tolerance comes from the measured read-off and isn't widened for any quantity. |
+| V1 open differences, tracked at their recorded values | ✅ tracked | `BallinTrim.*` fails if any of them grows or shrinks; see the gap register below. |
+| V1 waterline sensitivity | ✅ | At most 1.3 % of travel and 0.36°, within the gate tolerance ("V1 side questions"). |
+| Neutral longitudinal cyclic in the GenHel spread | ✅ | The fit gives 1.904 in, inside 1.10–1.91 in (D-040). |
+| Pitch bias actuator in the static trims | ✅ | Off. With it on, the stick would sit 4.3 % aft of both GenHel and the flight test ("Pitch bias actuator"). |
+| D-034 item 5 rulings: elastic twist, ΔC_DMR, yawed drag | ✅ | D-038, D-039; the Ames twist question is resolved. |
+| Pedal through the 30 kt corner | ✅ | Sikorsky GenHel shows the same corner; it stays unsmoothed. |
+| V2 Table 1: M_β/I_β and Lock number | ✅ reported | M_β/I_β is exact. The effective Lock number is 7.87, against Fletcher's 8.06 theoretical and 8.62 identified. |
+| V2 on-axis responses, 1.5–12 rad/s | ✅ reported | Within 1.6 dB and 12° RMS, in hover and at 80 kt. |
+| V2 on-axis responses below 1.5 rad/s; yaw rate to collective | open, reported | Parked or assigned to M9 (D-041). |
+| V2 off-axis responses | known limitation | Wake distortion goes to M9 (D-041). |
+| V2 mode character against Padfield §4.3 | ✅ hover; 80 kt open | 80 kt has a phugoid-type divergence from M_u < 0 (parked, D-041). |
+| V2 Floquet against averaged roots | ✅ | Within 0.0025 rad/s below 3 rad/s. |
+
+**Level flight (Fig. B1).** Eyas is in red. The dotted curves hold sideslip at zero instead of roll.
+
+![Level flight](validation/m7/m7c_level.png)
+
+Eyas − Sikorsky GenHel over 0–160 kt, and Eyas − flight test at its eight points (`m7c_differences.csv`):
+
+| | GenHel mean / RMS | flight test mean / RMS |
+|---|---|---|
+| longitudinal cyclic [%] | 0.03 / 0.60 | 0.85 / 2.83 |
+| lateral cyclic [%] | 1.41 / 2.45 | −3.04 / 6.71 |
+| collective [%] | −0.34 / 2.79 | −4.05 / 7.58 |
+| pitch attitude [deg] | 0.20 / 0.37 | 0.51 / 0.74 |
+| sideslip [deg] | 3.52 / 3.54 | 3.57 / 3.94 |
+| pedal [%] | −2.83 / 4.48 | 10.1 / 11.5 |
+| stabilator [deg] | 0.09 / 0.66 | −5.40 / 5.75 |
+| main-rotor power [hp] | −49 / 57 | −191 / 280 |
+
+The flight-test columns include what Ballin (p. 10) notes for both GenHel models: a test pedal bias of about 0.5 in right, and more collective and power at low speed than either model predicts.
+
+**Frequency responses (V2).** Black is flight and red is Eyas. Grey marks what isn't compared.
+
+![Hover](validation/m7/m7c_fletcher_hover.png)
+
+![80 kt](validation/m7/m7c_fletcher_80kt.png)
+
+![Yaw to collective](validation/m7/m7c_fletcher_yaw.png)
+
+### Gap register
+
+Every M7c difference that isn't explained by the data's accuracy, with where it goes. D-041 records the dispositions. The investigations behind each one are in the subsections below.
+
+| Gap | Size | Status | Goes to |
+|---|---|---|---|
+| Sideslip at zero roll | +3.5° against GenHel; Eyas rolls left where the test rolled right | Unexplained. The rotor force integration and lateral cyclic are verified. | Parked: USAAEFA report or M8 piloted evaluation |
+| Lateral cyclic above 110 kt | Up to +7.8 % at 155 kt | Unexplained; probably linked to the sideslip | Parked, with the sideslip |
+| Pedal | GenHel − Eyas +0.8 to +7.8 % | Explained by the sideslip and collective (residual ±0.65 %) | Follows the sideslip |
+| Hover main-rotor power | −71 hp (4.4 %) | About 37 hp is tip loss on the inflow; about 140 hp of GenHel's power is unexplained | Tip loss to M9 (D-041) |
+| Cruise power and collective | −49 hp mean; collective −6.4 % at 160 kt | Within the yawed-drag ruling (D-039) | Tracked by the gate |
+| B2–B4 descent collective | Eyas falls 6–9 % less at 100–137.5 kt | Unexplained | Parked |
+| B2–B4 climb lateral cyclic | +5.3 and +9.5 % at +3000 ft/min | Unexplained; the 137.5 kt end trims beyond full collective | Parked |
+| B2–B4 power slope at 137.5 kt | 14 % above GenHel | Unexplained | Parked |
+| Slow on-axis response below 1.5 rad/s | Hover pitch +3.7 dB; 80 kt phase lead 27° (roll), 43° (pitch) | At 80 kt, M_u < 0 from the held stabilator in the rotor downwash, as simple wake theory gives | Parked |
+| 80 kt phugoid-type divergence | +0.289 1/s | Same cause as the line above | Parked |
+| Off-axis angular rates | Phase off by 140–160° (hover) | Known limitation of Pitt–Peters without wake distortion | M9 wake distortion (D-041) |
+| Yaw rate to collective, hover | −3.8 dB mean, +43° | Rotor speed and engine dynamics (Fletcher) | M9 drivetrain |
+| Yaw rate to collective, 80 kt | −8 dB | Unexplained; Fletcher's BE model misses it too | Parked |
+| Tail-rotor torque | Not modelled | DATA_GAPS.md | M9 |
+| Steady turns (B5), step responses (App. D) | Not compared | Needs an interface change, lag and the AFCS | M8 or later (D-035) |
+
+**Builds:** all 312 tests pass with GCC 13.3 and Clang 18.1 (Debug), including both `BallinTrim` gates.
+
+The investigations follow, in the order they were done.
+
+### Open: Eyas trims with right sideslip at zero roll
+
+D-040 (the stabilator schedule on equivalent airspeed) came after most of this work and moves the zero-roll sideslip by at most 0.04°, so these numbers stand.
+
+| kt | 60 | 80 | 100 | 120 | 140 | 160 |
+|---|---|---|---|---|---|---|
+| Eyas β [deg] | 5.89 | 3.98 | 3.29 | 3.07 | 3.11 | 3.39 |
+| GenHel β [deg] (B1(f)) | 3.05 | 0.87 | −0.32 | −0.78 | −0.78 | −0.45 |
+
+Trimmed at the flight test's sideslip with roll free, Eyas rolls left where the test rolled right (test roll from B1(e), unverified):
+
+| kt | 49 | 73 | 95 | 118 | 140 | 163 |
+|---|---|---|---|---|---|---|
+| test β / φ [deg] | 0.9 / −0.2 | 0.4 / 0.1 | 0.8 / 0.8 | 1.1 / 1.7 | 0.6 / 1.5 | −1.3 / −0.8 |
+| Eyas φ [deg] | −0.85 | −0.86 | −0.89 | −1.03 | −1.84 | −4.74 |
+| W sin Δφ [lbf] | ≈ 180 | 270 | 470 | 760 | 930 | 1100 |
+
+So Eyas carries a rightward side force (or lacks a leftward one) of ≈ 370 lbf at 100 kt against GenHel, growing with speed against the test. At these rolls ΣF_y = W sin φ ≠ 0, so the CG height enters the roll balance (Ballin's waterline question, DATA_GAPS.md) at about W sin φ × 1.39 ft ≈ 650 ft·lbf at 95 kt, of order 0.1° of roll.
+
+Side-force budget at 100 kt, zero roll (β = 3.30°): main rotor −290 lbf, tail rotor +598, fuselage −263, fin −45, stabilator −1.
+
+**Ruled out, each by a test:**
+- *Main-rotor side force against theory.* Split by term (scratch instrumentation, 60/100/140 kt): lift tilted in-plane by the inflow angle −278/−253/−289 lbf, lift along the flapped normal −34/−23/−60, drag terms −6/−13/−62. The blade inertial terms (Coriolis, centrifugal, flap acceleration) sum to |F_y| < 10 lbf: a periodic blade's mass centre has zero mean acceleration. The lift part against Johnson (2013) Eqs. 6.75 and 6.85 evaluated at Eyas's own flapping, pitch and inflow harmonics, in wind axes, scaled by Eyas's thrust (Y/T, so the lift slope cancels): the closed form and the numerical integral agree to 0.1 lbf; adding Eyas's twist table, elastic twist, tip loss, root cutout, hinge offset and Pitt–Peters harmonics gives −246/−254/−295 lbf against Eyas's −274/−294/−372. The 10–20 % rest is the nonlinear, Mach-dependent airfoil tables, and goes the way GenHel needs. Eq. 6.85 is a difference of terms of 1000–3000 lbf, so the side force is sensitive to the rotor state, not to the force integration.
+- *Lateral cyclic against GenHel.* θ1c computed for both models from all four plotted controls through the shared GenHel rigging (the offsets cancel, to the then-placeholder's ±0.2°): Eyas − GenHel within ±0.25° from 60 to 110 kt (−0.13° at 100 kt; with D-040), −0.4 to −1.6° at 120–160 kt. Tilting the disc for 370 lbf would take about 1.3°.
+- *Wash-map inputs* (D-028; the maps use each model's own trimmed χ and a₁): a₁ ±1° and ±3°, χ ±2° and ±5°, wash ×0.9 and ×1.1 move β by ≤ 0.1°; removing the wash moves it 0.04° at 100 kt and 0.75° at 60 kt.
+- *Blade lag* (Eyas has none, D-026): a self-consistent rigid lag probe moves β by +0.2 to +0.4° (wrong way); closing the gap would need ~14× the self-consistent 1/rev lag.
+- *GenHel's inflow* (uniform with K_CM = K_CL = 0, as in the 1981 dataset): β +3.9°, worse. Uniform inflow: +4.15°.
+- *Rotor variants at 100 kt:* yawed drag off 3.21°, elastic twist off 3.28°, 60 elements 3.32°, no tip loss 3.29°.
+- *CG waterline* (WL 248.2 against 231.5 in): β 3.30 → 3.31°; at zero roll ΣF_y = 0, so CG height cancels.
+- *Fin* reproduces GenHel Table 3.5.9 (C_L(0) = −0.06, about +45 lbf at β_v = 0, 100 kt). *Fuselage:* the side-force table is antisymmetric and the yaw table has N(0) = 0, so neither model has a lateral offset. *DNQD = 0* (DATA_GAPS.md): moving 370 lbf of tail-rotor thrust at the 33 ft arm needs about 12 000 ft·lbf, N/q ≈ 400 ft³ at 100 kt, comparable to the yaw map's extremes at 70–90°: not plausible near β = 0.
+- *Tail rotor* against GenHel pp. 5.4-4 to 5.4-8 and *hub loads* against pp. 5.1-33 to 5.1-36: same equations; the 20° cant reading stands (DATA_GAPS.md). Yaw balance pins the tail-rotor thrust to within the main-rotor torque difference, a few % of ~28 000 ft·lbf over ~33 ft, i.e. 30–50 lbf of the 370.
+
+**Pedal gap explained.** GenHel − Eyas pedal at zero roll grows from +0.8 % (60 kt) to +7.8 % (150 kt). Eyas's own dPedal/dβ (−0.6 to −1.4 %/deg, from its zero-sideslip and zero-roll trims) times the sideslip difference, plus the collective-to-tail-rotor mixing (16° θ0 per unit collective), leaves a residual within ±0.65 % at every speed to 160 kt (with D-040 and the corrected readings). It follows from the sideslip and collective; it isn't a separate defect.
+
+**Status:** unexplained, recorded open. Since the force integration matches theory and the lateral cyclic matches GenHel, the difference is in the rotor state GenHel trims to or in a term of GenHel's not visible from its equations as read; the flight test (which flew rolled right) is the referee. Parked (D-041): revisit with the USAAEFA report or if M8's piloted evaluation shows it.
+
+### Stabilator airspeed (D-040) and neutral longitudinal cyclic
+
+**Stabilator.** Against Ballin's Sikorsky GenHel B1(h), Eyas's scheduled stabilator sat 1–4° low from 40 to 90 kt. GenHel's schedule (Fig. 5.1.7) evidently reads equivalent airspeed, as the aircraft's air-data sensors give it: fed GenHel's own collective, the schedule fits B1(h) to 0.61° rms on equivalent airspeed and 2.06° on true airspeed (5250 ft; at sea level they are the same). D-040 makes the change. Eyas − Sikorsky GenHel, 40–150 kt, rms (mean), before → after:
+
+| | stabilator [deg] | longitudinal cyclic [%] | pitch [deg] | lateral cyclic [%] |
+|---|---|---|---|---|
+| true airspeed | 2.13 (−1.91) | 2.10 (−1.74) | 0.92 (+0.91) | 2.73 (+1.76) |
+| equivalent airspeed | 0.77 (+0.06) | 0.57 (+0.14) | 0.40 (+0.27) | 2.43 (+1.37) |
+
+Collective, sideslip, pedal and main-rotor power move by under 0.2 %, 0.04° and 2 hp.
+
+**Neutral longitudinal cyclic.** Fitted to Ballin's GenHel longitudinal stick (B1(a), human-reviewed). Before D-040 the fit needed neutral at 2.06 in, 0.14 in beyond the range of GenHel's three Fig. 6.3.1 estimates (1.10–1.91 in), so the D-035 check failed; neutral was set at the pinned row's 1.91 in and 1.4 % of stick was recorded as an Eyas–GenHel pitch-trim difference. With D-040 the fit lands at 1.904 in, inside the range and 0.07 % of travel from 1.91 in; the check passes, and the residual is 0.64 % rms (largest 1.2 %), within the read-off accuracy: the 1.4 % was the stabilator's airspeed. With this neutral the cyclic offsets come out at −0.009° (θ1s) and +0.001° (θ1c), i.e. a centred stick gives a level swashplate. Since the fit chose neutral from GenHel's three estimates, the V1 gate tests B1(a)'s shape against speed only, its mean removed (largest 1.17 % against a tolerance of at least 1.79 %), and tracks the mean (Eyas 0.07 % aft over 10–150 kt) as a calibration. The check on neutral independent of the choice is the flight test, whose mean differs by 0.4 % (pitch bias actuator, below).
+
+### Pitch bias actuator
+
+GenHel's PBA (Fig. 5.1.4) settles to −0.375 %/deg of pitch attitude plus 0.0525 %/kt above 80 kt, less 4.9 %, in percent of longitudinal stick travel, and in a trim it moves only the stick (the blade pitch, and so the trimmed state, are the same). With it on, Eyas's stick would sit 4.3 % aft of the Sikorsky GenHel curve with a 1.75 % rms shape error; with it off, −0.07 % and 0.64 %. The flight test agrees (off −0.4 %, on −4.4 %). V1 compares with it off (DECISIONS.md D-035).
+
+### Climbs and descents (Figs. B2–B4)
+
+Ballin's B2–B4 give no weight, CG or density altitude, and their level points differ from B1's (DATA_GAPS.md), so only the **change from level flight** against climb rate is compared, Eyas at B1's conditions. Sikorsky's GenHel held the stabilator at its level-flight value for each speed in these runs (Ballin p. 10); `eyas_m7c_cases` now writes both Eyas variants, `fixed_stabilator` (held at Eyas's own level incidence, through GenHel's STBSET override) and `genhel` (scheduled). Against the Sikorsky curves, holding the stabilator halves the longitudinal and pitch errors, as expected:
+
+| rms of Eyas − Sikorsky change from level, −3 to +3 thousand ft/min | 60 kt | 100 kt | 137.5 kt |
+|---|---|---|---|
+| longitudinal cyclic [%], held / scheduled | 2.4 / 3.9 | 3.3 / 6.9 | 2.9 / 7.1 |
+| pitch attitude [deg], held / scheduled | 0.23 / 0.79 | 0.34 / 1.06 | 0.65 / 1.39 |
+
+With the stabilator held, against Sikorsky (rms over the Sikorsky curve's readings, from `m7c_differences.csv`; Eyas − GenHel at −3 / +3 thousand ft/min):
+
+![Climb 60 kt](validation/m7/m7c_climb_60kt.png)
+
+![Climb 100 kt](validation/m7/m7c_climb_100kt.png)
+
+![Climb 137.5 kt](validation/m7/m7c_climb_137.5kt.png)
+
+
+| | 60 kt | 100 kt | 137.5 kt |
+|---|---|---|---|
+| collective [%] | 1.3 (+3.4 / +0.4) | 2.4 (+6.0 / −0.3) | 3.4 (+9.2 / +1.4) |
+| longitudinal cyclic [%] | 2.4 (−3.7 / +3.1) | 3.3 (−4.9 / +6.1) | 2.9 (−5.6 / +2.5) |
+| lateral cyclic [%] | 1.5 (+0.7 / +3.2) | 2.5 (−2.4 / +5.3) | 4.5 (−5.0 / +9.5) |
+| pedal [%] | 0.6 | 1.8 | 1.7 |
+| pitch attitude [deg] | 0.23 | 0.34 | 0.65 |
+| main-rotor power [hp] | 64 | 61 | 92 |
+
+- *Power against climb rate* (slope over ±2000 ft/min, hp per 1000 ft/min): Eyas 465 / 479 / 521, Sikorsky 445 / 469 / 447, Ames 441 / 455 / 447, flight test 414 / 483 / 368 (four points each); W·V_c at 16 000 lbf is 485. At 60 and 100 kt Eyas is within 2–4 % of GenHel, so the unknown weight of B2–B4 can't be far from B1's; at 137.5 kt Eyas's slope is 14 % above GenHel's and above W·V_c. `Open.`
+- *Collective in steep descent:* Eyas's collective falls less than GenHel's, by 3.4, 6.0 and 9.2 % at −3000 ft/min, growing with speed. `Open.`
+- *Lateral cyclic in steep climb:* Eyas moves right of GenHel by 3.2, 5.3 and 9.5 % at +3000 ft/min. `Open.`
+- These are trends at constant weight and density altitude of unknown value; the climb runs also sit at Eyas's level-flight sideslip, which differs from GenHel's (above).
+- *Investigated (2026-10-16), each by a probe at the climb conditions, stabilator held; Eyas − Sikorsky change from level at 60 / 100 / 137.5 kt:*
+  - *Inflow model:* uniform inflow in place of Pitt–Peters (GenHel's inflow has no first-harmonic terms, K_CM = K_CL = 0) removes the climb lateral drift at 60 kt (+3.2 → −0.2 %) but not at 100 and 137.5 kt (+4.1, +9.0 %), and leaves the descent collective (+3.8 / +5.8 / +9.0 %) and the power slope (+78 at 137.5 kt) unchanged.
+  - *Yawed-flow drag (D-039) off:* descent collective +3.2 / +4.6 / +7.0 %, power slope +60 at 137.5 kt: about a quarter of each, from physics Eyas keeps (Johnson 2013 §6.22–6.23).
+  - *Elastic twist (D-038) off:* no help (descent collective +10.1 % and power slope +97 at 137.5 kt).
+  - *Pitch attitude:* nudging the held stabilator ±2° in the −3000 ft/min descent moves the collective by only +0.15 and +0.24 % per degree of pitch at 100 and 137.5 kt (the trim compensates), so Eyas's ~0.5° pitch difference from GenHel explains about 0.1 % of the descent-collective gap.
+  - *Advancing tip near Mach 0.86 at 137.5 kt:* the near-sonic part of the disc (M > 0.8, α −3° to +1°) gives 26 % of the profile torque in the −3000 ft/min descent and 24 % in level flight; negative lift is 8 % against 4 % of the total lift. Nothing compressibility-related switches on in the descent, so it doesn't explain a descent-only gap.
+  - *Beyond the collective travel:* at 137.5 kt and +3000 ft/min Eyas's trim needs 105 % collective, past full up (the trim doesn't limit the controls); GenHel's curve is just under 100 % there. Eyas's lateral cyclic and power at that point come from a trim the aircraft can't fly; read the 137.5 kt climb end with that in mind.
+  - Still unexplained: the descent collective (Eyas falls 6–9 % less than GenHel at 100–137.5 kt; at 60 kt within tolerance), the climb lateral drift at 100–137.5 kt, and the power slope at 137.5 kt. Parked (D-041).
+
+### V1 side questions (D-035 M7c amendment)
+
+Answered with a scratch probe on Ballin's B1 trims (GenHel's lateral constraint, stabilator scheduled, 5250 ft):
+- *Pedal through the 30 kt fin-blockage corner (D-036 notes):* Eyas's pedal slope halves at exactly 30 kt (0.62–0.68 %/kt from 20 to 30 kt, 0.28–0.33 %/kt from 30 to 40 kt; 1 kt steps). Ballin's Sikorsky GenHel curve changes the same way (0.613 and 0.332 %/kt over 20–30 and 30–40 kt, from the reviewed readings at 5 kt steps). The flight test has three points near the corner (21.8, 29.8 and 31.8 kt) scattered by 2 % and 10–18 % left of GenHel (Ballin's pedal bias), too few to tell a corner from a smooth curve. So there is no evidence to smooth it; the D-036 ruling stands.
+- *Ballin's "no dynamic twisting or bending" for the Ames GenHel (p. 3) against CR-166309's K_FP0:* removing the elastic twist (D-038) lowers Eyas's trimmed collective by 6.9–7.1 % of travel up to 100 kt and 9.1–12.7 % from 120 to 160 kt. The Ames and Sikorsky GenHel collective curves of Fig. B1(c) coincide within a line width (about 1 %) from 80 to 150 kt (0.7 % apart at 40 kt). A model without the twist couldn't have drawn the Ames curve, so it had the twist or an equivalent. Ballin's sentence reads as no torsional or bending degrees of freedom, which K_FP0, a quasi-static pitch correction proportional to the blade load, isn't. D-038 stands.
+- *Waterline (DATA_GAPS.md, Ballin's datum open):* the same aircraft with the CG at GenHel's WL 248.2 in instead of Ballin's 231.5 in moves the B1 trims by at most 1.30 % lateral cyclic (hover; 0.55 % at 40 kt, ≤ 0.2 % from 60 kt), 1.15 % longitudinal cyclic (20 kt), 0.11 % collective, 0.09 % pedal, 0.36° pitch, 0.22° roll, 0.01° sideslip and 5 hp. All of that is within the gate's 1.75 % read-off tolerance, so the open datum doesn't affect a V1 conclusion.
+
+### The V1 gate
+
+`BallinTrim.LevelFlightAgainstSikorskyGenHel` and `BallinTrim.ClimbAndDescentTrendsAgainstSikorskyGenHel` (`tests/unit/test_ballin_trim.cpp`; slow, about 30 s and 60 s in Debug) trim the Ballin aircraft and compare against the Sikorsky GenHel curves with a tolerance from the measured read-off: 1.75 % of the axis span plus the local slope times 1.5 kt (0.1 thousand ft/min for B2–B4); DECISIONS.md D-035. They gate the longitudinal cyclic (10–150 kt; its shape, with the mean removed, since the mean set neutral cyclic, and the mean tracked at its record), lateral cyclic (10–110 kt), stabilator (10–150 kt) and pitch attitude (0–80 kt), all within tolerance, and track every open difference above (lateral cyclic above 110 kt, pitch about +0.5° from 90 kt, collective, sideslip, pedal, main-rotor power; the descent collective, climb lateral cyclic and power slope of B2–B4) at its recorded value, so a change either way fails the test. A deliberate change to one record was caught.
+
+### Open: hover power
+
+Eyas 1537 hp main-rotor power at 0 kt against GenHel 1608 (B1(i)): induced 1210 hp equals ideal momentum (κ = 1.00), profile 325 hp, figure of merit 0.787.
+- *ΔC_DMR = 0.002:* GenHel subtracts it (CR-166309 p. 5.1-27, re-read at 400 dpi; nomenclature p. 5.1-45 "Profile drag correction", no units). GenHel's profile power is therefore about 65 hp below Eyas's, leaving ≈ 140 hp of GenHel's power unexplained like for like.
+- *Tip loss:* both models zero the lift outboard of B·R but take momentum inflow over the full disc. Leishman 2nd ed. §3.2.4 (Eqs. 3.36, 3.41) raises the induced velocity by 1/B: about +37 hp. Deferred to M9 with the inflow upgrades (D-041); a departure from GenHel needing an M5 recheck.
+- *Ruled out:* fuselage download (334 lbf), stabilator download (−16 lbf), element count (within 5 hp).
+- The real aircraft needs more power than both models at low speed (Ballin p. 10); the USAAEFA flight-test report (Project 79-24) would be the referee (DATA_GAPS.md).
+
+Cruise main-rotor power is in D-039 (mean −45 hp against GenHel); with GenHel's uniform-plus-harmonic inflow it would be −10 hp mean against flight test (probe, not adopted; left to the V2 frequency responses).
+
+### V2: frequency responses against Fletcher's flight data (reported)
+
+`eyas_m7c_fletcher` (`tests/validation/m7c_fletcher.cpp`) trims `uh60a_fletcher.yaml` (about 14 350 lbm, CG FS 360) in hover and at 80 kt with the stabilator held at Fletcher's 40° and 4° trailing edge down and no stability augmentation. It writes p and q per inch of lateral and longitudinal cyclic from the averaged linear model (M7b), with and without GenHel's primary servo. `tools/plot_m7c_fletcher.py` compares them with Fletcher's flight data (21st ERF 1995 Paper VII-4, Figs. 3 and 4; digitized and human-reviewed, DATA_GAPS.md). The comparison uses only the stretches where the coherence is at least 0.6, up to 12 rad/s. Fletcher's phase curves sit on their own 360° branch, so each Eyas phase curve is moved by whole turns. The figures below are Eyas with the servo, the like-for-like case (the flight data include the actuators); the servo adds 28° of lag at 10 rad/s and changes the magnitude by less than 0.05 dB.
+- *Conditions assumed:* ISA sea level. Fletcher flew at Crows Landing, California, in September 1992 in very calm air (p. VII-4-6) and gives no altitude or temperature.
+
+| | p/δlat hover | q/δlon hover | p/δlat 80 kt | q/δlon 80 kt |
+|---|---|---|---|---|
+| magnitude, 1.5–12 rad/s: mean / RMS [dB] | −0.7 / 1.6 | 0.0 / 1.2 | −0.1 / 0.9 | 0.8 / 1.1 |
+| phase, 1.5–12 rad/s: mean / RMS [deg] | −3.1 / 11.7 | 3.0 / 8.6 | 0.1 / 6.2 | 4.6 / 7.7 |
+| magnitude, below 1.5 rad/s: mean / RMS [dB] | 0.7 / 2.2 | 3.7 / 4.0 | −0.8 / 2.5 | 2.3 / 3.6 |
+| phase, below 1.5 rad/s: mean / RMS [deg] | 1.5 / 3.0 | 9.6 / 11.5 | 27.3 / 33.2 | 43.0 / 49.0 |
+
+- *On-axis, 1.5–12 rad/s (roll from lateral, pitch from longitudinal):* Eyas matches the flight data in both conditions: magnitude within 1.6 dB RMS, phase within 12° RMS. This is the band of the rotor-fuselage coupled roll and pitch response that flight control design works in.
+- *On-axis, below 1.5 rad/s (the whole-aircraft modes), open:* in hover, Eyas's pitch response is 3.7 dB too large on average from 0.56 rad/s (where the coherence first reaches 0.6) to 1.5 rad/s, with a higher peak near 0.7 rad/s. At 80 kt the magnitudes are close, but Eyas leads in phase: 27° on average in roll, below 1 rad/s, and 43° in pitch at 0.2–1 rad/s, up to 85°. The flight roll response stays flat in magnitude down to 0.1 rad/s; Eyas's falls by about 5 dB, with phase lead, as with a stronger roll restoring moment through sideslip. The likely suspects are the slow-mode derivatives: the speed and incidence stability in pitch, and the dihedral and weathercock stability in roll and yaw. The condensed-model modes against Padfield §4.3 (the rest of V2) are the next check.
+- *Off-axis (roll from longitudinal, pitch from lateral), known limitation:* Eyas misses badly in both conditions (phase off by 140–160° on average in hover; magnitude off by up to 13 dB in hover and 28 dB at 80 kt). This is the documented limitation of blade-element rotors with Pitt–Peters inflow. Fletcher (p. VII-4-3) writes that such models "predict the on-axis responses well to about 10 rad/sec but have deficiencies in their off-axis angular rate response prediction", reports the same for AH-64 and BO 105 models, and attributes it to the wake distortion in pitch and roll that Pitt–Peters doesn't model (p. VII-4-4, after Rosen). Padfield 3rd ed. §5.3.3 (p. 298) calls it "a common feature of current modelling standards". Fletcher's fix is an identified aerodynamic phase lag in the flapping equations, a fitted equivalent. A wake-distortion model is added to M9 (D-041).
+- *Yaw rate to collective (Figs. 7 and 13), open:* `tools/plot_m7c_fletcher.py` also compares r per inch of collective (`m7c_fletcher_yaw.png`) against the reviewed flight curves (DATA_GAPS.md). Every reading Fletcher drew is compared, since these figures have no coherence panel: 0.53–9.5 rad/s in hover and 3.2–9.6 rad/s at 80 kt. Eyas with the servo, mean / RMS:
+
+  | | magnitude [dB] | phase [deg] |
+  |---|---|---|
+  | hover | −3.8 / 6.6 | +42.8 / 59.2 |
+  | 80 kt | −8.1 / 8.4 | +24.3 / 25.5 |
+
+  - *Hover:* Eyas matches near 0.5–1 rad/s, then falls off faster than the flight data (about 10 dB low by 5–8 rad/s), and the flight lags up to about 110° more. Fletcher (p. VII-4-4) puts the UH-60's yaw/heave coupling in hover down to rotor speed and engine/governor dynamics, which his identified model and BE model B include and Eyas doesn't (M9). This is the baseline the M9 drivetrain must improve.
+  - *80 kt:* Eyas is 8 dB low across the band. Fletcher finds the blade-element model he compares at 80 kt also mismatched, "greater than in hover", and his identified model fits without drivetrain dynamics, so the drivetrain "is not the source of the problem" (p. VII-4-11). Parked (D-041). Eyas's tail rotor has no torque yet (DATA_GAPS.md, M9), but that is a power term, not this response's.
+- *Not compared:* the heave responses to pedal (Figs. 8 and 14), which V2 doesn't list.
+
+### V2: rotor parameters against Fletcher's Table 1 (reported)
+
+Fletcher's Table 1 (p. VII-4-9, PDF p. 11; read from the scan at 400 dpi, clear) compares his hover-identified flapping parameters with theoretical values. His notation (p. VII-4-1) defines M_β and I_β as the blade's first and second flapwise mass moments, in slug·ft and slug·ft², so M_β/I_β is in 1/ft. He doesn't say how the theoretical values were computed.
+
+| | Eyas | Fletcher theoretical | Fletcher identified (hover) |
+|---|---|---|---|
+| M_β/I_β [1/ft] | 0.0573 | 0.0573 | 0.0321 |
+| γ, textbook form ρ a c R⁴/I_β | 10.1 | 8.06 | 8.62 |
+| γ, effective (Eyas's lifting span) | 7.87 | | |
+| δ3 [deg] | 0 | 0 | 7.84 |
+| aerodynamic phase lag ψ_a [deg] | none | n/a | 38.8 |
+
+- *M_β/I_β:* Eyas's blade is GenHel's (S_β = 86.7 slug·ft, I_β = 1512.6 slug·ft², CR-166309 p. 5.1-49), and its ratio equals Fletcher's theoretical value to the printed digits, so his theory starts from the same blade data. His identified value is 44 % lower; he calls it "reasonably close".
+- *Lock number:* Fletcher's 8.06 is the textbook form at sea level with Eyas's (GenHel's) chord, radius and I_β and a lift slope of 5.72/rad, i.e. 0.1/deg (1.4087 × 5.72). Eyas takes its lift slope from the SC1095 tables, which give 6.45/rad at low Mach rising to 6.96 at Mach 0.5. Weighted along the span by r(r − e)² at each section's hover Mach number, that is 7.20/rad, so the textbook form gives 10.1. But Eyas's blade lifts only from the 5.08 ft root cutout to the tip-loss radius (0.97 R) and flaps about a 1.25 ft hinge offset. The Lock number equivalent to the aerodynamic flap damping Eyas actually computes, γ_eff = 4ρ∫a(r) c r (r − e)² dr / I_β over that span, is 7.87. That is 2.4 % below Fletcher's theoretical value and 9 % below his identified one, within the 7 % spread between those two.
+- *δ3 and ψ_a:* Eyas, like GenHel, has no pitch-flap coupling. Fletcher identifies 7.84°, a stabilizing equivalent coupling that "contributes significantly to the measured response", and the 38.8° aerodynamic phase lag that stands in for the wake distortion (the off-axis limitation above). Both are identified equivalents, not measured hardware, so neither is adopted.
+
+### V2: mode character (reported)
+
+`eyas_m7c_fletcher` also writes the condensed 6-DOF model's modes and derivatives at the same two conditions (`m7c_fletcher_modes.csv`, `m7c_fletcher_derivatives.csv`), and the averaged model's roots below 3 rad/s against the Floquet exponents of the free flow map (`m7c_fletcher_floquet.csv`). Fletcher gives no eigenvalues or stability derivatives (his Tables 1 and 2 list rotor parameters only, and he puts his identified models' validity at 0.3–0.5 to 20 rad/s), so the comparison is with the mode character Padfield 3rd ed. §4.3.3 describes for the Lynx, Bo105 and Puma.
+- *Floquet:* every root below 3 rad/s is within 0.0004 rad/s of its Floquet exponent in hover and 0.0025 rad/s at 80 kt, so the averaged model is adequate for these modes.
+
+| Hover | λ [1/s] | ω_n [rad/s], ζ | Padfield |
+|---|---|---|---|
+| Coupled pitch–roll oscillation | 0.202 ± 0.354i | 0.41, −0.49 (doubles in 3.4 s) | Unstable phugoid-type oscillation, coupled longitudinal/lateral, doubling in about 2.5 s for the Lynx and Bo105 (p. 206); "naturally unstable in hover" (p. 211) |
+| Lateral phugoid | −0.170 ± 0.465i | 0.49, 0.34 | Similar frequency, stable or almost stable through its yaw content (p. 214) |
+| Heave and yaw (labelled yaw subsidence) | −0.242 ± 0.065i | 0.25, 0.97 | Heave subsidence set by Z_w (−0.29 here) and yaw by N_r (−0.24); the two near-equal roots couple, through the rotor torque, into a heavily damped pair. Fletcher (p. VII-4-4) finds strong UH-60 yaw/heave coupling in hover through rotor speed and the engine, which Eyas doesn't model yet (M9) |
+| Pitch subsidence | −1.03 | | Set by M_q (−0.89) (p. 211) |
+| Roll subsidence | −6.03 | | Set by L_p (−6.00) (p. 214) |
+
+| 80 kt | λ [1/s] | ω_n [rad/s], ζ | Padfield |
+|---|---|---|---|
+| Dutch roll | −0.337 ± 1.093i | 1.14, 0.29 | O(1 rad/s) (p. 215) |
+| Spiral | −0.073 | | O(0.1 rad/s) (p. 215) |
+| Roll subsidence (two, one with pitch) | −2.83, −2.37 | | Set by L_p (−3.20); the on-axis roll response above 1.5 rad/s, which L_p dominates, matches the flight data (V2 above) |
+| Phugoid-type divergence (labelled speed subsidence) | **+0.289** | doubles in 2.4 s | Articulated Puma: "a classical short-period pitch/heave oscillation and neutrally stable phugoid" (p. 212) |
+| Oscillation | −0.201 ± 0.261i | 0.33, 0.61 | |
+
+- *Hover:* every feature Padfield describes is there, with the expected signs and sizes.
+- *80 kt, open:* the longitudinal set differs. Eyas has a real divergence where Padfield's articulated example has a neutrally stable phugoid, and where the flight pitch response shows a lightly damped resonance near 0.4 rad/s (Fig. 4). The cause is negative speed stability: M_u = −0.0085 (rad/s)/(m/s), where Padfield's examples are positive (p. 189).
+  - *Padfield's low-modulus phugoid approximation* (Eq. 4A.44, p. 225; its small (X_q − W_e) term, which only affects damping, left out) on Eyas's own derivatives gives real roots +0.38 and −0.30. With M_u = 0 it gives a near-neutral oscillation, and with M_u = +0.005 one at 0.26 rad/s, ζ = 0.20. The manoeuvre-margin term M_q Z_w − M_w (Z_q + U_e) is +0.54, so the short period is stable; M_w = +0.0117 is destabilizing but not divergent on its own.
+  - *Where M_u comes from* (scratch probe, quasi-steady: body held at the trim state with u or w perturbed by ±0.25 m/s, component states settled for 3 s, loads averaged over a revolution; the components sum to the condensed M_u with an effective inertia of 51 950 kg·m², I_yy being 52 210): in N·m per m/s, main rotor +317 (flapback, stabilizing, as Padfield p. 189 describes), stabilator −577, tail rotor −108, fuselage −72. For M_w: main rotor +1919, fuselage +1017 (both destabilizing), stabilator −2037, tail rotor −149.
+  - *Why the stabilator is speed-destabilizing:* held at 4° trailing edge down, it carries a 345 N download in a rotor downwash of about 5.6 m/s, twice the momentum induced velocity (a developed wake). Its angle of attack rises 0.0050 rad per m/s of speed: 0.0024 because the same downflow is a smaller angle at higher speed, and 0.0034 because the wash weakens. The local downflow falls by 0.13 m/s per m/s, where momentum theory (wash ∝ 1/V) gives 0.136. This is Padfield's Eq. 4.62 (p. 191), α_tp = α_f − λ_tp/μ: the downwash angle at the tail shrinks with speed. A fixed tail's own contribution, proportional to its trim load (p. 189), would be +145 N·m per m/s. So Eyas's wash follows simple wake theory, and the speed instability is that theory applied to a held stabilator, not a code or data quirk. Whether the real aircraft's tail sees as much downwash at 80 kt is what the flight data question.
+  - *Not one derivative:* shifting M_u, M_w or both in the condensed model doesn't reconcile the 80 kt pitch response below 1.5 rad/s (best phase 31° RMS with M_u made positive, but magnitude 5.3 dB RMS against 3.6 now). Fletcher reports the same for the blade-element model he compares at 80 kt: "the mismatch between BE model A and the flight test data below 3 rad/sec... the errors are very significant" (p. VII-4-11). Parked (D-041); a multi-parameter identification against the flight data is beyond M7c.

@@ -44,4 +44,27 @@ bool trim_body_state(const TrimCondition& c, double pitch, double roll, double o
 TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimResult* start,
                       std::vector<double>& x, const TrimOptions& options = {});
 
+// A trim at a given roll angle with the sideslip free, as GenHel's trims are
+// made above about 50 kt (Ballin, NASA TM-88360, Fig. B1; D-035 M7c
+// amendment). `sideslip` is the solved β [rad]; `trim` is the solve_trim
+// result at it, whose roll is the asked-for one to `roll_tol`.
+struct RollTrimResult {
+    bool converged = false;  // the inner trim converged and |φ − roll| ≤ roll_tol
+    int iterations = 0;      // secant iterations on β
+    double sideslip = 0.0;   // β [rad]
+    TrimResult trim;
+};
+
+// Trims `ex`'s aircraft for `c` with φ = `roll` [rad], solving for β by the
+// secant method from c.sideslip (at most 20 iterations, steps of at most
+// 10°; spec §7 rule 3). Each inner trim starts from the previous one, the
+// first from `start` if given. `x` is as in solve_trim, at the final β.
+// Throws InitError if the airspeed is zero or the flight vertical, where the
+// sideslip is undefined, or on an invalid condition.
+[[nodiscard]] RollTrimResult solve_trim_at_roll(const Executive& ex, const TrimCondition& c,
+                                                double roll, const TrimResult* start,
+                                                std::vector<double>& x,
+                                                const TrimOptions& options = {},
+                                                double roll_tol = 1e-8);
+
 }  // namespace eyas

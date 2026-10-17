@@ -23,6 +23,7 @@
 
 #include "airframe/airframe_aero.hpp"
 #include "core/rigid_body.hpp"
+#include "env/atmosphere.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/rotor_wash.hpp"
 #include "sim/executive.hpp"
@@ -777,6 +778,10 @@ AirframeAeroConfig scheduled_airframe() {
     return c;
 }
 
+// Sea-level density [slug/ft³]: at it the schedule's equivalent airspeed is
+// the true airspeed (D-040).
+const double kSeaLevelSlug = isa::kSeaLevelDensity / kSlugPerFt3;
+
 // The stabilator schedule (GenHel Fig. 5.1.7, steady state; D-028) against
 // GenHel's block diagram evaluated directly: the merged table is exact (each
 // cell is bilinear), so they agree to rounding everywhere, outside the table
@@ -790,7 +795,8 @@ TEST(StabilatorSchedule, MatchesGenHel) {
     const std::vector<double> x = {0.0, 0.0};
     for (int i = 0; i < 2000; ++i) {
         const double v_kt = v(rng);
-        SimContext ctx = context(v_kt * units::kKnot / kFoot, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0023769);
+        SimContext ctx =
+            context(v_kt * units::kKnot / kFoot, 0.0, 0.0, 0.0, 0.0, 0.0, kSeaLevelSlug);
         ctx.controls.collective = c(rng);
         const AirframeAeroLoads p = aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero());
         const double expect = ref.incidence(v_kt, 100.0 * ctx.controls.collective);
@@ -805,7 +811,8 @@ TEST(StabilatorSchedule, HoverAndForwardFlight) {
     const AirframeAero aero(scheduled_airframe());
     const std::vector<double> x = {0.0, 0.0};
     const auto incidence = [&](double v_kt, double collective) {
-        SimContext ctx = context(v_kt * units::kKnot / kFoot, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0023769);
+        SimContext ctx =
+            context(v_kt * units::kKnot / kFoot, 0.0, 0.0, 0.0, 0.0, 0.0, kSeaLevelSlug);
         ctx.controls.collective = collective;
         return aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero()).stabilator_incidence / kDegree;
     };
@@ -822,11 +829,46 @@ TEST(StabilatorSchedule, HoverAndForwardFlight) {
     fixed.stabilator.schedule.reset();
     fixed.stabilator.incidence = incidence(80.0, 0.5) * kDegree;
     const AirframeAero f(std::move(fixed));
-    SimContext ctx = context(80.0 * units::kKnot / kFoot, 3.0, -4.0, 0.0, 0.1, 0.0, 0.0023769);
+    SimContext ctx = context(80.0 * units::kKnot / kFoot, 3.0, -4.0, 0.0, 0.1, 0.0, kSeaLevelSlug);
     ctx.controls.collective = 0.5;
     const AirframeAeroLoads a = aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero());
     const AirframeAeroLoads b = f.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero());
     EXPECT_EQ(a.stabilator.F, b.stabilator.F);
+}
+
+// The schedule's airspeed is the equivalent (indicated) airspeed, u √(ρ/ρ0),
+// as the aircraft's air-data sensors give it (D-040): at altitude the
+// incidence is GenHel's diagram at that airspeed, and at sea level nothing
+// changes.
+TEST(StabilatorSchedule, UsesEquivalentAirspeed) {
+    const test::GenHelStabilator ref = test::read_genhel_stabilator(test::uh60a_genhel_dir());
+    const AirframeAero aero(scheduled_airframe());
+    std::mt19937_64 rng(6302);
+    std::uniform_real_distribution<double> v(0.0, 180.0);      // [kt], true
+    std::uniform_real_distribution<double> sigma(0.45, 1.15);  // ρ/ρ0
+    std::uniform_real_distribution<double> c(0.0, 1.0);
+    const std::vector<double> x = {0.0, 0.0};
+    for (int i = 0; i < 1000; ++i) {
+        const double v_kt = v(rng);
+        const double s = sigma(rng);
+        const double rho_slug = isa::kSeaLevelDensity * s / kSlugPerFt3;
+        SimContext ctx = context(v_kt * units::kKnot / kFoot, 0.0, 0.0, 0.0, 0.0, 0.0, rho_slug);
+        ctx.controls.collective = c(rng);
+        const double got = aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero()).stabilator_incidence;
+        const double expect = ref.incidence(v_kt * std::sqrt(s), 100.0 * ctx.controls.collective);
+        EXPECT_NEAR(got, expect * kDegree, 1e-12) << v_kt << " kt, sigma " << s;
+    }
+    // At 5250 ft (ISA, σ = 0.8552, √σ = 0.9248), 80 kt true is 73.98 kt
+    // equivalent. Below 80 kt at 45 % collective the command falls by
+    // 0.67 + 0.003286·(5 + 20) = 0.7522°/kt, so the incidence is
+    // 0.7522 × 6.02 = 4.53° higher than at sea level.
+    const auto at = [&](double rho_slug) {
+        SimContext ctx = context(80.0 * units::kKnot / kFoot, 0.0, 0.0, 0.0, 0.0, 0.0, rho_slug);
+        ctx.controls.collective = 0.45;
+        return aero.evaluate(ctx, x, Vec3::Zero(), Vec3::Zero()).stabilator_incidence / kDegree;
+    };
+    const double rho_5250 = isa_atmosphere(5250.0 * kFoot, 0.0).density / kSlugPerFt3;
+    EXPECT_NEAR(at(rho_5250) - at(kSeaLevelSlug), 4.53, 0.01);
 }
 
 TEST(StabilatorSchedule, ReadsConfig) {

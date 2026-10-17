@@ -1,10 +1,11 @@
 """Build the UH-60A aircraft config data/uh60a/uh60a.yaml from the GenHel transcriptions.
 
 Reads the as-printed constants in data/uh60a/genhel/ (GenHel, NASA CR-166309) and writes the
-whole-aircraft config the model loads (DECISIONS.md D-034):
+whole-aircraft config the model loads (DECISIONS.md D-034), plus the validation variants at
+the weight and CG of a published test (D-035 M7c amendment; VARIANTS below):
 
-    python3 tools/build_uh60a_config.py            # write the config
-    python3 tools/build_uh60a_config.py --check    # fail if the config is stale
+    python3 tools/build_uh60a_config.py            # write the configs
+    python3 tools/build_uh60a_config.py --check    # fail if a config is stale
 
 What it works out:
 - Mass split (D-002, D-032 item 7). GenHel's WEIGHT and CG (p. 5.1-49) are the whole
@@ -16,13 +17,16 @@ What it works out:
   x = -(FS - FS_cg), y = -(BL - BL_cg) (buttlines positive to port), z = -(WL - WL_cg).
   The exception is BLMGA: GenHel's landing module uses it as body y (Y_RMGA = BLMGA/12,
   p. 5.7-9, so positive to starboard), not as a buttline.
+- Elastic twist (D-038): GenHel's K_FP0 against airspeed and its mode shape against r/R
+  (pp. 5.1-24, 5.1-49), written as dynamic_twist_gain.csv and dynamic_twist_mode.csv.
 - Controls (§5.5, Figs. 5.1.6(a)-(d)): normalized input -> stick or pedal inches -> GenHel's
   mechanical mixing [deg] -> the swashplate phase rotation (p. 5.1-24), written as the
   offsets and gains of Eyas's linear control map. The travels in inches come from GenHel's
   cockpit section (Figs. 6.3.1 and 6.4.1, pp. 6.16-6.17; D-035). Collective, lateral and pedal
   fit the rigging exactly (checked here). The longitudinal stroke is given but its rows put
-  neutral cyclic in three places; neutral is their mean, and the values that depend on it
-  (the theta1s and theta1c offsets) are tagged !placeholder.
+  neutral cyclic in three places, 0.81 in apart. Neutral is the pinned row's estimate, the end
+  of that range nearest the fit to Ballin's GenHel longitudinal stick (D-035 M7c amendment;
+  the fit itself, 2.04 in, lies outside the range).
 """
 
 import argparse
@@ -34,6 +38,21 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "data" / "uh60a" / "genhel"
 DATA = ROOT / "data" / "uh60a"
 OUT = DATA / "uh60a.yaml"
+
+# Validation variants: GenHel's aircraft at another gross weight and CG. Only WEIGHT and the CG
+# change; the mass split (D-034 item 2) and every position follow. The inertias stay GenHel's
+# motion-module values (D-002): neither source gives the test aircraft's for its trims.
+# Each entry: file -> (weight [lbm], FS, BL, WL [in], source line). None keeps GenHel's value.
+VARIANTS = {
+    "uh60a_ballin.yaml": (
+        16000.0, 351.0, None, 231.5,
+        "Ballin, NASA TM-88360 (1987), Fig. B1 (p. 28): gross weight 16000 lb, CG station "
+        "351.0 in, CG waterline 231.5 in (the level-flight and climb trims of App. B)"),
+    "uh60a_fletcher.yaml": (
+        14350.0, 360.0, None, None,
+        "Fletcher, 21st ERF (1995) Paper VII-4, p. VII-4-6: takeoff gross weight approximately "
+        "14,350 lb, CG at station 360; no waterline given, so GenHel's WLCG is kept (DATA_GAPS.md)"),
+}
 
 SLUG_LBM = 32.17404855643044  # lbm per slug (g0 / ft)
 LBF_LBM = 1.0                 # a GenHel weight in lb is the same number in lbm
@@ -161,7 +180,9 @@ def travels(rig, tv):
     close(a1s(xa_n - tv["A_PIN_IN"], xc_low), tv["A_PIN_A1S"], "lateral pinned")
 
     # Longitudinal, with the pedal at neutral: each row gives its own neutral cyclic. They
-    # disagree by up to 0.8 in (DATA_GAPS.md), so neutral is their mean.
+    # disagree by up to 0.8 in (DATA_GAPS.md). Fitted to Ballin's GenHel longitudinal stick
+    # (NASA TM-88360 Fig. B1(a)), neutral comes out at 2.04 in, beyond the largest estimate,
+    # so neutral is that estimate, the pinned row's (D-035 M7c amendment).
     kb = rig["KXBB1S"] * rig["SIGN_XB2"]
 
     def b1s_rest(xc_in):  # B1S with the stick at XB+2 = 0
@@ -170,9 +191,32 @@ def travels(rig, tv):
     est = [(tv["B_FWD_B1S"] - b1s_rest(xc_high)) / kb - tv["B_FWD_IN"],
            (tv["B_PIN_B1S"] - b1s_rest(xc_low)) / kb + tv["B_PIN_IN"],
            (tv["B_AFT_B1S"] - b1s_rest(xc_mid)) / kb + tv["B_AFT_IN"]]
-    xb_n = sum(est) / len(est)
+    xb_n = est[1]
+    if xb_n != max(est):
+        raise ValueError("control travels: the pinned row no longer gives the largest neutral")
     xb = (xb_n - 0.5 * tv["STROKE_B"], xb_n + 0.5 * tv["STROKE_B"])  # -1 = full aft
     return xc, xa, xb, xp, max(est) - min(est)
+
+
+def dynamic_twist_tables():
+    """GenHel's elastic-twist gain against airspeed and mode shape against r/R (D-038), as
+    the text of two CSV files."""
+    dt = constants("dynamic_twist_5_1.txt")
+    src = ("# source: GenHel, NASA CR-166309 (1981), pp. 5.1-24, 5.1-25 and 5.1-49; transcription "
+           "data/uh60a/genhel/dynamic_twist_5_1.txt. Generated by tools/build_uh60a_config.py.\n")
+    # K_FP0 = BASE + SLOPE (V - 100) between its limits: BASE up to 100 kt, MIN from the speed
+    # where the line meets it; linear in between, constant outside (the table holds its ends).
+    v_min = 100.0 + (dt["KFP0_MIN"] - dt["KFP0_BASE"]) / dt["KFP0_SLOPE"]
+    gain = src + "airspeed[kt],gain[deg/lbf]\n"
+    for v, k in ((0.0, dt["KFP0_BASE"]), (100.0, dt["KFP0_BASE"]), (v_min, dt["KFP0_MIN"])):
+        gain += f"{fmt(round(v, 9))},{fmt(k)}\n"
+    # MODESP = A + B sin(90 deg r/R), tabulated every 0.025 in r/R (linear interpolation of
+    # the sine then errs by at most 1.4e-4 of the tip twist).
+    mode = src + "r[1],mode[1]\n"
+    for i in range(41):
+        r = i / 40.0
+        mode += f"{fmt(r)},{fmt(round(dt['MODE_A'] + dt['MODE_B'] * math.sin(math.radians(90.0 * r)), 12))}\n"
+    return gain, mode
 
 
 def control_map(rig, mr, tv):
@@ -236,8 +280,17 @@ def map_rows(rows, indent, placeholders=()):
     return "\n".join(lines)
 
 
-def build():
+def build(variant=None):
+    """Config text: GenHel's aircraft, or a VARIANTS entry's weight and CG."""
     mr = constants("main_rotor_constants_5_1_5.txt")
+    note = ""
+    if variant is not None:
+        weight, fs, bl, wl, source = VARIANTS[variant]
+        for key, v in (("WEIGHT", weight), ("FSCG", fs), ("BLCG", bl), ("WLCG", wl)):
+            if v is not None:
+                mr[key] = v
+        note = (f"#\n# Validation variant ({variant}): WEIGHT and CG from {source}.\n"
+                f"# Inertias are GenHel's (D-002); not for use as the aircraft's own data.\n")
     tr = constants("tail_rotor_constants_5_4_5.txt")
     af = constants("airframe_constants_5_2_5_3.txt")
     mp = constants("mass_properties_5_10.txt")
@@ -317,9 +370,9 @@ def build():
 # Controls (D-034, D-035): stick and pedal travels from GenHel Figs. 6.3.1 and 6.4.1 (pp. 6.16-6.17):
 #   {trav}.
 # Collective, lateral and pedal fit the rigging exactly; the pedal uses its stroke with overtravel.
-# The longitudinal rows put neutral cyclic in three places {fmt(round(lon_spread, 3))} in apart; neutral is
-# their mean, so the theta1s and theta1c offsets are tagged !placeholder.
-
+# The longitudinal rows put neutral cyclic in three places {fmt(round(lon_spread, 3))} in apart; neutral is the
+# pinned row's, the end nearest the fit to Ballin's GenHel longitudinal stick (D-035 M7c amendment).
+{note}
 geodetic_origin: {{latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}}  # scenario, not aircraft data
 
 airframe:
@@ -352,8 +405,10 @@ components:
         first_moment: "{fmt(mr["M_B"])} slug*ft"
         inertia: "{fmt(mr["I_B"])} slug*ft^2"
         delta3: "{fmt(mr["DELTA_3"])} deg"
+      dynamic_twist: {{gain_table: dynamic_twist_gain.csv, mode_table: dynamic_twist_mode.csv, lag: "0.01 s"}}  # D-038; lag numerical
+      yawed_flow_drag: true  # D-039 (GenHel resolves its drag on the full segment velocity, p. 5.1-28)
     controls:
-{map_rows(main_map, "      ", (("theta1s", "offset"), ("theta1c", "offset")))}
+{map_rows(main_map, "      ")}
 
   - type: airframe_aero
     name: airframe
@@ -442,16 +497,20 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="fail if the config is stale")
     args = parser.parse_args()
-    text = build()
-    if args.check:
-        if not OUT.exists() or OUT.read_text(encoding="utf-8") != text:
-            print(f"{OUT.relative_to(ROOT)} is stale; run tools/build_uh60a_config.py",
-                  file=sys.stderr)
-            return 1
-        return 0
-    OUT.write_text(text, encoding="utf-8")
-    print(f"wrote {OUT.relative_to(ROOT)}")
-    return 0
+    gain, mode = dynamic_twist_tables()
+    outputs = [(OUT, build())] + [(DATA / name, build(name)) for name in VARIANTS] + [
+        (DATA / "dynamic_twist_gain.csv", gain), (DATA / "dynamic_twist_mode.csv", mode)]
+    stale = 0
+    for path, text in outputs:
+        if args.check:
+            if not path.exists() or path.read_text(encoding="utf-8") != text:
+                print(f"{path.relative_to(ROOT)} is stale; run tools/build_uh60a_config.py",
+                      file=sys.stderr)
+                stale = 1
+            continue
+        path.write_text(text, encoding="utf-8")
+        print(f"wrote {path.relative_to(ROOT)}")
+    return stale
 
 
 if __name__ == "__main__":

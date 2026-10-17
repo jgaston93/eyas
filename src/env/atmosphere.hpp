@@ -15,6 +15,10 @@ inline constexpr double kEarthRadius = 6356766.0;       // r0 [m], text p. 8
 inline constexpr double kGasConstant = 8.31432e3;       // R* [N·m/(kmol·K)], text p. 3
 inline constexpr double kMolecularWeight = 28.9644;     // M0 [kg/kmol], p. 9
 inline constexpr double kGamma = 1.40;                  // [-]
+// ρ0 [kg/m³], from the sea-level constants through the equation of state
+// (Eq. 42): 1.2250 kg/m³, the standard's tabulated value.
+inline constexpr double kSeaLevelDensity =
+    kSeaLevelPressure * kMolecularWeight / (kGasConstant * kSeaLevelTemperature);
 // USSA Table 4 (p. 3): base heights and gradients of layers 0 and 1.
 inline constexpr double kTropopause = 11000.0;  // H1 [m']
 inline constexpr double kLapseRate = -6.5e-3;   // L_M,0 [K/m']; L_M,1 = 0

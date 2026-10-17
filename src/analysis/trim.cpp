@@ -419,4 +419,63 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
     return result;
 }
 
+RollTrimResult solve_trim_at_roll(const Executive& ex, const TrimCondition& c, double roll,
+                                  const TrimResult* start, std::vector<double>& x,
+                                  const TrimOptions& o, double roll_tol) {
+    check(c);
+    if (c.airspeed == 0.0 || vertical(c.flight_path_angle)) {
+        throw InitError(
+            "trim at roll: sideslip is undefined at zero airspeed or in vertical flight");
+    }
+    if (!std::isfinite(roll) || !(roll_tol > 0.0)) {
+        throw InitError("trim at roll: roll must be finite and the tolerance positive");
+    }
+    constexpr int kMaxIterations = 20;
+    const double max_step = 10.0 * std::numbers::pi / 180.0;
+    const double beta_limit = 80.0 * std::numbers::pi / 180.0;
+
+    RollTrimResult out;
+    TrimCondition ci = c;
+    // f(β) = φ(β) − roll, one trim per evaluation, each from the last.
+    const auto eval = [&](double beta, const TrimResult* from) {
+        ci.sideslip = beta;
+        out.trim = solve_trim(ex, ci, from, x, o);
+        out.sideslip = beta;
+        return out.trim.roll - roll;
+    };
+    double b0 = c.sideslip;
+    double f0 = eval(b0, start);
+    if (!out.trim.converged) {
+        return out;
+    }
+    if (std::abs(f0) <= roll_tol) {
+        out.converged = true;
+        return out;
+    }
+    // The second secant point 1° away, towards zero sideslip.
+    const double one_deg = std::numbers::pi / 180.0;
+    double b1 = b0 > 0.0 ? b0 - one_deg : b0 + one_deg;
+    TrimResult previous = out.trim;
+    double f1 = eval(b1, &previous);
+    while (out.trim.converged && std::abs(f1) > roll_tol && out.iterations < kMaxIterations) {
+        ++out.iterations;
+        const double slope = (f1 - f0) / (b1 - b0);
+        if (!std::isfinite(slope) || slope == 0.0) {
+            break;
+        }
+        const double b2 =
+            std::clamp(b1 + std::clamp(-f1 / slope, -max_step, max_step), -beta_limit, beta_limit);
+        if (b2 == b1) {
+            break;  // pinned at the β limit
+        }
+        b0 = b1;
+        f0 = f1;
+        b1 = b2;
+        previous = out.trim;
+        f1 = eval(b1, &previous);
+    }
+    out.converged = out.trim.converged && std::abs(f1) <= roll_tol;
+    return out;
+}
+
 }  // namespace eyas

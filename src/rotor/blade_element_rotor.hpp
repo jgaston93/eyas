@@ -77,6 +77,22 @@ struct FlapHinge {
     double delta3 = 0.0;  // δ₃ [rad]: pitch change −tan δ₃ · β (Johnson 2013 §6.18)
 };
 
+// Elastic blade twist, the steady part of GenHel's (CR-166309 pp. 5.1-24,
+// 5.1-25, 5.1-49; D-038): every element's pitch changes by θ_e m(r/R), with
+// the tip twist θ_e following K(V) F with a first-order lag τ, F the mean
+// over blades of each blade's aerodynamic force in blade span axes,
+// |(F_t, F_n)|. The lag (a numerical choice) removes the load–twist loop
+// (D-038); in steady flight θ_e is GenHel's fixed point K F.
+struct DynamicTwist {
+    Table1D gain{Axis({0.0, 1.0}), {0.0, 0.0}};  // K [rad/N] against CG true airspeed [m/s]
+    Table1D mode{Axis({0.0, 1.0}), {0.0, 0.0}};  // m [-] against r/R
+    double lag = 0.0;                            // τ [s], positive
+    // The gain table is read with its corners rounded over this fraction of
+    // the shorter neighbouring segment (rounded(); D-038): GenHel's schedule
+    // has corners at 100 and 150 kt, where trims sit. In (0, 0.5], checked.
+    double gain_corner_fraction = 0.1;
+};
+
 struct BladeElementRotorConfig {
     // Instance name for the coupling outputs (D-003); empty: produces none.
     std::string name;
@@ -99,6 +115,13 @@ struct BladeElementRotorConfig {
     std::shared_ptr<const PitchSchedule> controls;
     std::optional<FlapHinge> flap;  // none: M3 rotor, flapping held at zero
     InflowModel inflow = InflowModel::uniform;
+    std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
+    // Yawed-flow drag (Johnson 2013 §6.22–6.23; D-039): the section drag acts
+    // along the full local flow, spanwise component u_R included, with
+    // magnitude ½ρc W² c_d, W² = U² + u_R², so a radial drag force appears
+    // and the in-plane drag grows by W/U. Lift is unaffected (independence
+    // principle, linear range). Off: drag from U = √(u_T² + u_P²) only.
+    bool yawed_flow_drag = false;
 };
 
 inline constexpr int kMaxBlades = 64;
@@ -122,8 +145,11 @@ struct RotorLoads {
     // plane, Σ dF_up (r/R)(sin ψ, cos ψ) / (ρA(ΩR)²) (D-027).
     double c1s = 0.0;
     double c1c = 0.0;
-    double mu = 0.0;        // μ [-] in-plane hub speed through the air / ΩR
-    double mu_z = 0.0;      // μ_z [-] hub speed along z_h (down) / ΩR
+    double mu = 0.0;    // μ [-] in-plane hub speed through the air / ΩR
+    double mu_z = 0.0;  // μ_z [-] hub speed along z_h (down) / ΩR
+    // Mean over blades of each blade's aerodynamic force in blade span axes,
+    // |(Σ dF·e_t, Σ dF·n)| [N] (GenHel's F_P0; D-038).
+    double blade_force = 0.0;
     int passes = 0;         // blade-element passes used by the inflow solve
     bool converged = true;  // inflow solve met its tolerance (D-023)
     // Aerodynamic moment about each blade's flap hinge [N·m], positive flap
@@ -133,11 +159,12 @@ struct RotorLoads {
 
 // One spanwise element, midpoint rule.
 struct BladeElement {
-    double r = 0.0;      // [m] span position of the element center from the hub center
-    double dr = 0.0;     // [m] width
-    double chord = 0.0;  // [m]
-    double twist = 0.0;  // [rad] θ_tw(r)
-    double lift = 1.0;   // 1 inboard of B·R, 0 outboard (tip loss)
+    double r = 0.0;           // [m] span position of the element center from the hub center
+    double dr = 0.0;          // [m] width
+    double chord = 0.0;       // [m]
+    double twist = 0.0;       // [rad] θ_tw(r)
+    double lift = 1.0;        // 1 inboard of B·R, 0 outboard (tip loss)
+    double twist_mode = 0.0;  // m(r/R) of the elastic twist [-] (D-038); 0 without it
 };
 
 class BladeElementRotor : public DynamicComponent {
@@ -152,7 +179,8 @@ public:
     // States: with a flap hinge, x[2k] = β_k [rad], x[2k+1] = β̇_k [rad/s]
     // for blade k = 0…N_b−1, numbered as in blade_azimuth() (D-026); then,
     // with Pitt–Peters inflow, (λ0, λ1s, λ1c) [-] from inflow_offset()
-    // (D-027). All start at zero.
+    // (D-027); then, with elastic twist, the tip twist θ_e [rad] from
+    // twist_offset() (D-038). All start at zero.
     std::size_t num_states() const override;
     void initial_states(std::span<double> x) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
@@ -189,6 +217,8 @@ public:
 
     // Index of λ0 in the states (Pitt–Peters only): 2 N_b with a flap hinge, else 0.
     std::size_t inflow_offset() const noexcept;
+    // Index of θ_e in the states (elastic twist only, D-038): after the inflow states.
+    std::size_t twist_offset() const noexcept;
 
     // Rotor azimuth ψ [rad] in [0, 2π) at time t [s]: ψ = Ω t (D-024).
     double azimuth(double t) const noexcept;
@@ -215,12 +245,13 @@ private:
         Vec3 omega_h;  // [rad/s] body angular rate
         double psi;    // [rad] rotor azimuth
         SwashplatePitch pitch;
-        double rho;    // [kg/m³]
-        double a;      // [m/s] speed of sound
-        double mu;     // μ [-] in-plane hub speed through the air / ΩR
-        double mu_z;   // μ_z [-] hub speed along z_h (down) / ΩR
-        double cos_w;  // downwind azimuth ψ_w (D-027): cos ψ_w = v_x/|v_xy|,
-        double sin_w;  //   sin ψ_w = −s v_y/|v_xy|; (1, 0) at |v_xy| = 0
+        double rho;       // [kg/m³]
+        double a;         // [m/s] speed of sound
+        double mu;        // μ [-] in-plane hub speed through the air / ΩR
+        double mu_z;      // μ_z [-] hub speed along z_h (down) / ΩR
+        double cos_w;     // downwind azimuth ψ_w (D-027): cos ψ_w = v_x/|v_xy|,
+        double sin_w;     //   sin ψ_w = −s v_y/|v_xy|; (1, 0) at |v_xy| = 0
+        double airspeed;  // [m/s] CG true airspeed, for the elastic-twist gain (D-038)
     };
 
     Kinematics kinematics(const SimContext& ctx) const noexcept;
@@ -230,6 +261,8 @@ private:
                     std::span<const double> x) const noexcept;
     RotorLoads solve_uniform(const Kinematics& k, std::span<const double> x) const noexcept;
     void finish(RotorLoads& loads, const Kinematics& k) const noexcept;
+    // Elastic-twist gain K(V) [rad/N] at the kinematics' airspeed (D-038); 0 without it.
+    double twist_gain(const Kinematics& k) const noexcept;
 
     BladeElementRotorConfig config_;
     std::vector<BladeElement> elements_;
@@ -249,6 +282,7 @@ private:
     // Hunt-search hints, one per (blade, element). They change only the
     // search time, never the result, so derivatives() stays pure (spec §6).
     mutable std::vector<TableCursor<2>> cursors_;
+    mutable TableCursor<1> twist_gain_cursor_;
 };
 
 }  // namespace eyas

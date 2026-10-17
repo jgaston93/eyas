@@ -25,17 +25,14 @@ constexpr double kDeg = std::numbers::pi / 180.0;
 // ---- Config ------------------------------------------------------------------------
 
 // The config loads through the public API, with exactly the placeholders
-// D-034 and D-035 declare: the cyclic offsets (they depend on neutral
-// longitudinal cyclic, which GenHel's Fig. 6.3.1 leaves uncertain by 0.8 in)
-// and the strut top stops (D-032 item 6).
+// D-034 declares: the strut top stops (D-032 item 6). The cyclic offsets
+// were placeholders until M7c set neutral longitudinal cyclic (D-035 M7c
+// amendment).
 TEST(Uh60aAircraft, ConfigLoadsWithTheDeclaredPlaceholders) {
     const Model m = Model::from_file(test::uh60a_config_path());
     std::vector<std::string> p = m.placeholders();
     std::sort(p.begin(), p.end());
     std::vector<std::string> expect;
-    for (const char* r : {"theta1c", "theta1s"}) {
-        expect.push_back(std::string("components[0].controls.") + r + ".offset");
-    }
     for (const char* g : {"0", "1", "2"}) {
         expect.push_back(std::string("components[3].gears[") + g + "].strut.stop_damping");
         expect.push_back(std::string("components[3].gears[") + g + "].strut.stop_stiffness");
@@ -78,6 +75,19 @@ TEST(Uh60aAircraft, MassSplitKeepsGenHelsWeightAndCg) {
         ac.get<BladeElementRotor>("main_rotor").C_hb().transpose() * Vec3(0.0, 0.0, -1.0);
     EXPECT_NEAR(std::asin(up_shaft.x()) / kDeg, 3.0, 1e-12);
     EXPECT_NEAR(up_shaft.y(), 0.0, 1e-15);
+}
+
+// Fletcher (21st ERF 1995, Paper VII-4, Table 1, p. VII-4-9) lists the
+// theoretical flap parameters his identification started from: blade mass
+// moment ratio M_β/I_β = 0.0573 [1/ft] and pitch–flap coupling 0. The rotor
+// as loaded must have them (D-035 M7c amendment, V2). His theoretical Lock
+// number, 8.06, assumes a lift slope the paper doesn't give (5.72 /rad at
+// sea level); VALIDATION.md M7c reports Eyas's against it.
+TEST(Uh60aAircraft, FlapParametersAreFletchersTheoreticalOnes) {
+    const Uh60aHarness ac;
+    const auto& flap = *ac.get<BladeElementRotor>("main_rotor").config().flap;
+    EXPECT_NEAR(flap.first_moment / flap.inertia * units::kFoot, 0.0573, 5e-5);
+    EXPECT_EQ(flap.delta3, 0.0);
 }
 
 // The main wheels are mirrored about the centreline with the brakes on the

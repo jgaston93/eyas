@@ -91,6 +91,15 @@ void validate(const BladeElementRotorConfig& c) {
             fail("flap: delta3 must be within ±90°");
         }
     }
+    if (c.dynamic_twist &&
+        (!(c.dynamic_twist->lag > 0.0) || !std::isfinite(c.dynamic_twist->lag))) {
+        fail("dynamic_twist: lag must be positive and finite");
+    }
+    // rounded() is C¹ only while the bands of neighbouring corners don't overlap.
+    if (c.dynamic_twist && (!(c.dynamic_twist->gain_corner_fraction > 0.0) ||
+                            !(c.dynamic_twist->gain_corner_fraction <= 0.5))) {
+        fail("dynamic_twist: gain_corner_fraction must be in (0, 0.5]");
+    }
 }
 
 }  // namespace
@@ -128,6 +137,7 @@ BladeElementRotor::BladeElementRotor(BladeElementRotorConfig config)
         e.chord = c.chord(e.r / c.radius);
         e.twist = c.twist(e.r / c.radius);
         e.lift = j < static_cast<std::size_t>(n_lift) ? 1.0 : 0.0;
+        e.twist_mode = c.dynamic_twist ? c.dynamic_twist->mode(e.r / c.radius) : 0.0;
         if (!(e.chord > 0.0) || !std::isfinite(e.twist)) {
             throw InitError("blade_element_rotor: chord must be positive and twist finite at r = " +
                             std::to_string(e.r) + " m");
@@ -168,7 +178,16 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     // free stream relative to the hub, e_r(ψ_w) ∥ −v_xy.
     k.cos_w = v_xy > 0.0 ? k.v_hub_h.x() / v_xy : 1.0;
     k.sin_w = v_xy > 0.0 ? -s_ * k.v_hub_h.y() / v_xy : 0.0;
+    k.airspeed = v_air_b.norm();
     return k;
+}
+
+double BladeElementRotor::twist_gain(const Kinematics& k) const noexcept {
+    if (!config_.dynamic_twist) {
+        return 0.0;
+    }
+    const DynamicTwist& d = *config_.dynamic_twist;
+    return rounded(d.gain, k.airspeed, d.gain_corner_fraction, twist_gain_cursor_);
 }
 
 RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lambda,
@@ -180,6 +199,8 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
     const std::size_t n_el = elements_.size();
     const double e = hinge_offset();
     const double tan_d3 = c.flap ? std::tan(c.flap->delta3) : 0.0;
+    // Elastic twist at the tip θ_e [rad] (D-038); 0 without it or with x empty.
+    const double tip = c.dynamic_twist && !x.empty() ? x[twist_offset()] : 0.0;
 
     RotorLoads out;
     for (int blade = 0; blade < c.num_blades; ++blade) {
@@ -214,6 +235,11 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
         const double lambda_h = lambda.l1s * sp + lambda.l1c * cp;
         const double a_P = -v0.dot(n) + tip_speed_ * cb * (lambda.l0 + e / c.radius * lambda_h);
         const double b_P = -v1.dot(n) + omega * cb * cb * lambda_h;
+        // The air's velocity relative to the blade along the span, outward
+        // positive (Johnson 2013 u_R; D-039): −v·e_s plus the induced
+        // velocity's component, v_i e_z·e_s = −sin β v_i. Affine in ρ too.
+        const double a_S = -v0.dot(e_s) - sb * tip_speed_ * (lambda.l0 + e / c.radius * lambda_h);
+        const double b_S = -v1.dot(e_s) - sb * omega * cb * lambda_h;
         // Padfield 3rd ed. Eq. 3.59, with pitch–flap coupling −tan δ₃ β
         // (Johnson 2013 §6.18); twist is added per element (spec §6.3).
         const double theta =
@@ -223,6 +249,8 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
         double f_n = 0.0;   // Σ force along n [N]
         double rf_t = 0.0;  // Σ ρ × force along e_t [N·m]
         double rf_n = 0.0;  // Σ ρ × force along n [N·m]
+        double f_s = 0.0;   // Σ radial drag along e_s [N] (D-039)
+        double rf_s = 0.0;  // Σ ρ × radial drag [N·m]
         TableCursor<2>* cursor = cursors_.data() + static_cast<std::size_t>(blade) * n_el;
         for (std::size_t j = 0; j < n_el; ++j) {
             const BladeElement& el = elements_[j];
@@ -232,7 +260,8 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
             // Leishman 2nd ed. Eqs. 3.1–3.3; φ in all quadrants.
             const double u = std::sqrt(u_t * u_t + u_p * u_p);
             const double phi = std::atan2(u_p, u_t);
-            double alpha = theta + el.twist - phi;
+            // Elastic twist added to the preset twist (CR-166309 p. 5.1-25; D-038).
+            double alpha = theta + el.twist + tip * el.twist_mode - phi;
             if (alpha >= std::numbers::pi) {
                 alpha -= kTwoPi;
             } else if (alpha < -std::numbers::pi) {
@@ -245,26 +274,42 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
             // and lift direction l = (−U_P e_t − U_T n)/U,
             //   dF = ½ρU²c dr (C_l l + C_d d).
             const double q = 0.5 * k.rho * el.chord * el.dr * u;
-            const double dft = q * (-cl * u_p - coef.cd * u_t);
-            const double dfn = q * (-cl * u_t + coef.cd * u_p);
+            // Yawed-flow drag (Johnson 2013 Eqs. 6.397–6.399; D-039): the drag
+            // force is ½ρc dr c_d W along the full relative wind (−u_T e_t +
+            // u_P n + u_R e_s), W² = U² + u_R²; without it, W = U and u_R = 0.
+            double q_d = q;
+            if (c.yawed_flow_drag) {
+                const double u_r = a_S + b_S * rho_j;
+                q_d = 0.5 * k.rho * el.chord * el.dr * std::sqrt(u * u + u_r * u_r);
+                const double dfs = q_d * coef.cd * u_r;
+                f_s += dfs;
+                rf_s += rho_j * dfs;
+            }
+            const double dft = -q * cl * u_p - q_d * coef.cd * u_t;
+            const double dfn = -q * cl * u_t + q_d * coef.cd * u_p;
             f_t += dft;
             f_n += dfn;
             rf_t += rho_j * dft;
             rf_n += rho_j * dfn;
         }
-        const Vec3 F = f_t * e_t + f_n * n;
+        const Vec3 F = f_t * e_t + f_n * n + f_s * e_s;
         out.F_h += F;
-        // About the hub center: Σ (e e_r + ρ e_s) × dF.
+        // GenHel's F_PDYMR, the blade's force in blade span axes (p. 5.1-24).
+        out.blade_force += std::hypot(f_t, f_n);
+        // About the hub center: Σ (e e_r + ρ e_s) × dF (radial drag along e_s
+        // has no moment about the hinge line, only through e e_r).
         out.M_h += (e * e_r).cross(F) + e_s.cross(rf_t * e_t + rf_n * n);
         // About the hinge, positive flap up: −Σ ρ n·dF (D-026).
         out.flap_moment[static_cast<std::size_t>(blade)] = -rf_n;
         // Σ dF_up r for the Pitt–Peters loads (D-027): dF_up = −cos β dF·n
-        // (e_t is in the hub plane), r = e + ρ cos β.
-        const double fr_up = -cb * (e * f_n + cb * rf_n);
+        // + sin β dF·e_s (e_t is in the hub plane; e_s·(−e_z) = sin β),
+        // r = e + ρ cos β.
+        const double fr_up = -cb * (e * f_n + cb * rf_n) + sb * (e * f_s + cb * rf_s);
         out.c1s += fr_up * sp;
         out.c1c += fr_up * cp;
     }
 
+    out.blade_force /= static_cast<double>(c.num_blades);
     const double q_disk = k.rho * area_ * tip_speed_ * tip_speed_;  // ρA(ΩR)² [N]
     out.thrust = -out.F_h.z();
     out.torque = s_ * out.M_h.z();  // rotation axis is −s e_z
@@ -456,8 +501,12 @@ std::size_t BladeElementRotor::inflow_offset() const noexcept {
     return config_.flap ? 2 * static_cast<std::size_t>(config_.num_blades) : 0;
 }
 
-std::size_t BladeElementRotor::num_states() const {
+std::size_t BladeElementRotor::twist_offset() const noexcept {
     return inflow_offset() + (config_.inflow == InflowModel::pitt_peters ? 3 : 0);
+}
+
+std::size_t BladeElementRotor::num_states() const {
+    return twist_offset() + (config_.dynamic_twist ? 1 : 0);
 }
 
 void BladeElementRotor::initial_states(std::span<double> x) const {
@@ -511,6 +560,13 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
         out.xdot0[i] = rates.x();
         out.xdot0[i + 1] = rates.y();
         out.xdot0[i + 2] = rates.z();
+    }
+    if (config_.dynamic_twist) {
+        // The tip twist lags GenHel's θ_DYTIP = K_FP0 F_P0 (CR-166309
+        // p. 5.1-24; D-038); independent of the body acceleration, so its G
+        // row stays zero.
+        const std::size_t i = twist_offset();
+        out.xdot0[i] = (twist_gain(kin) * loads.blade_force - x[i]) / config_.dynamic_twist->lag;
     }
     if (!config_.flap) {
         return;
@@ -692,11 +748,29 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
 
     const Config blade = node.child("blade");
     blade.allow_keys({"root_cutout", "tip_loss", "chord", "chord_table", "twist", "twist_table",
-                      "airfoil", "elements", "spacing", "flap"});
+                      "airfoil", "elements", "spacing", "flap", "dynamic_twist",
+                      "yawed_flow_drag"});
     c.root_cutout = blade.quantity("root_cutout", Dimension::length);
     c.tip_loss = blade.number("tip_loss");
     c.chord = read_spanwise(blade, "chord", Dimension::length, false);
     c.twist = read_spanwise(blade, "twist", Dimension::angle, true);
+    c.yawed_flow_drag = blade.contains("yawed_flow_drag") && blade.boolean("yawed_flow_drag");
+    if (blade.contains("dynamic_twist")) {
+        // Elastic twist (D-038): gain_table (columns airspeed and gain),
+        // mode or mode_table (against r/R), lag.
+        const Config dt = blade.child("dynamic_twist");
+        dt.allow_keys({"gain_table", "mode", "mode_table", "lag"});
+        DynamicTwist d;
+        d.gain = dt.in_context("gain_table", [&] {
+            const CsvTable csv = dt.csv_table("gain_table");
+            csv.require_dimension("airspeed", Dimension::speed);
+            csv.require_dimension("gain", Dimension::angle_per_force);
+            return make_table1d(csv, "airspeed", "gain");
+        });
+        d.mode = read_spanwise(dt, "mode", Dimension::dimensionless, false);
+        d.lag = dt.quantity("lag", Dimension::time);
+        c.dynamic_twist = d;
+    }
     c.airfoil = blade.in_context("airfoil", [&] {
         return std::make_shared<const Airfoil>(Airfoil::from_csv(blade.csv_table("airfoil")));
     });

@@ -13,7 +13,8 @@
 # - DSP: swashplate phase angle (nomenclature, PDF p. 64). Blade pitch (p. 5.1-24, PDF p. 44):
 #   THOAMR = THETA_CUFF - A1S cos(psi + DSP) - B1S sin(psi + DSP) - 57.3 beta tan(delta_3)
 #            + 57.3 delta K_a1 + (57.3 delta)^2 K_a2 + dynamic twist.
-# - KFP0: dynamic (elastic) twist gain, speed scheduled; not modelled (DECISIONS.md D-034).
+# - KFP0: dynamic (elastic) twist gain, speed scheduled; modelled since M7c (DECISIONS.md D-038,
+#   dynamic_twist_5_1.txt).
 # - TFILMR: first-order filter on the rotor forces and moments (p. 5.1-36); not used (D-034).
 #
 # name     value      unit       note
@@ -55,7 +56,7 @@ K_FPC      0          -
 K_FPS      0          -
 NBS        4          -
 NSS        5          -          GenHel's blade segments (Eyas chooses its own element count)
-# KFP0 = -0.0003 - 0.0000044*(V_KT - 100), limited to -0.00052 <= KFP0 <= -0.0003 (not used)
+# KFP0 = -0.0003 - 0.0000044*(V_KT - 100), limited to -0.00052 <= KFP0 <= -0.0003 (dynamic_twist_5_1.txt)
 WEIGHT     16638.0    lbm        total helicopter weight, blades included (p. 5.1-39)
 FSCG       355.9      in
 WLCG       248.2      in
