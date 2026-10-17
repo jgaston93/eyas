@@ -14,7 +14,7 @@ whole turns that best align it over that band.
 
     cmake --build --preset release
     ./build/release/tests/eyas_m7c_fletcher build/m7c_fletcher
-    .venv/bin/python tools/plot_m7c_fletcher.py build/m7c_fletcher docs/validation/m7c
+    .venv/bin/python tools/plot_m7c_fletcher.py build/m7c_fletcher docs/validation/m7
 """
 
 import csv

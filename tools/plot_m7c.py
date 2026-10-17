@@ -2,13 +2,13 @@
 
 Reads the CSVs written by eyas_m7c_cases and Ballin's digitized App. B plots
 (data/uh60a/validation/ballin_b*.csv, human-reviewed, DATA_GAPS.md), and writes
-one figure per Ballin figure (Eyas over GenHel and flight test) and m7c_differences.csv:
-Eyas minus Sikorsky GenHel at the curve samples, and Eyas minus flight test at the test
-points, per quantity (mean, RMS, largest).
+one figure per Ballin figure (Eyas over GenHel and flight test; for B2-B4 the change from
+level flight) and m7c_differences.csv: Eyas minus Sikorsky GenHel at the curve samples, and
+Eyas minus flight test at the test points, per quantity (mean, RMS, largest).
 
     cmake --build --preset release
     ./build/release/tests/eyas_m7c_cases build/m7c_cases
-    .venv/bin/python tools/plot_m7c.py build/m7c_cases docs/validation/m7c
+    .venv/bin/python tools/plot_m7c.py build/m7c_cases docs/validation/m7
 """
 
 import csv
@@ -108,52 +108,69 @@ def level(data, outdir, table):
         ax.set_xlabel("true airspeed [kt]")
     axs[0, 0].legend(fontsize=7)
     axs[1, 2].legend(fontsize=7)
-    fig.suptitle("Level-flight trim against Ballin Fig. B1 (16000 lb, 5250 ft; "
-                 "Ballin readings UNVERIFIED)", fontsize=10)
+    fig.suptitle("Level-flight trim against Ballin Fig. B1 (16 000 lbf, 5250 ft; Eyas under "
+                 "GenHel's lateral constraint, zero roll from 50 kt)", fontsize=10)
     fig.tight_layout()
     fig.savefig(outdir / "m7c_level.png", dpi=110)
     plt.close(fig)
 
 
+def from_level(xy):
+    """A climb series as the change from its own level-flight value (interpolated at 0)."""
+    if not len(xy):
+        return xy
+    return np.column_stack([xy[:, 0], xy[:, 1] - np.interp(0.0, xy[:, 0], xy[:, 1])])
+
+
 def climbs(data, outdir, table):
+    """Change from level flight against climb rate (B2-B4 give no weight, CG or density
+    altitude, so only the change is compared). Eyas at B1's conditions, with the stabilator held
+    at its level-flight incidence as Sikorsky's GenHel ran (Ballin p. 10) and, dotted,
+    scheduled; the differences are for the held stabilator."""
     eyas = load_eyas(data / "m7c_climb.csv")
     qs = ["collective", "main_rotor_power", "pedal", "pitch_attitude", "lateral_cyclic",
           "longitudinal_cyclic"]
     for fig_id, kt in (("b2", 60.0), ("b3", 100.0), ("b4", 137.5)):
-        rows = sorted((r for r in eyas if r["knots"] == kt), key=lambda r: r["rate_of_climb_fpm"])
-        roc = np.array([r["rate_of_climb_fpm"] / 1000.0 for r in rows])
         b = load_ballin(fig_id)
         fig, axs = plt.subplots(3, 2, figsize=(10.0, 10.0), sharex=True)
         for ax, q in zip(axs.flat, qs):
             col, label = QTY[q]
-            y = np.array([r[col] for r in rows])
             scale = 0.01 if q == "main_rotor_power" else 1.0  # Ballin plots hp/100
             for name, style, lab in (("sikorsky_genhel", "k-", "GenHel (Sikorsky)"),
                                      ("ames_genhel", "k--", "GenHel (Ames)")):
                 s = series(b, q, name)
                 if len(s):
-                    ax.plot(s[:, 0], s[:, 1] / scale, style, lw=1.0, label=lab)
+                    s = from_level(np.column_stack([s[:, 0], s[:, 1] / scale]))
+                    ax.plot(s[:, 0], s[:, 1], style, lw=1.0, label=lab)
             t = series(b, q, "aefa_test")
             if len(t):
-                ax.plot(t[:, 0], t[:, 1] / scale, "o", mfc="none", mec="k", ms=6,
+                t = from_level(np.column_stack([t[:, 0], t[:, 1] / scale]))
+                ax.plot(t[:, 0], t[:, 1], "o", mfc="none", mec="k", ms=6,
                         label="flight test")
-            ax.plot(roc, y, "o-", color="tab:red", ms=3, lw=1.5, label="Eyas")
-            ax.set_ylabel(label, fontsize=8)
+            for constraint, style, lab in (("fixed_stabilator", "o-", "Eyas, stabilator held"),
+                                           ("genhel", ":", "Eyas, stabilator scheduled")):
+                rows = sorted((r for r in eyas if r["knots"] == kt
+                               and r["constraint"] == constraint),
+                              key=lambda r: r["rate_of_climb_fpm"])
+                e = from_level(np.array([[r["rate_of_climb_fpm"] / 1000.0, r[col]]
+                                         for r in rows]))
+                ax.plot(e[:, 0], e[:, 1], style, color="tab:red", ms=3,
+                        lw=1.5 if constraint == "fixed_stabilator" else 1.0, label=lab)
+                if constraint == "fixed_stabilator":
+                    rng = (e[:, 0].min(), e[:, 0].max())
+                    diffs(e[:, 0], e[:, 1], from_level(series(b, q, "sikorsky_genhel") *
+                                                       [1.0, 1.0 / scale]),
+                          f"GenHel {kt:g} kt", q, table, rng)
+                    diffs(e[:, 0], e[:, 1], t, f"flight test {kt:g} kt", q, table, rng)
+            ax.set_ylabel(f"change in {label}", fontsize=8)
             ax.grid(alpha=0.3)
             if q == "longitudinal_cyclic":
                 ax.invert_yaxis()
-            g = series(b, q, "sikorsky_genhel")
-            if len(g):
-                g = np.column_stack([g[:, 0], g[:, 1] / scale])
-            diffs(roc, y, g, f"GenHel {kt:g} kt", q, table, (roc.min(), roc.max()))
-            if len(t):
-                t = np.column_stack([t[:, 0], t[:, 1] / scale])
-            diffs(roc, y, t, f"flight test {kt:g} kt", q, table, (roc.min(), roc.max()))
         for ax in axs[-1]:
             ax.set_xlabel("rate of climb [1000 ft/min]")
         axs[0, 0].legend(fontsize=7)
-        fig.suptitle(f"Climb and descent trim at {kt:g} kt against Ballin Fig. "
-                     f"{fig_id.upper()} (readings UNVERIFIED)", fontsize=10)
+        fig.suptitle(f"Change from level flight at {kt:g} kt against Ballin Fig. "
+                     f"{fig_id.upper()}", fontsize=10)
         fig.tight_layout()
         fig.savefig(outdir / f"m7c_climb_{kt:g}kt.png", dpi=110)
         plt.close(fig)
