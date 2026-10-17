@@ -106,7 +106,8 @@ TEST(AirData, NegativeImpactPressureGivesZero) {
 // V is rounded to 0.05 kt, and dV_c/dV ≤ 1, so V_c must agree to 0.05 kt.
 // One entry is left out (NaN): V_c = 100 kt at 20 000 ft is printed 137.2,
 // above V_c/√σ = 137.0, which no subsonic V can be since V_c > V_e there; the
-// equations give 136.5. A misprint (DATA_GAPS.md, M8a).
+// equations give 136.5. A misprint, confirmed printed so by human review
+// (DATA_GAPS.md, M8a).
 TEST(AirData, MatchesGraceyTableA13) {
     const std::array<double, 7> H_ft = {0.0, 5000.0, 10000.0, 15000.0, 20000.0, 30000.0, 40000.0};
     const std::array<double, 3> vc_kt = {100.0, 200.0, 300.0};

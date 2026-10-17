@@ -947,7 +947,7 @@ Tests: `tests/unit/test_realtime.cpp`, `test_outputs.cpp`, `test_air_data.cpp`; 
 | Determinism; no allocation (spec §7) | ✅ | The two above, plus `RealTime.ZeroAllocationInFlight`: 120 frames of `advance()` and `outputs()` with the Tier 2–4 evaluation in flight allocate nothing. On the ground: `Uh60aAircraft.RealTimeRules`, which now includes the outputs. |
 | 30-min run free of drift and NaNs (spec; D-042 (b)–(d)) | ✅ | See the long runs below. (a), free flight with the AFCS on, comes in M8c. |
 | Timing budget (spec §7, D-005, D-042) | ✅ here; RHEL target in M8e | See timing below: worst `advance()` 0.65 ms idle against the 8.33 ms budget (8 %). Under full CPU load at equal priority, up to 7.8 ms (93 %) from scheduling. |
-| Output Tiers 2–4 (spec §6.10, D-043) | ✅ | `Outputs.*`: hand computation of every field at three trims and on the ground; Gracey's Table A13 for the airspeed relation (`AirData.MatchesGraceyTableA13`, 20 entries to 0.05 kt; one printed entry is a misprint, DATA_GAPS.md). |
+| Output Tiers 2–4 (spec §6.10, D-043) | ✅ | `Outputs.*`: hand computation of every field at three trims and on the ground; Gracey's Table A13 for the airspeed relation (`AirData.MatchesGraceyTableA13`, 20 entries to 0.05 kt; one printed entry is a misprint, confirmed by review, DATA_GAPS.md). |
 | Reference adapter and test driver in `examples/` (spec) | ✅ | `ExampleDrive.Doublet10s`: trims at 60 kt, flies the 10-s doublet at 60 Hz, 601 rows, all finite. `ExampleAdapter.Flies5s`: a toy host interface in feet, knots and degrees, with an `EyasAdapter` behind it; the host code names the flight model in one line. |
 | Earlier results unchanged | ✅ | The outputs evaluation is pure: `eyas_m6d_cases`, `eyas_m7_cases` and `eyas_m7c_cases` write byte-identical files on `main` and on this branch (Release, GCC 13.3), except M6d's timing line (below). |
 | Swapping adapters needs no host change (spec) | M8e | The host team's acceptance; the example shows the pattern. |
@@ -990,6 +990,6 @@ Tests: `tests/unit/test_realtime.cpp`, `test_outputs.cpp`, `test_air_data.cpp`; 
 
 **Air data.** Gracey, NASA RP-1046 (1980), Ch. III (read from page images: Eqs. 3.14, 3.16, 3.20 on book pp. 15–16; "altimeters are calibrated in geopotential feet", p. 12; Table A13, p. 246):
 - The calibrated airspeed inverts Eq. 3.16 exactly.
-- Run backwards from Table A13's true airspeeds, it gives the table's calibrated airspeed within its rounding (0.05 kt) at every entry used from sea level to 40 000 ft, both ISA layers. The exception is V_c = 100 kt at 20 000 ft, printed 137.2 kt, which is above V_c/√σ = 137.0 kt and so can't be right; the equations give 136.5 kt (DATA_GAPS.md, for review).
+- Run backwards from Table A13's true airspeeds, it gives the table's calibrated airspeed within its rounding (0.05 kt) at every entry used from sea level to 40 000 ft, both ISA layers. The exception is V_c = 100 kt at 20 000 ft, printed 137.2 kt, which is above V_c/√σ = 137.0 kt and so can't be right; the equations give 136.5 kt. A person confirmed the page prints 137.2, so it is a misprint in the source (DATA_GAPS.md).
 - On the UH-60A at 1000 m, ISA + 15 K and 100 kt: V_c exceeds V_e by under 1 %; the pressure altitude is below the geopotential altitude, as on any hot day.
 - The adapter example at 60 kt TAS and 1000 ft shows 59.1 kt IAS and 1000 ft pressure altitude.
