@@ -325,6 +325,10 @@ int run(const Options& opt) {
         const bool input_stale = live_input && watchdog.stale(polled);
         if (input_stale != reported_stale) {
             if (!input_stale) {
+                // The device may come back reading something else (a
+                // restarted FlightGear reads an untouched axis as 0): hold
+                // the collective until the lever is brought to it again.
+                map.rearm_pickup();
                 std::cerr << "input back: flying\n";
             } else if (watchdog.seen()) {
                 std::cerr << "input lost: paused\n";
@@ -386,7 +390,11 @@ int run(const Options& opt) {
             hud.state = &st.outputs();
             hud.applied = applied;
             hud.trim_point = station::apply(map.start(), map.trim_points());
-            hud.collective_held = map.collective_held();
+            // Only sources that drive the map have a lever to sync.
+            const bool map_driven =
+                opt.input != InputSource::script && opt.input != InputSource::none;
+            hud.collective_held = map_driven && map.collective_held();
+            hud.collective_lever_known = map.collective_lever_known();
             hud.collective_lever = map.collective_lever();
             hud.ground_height = st.ground_height();
             hud.source = station::source_name(opt.input);

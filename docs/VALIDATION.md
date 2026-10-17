@@ -1003,7 +1003,7 @@ M8b is the second M8 stage (D-042): a pilot station in `examples/pilot_station/`
 - It records each flight as an `eyas_drive` control file.
 - It adds one library call, `Model::from_file(path, GeodeticOrigin)`, so the host places the aircraft (D-044).
 
-Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (28 cases), and the smoke tests `ExampleStation.RecordingReplaysExactly` and `ExampleStation.ScriptRunsFromTheStartPoint`.
+Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (31 cases), and the smoke tests `ExampleStation.RecordingReplaysExactly` and `ExampleStation.ScriptRunsFromTheStartPoint`.
 
 | Check | Status | Evidence |
 |---|---|---|
@@ -1058,7 +1058,7 @@ All are fixed with tests (D-044 verification). Two points weren't acted on as st
 **First flights with a HOTAS (2026-10-17; developer, not a pilot evaluation).** A Logitech/Saitek X-56 (stick and throttle) on Windows, through FlightGear (`maps/x56_fg.map`), in five flights from the pad, the longest about 4 min, up to 145 kt.
 - *Before the fixes:*
   - FlightGear forwarded only one device, so several-device support and the `device:index` map syntax were added.
-  - The first lift-off jumped the collective from 0.2 to 0.5. The untouched throttle reads 0 (mid travel) until it moves, because FlightGear doesn't report an axis before then. This led to lever pickup (COLL SYNC).
+  - The first lift-off jumped the collective from 0.2 to 0.5. The untouched throttle reads 0 (mid travel) until it moves, because FlightGear doesn't report an axis before then. This led to lever pickup (COLL SYNC). A code review then found, and a reproduction confirmed, that its first version still dropped the 60 kt start's collective to 0 on FlightGear's first real reading, and didn't re-arm after an input loss; both are fixed (D-044).
   - The pad's half right pedal, from the parked case, spun the aircraft at lift-off. The pad now starts at the hover trim's pedal and cyclic.
 - *The station:*
   - In the last flight the worst `advance()` was 0.68 ms.

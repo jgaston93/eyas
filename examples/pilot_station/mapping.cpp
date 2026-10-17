@@ -2,6 +2,7 @@
 
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <fstream>
 #include <ostream>
 #include <sstream>
@@ -227,6 +228,9 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
             m.recentre = to_double(value, origin, n);
         } else if (key == "pickup") {
             m.pickup = to_double(value, origin, n);
+            if (std::isnan(m.pickup) || m.pickup < 0.0 || m.pickup > 0.5) {
+                fail(origin, n, "pickup must be in [0, 0.5] (fraction of the lever's travel)");
+            }
         } else {
             const auto dot = key.find('.');
             AxisMap* a = dot == std::string_view::npos ? nullptr : control(m, key.substr(0, dot));

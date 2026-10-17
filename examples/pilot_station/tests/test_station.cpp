@@ -105,8 +105,16 @@ TEST(StationControls, ControlsStayInTheirRanges) {
     eyas::Controls s = start_controls();
     s.lat_cyclic = 0.8;
     ControlsMap m(cfg, s);
-    (void)m.update(axes(0.0, 0.0, -0.2), 0.1);  // collective lever picked up at its start
     const double ulp = 2.0 * std::numeric_limits<double>::epsilon();
+    // Held (pickup pending): the collective is the start, in range whatever
+    // the lever says (code review: the held path was untested).
+    for (const double v : {-1.0, 1.0}) {
+        const eyas::Controls c = m.update(axes(0.0, 0.0, v), 0.1);
+        EXPECT_TRUE(m.collective_held());
+        EXPECT_EQ(c.collective, 0.4);
+    }
+    (void)m.update(axes(0.0, 0.0, -0.2), 0.1);  // collective lever picked up at its start
+    ASSERT_FALSE(m.collective_held());
     for (const double v : {-1.0, 1.0}) {
         const eyas::Controls c = m.update(axes(v, -v, v), 0.1);
         EXPECT_NEAR(c.lat_cyclic, v, ulp);
@@ -129,22 +137,32 @@ TEST(StationControls, AbsoluteCollectiveIsALever) {
 }
 
 // Pickup (found flying the X-56): after a start, a lever collective holds
-// the start value whatever the lever says, until the lever is brought to it
-// or passes it, so an untouched or misplaced lever never jumps the
-// collective. A start re-arms it.
+// the start value whatever the lever says, until the lever is brought within
+// the pickup band of it, or passes it in a small step (at most kPickupStep).
 TEST(StationControls, LeverCollectiveWaitsForPickup) {
     ControlsMapConfig cfg;
     cfg.collective = absolute(0);
     ControlsMap m(cfg, start_controls());  // start collective 0.4
     EXPECT_TRUE(m.collective_held());
+    EXPECT_FALSE(m.collective_lever_known());             // no sample yet: the HUD shows no tick
     EXPECT_EQ(m.update(axes(0.0), 0.1).collective, 0.4);  // lever at 0.5: held
+    EXPECT_TRUE(m.collective_lever_known());
     EXPECT_DOUBLE_EQ(m.collective_lever(), 0.5);
     EXPECT_EQ(m.update(axes(0.1), 0.1).collective, 0.4);  // further away: held
+    // A big step across the held value (0.55 -> 0.3) is a jump, not a pass.
+    EXPECT_EQ(m.update(axes(-0.4), 0.1).collective, 0.4);
     EXPECT_TRUE(m.collective_held());
-    // Lowered past 0.4 in one sample (0.55 -> 0.3): picked up, follows.
-    EXPECT_DOUBLE_EQ(m.update(axes(-0.4), 0.1).collective, 0.3);
+    // Small steps up towards it (0.3 -> 0.35 -> 0.39): picked up once within
+    // the band, and follows from there.
+    EXPECT_EQ(m.update(axes(-0.3), 0.1).collective, 0.4);
+    EXPECT_DOUBLE_EQ(m.update(axes(-0.22), 0.1).collective, 0.39);  // within 2 %: taken
     EXPECT_FALSE(m.collective_held());
-    EXPECT_DOUBLE_EQ(m.update(axes(0.6), 0.1).collective, 0.8);
+    EXPECT_DOUBLE_EQ(m.update(axes(-0.14), 0.1).collective, 0.43);
+    // A small step across without landing in the band also takes over.
+    m.restart(start_controls());
+    (void)m.update(axes(-0.24), 0.1);                               // 0.38
+    EXPECT_DOUBLE_EQ(m.update(axes(-0.16), 0.1).collective, 0.42);  // passed in 0.04
+    EXPECT_FALSE(m.collective_held());
     // Within the pickup band (2 % of travel) also takes over.
     m.restart(start_controls());
     EXPECT_DOUBLE_EQ(m.update(axes(-0.17), 0.1).collective, 0.415);  // 1.5 % away: taken
@@ -661,6 +679,56 @@ TEST(StationRecorder, BrakeChangeIsMarked) {
     const std::string text = read_file(path);
     EXPECT_EQ(count(text, "# Replay: eyas_drive "), 1);
     EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s"), 1);
+}
+
+// The exact FlightGear sequence (code review): the untouched throttle reads
+// 0 (mid travel), then its first real sample is idle. From the 60 kt start
+// (collective 0.403) that step passes the held value, but as a jump it must
+// not pick up: the collective used to drop to 0 in one frame. Same from the
+// pad. The X-56 map's collective: device 2, axis 0, inverted.
+TEST(StationControls, FlightGearUntouchedThenIdleDoesNotDropTheCollective) {
+    const ControlsMapConfig cfg = read_map_file(std::string(EYAS_STATION_MAPS_DIR) + "/x56_fg.map",
+                                                default_map(InputSource::flightgear));
+    RawInput untouched;
+    RawInput idle;
+    idle.axes[static_cast<std::size_t>(axis_index(2, 0))] = 1.0;  // reads +1 at idle
+    for (const double start : {0.403, 0.2, 0.543}) {
+        eyas::Controls s;
+        s.collective = start;
+        ControlsMap m(cfg, s);
+        EXPECT_EQ(m.update(untouched, 1.0 / 60.0).collective, start);
+        EXPECT_EQ(m.update(idle, 1.0 / 60.0).collective, start) << start;
+        EXPECT_TRUE(m.collective_held());
+    }
+}
+
+// After input was lost, the device may come back reading something else (a
+// restarted FlightGear reads an untouched axis as 0): rearm_pickup() holds the
+// collective where it is until the lever is brought to it (code review).
+TEST(StationControls, RearmedPickupHoldsAfterInputLoss) {
+    ControlsMapConfig cfg;
+    cfg.collective = absolute(0);
+    ControlsMap m(cfg, start_controls());
+    (void)m.update(axes(0.086), 0.1);  // 0.543 ...
+    (void)m.update(axes(-0.2), 0.1);   // ... a jump; then 0.4 = held: picked up
+    ASSERT_FALSE(m.collective_held());
+    EXPECT_DOUBLE_EQ(m.update(axes(0.086), 0.1).collective, 0.543);
+    m.rearm_pickup();  // input lost, now back
+    EXPECT_FALSE(m.collective_lever_known());
+    EXPECT_DOUBLE_EQ(m.update(axes(0.0), 0.1).collective, 0.543);  // untouched: held
+    EXPECT_TRUE(m.collective_held());
+    EXPECT_DOUBLE_EQ(m.update(axes(0.08), 0.1).collective, 0.54);  // within 2 %: taken
+    EXPECT_FALSE(m.collective_held());
+}
+
+TEST(StationMapping, PickupMustBeAFraction) {
+    for (const char* v : {"-0.02", "nan", "0.6", "x"}) {
+        EXPECT_THROW((void)parse_map(std::string("pickup = ") + v + "\n", {}, "p.map"),
+                     std::runtime_error)
+            << v;
+    }
+    EXPECT_EQ(parse_map("pickup = 0\n", {}, "p.map").pickup, 0.0);
+    EXPECT_EQ(parse_map("pickup = 0.05\n", {}, "p.map").pickup, 0.05);
 }
 
 // The input watchdog: stale until the first sample, fresh within the

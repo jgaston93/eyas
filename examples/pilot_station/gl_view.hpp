@@ -32,6 +32,7 @@ struct HudInfo {
     eyas::Controls trim_point;  // start + the force-trim point
     // A lever collective waiting for pickup, and where the lever is.
     bool collective_held = false;
+    bool collective_lever_known = false;  // a sample has arrived since the start
     double collective_lever = 0.0;
     double ground_height = 0.0;  // [m] MSL
     std::string_view source;

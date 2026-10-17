@@ -93,7 +93,8 @@ if(EYAS_BUILD_TESTS)
     target_link_libraries(eyas_station_tests PRIVATE eyas_station_core GTest::gtest_main)
     target_compile_definitions(eyas_station_tests PRIVATE
         EYAS_UH60A_CONFIG="${EYAS_UH60A_CONFIG}"
-        EYAS_STATION_FG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/flightgear")
+        EYAS_STATION_FG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/flightgear"
+        EYAS_STATION_MAPS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/maps")
     eyas_target_defaults(eyas_station_tests)
     include(GoogleTest)
     gtest_discover_tests(eyas_station_tests DISCOVERY_MODE PRE_TEST)

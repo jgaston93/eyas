@@ -31,9 +31,7 @@ void ControlsMap::restart(const eyas::Controls& start) noexcept {
     trim_held_ = false;
     brakes_ = start.brake_left > 0.5 || start.brake_right > 0.5;
     // A lever holds the start until it is brought to it (pickup).
-    lever_held_ = true;
-    lever_prev_ = std::numeric_limits<double>::quiet_NaN();
-    lever_target_ = 0.0;
+    rearm_pickup();
 }
 
 namespace {
@@ -52,8 +50,10 @@ double axis_value(const RawInput& in, const AxisMap& m) noexcept {
 
 }  // namespace
 
+// Not const: it changes this map's state, through `ch`'s pointers.
+// NOLINTNEXTLINE(readability-make-member-function-const)
 void ControlsMap::update_channel(const AxisMap& m, const Channel& ch, const RawInput& in, double dt,
-                                 bool released) const noexcept {
+                                 bool released) noexcept {
     if (m.axis < 0) {
         return;
     }
@@ -66,41 +66,58 @@ void ControlsMap::update_channel(const AxisMap& m, const Channel& ch, const RawI
     if (m.mode == AxisMode::rate) {
         d += m.gain * s * dt;
     } else {
+        // About the trim point, with force trim.
         const double half = 0.5 * (ch.hi - ch.lo);
-        if (ch.trimmable) {
-            if (released) {
-                // Force trim: the control stays where the pilot left it.
-                *ch.trim = std::clamp(*ch.delta, dlo, dhi);
-                *ch.latched = true;
-            }
-            if (*ch.latched && std::abs(s) <= config_.recentre) {
-                *ch.latched = false;
-            }
-            d = *ch.latched ? *ch.trim : *ch.trim + m.gain * half * s;
-        } else {
-            // A lever: its middle is the middle of the control's range.
-            const double target =
-                std::clamp(0.5 * (ch.lo + ch.hi) + m.gain * half * s - ch.start, dlo, dhi);
-            *ch.lever_target = target;
-            if (*ch.lever_held) {
-                // Pickup: hold the control until the lever reaches it, or
-                // passes it between two samples, so a start never jumps the
-                // control to wherever the lever happens to be.
-                const double gap = target - d;
-                const double prev_gap = *ch.lever_prev - d;  // NaN before the first sample
-                const bool near = std::abs(gap) <= config_.pickup * (ch.hi - ch.lo);
-                const bool crossed = prev_gap * gap < 0.0;
-                if (near || crossed) {
-                    *ch.lever_held = false;
-                }
-            }
-            *ch.lever_prev = target;
-            if (!*ch.lever_held) {
-                d = target;
-            }
+        if (released) {
+            // Force trim: the control stays where the pilot left it.
+            *ch.trim = std::clamp(*ch.delta, dlo, dhi);
+            *ch.latched = true;
         }
+        if (*ch.latched && std::abs(s) <= config_.recentre) {
+            *ch.latched = false;
+        }
+        d = *ch.latched ? *ch.trim : *ch.trim + m.gain * half * s;
     }
     *ch.delta = std::clamp(d, dlo, dhi);
+}
+
+void ControlsMap::update_lever(const AxisMap& m, const RawInput& in) noexcept {
+    if (m.axis < 0) {
+        return;
+    }
+    // The collective's range is [0, 1]; the lever's middle is its middle.
+    const double s = shape(axis_value(in, m), m.deadband, m.expo);
+    const double dlo = -start_.collective;
+    const double dhi = 1.0 - start_.collective;
+    const double target = std::clamp(0.5 + m.gain * 0.5 * s - start_.collective, dlo, dhi);
+    lever_target_ = target;
+    lever_seen_ = true;
+    if (lever_held_) {
+        // Pickup: hold the collective until the lever reaches it, or passes
+        // it in a small step between two samples, so a start never jumps
+        // the collective to wherever the lever happens to be. A big step
+        // isn't a pass: through FlightGear an untouched axis reads 0 (mid
+        // travel) until it moves, then jumps to the real value (code review).
+        const double d = delta_.collective;
+        const double gap = target - d;
+        const double prev_gap = lever_prev_ - d;  // NaN before the first sample
+        const bool near = std::abs(gap) <= config_.pickup;
+        const bool crossed = prev_gap * gap < 0.0 && std::abs(target - lever_prev_) <= kPickupStep;
+        if (near || crossed) {
+            lever_held_ = false;
+        }
+    }
+    lever_prev_ = target;
+    if (!lever_held_) {
+        delta_.collective = target;
+    }
+}
+
+void ControlsMap::rearm_pickup() noexcept {
+    lever_held_ = true;
+    lever_prev_ = std::numeric_limits<double>::quiet_NaN();
+    lever_target_ = 0.0;
+    lever_seen_ = false;
 }
 
 eyas::Controls ControlsMap::update(const RawInput& in, double dt) noexcept {
@@ -121,22 +138,25 @@ eyas::Controls ControlsMap::update(const RawInput& in, double dt) noexcept {
     }
     brake_was_pressed_ = brake_now;
 
-    update_channel(config_.collective,
-                   {&delta_.collective, &trim_.collective, latched_.data(), 0.0, 1.0,
-                    start_.collective, false, &lever_held_, &lever_prev_, &lever_target_},
-                   in, dt, released);
-    update_channel(config_.lat_cyclic,
-                   {&delta_.lat_cyclic, &trim_.lat_cyclic, latched_.data() + 1, -1.0, 1.0,
-                    start_.lat_cyclic, true},
-                   in, dt, released);
-    update_channel(config_.lon_cyclic,
-                   {&delta_.lon_cyclic, &trim_.lon_cyclic, latched_.data() + 2, -1.0, 1.0,
-                    start_.lon_cyclic, true},
-                   in, dt, released);
+    if (config_.collective.mode == AxisMode::absolute) {
+        update_lever(config_.collective, in);
+    } else {
+        update_channel(
+            config_.collective,
+            {&delta_.collective, &trim_.collective, latched_.data(), 0.0, 1.0, start_.collective},
+            in, dt, released);
+    }
     update_channel(
-        config_.pedal,
-        {&delta_.pedal, &trim_.pedal, latched_.data() + 3, -1.0, 1.0, start_.pedal, true}, in, dt,
-        released);
+        config_.lat_cyclic,
+        {&delta_.lat_cyclic, &trim_.lat_cyclic, latched_.data() + 1, -1.0, 1.0, start_.lat_cyclic},
+        in, dt, released);
+    update_channel(
+        config_.lon_cyclic,
+        {&delta_.lon_cyclic, &trim_.lon_cyclic, latched_.data() + 2, -1.0, 1.0, start_.lon_cyclic},
+        in, dt, released);
+    update_channel(config_.pedal,
+                   {&delta_.pedal, &trim_.pedal, latched_.data() + 3, -1.0, 1.0, start_.pedal}, in,
+                   dt, released);
 
     eyas::Controls c = apply(start_, delta_);
     c.brake_left = brakes_ ? 1.0 : 0.0;

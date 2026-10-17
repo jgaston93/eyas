@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <limits>
 
 #include "eyas/types.hpp"
 
@@ -70,8 +71,8 @@ struct ControlsMapConfig {
     // move the control; resuming then moves it by at most gain × recentre.
     double recentre = 0.02;
     // A lever collective takes over once within this fraction of its travel
-    // of the held value (or when it passes it): pickup, so that a start
-    // doesn't jump the collective to the lever.
+    // of the held value (or when it passes it in a small step): pickup, so
+    // that a start doesn't jump the collective to the lever. [0, 0.5].
     double pickup = 0.02;
 };
 
@@ -104,17 +105,28 @@ public:
     const ControlDeltas& trim_points() const noexcept { return trim_; }
     const eyas::Controls& start() const noexcept { return start_; }
     bool trim_held() const noexcept { return trim_held_; }
-    // An absolute collective (a lever) holds the start value after each
-    // start until the lever is brought to it (pickup). While held, the HUD
-    // shows where the lever is: collective_lever() (applied units).
+    // An absolute collective (a lever) holds its value after each start, and
+    // after rearm_pickup(), until the lever is brought to it (pickup). While
+    // held, the HUD shows where the lever is: collective_lever() (applied
+    // units), once collective_lever_known() (a sample has arrived).
     bool collective_held() const noexcept {
         return config_.collective.axis >= 0 && config_.collective.mode == AxisMode::absolute &&
                lever_held_;
     }
     double collective_lever() const noexcept { return start_.collective + lever_target_; }
+    bool collective_lever_known() const noexcept { return lever_seen_; }
+    // Holds the collective where it is until the lever is brought to it
+    // again: after the input was lost, a device may come back reading
+    // something else (FlightGear restarted reads an untouched axis as 0).
+    void rearm_pickup() noexcept;
+    // The largest lever step between two samples that still counts as
+    // passing the held value [fraction of travel]: a bigger one is a jump
+    // (e.g. FlightGear's first real reading of an untouched axis), not a pass.
+    static constexpr double kPickupStep = 0.05;
     bool brakes_set() const noexcept { return brakes_; }
 
 private:
+    // A trimmable control (cyclic, pedal) or a rate collective.
     struct Channel {
         double* delta;
         double* trim;
@@ -122,15 +134,11 @@ private:
         double lo;  // control range
         double hi;
         double start;
-        bool trimmable;  // follows the force trim (cyclic, pedal)
-        // For a lever (absolute, not trimmable): the pickup state.
-        bool* lever_held = nullptr;
-        double* lever_prev = nullptr;
-        double* lever_target = nullptr;
     };
-    // Writes through `ch`'s pointers into this map's state.
     void update_channel(const AxisMap& m, const Channel& ch, const RawInput& in, double dt,
-                        bool released) const noexcept;
+                        bool released) noexcept;
+    // An absolute collective: a lever, with pickup.
+    void update_lever(const AxisMap& m, const RawInput& in) noexcept;
 
     ControlsMapConfig config_;
     eyas::Controls start_;
@@ -142,8 +150,9 @@ private:
     bool brake_was_pressed_ = false;
     bool reset_was_pressed_ = false;
     bool lever_held_ = true;
-    double lever_prev_ = 0.0;
+    double lever_prev_ = std::numeric_limits<double>::quiet_NaN();
     double lever_target_ = 0.0;
+    bool lever_seen_ = false;
 };
 
 // The applied controls for a delta: start + delta, the sum eyas_drive makes,

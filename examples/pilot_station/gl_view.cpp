@@ -723,15 +723,19 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     glEnd();
     text(colx - 6, cy + 64, 1.2, "COLL");
     if (hud.collective_held) {
-        // Where the lever is, against the held collective (pickup).
-        const double ly = cy + 60 - 120.0 * hud.collective_lever;
-        glBegin(GL_LINES);
-        glColor3f(1.0F, 0.4F, 0.3F);
-        glVertex2d(colx - 6, ly);
-        glVertex2d(colx + 20, ly);
-        glEnd();
-        text(w / 2.0 - 300, 180, 2.2, "COLL SYNC - bring the throttle to the yellow bar", 1.0F,
-             0.6F, 0.3F);
+        if (hud.collective_lever_known) {
+            // Where the lever is, against the held collective (pickup).
+            const double ly = cy + 60 - 120.0 * hud.collective_lever;
+            glBegin(GL_LINES);
+            glColor3f(1.0F, 0.4F, 0.3F);
+            glVertex2d(colx - 6, ly);
+            glVertex2d(colx + 20, ly);
+            glEnd();
+        }
+        text(w / 2.0 - 300, 180, 2.2,
+             hud.collective_lever_known ? "COLL SYNC - bring the lever to the yellow bar"
+                                        : "COLL SYNC - move the collective lever",
+             1.0F, 0.6F, 0.3F);
     }
     (void)std::snprintf(b.data(), b.size(), "col %.3f lat %+.3f lon %+.3f ped %+.3f",
                         hud.applied.collective, hud.applied.lat_cyclic, hud.applied.lon_cyclic,
