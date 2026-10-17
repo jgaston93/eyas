@@ -6,6 +6,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -155,6 +158,83 @@ TEST(Model, Tier1PoseMatchesStateAfterResetAndAdvance) {
         EXPECT_EQ(s.q_nb.coeffs(), now.q_nb.coeffs());
         (void)m.advance(hover_controls(), Environment{}, kFrameNs);
     }
+}
+
+// ---- Geodetic origin override (D-044) ------------------------------------------------
+
+std::filesystem::path write_test_config(const std::string& name,
+                                        const std::string& yaml = test_yaml()) {
+    const std::filesystem::path p = std::filesystem::temp_directory_path() / name;
+    std::ofstream(p) << yaml;
+    return p;
+}
+
+// The override replaces geodetic_origin and nothing else: with the config's
+// own values the run is bit-identical to from_file.
+TEST(Model, OriginOverrideWithConfigValuesIsBitIdentical) {
+    const std::filesystem::path p = write_test_config("eyas_origin_same.yaml");
+    Model a = Model::from_file(p);
+    Model b = Model::from_file(p, {37.41 * units::kDegree, -122.05 * units::kDegree, 10.0});
+    BodyState s;
+    s.vel_b = Vec3(20.0, 1.0, -0.5);
+    s.omega_b = Vec3(0.01, -0.02, 0.03);
+    ASSERT_TRUE(a.reset(s));
+    ASSERT_TRUE(b.reset(s));
+    for (int i = 0; i < 60; ++i) {
+        (void)a.advance(hover_controls(), Environment{}, kFrameNs);
+        (void)b.advance(hover_controls(), Environment{}, kFrameNs);
+    }
+    const auto xa = a.state();
+    const auto xb = b.state();
+    ASSERT_EQ(xa.size(), xb.size());
+    EXPECT_EQ(std::memcmp(xa.data(), xb.data(), xa.size() * sizeof(double)), 0);
+    EXPECT_EQ(a.outputs().latitude, b.outputs().latitude);
+    EXPECT_EQ(a.outputs().altitude, b.outputs().altitude);
+}
+
+// A different origin moves the Tier 1 position by the D-017 map from it,
+// and the atmosphere follows its altitude (origin altitude + height).
+TEST(Model, OriginOverrideReachesThePose) {
+    const std::filesystem::path p = write_test_config("eyas_origin_other.yaml");
+    const GeodeticOrigin o{51.47 * units::kDegree, -0.45 * units::kDegree, 25.0};
+    Model m = Model::from_file(p, o);
+    BodyState b;
+    b.pos_n = Vec3(100.0, -200.0, -50.0);
+    ASSERT_TRUE(m.reset(b));
+    const FlatEarthMap map({o.latitude, o.longitude, o.altitude});
+    const GeodeticPosition g = map.to_geodetic(b.pos_n);
+    EXPECT_EQ(m.outputs().latitude, g.latitude);
+    EXPECT_EQ(m.outputs().longitude, g.longitude);
+    EXPECT_EQ(m.outputs().altitude, 75.0);
+}
+
+// With an override the config's own block is optional, but when present it
+// is checked as plain from_file checks it: the same file is valid or invalid
+// whichever call loads it (code review).
+TEST(Model, OriginOverrideStillChecksTheConfigsBlock) {
+    const GeodeticOrigin o{51.47 * units::kDegree, -0.45 * units::kDegree, 25.0};
+    std::string typo = test_yaml();
+    typo.replace(typo.find("  latitude:"), 11, "  lattitude:");
+    const std::filesystem::path bad = write_test_config("eyas_origin_typo.yaml", typo);
+    EXPECT_THROW((void)Model::from_file(bad), InitError);
+    EXPECT_THROW((void)Model::from_file(bad, o), InitError);
+
+    std::string none = test_yaml();
+    const auto b = none.find("geodetic_origin:");
+    none.erase(b, none.find("airframe:") - b);
+    const std::filesystem::path without = write_test_config("eyas_origin_none.yaml", none);
+    EXPECT_THROW((void)Model::from_file(without), InitError);
+    const Model m = Model::from_file(without, o);
+    EXPECT_EQ(m.outputs().latitude, o.latitude);
+}
+
+TEST(Model, InvalidOriginOverrideThrows) {
+    const std::filesystem::path p = write_test_config("eyas_origin_bad.yaml");
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_THROW((void)Model::from_file(p, {nan, 0.0, 0.0}), InitError);
+    EXPECT_THROW((void)Model::from_file(p, {0.0, 0.0, nan}), InitError);
+    EXPECT_THROW((void)Model::from_file(p, {89.5 * units::kDegree, 0.0, 0.0}), InitError);
+    EXPECT_THROW((void)Model::from_file(p, {0.0, 3.2, 0.0}), InitError);
 }
 
 // ---- Atmosphere in SimContext (D-016) ------------------------------------------------

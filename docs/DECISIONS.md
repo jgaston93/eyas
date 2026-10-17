@@ -868,3 +868,73 @@ Johnson (2013) has nothing specific. No source gives the fade width; c = 20° is
 - on the ground (weight on wheels).
 
 Also: accel_b against a central difference of the flown velocity (< 5e-3 m/s²); the mean load factor over a revolution of level flight equals 1 within 2e-3. `RealTime.*`: all outputs bit-identical across host rates, and zero allocation.
+
+## D-044 The M8b desktop pilot station, and the geodetic origin from the host — `Approved (2026-10-17)` — design (examples) and interface addition (public `Model`)
+**Context:** D-042 stages a desktop pilot station as M8b, so people can fly Eyas by hand before the host simulator does (M8e). The development machine is WSL2, where USB devices don't reach Linux without passthrough, and FlightGear 2024.1 is installed on the Windows side. Flying needs an out-the-window view, not only instruments. The config's `geodetic_origin` (0°, 0° in `uh60a.yaml`, marked there as scenario data) put the aircraft where no image generator has an airport.
+
+**Decision** (choices made with the spec owner, 2026-10-17):
+- *Interface addition:* `Model::from_file(path, GeodeticOrigin)` builds the model with the host's origin in place of the config's `geodetic_origin`. That block may then be left out; when present it is still checked, so a file is valid or invalid the same way through either call (code review). `GeodeticOrigin` (latitude and longitude in rad, altitude in m MSL) joins `include/eyas/types.hpp`. The checks are FlatEarthMap's (D-017): finite, |latitude| ≤ 89°, |longitude| ≤ 180°. It is additive: nothing existing changes.
+- *Where it lives:* `examples/pilot_station/`, host code on the public API only, like the driver and the adapter. One loop, two image generators:
+  - its own window (GLFW 3.3 and fixed-function OpenGL 2.1, so no loader; built only when both are found). It draws sky, a tiled and gridded ground with fog, the pad, a runway, scattered blocks and four 40 m masts for scale and parallax, the aircraft as a symbol with its rotor disc tilted by the multiblade flapping, a HUD and an engineering readout. HUD text uses stb_easy_font (public domain, one header, pinned by commit and SHA-256 like the other dependencies). Three views: chase, eye at the CG (a cockpit eye point would be aircraft data, so none is invented) and a ground observer by the pad;
+  - FlightGear as an optional second view, over UDP with two *generic* protocol files in the repo (`flightgear/eyas_fdm.xml` in, `eyas_ctrl.xml` out), FlightGear running `--fdm=null` as its own `playback.xml` does. Not `native-fdm`: the generic protocol needs no binary struct matched to an FG version, and its field list sits in the repo next to the code that writes it.
+- *Inputs, chosen at run time:* a GLFW gamepad or joystick, mouse and keyboard, FlightGear's joystick forwarded raw, an `eyas_drive` control file, or none. Each source has a built-in map; a key = value file overrides it (`--map`, `--print-map`).
+  - FlightGear's joysticks reach Windows-side devices from WSL2 with no passthrough. FlightGear doesn't publish raw stick values (tried live: the `/devices/status/joysticks` nodes stay empty).
+  - A third file, `flightgear/eyas_joystick.xml`, loaded with `--config`, defines the bindings of joysticks 0–3: each axis is copied (`property-scale`) and each button set and cleared (`property-assign`, `mod-up`) into `/devices/status/joysticks/joystick[d]`, which `eyas_ctrl` sends. Verified live: FlightGear logs "Using existing bindings" for each device and publishes the values.
+  - Several devices at once, because a HOTAS is two (stick and throttle): up to 4 devices of 12 axes and 32 buttons. Map files name an axis or button as `device:index`, the device being FlightGear's joystick number.
+  - `tools/build_fg_station_files.py` writes the three FlightGear files (`--check` in CI). For that session it replaces FlightGear's own bindings for the device, which fly nothing under the null FDM. We don't use FlightGear's flight-control properties (`/controls/flight/*`): they carry FlightGear's per-device mapping and trims, and no buttons.
+  - Each axis is absolute or rate, with deadband, expo and gain. A rate axis moves the control at gain × deflection per second and holds it when centred: the default for the collective on a spring-centred pad stick. An absolute collective is a lever (mid travel at centre).
+  - *Lever pickup:* an absolute (lever) collective holds its value after each start, and again when input returns after a loss, until the lever is brought to it.
+    - It takes over within 2 % of travel (`pickup`, 0–0.5), or when the lever passes the held value in a step of at most 5 % between two samples.
+    - The HUD shows the lever against the held value (COLL SYNC), from the first sample on.
+    - Found flying the X-56: FlightGear doesn't report an axis until it moves, so the untouched throttle read 0, mid travel, and the collective jumped from the pad's 0.2 to 0.5 and lifted off.
+    - Code review, reproduced: the first version took any pass, so FlightGear's first real reading (mid travel to idle) dropped the 60 kt start's collective from 0.40 to 0 in one frame. A restarted FlightGear did the same mid-flight, because pickup wasn't re-armed.
+  - *Force trim* on the cyclic and pedals, as on a helicopter's trim release: when the trim button is let go, the control's position becomes its new trim point and stays there while the spring-centred stick returns. It flies again once the shaped stick is back within 2 % of centre, so resuming moves the control by at most 2 % of the gain. A trim-reset button returns to the start controls; a button toggles the brakes.
+- *Stale input:* with a live device (gamepad, joystick, or FlightGear's sticks), the flight pauses whenever no sample has arrived for 250 ms (`--input-timeout`) or the device is gone. The HUD shows WAITING FOR INPUT or INPUT LOST, and the flight resumes when samples return. It pauses rather than holding the controls, because the bare aircraft is unstable and frozen controls would fly it away. Found while comparing input paths: FlightGear stopping would otherwise leave the last stick values applied.
+- *Frames:* a fixed nominal host frame (default 60 Hz; D-006), paced to the wall clock. The frame period and the frame count for a duration come from one helper shared with `eyas_drive` (`examples/common/frames.hpp`). Two separate formulas disagreed by a frame for some durations at 50 Hz and 100 Hz (code review). A late frame still advances one period, so the run stays reproducible, and counts an overrun. More than five periods behind, the clock resyncs rather than catching up. The worst `advance()` time is shown.
+- *Starts and repositions:* four start points prepared at init:
+  - on the pad: dropped from 2.2 m as in the M8a parked case (D-042 (d)), brakes set, collective 0.2, settled for 40 s. Its cyclic and pedal are the hover trim's, because they are the offsets the pilot's centred stick and twist fly from. The parked case's half right pedal spun the aircraft at lift-off unless held off with the twist (found flying the X-56);
+  - level trims in hover, at 60 kt and at 120 kt, 100 ft above the ground by default.
+
+  The ground is level through the origin's altitude. `--hover-height` must be positive, and the station flies one frame from each trim over the real ground to check that the gear clears it (the trim itself has no ground). A reposition is `restore()` of the start's snapshot, a real-time call, so D-043's proposed `reset(body, controls, env)` is still not needed. The trims are cold, as `eyas_drive` makes them.
+- *Recording:* `--record` writes an `eyas_drive` control file: increments from the start controls, a row whenever they change, timed from the start point, and a header with the `eyas_drive` command that replays it (with `--origin` and the new `eyas_drive --ground`).
+  - Paths in the command are shell-quoted when needed, and `--origin` takes no whitespace, so the command pastes and splits as written.
+  - Scripts (`--input script`) are also timed from the start point. The pad's snapshot carries 40 s of settling, so timing from absolute sim time skipped every row before 40 s (code review). The station applies the controls as start + increment, the sum `eyas_drive` makes, with each increment clamped so that the sum stays in range. So a replay from an airborne start is the same flight to the bit. A reposition starts a new segment file. The pad start doesn't replay, because `eyas_drive` starts from a trim. Brakes don't replay either: `eyas_drive` has no brake input, so the first frame whose brakes differ from the start's writes a `# NOT REPLAYABLE from t = …` line into the file.
+- *Crashes:* the station stops advancing, shows CRASHED and waits for a restart when any of these happens:
+  - a frame fails;
+  - a wheel is on the ground at more than 30° of bank or pitch;
+  - |n_z| passes 10 g;
+  - the CG goes below the ground.
+
+  These are display heuristics, not aircraft limits. Past them the GenHel gear is outside its validity and the state can diverge to finite garbage before anything overflows (SPEC_REVIEW #34): a hands-off hover rolled into the ground reached a height of −1e15 m within three frames of touching it.
+- *Out of scope here:* terrain heights from FlightGear (the ground is the flat plane at the origin's altitude, D-032 item 9); %Q (no torque rating in the data, so torque and power are shown in SI); a cockpit eye point.
+
+**Known limits for anyone flying it:**
+- The bare UH-60A is unstable without its AFCS (M7c modes), so it is hard to hover until M8c.
+- There is no ground effect (M9) and no vortex-ring correction (M8d).
+- Track, angle of attack and sideslip are blanked on the HUD at low speed, where they are noise (D-043 leaves that to the display).
+
+**Verification:**
+- `tests/unit/test_model.cpp` `Model.OriginOverride*`:
+  - the config's own origin passed in gives a bit-identical run;
+  - another origin moves the pose by the D-017 map from it;
+  - an invalid origin throws.
+- `eyas_station_tests` covers:
+  - shaping;
+  - absolute, lever and rate axes (exact integration);
+  - ranges kept to an ulp;
+  - force trim and its reset;
+  - the brake toggle;
+  - the map files (override, round trip, errors naming file and line);
+  - the FlightGear lines (round trip, malformed lines rejected, the FDM fields in FG units, a loopback through the sockets);
+  - the start points (on the gear and settled; the trims at their speed and height);
+  - a restart replays bit for bit;
+  - a crash (collective down from the 100 ft hover) freezes the aircraft until a start clears it;
+  - the three FlightGear files are well-formed for FlightGear (no "--" in a comment, which it rejects as "not well-formed" (found live)) and their field counts match the code;
+  - the whole frame path (map, advance, send, poll) allocates nothing;
+  - the input watchdog (stale before the first sample, after a gap past the timeout, fresh again when samples return);
+  - lever pickup: held until the lever reaches the band or passes in a small step; a big step across isn't a pass; FlightGear's untouched-then-idle sequence from the 60 kt, pad and hover starts leaves the collective held; held again after `rearm_pickup()`; the held collective stays in range; `pickup` outside 0–0.5 or NaN is rejected;
+  - from the code review: the shared frame arithmetic, flight time from the start point, the hover-height checks, the brake note, shell quoting, `--origin` without spaces, `--listen` limited to 1–65535, and loopback tests on free ports, so concurrent runs can't collide.
+- `ExampleStation.ScriptRunsFromTheStartPoint` flies the doublet from the pad and checks that the recording starts at 0 and has the 1-s row.
+- `Model.OriginOverrideStillChecksTheConfigsBlock` covers the origin block under an override.
+- CI's ASan job skips the station's model-building tests and the example smoke tests (`SLOW_TESTS`). They take about 1 s each in Release, but 58–81 s each under ASan, because each case builds the start points in its own process. The nightly job still runs them.
+- `ExampleStation.RecordingReplaysExactly` flies the doublet headless at another origin and records it. It then runs the `eyas_drive` command from the recording's header and compares the two state histories, which must be byte-identical.

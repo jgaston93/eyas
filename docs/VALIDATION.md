@@ -993,3 +993,80 @@ Tests: `tests/unit/test_realtime.cpp`, `test_outputs.cpp`, `test_air_data.cpp`; 
 - Run backwards from Table A13's true airspeeds, it gives the table's calibrated airspeed within its rounding (0.05 kt) at every entry used from sea level to 40 000 ft, both ISA layers. The exception is V_c = 100 kt at 20 000 ft, printed 137.2 kt, which is above V_c/√σ = 137.0 kt and so can't be right; the equations give 136.5 kt. A person confirmed the page prints 137.2, so it is a misprint in the source (DATA_GAPS.md).
 - On the UH-60A at 1000 m, ISA + 15 K and 100 kt: V_c exceeds V_e by under 1 %; the pressure altitude is below the geopotential altitude, as on any hot day.
 - The adapter example at 60 kt TAS and 1000 ft shows 59.1 kt IAS and 1000 ft pressure altitude.
+
+## M8b — Desktop pilot station (2026-10-17)
+
+M8b is the second M8 stage (D-042): a pilot station in `examples/pilot_station/` (D-044), host code on the public API.
+- It flies the aircraft by hand at a fixed 60 Hz host frame, paced to the wall clock.
+- It shows the flight in its own window (GLFW and OpenGL 2.1), and optionally in FlightGear over UDP.
+- Its inputs are a gamepad or joystick, mouse and keyboard, or FlightGear's stick forwarded from Windows.
+- It records each flight as an `eyas_drive` control file.
+- It adds one library call, `Model::from_file(path, GeodeticOrigin)`, so the host places the aircraft (D-044).
+
+Tests: `Model.OriginOverride*` and `Model.InvalidOriginOverrideThrows` (`tests/unit/test_model.cpp`), `eyas_station_tests` (31 cases), and the smoke tests `ExampleStation.RecordingReplaysExactly` and `ExampleStation.ScriptRunsFromTheStartPoint`.
+
+| Check | Status | Evidence |
+|---|---|---|
+| The host's origin replaces the config's, and nothing else | ✅ | With the config's own origin passed in, 60 frames are bit-identical to `from_file(path)`. Another origin moves Tier 1 by the D-017 map from it; invalid origins throw. The config's block stays optional under an override, but an invalid one is rejected by both calls. |
+| A recorded flight replays exactly (from an airborne start, brakes unchanged) | ✅ | `ExampleStation.RecordingReplaysExactly`: the station flies the 10-s doublet headless from the 60 kt start at another origin (51.47° N, 0.45° W, 25 m), recording it; `eyas_drive` runs the command in the recording's header; the two state histories (602 lines, every `AircraftState` field at 17 digits) are byte-identical. |
+| Control mapping and force trim | ✅ | `StationControls.*`: deadband and expo; absolute axes from the start; the lever collective; rate integration (exact to 1e-14 for a constant input); every control within its D-024 range to an ulp; force trim holds the release point while the stick returns, then flies about it; trim reset; brake toggle. |
+| FlightGear link | ✅ (pose and lines, live); stick values pending a person at the pad | `StationFlightGear.*`: the control line round-trips; short, long, non-numeric and NaN lines are rejected; the FDM line has the protocol's 22 fields in FlightGear units; the three FlightGear files are well-formed and match the code's field counts; a UDP loopback through `FgLink` delivers an FDM line and reads back the newest control line. Live run below. |
+| Crash handling | ✅ | `StationStarts.CrashFreezesUntilRestart`: collective down from the 100 ft hover; the station calls the crash, stops advancing, and a start clears it (D-044, SPEC_REVIEW #34). |
+| Start points | ✅ | `StationStarts.*`: on the pad the aircraft carries weight on its wheels and has settled (< 1e-3 m/s after the 40 s D-042 (d) settle); the three trims fly at their airspeed (within the rotor's 4/rev, 2e-3 m/s) 100 ft above the ground; a restart replays bit for bit. |
+| Real-time rules on the frame path | ✅ | `StationRealTime.FramePathDoesNotAllocate`: map the controls, `advance()`, send the FlightGear line and poll for controls, 30 frames, no allocation. |
+
+![Chase view at 60 kt](validation/m8/m8b_chase_60kt.png)
+
+![Ground observer, hover](validation/m8/m8b_observer_hover.png)
+
+**The window** (Release, WSLg on the development machine; screenshots from `--screenshot`): the chase view at the 60 kt start and the ground observer's view of the hover start, 100 ft up. The ground is tiled so the per-vertex fog stays right near the eye (a first version drew one 40 km quad, which fogged to sky colour everywhere). The blocks and masts give scale and parallax; the rotor disc is tilted by the multiblade flapping. The HUD blanks the track below 1 kt of ground speed and the angle of attack and sideslip below 5 kt of airspeed, where D-043 leaves blanking to the display.
+
+**FlightGear, live** (FlightGear 2024.1 on Windows, the station in WSL2 in NAT networking, 2026-10-17):
+- *Two faults found and fixed.* FlightGear first rejected both protocol files as "not well-formed": their comments contained `--` (from `--fdm=null`), which XML forbids. A test now checks every FlightGear file for it.
+  - FlightGear also doesn't publish raw stick values: the `/devices/status/joysticks/joystick[0]` nodes stayed empty.
+  - `eyas_joystick.xml`, loaded with `--config`, now binds joystick 0's axes and buttons to them. FlightGear loads it (its log reads the property file, and `/input/joysticks/js[0]` carries the bindings).
+- *Pose into FlightGear:* a 20 s flight from the 60 kt start at 37.6188° N, 122.3756° W (ground 4 m MSL). FlightGear's own properties, read back through its web server, showed:
+  - the aircraft 618 m north of the origin (60 kt × 20 s = 617 m);
+  - 113 ft MSL (100 ft above the 13 ft ground);
+  - heading 360.0° and 59.9 kt.
+- *Lines from FlightGear:* 1188 received in 20 s (FlightGear sends at 60 Hz), none rejected.
+- *Timing with FlightGear rendering on the same machine:* worst `advance()` 0.59–0.61 ms, no overruns after the first frame, sim time / wall time 1.0000.
+- *Pending:* stick values arriving from the Xbox pad (needs someone moving the sticks), the Xbox axis numbers in the `fg` map, and a piloted session for the latency and overrun figures. Pilot comments belong to M8e (D-042).
+
+**Hands-off, the hover holds and then diverges, as the bare UH-60A should.** From the hover start with the controls fixed at trim (`--input none`):
+- the aircraft holds within 0.01 m and 0.1° for about 50 s (the trim's residuals);
+- it then departs through the unstable modes (M7c);
+- at 85 s it meets the ground rolled 72°.
+
+That impact is what exposed SPEC_REVIEW #34: the state diverged to finite garbage within three frames of the gear touching. The station's crash rule now stops it at the touch.
+
+**Code review fixes (2026-10-17).** The review's findings were each checked by reproduction before fixing:
+- a script flown from the pad skipped every row before 40 s;
+- brake changes weren't recorded, though the header promised an exact replay;
+- the station and `eyas_drive` counted frames with different formulas, and kept two copies of the frame period (853 durations disagreed at 50 Hz and 1704 at 100 Hz in a sweep from 0.001 to 200 s; none at 60 Hz);
+- an `--origin` with spaces broke the replay command;
+- `--listen 70000` bound port 4464;
+- a negative `--hover-height` crashed on the first frame;
+- fixed test ports collided with another process holding them;
+- the origin override accepted a misspelled origin block that plain `from_file` rejects;
+- the heavy tests ran under ASan (58–81 s each).
+
+All are fixed with tests (D-044 verification). Two points weren't acted on as stated:
+- *The socket error text read after `freeaddrinfo()`:* theoretical, since glibc ≥ 2.33 leaves `errno` alone there. It was tidied anyway.
+- *A `from_string` overload with an origin:* left out, since no caller needs it yet.
+
+**First flights with a HOTAS (2026-10-17; developer, not a pilot evaluation).** A Logitech/Saitek X-56 (stick and throttle) on Windows, through FlightGear (`maps/x56_fg.map`), in five flights from the pad, the longest about 4 min, up to 145 kt.
+- *Before the fixes:*
+  - FlightGear forwarded only one device, so several-device support and the `device:index` map syntax were added.
+  - The first lift-off jumped the collective from 0.2 to 0.5. The untouched throttle reads 0 (mid travel) until it moves, because FlightGear doesn't report an axis before then. This led to lever pickup (COLL SYNC). A code review then found, and a reproduction confirmed, that its first version still dropped the 60 kt start's collective to 0 on FlightGear's first real reading, and didn't re-arm after an input loss; both are fixed (D-044).
+  - The pad's half right pedal, from the parked case, spun the aircraft at lift-off. The pad now starts at the hover trim's pedal and cyclic.
+- *The station:*
+  - In the last flight the worst `advance()` was 0.68 ms.
+  - There was one overrun over the session (the first frame), with FlightGear rendering on the same machine.
+  - It received 80 445 control lines from FlightGear and rejected 156 (0.2 %); the newest good line is used, so no input was lost. A 30-s capture afterwards had no bad line, so the cause is not yet known. The station now prints the last rejected line at exit.
+- *What the developer reported:* "during forward flight it felt like the nose wanted to keep going up". The recording agrees with the model's trims. The forward cyclic held at 100–130 kt was +0.31 to +0.39, against level-flight trims of +0.22 (100 kt) to +0.32 (140 kt), more when accelerating or descending. The model needs about 0.2 more forward stick between 60 and 80 kt, from the stabilator schedule (D-040). Its trimmed stick matches GenHel to within 1 % of travel (M7c). Other contributors:
+  - flapback with speed (Padfield p. 189);
+  - the bare aircraft's pitch instability: the unstable phugoid and M_w > 0 (M7c modes);
+  - the missing pitch bias actuator and SAS (M8c, D-029).
+
+  Nothing points to a fault; re-check after M8c. The open 80 kt speed-stability gap (M_u < 0, D-041) tends to pitch the nose down rather than up, so it isn't this.

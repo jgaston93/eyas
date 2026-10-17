@@ -52,6 +52,14 @@ struct AdvanceStatus {
     bool atmosphere_out_of_range = false;
 };
 
+// The geodetic origin of the NED frame (D-017, D-044): the point the flat-earth
+// map is tangent to. Its altitude is the NED origin's height above MSL.
+struct GeodeticOrigin {
+    double latitude = 0.0;   // [rad] WGS-84 geodetic
+    double longitude = 0.0;  // [rad]
+    double altitude = 0.0;   // [m] above MSL
+};
+
 // Rigid-body state of the airframe.
 struct BodyState {
     Vec3 pos_n = Vec3::Zero();     // [m]     CG position, NED

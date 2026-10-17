@@ -46,6 +46,17 @@ target_compile_definitions(eyas_eigen INTERFACE EIGEN_MPL2_ONLY)
 
 eyas_mark_system_includes(yaml-cpp)
 
+# --- stb_easy_font v1.1 (the pilot station's HUD text; examples only) --------
+# One public-domain header, pinned by commit and SHA-256. Declared here and
+# made available by examples/CMakeLists.txt only when the station's window is
+# built (GLFW and OpenGL found).
+if(EYAS_BUILD_EXAMPLES)
+    FetchContent_Declare(stb_easy_font
+        URL https://raw.githubusercontent.com/nothings/stb/2bb4a0accd4003c1db4c24533981e01b1adfd656/stb_easy_font.h
+        URL_HASH SHA256=7b48b52a316477766c0a7a096b33a29bcbd847b6fab4fabd32bb3fdb7cea1a60
+        DOWNLOAD_NO_EXTRACT TRUE)
+endif()
+
 # --- GoogleTest 1.15.2 (tests only) -------------------------------------------
 if(EYAS_BUILD_TESTS)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
