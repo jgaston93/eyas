@@ -1136,7 +1136,7 @@ Generator `eyas_m8c_cases` (`tests/validation/m8c_cases.cpp`), plots `tools/plot
 - Averaged model in hover: 1.03e-3 (M7b: 1.04e-3).
 
 **Open items:**
-- *Dutch-roll damping* with the live stabilator (above). Its size rests on two readings not yet verified (DATA_GAPS.md, AFCS: KVYDT's unit and what AYPS1 senses), to re-read first. Then to check once the SAS is in (M8c2).
+- *Dutch-roll damping* with the live stabilator (above). The two readings it rests on are confirmed from GenHel's own equations (DATA_GAPS.md, AFCS, 2026-10-18): KVYDT is in deg per (ft/s² · kt), and AYPS1 is the specific force at the transducer, as modelled. The drop is therefore GenHel's stabilator law as written, still unchecked against flight data, since Fletcher's lateral data were flown with the stabilator held. To check once the SAS is in (M8c2), with the whole system.
 - *The L3 misfit's noise allowance* (half the floor) can hide a 3 % curvature in e(a); to tighten in M8c2.
 - *The stabilator schedule's 147 kt node* sits 3 kt below the 150 kt gate trim. A hotter or higher 150 kt condition (EAS below 147 kt) puts V_F on its other slope; not a fault, but L3 at such a condition crosses it.
 
