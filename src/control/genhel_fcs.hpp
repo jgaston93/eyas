@@ -32,10 +32,11 @@ class Config;
 // states, so it consumes nothing and runs first.
 namespace eyas {
 
-// A second-order servo 1/(a2 s² + a1 s + 1) with optional rate and position
-// limits (D-045). The command is clamped to the position limits and the
-// position output again, so the limits hold without windup; the rate limit
-// saturates the servo's velocity state. States: [position, velocity].
+// A second-order servo 1/(a2 s² + a1 s + 1) with an optional rate limit
+// (D-045), which saturates the servo's velocity state. States: [position,
+// velocity]. It has no position limits of its own: where a channel has them
+// (the rotor head limits, the stabilator travel), the component clamps that
+// channel's command and its output.
 struct ServoConfig {
     double a2 = 0.0;          // [s²]
     double a1 = 0.0;          // [s]

@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "env/air_data.hpp"
 #include "env/atmosphere.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
@@ -240,7 +241,7 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
         } else if (h.schedule) {
             // GenHel Fig. 5.1.7, steady state (D-028), on the equivalent
             // airspeed u √(ρ/ρ0) the air-data sensors give (D-040).
-            const double u_eas = u * std::sqrt(rho / isa::kSeaLevelDensity);
+            const double u_eas = equivalent_airspeed(rho, u);
             out.stabilator_incidence =
                 std::clamp(h.schedule->command(u_eas, ctx.controls.collective), h.schedule->min,
                            h.schedule->max);

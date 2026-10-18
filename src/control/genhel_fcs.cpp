@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "core/rigid_body.hpp"
+#include "env/air_data.hpp"
 #include "env/atmosphere.hpp"
 #include "util/config.hpp"
 #include "util/error.hpp"
@@ -53,16 +54,21 @@ Mixer mix(const GenHelRigging& r, const Controls& c) noexcept {
 }
 
 // ẋ of a servo 1/(a2 s² + a1 s + 1) at states (p, v) and command u. The rate
-// limit holds the velocity at ±R: the acceleration stops where it would push
-// past it.
+// limit holds the velocity at ±R. Where the command pushes it outward at or
+// past the limit, only the servo's own velocity damping acts, on the excess:
+// v̇ = −a1 (v ∓ R)/a2. A step that carries v past R (by up to v̇ h) then
+// decays back instead of winding up, and v̇ is continuous at the limit.
 void servo(const ServoConfig& s, double u, double p, double v, double& p_dot,
            double& v_dot) noexcept {
     double acc = (u - p - s.a1 * v) / s.a2;
     if (s.rate_limit > 0.0) {
-        if ((v >= s.rate_limit && acc > 0.0) || (v <= -s.rate_limit && acc < 0.0)) {
-            acc = 0.0;
+        const double R = s.rate_limit;
+        if (v >= R && acc > 0.0) {
+            acc = -s.a1 * (v - R) / s.a2;
+        } else if (v <= -R && acc < 0.0) {
+            acc = -s.a1 * (v + R) / s.a2;
         }
-        p_dot = std::clamp(v, -s.rate_limit, s.rate_limit);
+        p_dot = std::clamp(v, -R, R);
     } else {
         p_dot = v;
     }
@@ -90,18 +96,26 @@ double lateral_specific_force0(const BodyState& b, const Vec3& r) noexcept {
     return w.cross(b.vel_b).y() + w.cross(w.cross(r)).y() - g_b.y();
 }
 
-// Equivalent airspeed from the body-x air velocity, u √(ρ/ρ0) (D-040) [m/s].
-double equivalent_airspeed(const SimContext& ctx) noexcept {
+// Equivalent airspeed of the body-x air velocity (D-040) [m/s].
+double body_x_eas(const SimContext& ctx) noexcept {
     const BodyState& b = ctx.body;
     const double u_air = (b.vel_b - b.q_nb.conjugate() * ctx.env.wind_n).x();
-    return u_air * std::sqrt(ctx.air.density / isa::kSeaLevelDensity);
+    return equivalent_airspeed(ctx.air.density, u_air);
+}
+
+// The lateral-acceleration gain's ramp, 0 → 1 from ay_speed_lo to
+// ay_speed_hi; checked first, so a bad range gets its own message.
+Table1D ay_ramp(const GenHelStabilatorLaw& l) {
+    if (!(l.ay_speed_lo < l.ay_speed_hi)) {
+        throw InitError("genhel_fcs: the lateral-acceleration ramp needs from < to");
+    }
+    return Table1D(Axis({l.ay_speed_lo, l.ay_speed_hi}), {0.0, 1.0});
 }
 
 }  // namespace
 
 GenHelFcs::GenHelFcs(GenHelFcsConfig config)
-    : config_(std::move(config)),
-      ay_ramp_(Axis({config_.stabilator.ay_speed_lo, config_.stabilator.ay_speed_hi}), {0.0, 1.0}) {
+    : config_(std::move(config)), ay_ramp_(ay_ramp(config_.stabilator)) {
     const auto positive = [](const ServoConfig& s, const char* what) {
         if (!(s.a2 > 0.0) || !(s.a1 > 0.0) || s.rate_limit < 0.0) {
             throw InitError(std::string("genhel_fcs: ") + what +
@@ -117,9 +131,6 @@ GenHelFcs::GenHelFcs(GenHelFcsConfig config)
     }
     if (!(config_.stabilator.airspeed_lag > 0.0)) {
         throw InitError("genhel_fcs: the stabilator airspeed lag must be positive");
-    }
-    if (!(config_.stabilator.ay_speed_lo < config_.stabilator.ay_speed_hi)) {
-        throw InitError("genhel_fcs: the lateral-acceleration ramp needs from < to");
     }
     const GenHelRigging& r = config_.rigging;
     if (!(r.theta0_min < r.theta0_max) || !(r.a1s_min < r.a1s_max) || !(r.b1s_min < r.b1s_max)) {
@@ -219,8 +230,7 @@ void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
 
     // Stabilator (Fig. 5.1.7): airspeed lag on the equivalent airspeed
     // (D-040), then the servo with its rate limit on the command.
-    out.xdot0[kAirspeedLag] =
-        (equivalent_airspeed(ctx) - x[kAirspeedLag]) / config_.stabilator.airspeed_lag;
+    out.xdot0[kAirspeedLag] = (body_x_eas(ctx) - x[kAirspeedLag]) / config_.stabilator.airspeed_lag;
     run(config_.stabilator.servo, o.stabilator_cmd, kServoStab);
 }
 
@@ -231,7 +241,7 @@ void GenHelFcs::steady_states(const SimContext& ctx, std::span<double> x) const 
     x[kGyroQ] = b.omega_b.y();
     x[kGyroR] = b.omega_b.z();
     x[kAccelY] = lateral_specific_force0(b, config_.accelerometer_b);
-    x[kAirspeedLag] = equivalent_airspeed(ctx);
+    x[kAirspeedLag] = body_x_eas(ctx);
     // The commands read the sensors just set.
     const GenHelFcsOutputs o = evaluate(ctx, x);
     x[kServoTheta0] = o.theta0_cmd;

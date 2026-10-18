@@ -235,8 +235,9 @@ TEST(GenHelFcs, AccelerometerSensesTheSpecificForceAtItsStation) {
     EXPECT_NEAR(x[Fcs::kAccelY], -kG * std::sin(phi), 1e-12);
 }
 
-// The stabilator servo's rate limit (Fig. 5.1.7, 7°/s): at the limit the
-// velocity state stops growing outward and the position moves at the limit.
+// The stabilator servo's rate limit (Fig. 5.1.7, 7°/s): the position moves
+// at the limit, and with the command pushing outward the velocity state only
+// decays back to it, at the servo's own damping, −a1 (v − R)/a2.
 TEST(GenHelFcs, StabilatorServoRateLimit) {
     const GenHel g;
     const Fcs f(config());
@@ -252,13 +253,45 @@ TEST(GenHelFcs, StabilatorServoRateLimit) {
         x[s + 1] = v;
         const Eval e = derivs(f, ctx, x);
         EXPECT_DOUBLE_EQ(e.xdot0[s], R);
-        EXPECT_DOUBLE_EQ(e.xdot0[s + 1], 0.0);
+        EXPECT_NEAR(e.xdot0[s + 1], -g.SV_A1 * (v - R) / g.SV_A2, 1e-12);
     }
     x[s + 1] = 0.5 * R;  // inside: free
     EXPECT_GT(derivs(f, ctx, x).xdot0[s + 1], 0.0);
     x[s + 1] = R;
     x[s] = g.HI * kDegree;  // above the command: may slow down
     EXPECT_LT(derivs(f, ctx, x).xdot0[s + 1], 0.0);
+
+    // No windup: slewing from the bottom stop under RK4 at 1 ms, the velocity
+    // state settles at R instead of where the first steps carried it (6 %
+    // above R before the fix), and the position moves at R.
+    x[s] = g.LO * kDegree;
+    x[s + 1] = 0.0;
+    const double h = 1e-3;
+    const auto rate = [&](const std::vector<double>& y) {
+        std::vector<double> xs = x;
+        xs[s] = y[0];
+        xs[s + 1] = y[1];
+        const Eval e = derivs(f, ctx, xs);
+        return std::vector<double>{e.xdot0[s], e.xdot0[s + 1]};
+    };
+    std::vector<double> y = {x[s], 0.0};
+    double p1 = 0.0;
+    for (int n = 1; n <= 2000; ++n) {
+        const auto k1 = rate(y);
+        const auto k2 = rate({y[0] + 0.5 * h * k1[0], y[1] + 0.5 * h * k1[1]});
+        const auto k3 = rate({y[0] + 0.5 * h * k2[0], y[1] + 0.5 * h * k2[1]});
+        const auto k4 = rate({y[0] + h * k3[0], y[1] + h * k3[1]});
+        for (std::size_t i = 0; i < 2; ++i) {
+            y[i] += h / 6.0 * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
+        }
+        if (n == 1000) {
+            p1 = y[0];
+        }
+        if (n >= 1000) {
+            EXPECT_LT(y[1], R * (1.0 + 1e-3)) << n;
+        }
+    }
+    EXPECT_NEAR((y[0] - p1) / 1.0, R, 1e-9);
 }
 
 // steady_states() (D-045, GenHel's IC mode) is an equilibrium of the held

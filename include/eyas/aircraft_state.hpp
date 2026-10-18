@@ -87,12 +87,13 @@ struct AircraftState {
     bool weight_on_wheels = false;  // some gear carries a normal load
 
     // ---- Flight controls (M8c, D-045) -----------------------------------------
-    // NaN when the aircraft has no such part. Stabilator: trailing edge down
-    // positive, from the airframe (scheduled, held or from the flight control
-    // system). Blade pitch: the flight control system's outputs after its
-    // servos and the rotor head limits; main rotor θ = θ0 + θ1c cos ψ + θ1s sin ψ
-    // at the hub centre (Padfield 3rd ed. Eq. 3.59), tail rotor its collective
-    // before the rotor's own pitch bias.
+    // Stabilator: trailing edge down positive, from the airframe (scheduled,
+    // held or from the flight control system); NaN without an airframe.
+    // Blade pitch: the flight control system's (genhel_fcs) outputs after its
+    // servos and the rotor head limits, whether or not a rotor takes them; NaN
+    // without one, also when a rotor flies on its own control map. Main rotor
+    // θ = θ0 + θ1c cos ψ + θ1s sin ψ at the hub centre (Padfield 3rd ed.
+    // Eq. 3.59), tail rotor its collective before the rotor's own pitch bias.
     double stabilator_incidence = detail::kNan;  // [rad]
     double main_rotor_theta0 = detail::kNan;     // [rad]
     double main_rotor_theta1s = detail::kNan;    // [rad] + nose-down disc tilt needs θ1s < 0

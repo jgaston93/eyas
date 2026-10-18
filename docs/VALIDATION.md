@@ -1136,7 +1136,7 @@ Generator `eyas_m8c_cases` (`tests/validation/m8c_cases.cpp`), plots `tools/plot
 - Averaged model in hover: 1.03e-3 (M7b: 1.04e-3).
 
 **Open items:**
-- *Dutch-roll damping* with the live stabilator (above): to check once the SAS is in (M8c2), against Fletcher's 80 kt lateral data if the comparison is re-run with the stabilator free.
+- *Dutch-roll damping* with the live stabilator (above). Its size rests on two readings not yet verified (DATA_GAPS.md, AFCS: KVYDT's unit and what AYPS1 senses), to re-read first. Then to check once the SAS is in (M8c2).
 - *The L3 misfit's noise allowance* (half the floor) can hide a 3 % curvature in e(a); to tighten in M8c2.
 - *The stabilator schedule's 147 kt node* sits 3 kt below the 150 kt gate trim. A hotter or higher 150 kt condition (EAS below 147 kt) puts V_F on its other slope; not a fault, but L3 at such a condition crosses it.
 
