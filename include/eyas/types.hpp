@@ -13,6 +13,18 @@ namespace eyas {
 using Vec3 = Eigen::Vector3d;
 using Quat = Eigen::Quaterniond;
 
+// The pilot's switches of an automatic flight control system (D-045), all off
+// by default. A config without one ignores them. For the UH-60A (GenHel
+// CR-166309 §5.5): the SAS has a digital and an analog channel per axis; with
+// both on each works at gain 1, with one on that one works at gain 2. The
+// pitch bias actuator (PBA) drives back to centre at its rate limit when
+// switched off.
+struct AfcsSwitches {
+    bool sas_digital = false;  // GenHel DSASSW
+    bool sas_analog = false;   // GenHel ASASSW
+    bool pitch_bias = false;   // pitch bias actuator
+};
+
 // Normalized pilot inputs (sign conventions per D-024).
 struct Controls {
     double collective = 0.0;  // [0, 1]  0 = full down, 1 = full up
@@ -23,6 +35,7 @@ struct Controls {
     // Values outside [0, 1] are clamped; NaN counts as released.
     double brake_left = 0.0;   // [0, 1]
     double brake_right = 0.0;  // [0, 1]
+    AfcsSwitches afcs;         // switch positions, not inputs that trim solves for
 };
 
 // Atmospheric conditions set by the host (D-016). Eyas evaluates the

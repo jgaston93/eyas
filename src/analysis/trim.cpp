@@ -104,8 +104,10 @@ public:
     std::size_t evaluations_unconverged() const { return held_.unconverged(); }
     void clear_unconverged() { held_.clear_unconverged(); }
 
-    static Controls controls(const VecX& z) {
+    // The pilot inputs in z with the condition's AFCS switches (D-045).
+    Controls controls(const VecX& z) const {
         Controls u;
+        u.afcs = c_.afcs;
         u.collective = z(0);
         u.lat_cyclic = z(1);
         u.lon_cyclic = z(2);
@@ -455,7 +457,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         }
         if (p.pack(z)) {
             Vec6 ignored;
-            p.hold(o.settle_periods, Problem::controls(z), ignored);
+            p.hold(o.settle_periods, p.controls(z), ignored);
             for (std::size_t j = 0; j < nc; ++j) {
                 z(static_cast<Eigen::Index>(kHead + j)) = p.state()[body_layout::kSize + j];
             }
@@ -564,7 +566,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
     result.converged = ok && finite && converged(m, o) && p.evaluations_unconverged() == 0 &&
                        free.unconverged == 0;
     result.iterations = it;
-    result.controls = Problem::controls(z);
+    result.controls = p.controls(z);
     result.pitch = z(kPitch);
     result.roll = z(kRoll);
     result.force_residual = m.force * p.weight();

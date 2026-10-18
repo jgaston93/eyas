@@ -1,9 +1,11 @@
 #include "control/genhel_fcs.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <utility>
 
+#include "core/attitude.hpp"
 #include "core/rigid_body.hpp"
 #include "env/air_data.hpp"
 #include "env/atmosphere.hpp"
@@ -26,20 +28,26 @@ struct Mixer {
     double theta0 = 0.0, a1s = 0.0, b1s = 0.0, thettr = 0.0;  // [rad]
 };
 
+// The automatic inputs to the mixer's sums [m]: the SAS inner loop XAILS,
+// XBILS, XPILS and the PBA's XBBAS (M8c2; the FPS joins in M8c3).
+struct InnerLoop {
+    double xa = 0.0, xb = 0.0, xp = 0.0;
+};
+
 // GenHel Figs. 5.1.6(a)–(d) (p. 5.5-14 to 5.5-17; control_rigging_5_5.txt):
 //   THOSUM = KXCTH0 XCSUM,  THRSUM = KXPTHR XPSUM
 //   THETA0 = THOSUM + BIAS_C
 //   A1S    = KXAA1S XASUM + MIX_AC THOSUM + BIAS_A
 //   B1S    = KXBB1S XBSUM + MIX_BC THOSUM + MIX_BP THRSUM + BIAS_B
 //   THETTR = THRSUM + THOSUM + BIAS_P
-// with XBSUM = SIGN_XB2 XB+2 and the other sums the pilot's inches (the SAS,
-// PBA and FPS inch inputs join here in M8c2 and M8c3), then the rotor head
-// limits of p. 5.5-20 on THETA0, A1S and B1S (D-045).
-Mixer mix(const GenHelRigging& r, const Controls& c) noexcept {
+// with XBSUM = SIGN_XB2 XB+2 + XBILS + XBBAS, XASUM = XA+2 + XAILS, XPSUM =
+// XP+2 + XPILS, XCSUM = XC+2, then the rotor head limits of p. 5.5-20 on
+// THETA0, A1S and B1S (D-045).
+Mixer mix(const GenHelRigging& r, const Controls& c, const InnerLoop& il) noexcept {
     const double xc = inches(r.collective, c.collective, true);
-    const double xa = inches(r.lat_cyclic, c.lat_cyclic, false);
-    const double xb = r.sign_lon_stick * inches(r.lon_cyclic, c.lon_cyclic, false);
-    const double xp = inches(r.pedal, c.pedal, false);
+    const double xa = inches(r.lat_cyclic, c.lat_cyclic, false) + il.xa;
+    const double xb = r.sign_lon_stick * inches(r.lon_cyclic, c.lon_cyclic, false) + il.xb;
+    const double xp = inches(r.pedal, c.pedal, false) + il.xp;
     const double thosum = r.k_collective * xc;
     const double thrsum = r.k_pedal * xp;
     Mixer m;
@@ -103,6 +111,191 @@ double body_x_eas(const SimContext& ctx) noexcept {
     return equivalent_airspeed(ctx.air.density, u_air);
 }
 
+using Fcs = GenHelFcs;
+
+// The fade's approach to its target: at most 1/T_fade, proportional within
+// 1/(T_fade k) of it, so it settles without chattering (numerical, D-045).
+constexpr double kFadeGain = 100.0;  // [1/s]
+
+// Passes of steady_states(): each sets every state to its input, which is
+// exact once it has run as many passes as the longest chain of states (7:
+// the roll analog's attitude filters, shaping, derivative, lags, actuator).
+constexpr int kSteadyPasses = 8;
+
+// The SAS's 2:1 gain switch (Fig. 5.1.3(a), p. 5.5-2): ON/ON both channels at
+// gain 1, ON/OFF the digital alone at 2, OFF/ON the analog alone at 2.
+double digital_gain(const AfcsSwitches& s) noexcept {
+    if (!s.sas_digital) {
+        return 0.0;
+    }
+    return s.sas_analog ? 1.0 : 2.0;
+}
+double analog_gain(const AfcsSwitches& s) noexcept {
+    if (!s.sas_analog) {
+        return 0.0;
+    }
+    return s.sas_digital ? 1.0 : 2.0;
+}
+
+double limit(double v, double l) noexcept {
+    return std::clamp(v, -l, l);
+}
+
+// The SAS and PBA at one evaluation (M8c2): the input of every first-order
+// state (a lag's input, a washout's or hold's input, an actuator's command,
+// the fade's target), the channel outputs [-] and the PBA's held command.
+struct AfcsSignals {
+    std::array<double, Fcs::kNumStates> in{};
+    double pitch_d = 0.0, pitch_a = 0.0, roll_d = 0.0, roll_a = 0.0, yaw_d = 0.0, yaw_a = 0.0;
+    double pba_held = 0.0;  // the hold's output
+};
+
+// A zero-order hold as a first-order Padé of half of it (D-045):
+// (1 − sT/4)/(1 + sT/4) = 2/(1 + sT/4) − 1, a lag z of T/4 with output 2z − u.
+double pade_hold(std::span<const double> x, std::size_t i, double u, AfcsSignals& s) noexcept {
+    s.in[i] = u;
+    return 2.0 * x[i] - u;
+}
+
+// GenHel Figs. 5.1.3(a)–(c) (SAS) and 5.1.4 (PBA), with the text pp. 5.5-2,
+// 5.5-3; signal names as fig_5_1_3_sas.txt. The sensors are the M8c1 states
+// (rate gyros, lateral accelerometer), the vertical gyro the Euler attitude
+// (Fig. 5.1.2: no dynamics), the airspeed VXBIKT the body-x equivalent
+// airspeed (D-040).
+AfcsSignals afcs_signals(const GenHelFcsConfig& c, const SimContext& ctx,
+                         std::span<const double> x) noexcept {
+    AfcsSignals o;
+    if (!c.sas) {
+        return o;
+    }
+    const GenHelSas& sas = *c.sas;
+    const AfcsSwitches& sw = ctx.controls.afcs;
+    const double gd = digital_gain(sw);
+    const double ga = analog_gain(sw);
+    const EulerAngles e = euler_angles(ctx.body.q_nb);
+    const double v = body_x_eas(ctx);
+    const bool slow = v < sas.switch_speed;
+    const double ysens = x[Fcs::kAccelY];
+    auto& in = o.in;
+
+    // Pitch, Fig. 5.1.3(a). Digital: A/D filter, rate and lagged rate,
+    // washout, switch, limit, hold.
+    const GenHelSasPitch& p = sas.pitch;
+    in[Fcs::kPitchAd] = x[Fcs::kGyroQ];
+    const double q1 = x[Fcs::kPitchAd];
+    in[Fcs::kPitchRateD] = q1;
+    in[Fcs::kPitchLagD] = q1;
+    const double pd =
+        p.rate_d.gain * x[Fcs::kPitchRateD] + p.lagged_rate_d.gain * x[Fcs::kPitchLagD];
+    in[Fcs::kPitchWashD] = pd;
+    o.pitch_d =
+        pade_hold(x, Fcs::kPitchHoldD, limit(gd * (pd - x[Fcs::kPitchWashD]), p.limit_d), o);
+    // Analog: KQQPA TW s/((T s + 1)(TW s + 1)), rate and lagged rate, the .5
+    // block, switch, limit.
+    in[Fcs::kPitchFilterA] = x[Fcs::kGyroQ];
+    const double qa = p.filter_a.gain * x[Fcs::kPitchFilterA];
+    in[Fcs::kPitchWashA] = qa;
+    const double q2 = qa - x[Fcs::kPitchWashA];
+    in[Fcs::kPitchRateA] = q2;
+    in[Fcs::kPitchLagA] = q2;
+    o.pitch_a =
+        limit(ga * p.scale_a *
+                  (p.rate_a.gain * x[Fcs::kPitchRateA] + p.lagged_rate_a.gain * x[Fcs::kPitchLagA]),
+              p.limit_a);
+
+    // Roll, Fig. 5.1.3(b). Digital: A/D filter, rate, lagged rate and the
+    // limited attitude, switch, limit, hold.
+    const GenHelSasRoll& r = sas.roll;
+    in[Fcs::kRollAd] = x[Fcs::kGyroP];
+    const double p1 = x[Fcs::kRollAd];
+    in[Fcs::kRollLagD] = p1;
+    const double rd = r.rate_gain_d * p1 + r.lagged_rate_d.gain * x[Fcs::kRollLagD] +
+                      r.attitude_gain_d * limit(e.roll, r.attitude_limit_d);
+    o.roll_d = pade_hold(x, Fcs::kRollHoldD, limit(gd * rd, r.limit_d), o);
+    // Analog, its rate derived from the roll attitude: f1 = KPHF1/((T1 s +
+    // 1)(T2 s + 1)) φ, then KPHF2/(A2 s² + A1 s + 1), limit, and KPHF3 s/((T1 s
+    // + 1)(T2 s + 1)) = p2, whose s is the second lag's rate; lags on p2, and
+    // the attitude path KPHIRA limit(KPHR1 f1).
+    in[Fcs::kRollAtt1] = r.attitude_filter_gain * e.roll;
+    in[Fcs::kRollAtt2] = x[Fcs::kRollAtt1];
+    const double f1 = x[Fcs::kRollAtt2];
+    in[Fcs::kRollShape] = r.shaping_gain * f1;
+    in[Fcs::kRollDer1] = limit(x[Fcs::kRollShape], r.shaping_limit);
+    in[Fcs::kRollDer2] = x[Fcs::kRollDer1];
+    const double p2 = r.derivative_gain * (x[Fcs::kRollDer1] - x[Fcs::kRollDer2]) / r.derivative_t2;
+    in[Fcs::kRollRateA] = p2;
+    in[Fcs::kRollLagA] = p2;
+    const double r_a = r.rate_a.gain * x[Fcs::kRollRateA];  // "B", to the yaw analog
+    const double ra = r_a + r.lagged_rate_a.gain * x[Fcs::kRollLagA] +
+                      r.attitude_output_gain_a * limit(r.attitude_gain_a * f1, r.attitude_limit_a);
+    o.roll_a = limit(ga * ra, r.limit_a);
+
+    // Yaw, Fig. 5.1.3(c). Digital: A/D filter; rate, and the lagged rate below
+    // the switch speed; washout; and, faded in above it, the lagged lateral
+    // acceleration and the roll A/D output ("A"); switch, limit, hold.
+    const GenHelSasYaw& y = sas.yaw;
+    in[Fcs::kYawAd] = x[Fcs::kGyroR];
+    const double r1 = x[Fcs::kYawAd];
+    in[Fcs::kYawRateD] = r1;
+    in[Fcs::kYawLagD] = slow ? r1 : 0.0;
+    const double s1 = y.rate_d.gain * x[Fcs::kYawRateD] + y.lagged_rate_d.gain * x[Fcs::kYawLagD];
+    in[Fcs::kYawWashD] = s1;
+    in[Fcs::kYawAccelD] = ysens;
+    in[Fcs::kYawFade] = slow ? 0.0 : 1.0;
+    const double fade = std::clamp(x[Fcs::kYawFade], 0.0, 1.0);
+    const double s2 =
+        fade * (y.lateral_accel_d.gain * x[Fcs::kYawAccelD] + y.roll_rate_gain_d * p1);
+    o.yaw_d = pade_hold(x, Fcs::kYawHoldD, limit(gd * (s1 - x[Fcs::kYawWashD] + s2), y.limit_d), o);
+    // Analog: KRRFI TW s/((T s + 1)(TW s + 1)) = w; a lag on w; a lag on w
+    // below the switch speed, on KLAYF1 Y.SENS above it; the .5 block; and,
+    // faded in above it, KRPPYA on the roll channel's "B"; switch, limit.
+    in[Fcs::kYawFilterA] = x[Fcs::kGyroR];
+    const double ra_f = y.filter_a.gain * x[Fcs::kYawFilterA];
+    in[Fcs::kYawWashA] = ra_f;
+    const double w = ra_f - x[Fcs::kYawWashA];
+    in[Fcs::kYawRateA] = w;
+    in[Fcs::kYawLagA] = slow ? w : y.lateral_accel_gain_a * ysens;
+    const double s3 =
+        y.scale_a * (y.rate_a.gain * x[Fcs::kYawRateA] + y.lagged_a.gain * x[Fcs::kYawLagA]);
+    o.yaw_a = limit(ga * (s3 + fade * y.roll_rate_gain_a * r_a), y.limit_a);
+
+    // SAS actuator commands: percent → blade pitch (KPCDG*) → inches (1/KX*),
+    // Figs. 5.1.6(b)–(d).
+    const GenHelRigging& rig = c.rigging;
+    in[Fcs::kPitchAct] = (o.pitch_d + o.pitch_a) * sas.descale_pitch / rig.k_longitudinal;
+    in[Fcs::kRollAct] = (o.roll_d + o.roll_a) * sas.descale_roll / rig.k_lateral;
+    in[Fcs::kYawAct] = (o.yaw_d + o.yaw_a) * sas.descale_yaw / rig.k_pedal;
+
+    // PBA, Fig. 5.1.4: the limited attitude, conditioned pitch rate (q1) and
+    // airspeed above the bias, plus the bias; the hold. Off: no command.
+    if (c.pitch_bias) {
+        const GenHelPitchBias& b = *c.pitch_bias;
+        const double batemp =
+            sw.pitch_bias
+                ? b.attitude_gain * limit(e.pitch, b.attitude_limit) +
+                      b.rate_gain * limit(q1, b.rate_limit_in) +
+                      b.speed_gain * std::clamp(v - b.speed_from, 0.0, b.speed_range) + b.bias
+                : 0.0;
+        o.pba_held = pade_hold(x, Fcs::kPbaHold, batemp, o);
+    }
+    return o;
+}
+
+// The automatic inches into the mixer at states x.
+InnerLoop inner_loop(const GenHelFcsConfig& c, std::span<const double> x) noexcept {
+    InnerLoop il;
+    if (c.sas) {
+        il.xb = x[Fcs::kPitchAct];
+        il.xa = x[Fcs::kRollAct];
+        il.xp = x[Fcs::kYawAct];
+        if (c.pitch_bias) {
+            const double pba = limit(x[Fcs::kPba], c.pitch_bias->authority);
+            il.xb += pba * c.sas->descale_pitch / c.rigging.k_longitudinal;  // XBBAS
+        }
+    }
+    return il;
+}
+
 // The lateral-acceleration gain's ramp, 0 → 1 from ay_speed_lo to
 // ay_speed_hi; checked first, so a bad range gets its own message.
 Table1D ay_ramp(const GenHelStabilatorLaw& l) {
@@ -136,11 +329,87 @@ GenHelFcs::GenHelFcs(GenHelFcsConfig config)
     if (!(r.theta0_min < r.theta0_max) || !(r.a1s_min < r.a1s_max) || !(r.b1s_min < r.b1s_max)) {
         throw InitError("genhel_fcs: each head limit's min must be below its max");
     }
+    if (config_.sas) {
+        const GenHelSas& s = *config_.sas;
+        positive(s.actuator, "sas actuator");
+        const auto time = [](double t, const char* what) {
+            if (!(t > 0.0)) {
+                throw InitError(std::string("genhel_fcs: sas ") + what + " must be positive");
+            }
+            return t;
+        };
+        const auto lim = [](double l, const char* what) {
+            if (!(l >= 0.0)) {
+                throw InitError(std::string("genhel_fcs: sas ") + what + " must be >= 0");
+            }
+        };
+        if (!(r.k_lateral != 0.0) || !(r.k_longitudinal != 0.0) || !(r.k_pedal != 0.0)) {
+            throw InitError("genhel_fcs: the sas needs nonzero rigging gains");
+        }
+        const double hold = time(s.hold, "hold") / 4.0;
+        time(s.fade_time, "fade time");
+        const GenHelSasPitch& p = s.pitch;
+        tau_[kPitchAd] = time(p.ad_lag, "pitch A/D lag");
+        tau_[kPitchRateD] = time(p.rate_d.tau, "pitch digital rate lag");
+        tau_[kPitchLagD] = time(p.lagged_rate_d.tau, "pitch digital lagged rate lag");
+        tau_[kPitchWashD] = time(p.washout_d, "pitch digital washout");
+        tau_[kPitchHoldD] = hold;
+        tau_[kPitchFilterA] = time(p.filter_a.tau, "pitch analog filter lag");
+        tau_[kPitchWashA] = time(p.washout_a, "pitch analog washout");
+        tau_[kPitchRateA] = time(p.rate_a.tau, "pitch analog rate lag");
+        tau_[kPitchLagA] = time(p.lagged_rate_a.tau, "pitch analog lagged rate lag");
+        lim(p.limit_d, "pitch digital limit");
+        lim(p.limit_a, "pitch analog limit");
+        const GenHelSasRoll& o = s.roll;
+        tau_[kRollAd] = time(o.ad_lag, "roll A/D lag");
+        tau_[kRollLagD] = time(o.lagged_rate_d.tau, "roll digital lagged rate lag");
+        tau_[kRollHoldD] = hold;
+        tau_[kRollAtt1] = time(o.attitude_filter_t1, "roll attitude filter lag 1");
+        tau_[kRollAtt2] = time(o.attitude_filter_t2, "roll attitude filter lag 2");
+        tau_[kRollDer1] = time(o.derivative_t1, "roll derivative lag 1");
+        tau_[kRollDer2] = time(o.derivative_t2, "roll derivative lag 2");
+        tau_[kRollRateA] = time(o.rate_a.tau, "roll analog rate lag");
+        tau_[kRollLagA] = time(o.lagged_rate_a.tau, "roll analog lagged rate lag");
+        time(o.shaping_a2, "roll shaping a2");
+        time(o.shaping_a1, "roll shaping a1");
+        lim(o.attitude_limit_d, "roll digital attitude limit");
+        lim(o.limit_d, "roll digital limit");
+        lim(o.shaping_limit, "roll shaping limit");
+        lim(o.attitude_limit_a, "roll analog attitude limit");
+        lim(o.limit_a, "roll analog limit");
+        const GenHelSasYaw& y = s.yaw;
+        tau_[kYawAd] = time(y.ad_lag, "yaw A/D lag");
+        tau_[kYawRateD] = time(y.rate_d.tau, "yaw digital rate lag");
+        tau_[kYawLagD] = time(y.lagged_rate_d.tau, "yaw digital lagged rate lag");
+        tau_[kYawWashD] = time(y.washout_d, "yaw digital washout");
+        tau_[kYawAccelD] = time(y.lateral_accel_d.tau, "yaw digital lateral acceleration lag");
+        tau_[kYawHoldD] = hold;
+        tau_[kYawFilterA] = time(y.filter_a.tau, "yaw analog filter lag");
+        tau_[kYawWashA] = time(y.washout_a, "yaw analog washout");
+        tau_[kYawRateA] = time(y.rate_a.tau, "yaw analog rate lag");
+        tau_[kYawLagA] = time(y.lagged_a.tau, "yaw analog lagged lag");
+        lim(y.limit_d, "yaw digital limit");
+        lim(y.limit_a, "yaw analog limit");
+    }
+    if (config_.pitch_bias) {
+        const GenHelPitchBias& b = *config_.pitch_bias;
+        if (!config_.sas) {
+            throw InitError("genhel_fcs: the pitch bias actuator needs the sas (its pitch rate)");
+        }
+        if (!(b.hold > 0.0) || !(b.actuator_gain > 0.0) || !(b.rate_limit > 0.0) ||
+            !(b.authority > 0.0) || !(b.attitude_limit >= 0.0) || !(b.rate_limit_in >= 0.0) ||
+            !(b.speed_range >= 0.0)) {
+            throw InitError(
+                "genhel_fcs: the pitch bias actuator needs hold, gain, rate limit and authority "
+                "> 0 and its input limits >= 0");
+        }
+        tau_[kPbaHold] = b.hold / 4.0;
+    }
 }
 
 void GenHelFcs::initial_states(std::span<double> x) const {
     std::fill(x.begin(), x.end(), 0.0);
-    const Mixer m = mix(config_.rigging, Controls{});
+    const Mixer m = mix(config_.rigging, Controls{}, InnerLoop{});
     x[kServoTheta0] = m.theta0;
     x[kServoA1s] = m.a1s;
     x[kServoB1s] = m.b1s;
@@ -168,7 +437,24 @@ GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx,
     const GenHelRigging& r = config_.rigging;
     const GenHelStabilatorLaw& l = config_.stabilator;
     GenHelFcsOutputs o;
-    const Mixer m = mix(r, ctx.controls);
+    const AfcsSignals s = afcs_signals(config_, ctx, x);
+    o.pitch_d = s.pitch_d;
+    o.pitch_a = s.pitch_a;
+    o.roll_d = s.roll_d;
+    o.roll_a = s.roll_a;
+    o.yaw_d = s.yaw_d;
+    o.yaw_a = s.yaw_a;
+    const InnerLoop il = inner_loop(config_, x);
+    if (config_.sas) {
+        o.xbils = x[kPitchAct];
+        o.xails = x[kRollAct];
+        o.xpils = x[kYawAct];
+        o.xbbas = il.xb - o.xbils;
+    }
+    if (config_.pitch_bias) {
+        o.pba = limit(x[kPba], config_.pitch_bias->authority);
+    }
+    const Mixer m = mix(r, ctx.controls, il);
     o.theta0_cmd = m.theta0;
     o.a1s_cmd = m.a1s;
     o.b1s_cmd = m.b1s;
@@ -232,6 +518,41 @@ void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
     // (D-040), then the servo with its rate limit on the command.
     out.xdot0[kAirspeedLag] = (body_x_eas(ctx) - x[kAirspeedLag]) / config_.stabilator.airspeed_lag;
     run(config_.stabilator.servo, o.stabilator_cmd, kServoStab);
+
+    // SAS and PBA (M8c2): first-order states toward their inputs; the
+    // second-order roll shaping and the SAS actuators; the fade; the PBA
+    // actuator. Without their config sections they rest at zero.
+    const std::span<double> afcs_rates = out.xdot0.subspan(kPitchAd, kNumStates - kPitchAd);
+    std::fill(afcs_rates.begin(), afcs_rates.end(), 0.0);
+    if (!config_.sas) {
+        return;
+    }
+    const AfcsSignals s = afcs_signals(config_, ctx, x);
+    for (std::size_t i = kPitchAd; i < kNumStates; ++i) {
+        if (tau_[i] > 0.0) {
+            out.xdot0[i] = (s.in[i] - x[i]) / tau_[i];
+        }
+    }
+    const GenHelSas& sas = *config_.sas;
+    const ServoConfig shaping{sas.roll.shaping_a2, sas.roll.shaping_a1, 0.0};
+    run(shaping, s.in[kRollShape], kRollShape);
+    run(sas.actuator, s.in[kPitchAct], kPitchAct);
+    run(sas.actuator, s.in[kRollAct], kRollAct);
+    run(sas.actuator, s.in[kYawAct], kYawAct);
+    // The 2 s fade: toward its target at 1/T_fade, settling within 1/(T k).
+    const double rate = 1.0 / sas.fade_time;
+    out.xdot0[kYawFade] = std::clamp(kFadeGain * (s.in[kYawFade] - x[kYawFade]), -rate, rate);
+    // PBA actuator (Fig. 5.1.4, p. 5.5-3): gain on the error to the held
+    // command, rate limit, and travel limit, where it stops (D-045: GenHel's
+    // limit after the integrator would let it wind up).
+    if (config_.pitch_bias) {
+        const GenHelPitchBias& pb = *config_.pitch_bias;
+        double v = limit(pb.actuator_gain * (s.pba_held - x[kPba]), pb.rate_limit);
+        if ((x[kPba] >= pb.authority && v > 0.0) || (x[kPba] <= -pb.authority && v < 0.0)) {
+            v = 0.0;
+        }
+        out.xdot0[kPba] = v;
+    }
 }
 
 void GenHelFcs::steady_states(const SimContext& ctx, std::span<double> x) const {
@@ -242,7 +563,23 @@ void GenHelFcs::steady_states(const SimContext& ctx, std::span<double> x) const 
     x[kGyroR] = b.omega_b.z();
     x[kAccelY] = lateral_specific_force0(b, config_.accelerometer_b);
     x[kAirspeedLag] = body_x_eas(ctx);
-    // The commands read the sensors just set.
+    // SAS and PBA (GenHel's IC mode, p. 5.5-2: integrators at their initial
+    // values): every state at its input, pass by pass down the chains, so the
+    // washouts read zero and the lags their steady input; the fade at its
+    // target; the PBA at its held command within its travel.
+    if (config_.sas) {
+        for (int pass = 0; pass < kSteadyPasses; ++pass) {
+            const AfcsSignals s = afcs_signals(config_, ctx, x);
+            for (std::size_t i = kPitchAd; i < kNumStates; ++i) {
+                x[i] = s.in[i];
+            }
+            for (const std::size_t i : {kRollShape, kPitchAct, kRollAct, kYawAct}) {
+                x[i + 1] = 0.0;  // the second-order states' velocities
+            }
+            x[kPba] = config_.pitch_bias ? limit(s.pba_held, config_.pitch_bias->authority) : 0.0;
+        }
+    }
+    // The commands read the sensors and inner loop just set.
     const GenHelFcsOutputs o = evaluate(ctx, x);
     x[kServoTheta0] = o.theta0_cmd;
     x[kServoA1s] = o.a1s_cmd;
@@ -344,11 +681,158 @@ GenHelStabilatorLaw stabilator_from_config(const Config& node) {
     return l;
 }
 
+// {gain, lag}: a lag with its gain in `gain_dim`, or a plain number when
+// `gain_dim` is dimensionless.
+Lag lag_from_config(const Config& node, Dimension gain_dim) {
+    node.allow_keys({"gain", "lag"});
+    Lag l;
+    l.gain = gain_dim == Dimension::dimensionless ? node.number("gain")
+                                                  : node.quantity("gain", gain_dim);
+    l.tau = node.quantity("lag", Dimension::time);
+    return l;
+}
+
+GenHelSasPitch sas_pitch_from_config(const Config& node) {
+    node.allow_keys({"digital", "analog"});
+    GenHelSasPitch p;
+    const Config d = node.child("digital");
+    d.allow_keys({"ad_lag", "rate", "lagged_rate", "washout", "limit"});
+    p.ad_lag = d.quantity("ad_lag", Dimension::time);
+    p.rate_d = lag_from_config(d.child("rate"), Dimension::per_angular_rate);
+    p.lagged_rate_d = lag_from_config(d.child("lagged_rate"), Dimension::per_angular_rate);
+    p.washout_d = d.quantity("washout", Dimension::time);
+    p.limit_d = d.quantity("limit", Dimension::dimensionless);
+    const Config a = node.child("analog");
+    a.allow_keys({"filter", "washout", "rate", "lagged_rate", "scale", "limit"});
+    p.filter_a = lag_from_config(a.child("filter"), Dimension::dimensionless);
+    p.washout_a = a.quantity("washout", Dimension::time);
+    p.rate_a = lag_from_config(a.child("rate"), Dimension::per_angular_rate);
+    p.lagged_rate_a = lag_from_config(a.child("lagged_rate"), Dimension::per_angular_rate);
+    p.scale_a = a.number("scale");
+    p.limit_a = a.quantity("limit", Dimension::dimensionless);
+    return p;
+}
+
+GenHelSasRoll sas_roll_from_config(const Config& node) {
+    node.allow_keys({"digital", "analog"});
+    GenHelSasRoll r;
+    const Config d = node.child("digital");
+    d.allow_keys({"ad_lag", "rate_gain", "lagged_rate", "attitude", "limit"});
+    r.ad_lag = d.quantity("ad_lag", Dimension::time);
+    r.rate_gain_d = d.quantity("rate_gain", Dimension::per_angular_rate);
+    r.lagged_rate_d = lag_from_config(d.child("lagged_rate"), Dimension::per_angular_rate);
+    const Config da = d.child("attitude");
+    da.allow_keys({"gain", "limit"});
+    r.attitude_gain_d = da.quantity("gain", Dimension::per_angle);
+    r.attitude_limit_d = da.quantity("limit", Dimension::angle);
+    r.limit_d = d.quantity("limit", Dimension::dimensionless);
+    const Config a = node.child("analog");
+    a.allow_keys(
+        {"attitude_filter", "shaping", "derivative", "rate", "lagged_rate", "attitude", "limit"});
+    const Config f = a.child("attitude_filter");
+    f.allow_keys({"gain", "lag1", "lag2"});
+    r.attitude_filter_gain = f.number("gain");
+    r.attitude_filter_t1 = f.quantity("lag1", Dimension::time);
+    r.attitude_filter_t2 = f.quantity("lag2", Dimension::time);
+    const Config s = a.child("shaping");
+    s.allow_keys({"gain", "a2", "a1", "limit"});
+    r.shaping_gain = s.number("gain");
+    r.shaping_a2 = s.quantity("a2", Dimension::time_squared);
+    r.shaping_a1 = s.quantity("a1", Dimension::time);
+    r.shaping_limit = s.quantity("limit", Dimension::angle);
+    const Config der = a.child("derivative");
+    der.allow_keys({"gain", "lag1", "lag2"});
+    r.derivative_gain = der.number("gain");
+    r.derivative_t1 = der.quantity("lag1", Dimension::time);
+    r.derivative_t2 = der.quantity("lag2", Dimension::time);
+    r.rate_a = lag_from_config(a.child("rate"), Dimension::per_angular_rate);
+    r.lagged_rate_a = lag_from_config(a.child("lagged_rate"), Dimension::per_angular_rate);
+    const Config aa = a.child("attitude");
+    aa.allow_keys({"gain", "limit", "output_gain"});
+    r.attitude_gain_a = aa.number("gain");
+    r.attitude_limit_a = aa.quantity("limit", Dimension::angle);
+    r.attitude_output_gain_a = aa.quantity("output_gain", Dimension::per_angle);
+    r.limit_a = a.quantity("limit", Dimension::dimensionless);
+    return r;
+}
+
+GenHelSasYaw sas_yaw_from_config(const Config& node) {
+    node.allow_keys({"digital", "analog"});
+    GenHelSasYaw y;
+    const Config d = node.child("digital");
+    d.allow_keys(
+        {"ad_lag", "rate", "lagged_rate", "washout", "lateral_accel", "roll_rate_gain", "limit"});
+    y.ad_lag = d.quantity("ad_lag", Dimension::time);
+    y.rate_d = lag_from_config(d.child("rate"), Dimension::per_angular_rate);
+    y.lagged_rate_d = lag_from_config(d.child("lagged_rate"), Dimension::per_angular_rate);
+    y.washout_d = d.quantity("washout", Dimension::time);
+    y.lateral_accel_d = lag_from_config(d.child("lateral_accel"), Dimension::per_acceleration);
+    y.roll_rate_gain_d = d.quantity("roll_rate_gain", Dimension::per_angular_rate);
+    y.limit_d = d.quantity("limit", Dimension::dimensionless);
+    const Config a = node.child("analog");
+    a.allow_keys({"filter", "washout", "rate", "lateral_accel_gain", "lagged", "scale",
+                  "roll_rate_gain", "limit"});
+    y.filter_a = lag_from_config(a.child("filter"), Dimension::dimensionless);
+    y.washout_a = a.quantity("washout", Dimension::time);
+    y.rate_a = lag_from_config(a.child("rate"), Dimension::per_angular_rate);
+    y.lateral_accel_gain_a = a.quantity("lateral_accel_gain", Dimension::rate_per_acceleration);
+    y.lagged_a = lag_from_config(a.child("lagged"), Dimension::per_angular_rate);
+    y.scale_a = a.number("scale");
+    y.roll_rate_gain_a = a.number("roll_rate_gain");
+    y.limit_a = a.quantity("limit", Dimension::dimensionless);
+    return y;
+}
+
+GenHelSas sas_from_config(const Config& node) {
+    node.allow_keys(
+        {"hold", "switch_speed", "fade_time", "actuator", "descaling", "pitch", "roll", "yaw"});
+    GenHelSas s;
+    s.hold = node.quantity("hold", Dimension::time);
+    s.switch_speed = node.quantity("switch_speed", Dimension::speed);
+    s.fade_time = node.quantity("fade_time", Dimension::time);
+    s.actuator = servo_from_config(node.child("actuator"), false);
+    const Config ds = node.child("descaling");
+    ds.allow_keys({"pitch", "roll", "yaw"});
+    s.descale_pitch = ds.quantity("pitch", Dimension::angle);
+    s.descale_roll = ds.quantity("roll", Dimension::angle);
+    s.descale_yaw = ds.quantity("yaw", Dimension::angle);
+    s.pitch = sas_pitch_from_config(node.child("pitch"));
+    s.roll = sas_roll_from_config(node.child("roll"));
+    s.yaw = sas_yaw_from_config(node.child("yaw"));
+    return s;
+}
+
+GenHelPitchBias pitch_bias_from_config(const Config& node) {
+    node.allow_keys({"attitude", "pitch_rate", "airspeed", "bias", "hold", "actuator"});
+    GenHelPitchBias b;
+    const Config at = node.child("attitude");
+    at.allow_keys({"gain", "limit"});
+    b.attitude_gain = at.quantity("gain", Dimension::per_angle);
+    b.attitude_limit = at.quantity("limit", Dimension::angle);
+    const Config pr = node.child("pitch_rate");
+    pr.allow_keys({"gain", "limit"});
+    b.rate_gain = pr.quantity("gain", Dimension::per_angular_rate);
+    b.rate_limit_in = pr.quantity("limit", Dimension::angular_rate);
+    const Config as = node.child("airspeed");
+    as.allow_keys({"gain", "from", "range"});
+    b.speed_gain = as.quantity("gain", Dimension::per_speed);
+    b.speed_from = as.quantity("from", Dimension::speed);
+    b.speed_range = as.quantity("range", Dimension::speed);
+    b.bias = node.quantity("bias", Dimension::dimensionless);
+    b.hold = node.quantity("hold", Dimension::time);
+    const Config ac = node.child("actuator");
+    ac.allow_keys({"gain", "rate_limit", "authority"});
+    b.actuator_gain = ac.quantity("gain", Dimension::frequency);
+    b.rate_limit = ac.quantity("rate_limit", Dimension::frequency);
+    b.authority = ac.quantity("authority", Dimension::dimensionless);
+    return b;
+}
+
 }  // namespace
 
 std::unique_ptr<GenHelFcs> GenHelFcs::from_config(const Config& node) {
     node.allow_keys({"type", "name", "rigging", "primary_servo", "rate_gyro",
-                     "lateral_accelerometer", "stabilator"});
+                     "lateral_accelerometer", "stabilator", "sas", "pitch_bias"});
     GenHelFcsConfig c;
     c.name = node.string("name");
     c.rigging =
@@ -368,6 +852,12 @@ std::unique_ptr<GenHelFcs> GenHelFcs::from_config(const Config& node) {
              pos.quantity("z", Dimension::length));
     c.stabilator = node.in_context(
         "stabilator", [&] { return stabilator_from_config(node.child("stabilator")); });
+    if (node.contains("sas")) {
+        c.sas = sas_from_config(node.child("sas"));
+    }
+    if (node.contains("pitch_bias")) {
+        c.pitch_bias = pitch_bias_from_config(node.child("pitch_bias"));
+    }
     return node.in_context("", [&] { return std::make_unique<GenHelFcs>(std::move(c)); });
 }
 

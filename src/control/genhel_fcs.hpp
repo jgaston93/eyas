@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -91,6 +93,100 @@ struct GenHelStabilatorLaw {
     ServoConfig servo;             // Fig. 5.1.7 servo and rate limit
 };
 
+// A first-order lag K/(τ s + 1); K in the units of its block.
+struct Lag {
+    double gain = 0.0;
+    double tau = 0.0;  // [s]
+};
+
+// The SAS (Figs. 5.1.3(a)–(c), text p. 5.5-2; M8c2), each axis a digital and
+// an analog channel, in SI: rates [rad/s], angles [rad], acceleration
+// [m/s²], airspeed [m/s] (equivalent, D-040), outputs a fraction of
+// authority (1 = 100 %). Names are GenHel's (fig_5_1_3_sas.txt).
+struct GenHelSasPitch {
+    double ad_lag = 0.0;        // P_AD [s], A/D filter (also the PBA's pitch rate)
+    Lag rate_d, lagged_rate_d;  // KRQQPD, KLQQPD [1/(rad/s)]
+    double washout_d = 0.0;     // TWQQPD [s]
+    double limit_d = 0.0;       // LMPD [-]
+    Lag filter_a;               // KQQPA [-], TQQPA
+    double washout_a = 0.0;     // TWQQPA [s]
+    Lag rate_a, lagged_rate_a;  // KRQQPA, KLQQPA [1/(rad/s)]
+    double scale_a = 0.0;       // the analog ".5 %/%" block [-]
+    double limit_a = 0.0;       // LMPA [-]
+};
+
+struct GenHelSasRoll {
+    double ad_lag = 0.0;            // R_AD [s]
+    double rate_gain_d = 0.0;       // KRPPRD [1/(rad/s)]
+    Lag lagged_rate_d;              // KLPPRD [1/(rad/s)]
+    double attitude_gain_d = 0.0;   // KPHRD [1/rad]
+    double attitude_limit_d = 0.0;  // LMPHRD [rad]
+    double limit_d = 0.0;           // LMRD [-]
+    // Analog: roll rate derived from the vertical gyro's roll attitude.
+    double attitude_filter_gain = 0.0;                // KPHF1 [-]
+    double attitude_filter_t1 = 0.0;                  // T1PHF1 [s]
+    double attitude_filter_t2 = 0.0;                  // T2PHF1 [s]
+    double shaping_gain = 0.0;                        // KPHF2 [-]
+    double shaping_a2 = 0.0, shaping_a1 = 0.0;        // A2PHF2 [s²], A1PHF2 [s]
+    double shaping_limit = 0.0;                       // LMPHR1 [rad]
+    double derivative_gain = 0.0;                     // KPHF3 [-] (its s is the derivative)
+    double derivative_t1 = 0.0, derivative_t2 = 0.0;  // T1PHF3, T2PHF3 [s]
+    Lag rate_a, lagged_rate_a;                        // KRPHRA, KLPHRA [1/(rad/s)]
+    double attitude_gain_a = 0.0;                     // KPHR1 [-]
+    double attitude_limit_a = 0.0;                    // LMPHRA [rad]
+    double attitude_output_gain_a = 0.0;              // KPHIRA [1/rad]
+    double limit_a = 0.0;                             // LMRA [-]
+};
+
+struct GenHelSasYaw {
+    double ad_lag = 0.0;            // Y_AD [s]
+    Lag rate_d;                     // KRRRYD [1/(rad/s)]
+    Lag lagged_rate_d;              // KLRRYD [1/(rad/s)], below the switch speed only
+    double washout_d = 0.0;         // TWRRYD [s]
+    Lag lateral_accel_d;            // KLAYYD [1/(m/s²)], faded in above the switch speed
+    double roll_rate_gain_d = 0.0;  // KRPPYD [1/(rad/s)], on the digital roll A/D output
+    double limit_d = 0.0;           // LMYD [-]
+    Lag filter_a;                   // KRRFI [-], TRRFI
+    double washout_a = 0.0;         // TWRRYA [s]
+    Lag rate_a;                     // KRRRYA [1/(rad/s)]
+    // KLAYF1 [(rad/s)/(m/s²)]: the lateral acceleration into the lagged path
+    // above the switch speed (its 0.0001 s lag is below the step: unity, p. 5.5-2).
+    double lateral_accel_gain_a = 0.0;
+    Lag lagged_a;                   // KLAYRR [1/(rad/s)], TLAYRR
+    double scale_a = 0.0;           // the analog ".5 %/%" block [-]
+    double roll_rate_gain_a = 0.0;  // KRPPYA [-], on the analog roll rate path's output
+    double limit_a = 0.0;           // LMYA [-]
+};
+
+struct GenHelSas {
+    GenHelSasPitch pitch;
+    GenHelSasRoll roll;
+    GenHelSasYaw yaw;
+    double hold = 0.0;          // digital zero-order hold [s] (a Padé of half of it, D-045)
+    double switch_speed = 0.0;  // VG60SW [m/s]
+    double fade_time = 0.0;     // [s] "2 SEC FADE"
+    ServoConfig actuator;       // SAS actuator, on the inches (Figs. 5.1.6(b)–(d))
+    // Percent to blade pitch, KPCDGP, KPCDGR, KPCDGY [rad per unit fraction];
+    // divided by the rigging gain into the inner-loop inches XBILS, XAILS, XPILS.
+    double descale_pitch = 0.0, descale_roll = 0.0, descale_yaw = 0.0;
+};
+
+// The pitch bias actuator, Fig. 5.1.4 and text p. 5.5-3 (M8c2).
+struct GenHelPitchBias {
+    double attitude_gain = 0.0;   // KTHBA [1/rad]
+    double attitude_limit = 0.0;  // LMTHBA [rad]
+    double rate_gain = 0.0;       // KQQBA [1/(rad/s)], on the pitch SAS A/D output
+    double rate_limit_in = 0.0;   // LMQQBA [rad/s]
+    double speed_gain = 0.0;      // KVXBA [s/m]
+    double speed_from = 0.0;      // [m/s] the −80 kt bias
+    double speed_range = 0.0;     // [m/s] LMVXBA's upper limit
+    double bias = 0.0;            // BIAS_BA [-]
+    double hold = 0.0;            // [s] zero-order hold (a Padé of half of it, D-045)
+    double actuator_gain = 0.0;   // [1/s]
+    double rate_limit = 0.0;      // [1/s] actuator rate
+    double authority = 0.0;       // [-] actuator travel, ±
+};
+
 struct GenHelFcsConfig {
     std::string name;  // instance name (D-003); required
     GenHelRigging rigging;
@@ -99,6 +195,10 @@ struct GenHelFcsConfig {
     ServoConfig lateral_accelerometer;    // Fig. 5.1.2
     Vec3 accelerometer_b = Vec3::Zero();  // [m] transducer from the CG, body axes
     GenHelStabilatorLaw stabilator;
+    // Optional (M8c2): without them their states stay at zero and the
+    // switches (Controls::afcs) do nothing.
+    std::optional<GenHelSas> sas;
+    std::optional<GenHelPitchBias> pitch_bias;
 };
 
 // Signals of one evaluation, for outputs and tests.
@@ -111,6 +211,12 @@ struct GenHelFcsOutputs {
     // within the head limits [rad].
     double a1s_cmd = 0.0, b1s_cmd = 0.0, theta0_cmd = 0.0, thettr_cmd = 0.0;
     double stabilator_cmd = 0.0;  // IHT0 within the travel limits [rad]
+    // SAS channel outputs PDSASO, PASASO, RDSASO, RASASO, YDSASO, YASASO [-]
+    // (fractions; the digital ones after the hold), the PBA position [-], and
+    // the inner-loop inches XBILS, XAILS, XPILS, XBBAS [m].
+    double pitch_d = 0.0, pitch_a = 0.0, roll_d = 0.0, roll_a = 0.0, yaw_d = 0.0, yaw_a = 0.0;
+    double pba = 0.0;
+    double xbils = 0.0, xails = 0.0, xpils = 0.0, xbbas = 0.0;
 };
 
 class GenHelFcs : public DynamicComponent {
@@ -126,7 +232,46 @@ public:
     static constexpr std::size_t kAccelY = 14;
     static constexpr std::size_t kAirspeedLag = 16;  // V_F [m/s]
     static constexpr std::size_t kServoStab = 17;
-    static constexpr std::size_t kNumStates = 19;
+    // SAS (M8c2). First-order states hold a lag's output (washouts: the lag
+    // their output subtracts from the input; holds: the Padé's lag); the
+    // actuators are position and velocity [m].
+    static constexpr std::size_t kPitchAd = 19;       // q₁, the A/D filter output
+    static constexpr std::size_t kPitchRateD = 20;    // KRQQPD's lag
+    static constexpr std::size_t kPitchLagD = 21;     // KLQQPD's lag
+    static constexpr std::size_t kPitchWashD = 22;    // WSQQPD
+    static constexpr std::size_t kPitchHoldD = 23;    // zero-order hold
+    static constexpr std::size_t kPitchFilterA = 24;  // KQQPA's lag
+    static constexpr std::size_t kPitchWashA = 25;    // WSQQPA
+    static constexpr std::size_t kPitchRateA = 26;    // KRQQPA's lag
+    static constexpr std::size_t kPitchLagA = 27;     // KLQQPA's lag
+    static constexpr std::size_t kPitchAct = 28;      // SAS actuator → XBILS
+    static constexpr std::size_t kRollAd = 30;        // p₁
+    static constexpr std::size_t kRollLagD = 31;      // KLPPRD's lag
+    static constexpr std::size_t kRollHoldD = 32;
+    static constexpr std::size_t kRollAtt1 = 33;  // KPHF1's lags, in series
+    static constexpr std::size_t kRollAtt2 = 34;
+    static constexpr std::size_t kRollShape = 35;  // KPHF2's second order (2 states)
+    static constexpr std::size_t kRollDer1 = 37;   // KPHF3's lags, in series
+    static constexpr std::size_t kRollDer2 = 38;
+    static constexpr std::size_t kRollRateA = 39;  // KRPHRA's lag
+    static constexpr std::size_t kRollLagA = 40;   // KLPHRA's lag
+    static constexpr std::size_t kRollAct = 41;    // → XAILS
+    static constexpr std::size_t kYawAd = 43;      // r₁
+    static constexpr std::size_t kYawRateD = 44;   // KRRRYD's lag
+    static constexpr std::size_t kYawLagD = 45;    // KLRRYD's lag
+    static constexpr std::size_t kYawWashD = 46;   // WSRRYD
+    static constexpr std::size_t kYawAccelD = 47;  // KLAYYD's lag
+    static constexpr std::size_t kYawFade = 48;    // the 2 s fade, 0..1
+    static constexpr std::size_t kYawHoldD = 49;
+    static constexpr std::size_t kYawFilterA = 50;  // KRRFI's lag
+    static constexpr std::size_t kYawWashA = 51;    // WSRRYA
+    static constexpr std::size_t kYawRateA = 52;    // KRRRYA's lag
+    static constexpr std::size_t kYawLagA = 53;     // KLAYRR's lag
+    static constexpr std::size_t kYawAct = 54;      // → XPILS
+    // Pitch bias actuator (M8c2).
+    static constexpr std::size_t kPbaHold = 56;  // zero-order hold
+    static constexpr std::size_t kPba = 57;      // actuator position [-]
+    static constexpr std::size_t kNumStates = 58;
 
     explicit GenHelFcs(GenHelFcsConfig config);
 
@@ -155,6 +300,8 @@ public:
 
 private:
     GenHelFcsConfig config_;
+    // Time constant of each first-order SAS and PBA state [s]; 0 for the rest.
+    std::array<double, kNumStates> tau_{};
     Table1D ay_ramp_;  // 0 → 1 over the lateral-acceleration ramp, corners rounded
     mutable TableCursor<1> ay_cursor_;  // search hint only (spec §6)
     CouplingSlot theta0_, theta1s_, theta1c_, theta_tr_, stab_;

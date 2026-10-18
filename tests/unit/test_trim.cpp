@@ -5,6 +5,7 @@
 // are checked on their own.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <random>
@@ -356,17 +357,158 @@ TEST(Trim, FcsKickDiesOut) {
     }
 }
 
+// M8c2 (D-045): with the SAS and PBA on, the trimmed aircraft is the same
+// (attitude, velocity, blade pitch: the SAS adds inches ahead of the mixer,
+// and the trim finds the blade pitch the forces need); only the stick moves,
+// by the SAS and PBA steady output. That output is written here from
+// GenHel's diagrams in GenHel's units (Figs. 5.1.3(a)–(c), 5.1.4): the rate
+// paths are washed out or zero in straight flight; what is left is the roll
+// attitude (digital KPHRD φ, analog KPHIRA KPHR1 KPHF1 φ), the yaw lateral
+// acceleration above 60 kt (digital KLAYYD, analog .5 KLAYRR KLAYF1, on
+// Y.SENS), and the PBA (KTHBA θ + KVXBA (VXBIKT − 80) + BIAS). Both SAS channels on:
+// each at gain 1 (p. 5.5-2). Tolerances: the trims converge to 1e-7 of the
+// weight in force, so the two solves agree to about 1e-7 rad.
+TEST(Trim, SasAndPbaMoveOnlyTheStick) {
+    const Executive ex = uh60a_executive();
+    std::size_t fcs = 0;
+    while (dynamic_cast<const GenHelFcs*>(&ex.component(fcs)) == nullptr) {
+        ++fcs;
+    }
+    const GenHelFcsConfig& cfg = dynamic_cast<const GenHelFcs&>(ex.component(fcs)).config();
+    const std::size_t off = ex.component_offset(fcs) - body_layout::kSize;  // in component_states
+    constexpr double kFt = 0.3048;
+    constexpr double kIn = 0.0254;
+    const auto half = [](const StickTravel& t) { return 0.5 * (t.hi - t.lo) / kIn; };  // [in]
+    const GenHelRigging& rig = cfg.rigging;
+    for (const int kt : {0, 100, 150}) {
+        SCOPED_TRACE(kt);
+        std::vector<double> x;
+        const TrimResult bare = solve_trim(ex, level(kt), nullptr, x);
+        ASSERT_TRUE(bare.converged);
+        TrimCondition c = level(kt);
+        c.afcs = {true, true, true};
+        const TrimResult on = solve_trim(ex, c, &bare, x);
+        ASSERT_TRUE(on.converged);
+        EXPECT_TRUE(on.controls.afcs.sas_digital && on.controls.afcs.sas_analog &&
+                    on.controls.afcs.pitch_bias);
+        EXPECT_NEAR(on.pitch, bare.pitch, 1e-6);
+        EXPECT_NEAR(on.roll, bare.roll, 1e-6);
+        EXPECT_NEAR((on.vel_b - bare.vel_b).norm(), 0.0, 1e-5);
+        for (const std::size_t s : {GenHelFcs::kServoTheta0, GenHelFcs::kServoA1s,
+                                    GenHelFcs::kServoB1s, GenHelFcs::kServoThettr}) {
+            EXPECT_NEAR(on.component_states[off + s], bare.component_states[off + s], 1e-6) << s;
+        }
+
+        // The SAS and PBA steady output [%] at the trim, from GenHel's diagrams.
+        const double phi = on.roll / kDeg;
+        const double theta = on.pitch / kDeg;
+        const double ysens = on.component_states[off + GenHelFcs::kAccelY] / kFt;  // [ft/s²]
+        // VXBIKT: the body-x airspeed (equivalent, D-040; sea level, no wind).
+        const double vx_kt = on.vel_b.x() / kKnot;
+        const double fast = vx_kt > 60.0 ? 1.0 : 0.0;
+        const double roll =
+            std::clamp(-0.139 * std::clamp(phi, -7.0, 7.0), -5.0, 5.0) +
+            std::clamp(2.413 * std::clamp(-0.703 * 0.0885 * phi, -7.0, 7.0), -5.5, 5.5);
+        const double yaw = std::clamp(fast * -1.1 * ysens, -5.0, 5.0) +
+                           std::clamp(fast * 0.5 * -28.11 * 0.0876 * ysens, -5.5, 5.5);
+        const double pba = std::clamp(-0.375 * std::clamp(theta, -20.0, 20.0) +
+                                          0.0525 * std::clamp(vx_kt - 80.0, 0.0, 100.0) - 4.9,
+                                      -15.0, 15.0);
+        // As inches ahead of each mixer (% → deg by KPCDG*, → in by 1/KX*), and
+        // the pilot's stick takes them out.
+        const double xa = roll * 0.16 / 1.6;
+        const double xb = pba * -0.283 / -2.83;
+        const double xp = yaw * -0.298 / -5.539;
+        EXPECT_NEAR((on.controls.lat_cyclic - bare.controls.lat_cyclic) * half(rig.lat_cyclic), -xa,
+                    1e-5);
+        EXPECT_NEAR((on.controls.lon_cyclic - bare.controls.lon_cyclic) * half(rig.lon_cyclic) *
+                        rig.sign_lon_stick,
+                    -xb, 1e-5);
+        EXPECT_NEAR((on.controls.pedal - bare.controls.pedal) * half(rig.pedal), -xp, 1e-5);
+        EXPECT_NEAR(on.controls.collective, bare.controls.collective, 1e-6);
+        std::printf(
+            "%3d kt: phi %.3f deg, Y.SENS %.4f ft/s^2; SAS roll %.3f %%, yaw %.3f %%, "
+            "PBA %.3f %%; stick lat %.4f, lon %.4f, pedal %.4f in\n",
+            kt, phi, ysens, roll, yaw, pba, -xa, -xb * rig.sign_lon_stick, -xp);
+    }
+}
+
+// M8c2: the SAS damps the Dutch roll, in nonlinear free flight. From level
+// trims at 90 to 150 kt a 0.05 rad/s yaw-rate kick starts it; the yaw rate's
+// change from the unkicked flight is measured as its largest swing over the
+// first 3 s and over 6 to 9 s. With the SAS and PBA on the linear model's
+// Dutch roll has ζ 0.33 to 0.44 and ω_n 1.0 to 1.3 rad/s (VALIDATION.md
+// M8c2), so over the 6 s between the windows the swing falls by
+// e^(−ζ ω_n 6 s), 9× or more; the gate takes 4× (measured 30 to 68×, the
+// faster modes adding to the first window). With them off (ζ 0.15 at 90 kt,
+// 0.02 at 120 kt, 0 at 150 kt) it fell 4.2×, 1.8× and 1.9×: the gate catches
+// a missing SAS at 120 and 150 kt.
+TEST(Trim, SasDampsTheDutchRoll) {
+    const Executive ex = uh60a_executive();
+    TrimResult prev;
+    bool have = false;
+    for (const int kt : {90, 120, 150}) {
+        SCOPED_TRACE(kt);
+        std::array<double, 2> ratio = {0.0, 0.0};
+        for (const bool on : {false, true}) {
+            TrimCondition c = level(kt);
+            if (on) {
+                c.afcs = {true, true, true};
+            }
+            std::vector<double> x;
+            const TrimResult r = solve_trim(ex, c, have ? &prev : nullptr, x);
+            ASSERT_TRUE(r.converged);
+            if (!on) {
+                prev = r;
+                have = true;
+            }
+            const Environment env = trim_environment(c);
+            const double dt = trim_period(ex) / 64;
+            const int steps = static_cast<int>(9.0 / dt);
+            const auto controls = [&](double) { return r.controls; };
+            std::size_t missed = 0;
+            const auto base = test::free_flight(ex, env, x, controls, dt, steps, &missed);
+            std::vector<double> xk = x;
+            xk[body_layout::kOmega + 2] += 0.05;
+            const auto kicked = test::free_flight(ex, env, xk, controls, dt, steps, &missed);
+            EXPECT_EQ(missed, 0U);
+            const auto swing = [&](double t0, double t1) {
+                double lo = 1e9;
+                double hi = -1e9;
+                for (int n = static_cast<int>(t0 / dt); n <= static_cast<int>(t1 / dt); ++n) {
+                    const auto i = static_cast<std::size_t>(n);
+                    const double d =
+                        kicked[i][body_layout::kOmega + 2] - base[i][body_layout::kOmega + 2];
+                    lo = std::min(lo, d);
+                    hi = std::max(hi, d);
+                }
+                return hi - lo;
+            };
+            ratio[on ? 1 : 0] = swing(0.0, 3.0) / swing(6.0, 9.0);
+        }
+        std::printf("%d kt: yaw-rate swing falls %.2fx (SAS off), %.2fx (SAS on) over 6 s\n", kt,
+                    ratio[0], ratio[1]);
+        EXPECT_GT(ratio[1], 4.0);
+        if (kt >= 120) {
+            EXPECT_LT(ratio[0], 4.0);  // the gate would catch the SAS missing
+        }
+    }
+}
+
 // ---- Model API -----------------------------------------------------------------------
 
 // trim() resets the model to t = 0 at the trimmed state; advance() then keeps
-// the real-time rules: no allocation and bit-identical repeat runs.
+// the real-time rules: no allocation and bit-identical repeat runs. With the
+// SAS and PBA on (M8c2), so their paths run too.
 TEST(Trim, ModelStartsFromTrimAndKeepsTheRealTimeRules) {
     Model m = Model::from_file(test::uh60a_config_path());
     Controls c;
     for (int k = 0; k < 50; ++k) {
         (void)m.advance(c, Environment{}, 1'000'000);
     }
-    const TrimResult r = m.trim(level(80));
+    TrimCondition tc = level(80);
+    tc.afcs = {true, true, true};
+    const TrimResult r = m.trim(tc);
     ASSERT_TRUE(r.converged);
     EXPECT_EQ(m.outputs().sim_time_ns, 0);
     EXPECT_NEAR(m.outputs().pitch, r.pitch, 1e-12);

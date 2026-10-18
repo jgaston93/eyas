@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <utility>
 
+#include "common/afcs.hpp"
 #include "common/control_file.hpp"
 #include "common/state_csv.hpp"
 
@@ -56,6 +57,7 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
     ++segment_;
     first_ = true;
     brakes_noted_ = false;
+    afcs_noted_ = false;
     const StartPoint& sp = station.starts()[station.current_start()];
     start_ = sp.controls;
     if (!controls_path_.empty()) {
@@ -66,13 +68,15 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
         }
         controls_ << "# Eyas pilot station recording (D-044), start '" << sp.name << "'\n";
         if (sp.replayable) {
-            controls_ << "# Replays exactly unless a later comment says the brakes changed.\n";
+            controls_ << "# Replays exactly unless a later comment says the brakes or the AFCS "
+                         "switches changed.\n";
             controls_ << "# Replay: eyas_drive --config " << shell_quote(config_) << " --controls "
                       << shell_quote(path) << " --out <out.csv> --rate " << rate_
                       << " --trim-speed " << exact(sp.trim_speed_kt) << " --altitude "
                       << exact(sp.altitude)
                       << (origin_.empty() ? "" : " --origin " + shell_quote(origin_))
-                      << " --ground " << exact(station.ground_height()) << " --duration <s>\n";
+                      << " --ground " << exact(station.ground_height()) << " --afcs "
+                      << examples::afcs_text(sp.controls.afcs) << " --duration <s>\n";
         } else {
             controls_ << "# Not replayable in eyas_drive: it starts from a trim, not on the pad.\n";
         }
@@ -97,6 +101,15 @@ void Recorder::frame(double t, const ControlDeltas& d, const eyas::Controls& c,
         controls_ << "# NOT REPLAYABLE from t = " << exact(t)
                   << " s: the brakes changed, and eyas_drive has no brake input\n";
         brakes_noted_ = true;
+    }
+    const eyas::AfcsSwitches& a = c.afcs;
+    const eyas::AfcsSwitches& a0 = start_.afcs;
+    if (controls_.is_open() && !afcs_noted_ &&
+        (a.sas_digital != a0.sas_digital || a.sas_analog != a0.sas_analog ||
+         a.pitch_bias != a0.pitch_bias)) {
+        controls_ << "# NOT REPLAYABLE from t = " << exact(t)
+                  << " s: the AFCS switches changed, and eyas_drive holds its --afcs\n";
+        afcs_noted_ = true;
     }
     if (controls_.is_open() &&
         (first_ || d.collective != last_.collective || d.lat_cyclic != last_.lat_cyclic ||

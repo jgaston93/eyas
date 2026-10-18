@@ -303,8 +303,8 @@ void write_uh60a(const std::filesystem::path& dir) {
             const test::L3Errors e = test::l3_errors(ex, c, r, start, m512, k, 3.0);
             require_converged(e.unconverged, "L3 free flights", kt);
             const double floor = test::l3_floor(kt);
-            const test::L3Fit fp = test::fit_l3(e.periodic, k.amplitude, 0.5 * floor);
-            const test::L3Fit fa = test::fit_l3(e.averaged, k.amplitude, 0.5 * floor);
+            const test::L3Fit fp = test::fit_l3(e.periodic, k.amplitude, 0.1 * floor);
+            const test::L3Fit fa = test::fit_l3(e.averaged, k.amplitude, 0.1 * floor);
             l3_csv << kt << "," << k.state << "," << k.control << "," << fp.c0 << ","
                    << fp.c1 * k.amplitude << "," << fp.misfit << "," << fa.c0 << ","
                    << fa.c1 * k.amplitude << "," << fa.misfit << "\n";

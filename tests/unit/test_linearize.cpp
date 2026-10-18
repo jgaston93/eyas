@@ -22,6 +22,7 @@
 #include "analysis/held_orbit.hpp"
 #include "analysis/linearize.hpp"
 #include "analysis/trim.hpp"
+#include "control/genhel_fcs.hpp"
 #include "core/attitude.hpp"
 #include "core/component.hpp"
 #include "core/rigid_body.hpp"
@@ -216,6 +217,10 @@ TEST(Linearize, GravityAndKinematicEntriesAreExact) {
         const double V = b.vel_b.y();
         const double W = b.vel_b.z();
         const auto n = static_cast<Eigen::Index>(m.states.size());
+        const std::string att = "fcs[" + std::to_string(GenHelFcs::kRollAtt1) + "]";
+        const auto sas_roll_attitude = static_cast<Eigen::Index>(
+            std::find(m.states.begin(), m.states.end(), att) - m.states.begin());
+        ASSERT_LT(sas_roll_attitude, n);
         for (const MatX& A : m.A_periodic) {
             VecX col_th = VecX::Zero(n);
             VecX col_ph = VecX::Zero(n);
@@ -228,6 +233,10 @@ TEST(Linearize, GravityAndKinematicEntriesAreExact) {
                                   W * std::cos(ph) * std::sin(th);
             col_ph(RC::kHeight) =
                 -V * std::cos(ph) * std::cos(th) + W * std::sin(ph) * std::cos(th);
+            // The SAS's analog roll channel reads the vertical gyro's φ
+            // through KPHF1/(T1 s + 1)(T2 s + 1) (GenHel Fig. 5.1.3(b); M8c2),
+            // switched on or not: its first lag's rate has KPHF1/T1 per rad.
+            col_ph(sas_roll_attitude) = 0.0885 / 0.0058;
             // FD precision: measured ≤ 2.5e-9, from rounding in the stiff gear
             // rows (truncation at 1e-5 rad is ~1e-10 g).
             EXPECT_LT((A.col(RC::kTheta) - col_th).cwiseAbs().maxCoeff(), 1e-7) << knots;
@@ -623,6 +632,88 @@ TEST(Linearize, ModesAndLabels) {
     }
 }
 
+// condense() with retained states (M8c2): a synthetic yaw damper r → washout
+// → yaw moment, through a fast sensor lag. Quasi-static, the washout's
+// output is zero and the damping is lost; retained, the model keeps the
+// washout as a state and condenses only the sensor, so its eigenvalues are
+// the full model's with the fast sensor root removed. modes() labels a mode
+// with little body motion "control system".
+TEST(Linearize, CondenseKeepsRetainedStatesDynamic) {
+    LinearModel m;
+    m.body_size = 10;  // with h
+    m.states = {"u", "v", "w", "p", "q", "r", "phi", "theta", "psi_h", "h", "sensor", "washout"};
+    m.inputs = {"collective", "lat_cyclic", "lon_cyclic", "pedal"};
+    m.A = MatX::Zero(12, 12);
+    m.B = MatX::Zero(12, 4);
+    for (int i = 0; i < 9; ++i) {
+        m.A(i, i) = -0.5 - 0.1 * i;
+    }
+    m.A(5, 5) = -0.05;        // weak natural yaw damping
+    m.A(8, 5) = 1.0;          // ψ̇ = r
+    const double ts = 0.005;  // sensor lag [s]
+    const double tw = 2.0;    // washout [s]
+    const double k = -2.0;    // yaw moment per washed-out rate
+    m.A(10, 5) = 1.0 / ts;    // sensor ← r
+    m.A(10, 10) = -1.0 / ts;
+    m.A(11, 10) = 1.0 / tw;  // washout state ← sensor
+    m.A(11, 11) = -1.0 / tw;
+    m.A(5, 10) = k;  // ṙ += k (sensor − washout)
+    m.A(5, 11) = -k;
+    m.B(5, 3) = 1.0;
+    m.B(10, 3) = 0.1;
+
+    // Quasi-static: sensor = r, washout = sensor, so the damper vanishes.
+    const CondensedModel all = condense(m);
+    ASSERT_EQ(all.A.rows(), 9);
+    EXPECT_NEAR(all.A(5, 5), -0.05, 1e-12);
+    // Retained: the washout stays; eliminating the sensor alone is exact.
+    const CondensedModel kept = condense(m, {11});
+    ASSERT_EQ(kept.A.rows(), 10);
+    ASSERT_EQ(kept.states.size(), 10U);
+    EXPECT_EQ(kept.states[9], "washout");
+    const std::array<Eigen::Index, 10> lead = {0, 1, 2, 3, 4, 5, 6, 7, 8, 11};
+    MatX Abb(10, 10);
+    MatX Bb(10, 4);
+    for (std::size_t a = 0; a < 10; ++a) {
+        for (std::size_t b = 0; b < 10; ++b) {
+            Abb(lead[a] == 11 ? 9 : lead[a], lead[b] == 11 ? 9 : lead[b]) =
+                m.A(lead[a], lead[b]) - m.A(lead[a], 10) * m.A(10, lead[b]) / m.A(10, 10);
+        }
+        for (Eigen::Index b = 0; b < 4; ++b) {
+            Bb(lead[a] == 11 ? 9 : lead[a], b) =
+                m.B(lead[a], b) - m.A(lead[a], 10) * m.B(10, b) / m.A(10, 10);
+        }
+    }
+    EXPECT_LT((kept.A - Abb).cwiseAbs().maxCoeff(), 1e-12);
+    EXPECT_LT((kept.B - Bb).cwiseAbs().maxCoeff(), 1e-12);
+    EXPECT_NEAR(kept.A(5, 5), -0.05 + k, 1e-12);  // the damper, at high frequency
+    // Body share: a retained state that no body state feeds nor reads is a
+    // mode of its own, all control system; the body modes keep share 1.
+    CondensedModel d;
+    d.A = MatX::Zero(10, 10);
+    for (int i = 0; i < 9; ++i) {
+        d.A(i, i) = -0.5 - 0.1 * i;
+    }
+    d.A(9, 9) = -3.0;
+    const std::vector<Mode> weighted = modes(d, 0.0, {1.0});
+    for (const Mode& x : weighted) {
+        const bool control = std::abs(x.eigenvalue.real() + 3.0) < 1e-12;
+        EXPECT_NEAR(x.body, control ? 0.0 : 1.0, 1e-12);
+        EXPECT_EQ(x.label == "control system", control);
+    }
+    // Without weights a retained state counts zero, and a mode with no body
+    // motion at all is all control system.
+    for (const Mode& x : modes(d, 0.0)) {
+        const bool control = std::abs(x.eigenvalue.real() + 3.0) < 1e-12;
+        EXPECT_EQ(x.body, control ? 0.0 : 1.0);
+    }
+    EXPECT_THROW((void)modes(d, 0.0, {1.0, 2.0}), InitError);
+    EXPECT_THROW((void)condense(m, {5}), InitError);  // a body state
+    EXPECT_THROW((void)condense(m, {9}), InitError);  // h
+    EXPECT_THROW((void)condense(m, {11, 11}), InitError);
+    EXPECT_THROW((void)condense(m, {12}), InitError);  // out of range
+}
+
 // ---- L3: linear against nonlinear ----------------------------------------------
 
 // The frequency response is the transfer function on the imaginary axis:
@@ -662,7 +753,9 @@ TEST(Linearize, FrequencyResponseMatchesClosedForms) {
 // 60 kt, T/512 above), in hover, at 60 kt and at 150 kt; eyas_m7b_cases
 // covers every 10 kt (VALIDATION.md M7b). The relative error must be the sum
 // of a part proportional to the amplitude (the fit c0 + c1 a describes the
-// four amplitudes to within 15 %), which proves the absolute error second
+// four amplitudes to within 15 %, deviations under a tenth of the floor
+// counted as noise; M8c2, from half, which could hide a 3 % curvature;
+// worst measured 0.118), which proves the absolute error second
 // order, and a leftover c0 below 1e-4 up to 60 kt and 1e-3 above. Half of
 // the high-speed leftover is the held-body linearization (the free aircraft
 // vibrates at 4/rev), half the steps. In hover the averaged model is gated
@@ -672,14 +765,21 @@ TEST(Linearize, FrequencyResponseMatchesClosedForms) {
 // acceleration feedback included (D-045): the free flights start with the
 // flight control system's sensors and servos on their free-flight 4/rev
 // orbit (solve_trim, D-045 amendment). A negative leftover is a fit
-// artifact, so |c0| is gated.
+// artifact, so |c0| is gated. In hover and at 150 kt again with the SAS and
+// PBA on (M8c2); not at 60 kt, where a level trim's body-x airspeed sits just
+// below the SAS's 60 kt switches and the u perturbation crosses them.
 TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {
     const Executive ex = uh60a_executive();
     TrimResult previous;
-    for (double knots : {0.0, 60.0, 150.0}) {
-        const TrimCondition c = level(knots);
+    for (const auto& [knots, afcs] :
+         {std::pair{0.0, false}, std::pair{0.0, true}, std::pair{60.0, false},
+          std::pair{150.0, false}, std::pair{150.0, true}}) {
+        TrimCondition c = level(knots);
+        if (afcs) {
+            c.afcs = {true, true, true};
+        }
         std::vector<double> start;
-        const TrimResult r = solve_trim(ex, c, knots == 0.0 ? nullptr : &previous, start);
+        const TrimResult r = solve_trim(ex, c, knots == 0.0 && !afcs ? nullptr : &previous, start);
         ASSERT_TRUE(r.converged) << knots;
         previous = r;
         // Both models step at 2T/J: T/256 up to 60 kt, T/512 above, where the
@@ -691,15 +791,15 @@ TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {
         EXPECT_EQ(m.unconverged, 0U);
         const double floor = test::l3_floor(knots);
         for (const test::L3Case& k : test::l3_cases()) {
-            SCOPED_TRACE(testing::Message()
-                         << knots << " kt, state " << k.state << ", control " << k.control);
+            SCOPED_TRACE(testing::Message() << knots << " kt" << (afcs ? ", SAS and PBA on" : "")
+                                            << ", state " << k.state << ", control " << k.control);
             const test::L3Errors e = test::l3_errors(ex, c, r, start, m, k, 3.0);
             EXPECT_EQ(e.unconverged, 0U);
-            const test::L3Fit f = test::fit_l3(e.periodic, k.amplitude, 0.5 * floor);
+            const test::L3Fit f = test::fit_l3(e.periodic, k.amplitude, 0.1 * floor);
             EXPECT_LT(f.misfit, 0.15);
             EXPECT_LT(std::abs(f.c0), floor);
             if (knots == 0.0) {
-                const test::L3Fit fa = test::fit_l3(e.averaged, k.amplitude, 0.5 * 2e-3);
+                const test::L3Fit fa = test::fit_l3(e.averaged, k.amplitude, 0.1 * 2e-3);
                 EXPECT_LT(fa.misfit, 0.15) << "averaged";
                 EXPECT_LT(fa.c0, 2e-3) << "averaged";
             }

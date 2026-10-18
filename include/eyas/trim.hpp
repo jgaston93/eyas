@@ -20,6 +20,9 @@ struct TrimCondition {
     double altitude = 0.0;           // [m] MSL height of the CG, held during the trim
     double isa_delta_T = 0.0;        // [K] as Environment::isa_delta_T (D-015)
     Vec3 wind_n = Vec3::Zero();      // [m/s] constant wind, NED
+    // The flight control system's switches during the trim; copied into
+    // TrimResult::controls (D-045).
+    AfcsSwitches afcs;
 };
 
 // The trimmed state. Hold the same environment (no ground, the condition's

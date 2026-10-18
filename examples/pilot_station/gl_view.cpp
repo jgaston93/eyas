@@ -229,7 +229,8 @@ void GlView::Impl::read_device(RawInput& raw) {
 // Axes 0, 1: the pointer from the window centre while the left button is
 // held (the stick springs to centre when it's let go); 2: collective keys
 // W (up) and S (down); 3: pedal keys Z (left) and X (right). Buttons 0: T or
-// the right mouse button (trim), 1: B (brakes), 2: C (trim reset).
+// the right mouse button (trim), 1: B (brakes), 2: C (trim reset), 3: A
+// (SAS), 4: Q (pitch bias actuator).
 void GlView::Impl::read_mouse_keyboard(RawInput& raw) const {
     raw = RawInput{};
     const auto key = [&](int k) { return glfwGetKey(window, k) == GLFW_PRESS; };
@@ -249,6 +250,8 @@ void GlView::Impl::read_mouse_keyboard(RawInput& raw) const {
         key(GLFW_KEY_T) || glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     raw.buttons[1] = key(GLFW_KEY_B);
     raw.buttons[2] = key(GLFW_KEY_C);
+    raw.buttons[3] = key(GLFW_KEY_A);
+    raw.buttons[4] = key(GLFW_KEY_Q);
 }
 
 ViewCommands GlView::poll(RawInput& raw) {
@@ -591,15 +594,25 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     text(20, 50, 1.6, b.data());
 
     // Rotor and gear, right.
-    panel(w - 350, 40, 340, 200);
-    (void)std::snprintf(b.data(), b.size(),
-                        "NR     %6.1f %%\nTHRUST %6.1f kN\nTORQUE %6.1f kN.m\nPOWER  %6.0f kW\n"
-                        "B0 %5.2f B1C %5.2f B1S %5.2f deg\nTR THR %6.2f kN\nWOW %s  BRAKES %s",
-                        s.rotor_speed_percent, s.main_rotor_thrust * 1e-3,
-                        s.main_rotor_torque * 1e-3, s.main_rotor_power * 1e-3, s.coning * kDeg,
-                        s.flap_1c * kDeg, s.flap_1s * kDeg, s.tail_rotor_thrust * 1e-3,
-                        s.weight_on_wheels ? "yes" : "no",
-                        hud.applied.brake_left > 0.5 ? "set" : "off");
+    panel(w - 350, 40, 340, 225);
+    const eyas::AfcsSwitches& af = hud.applied.afcs;
+    const char* sas = "OFF";
+    if (af.sas_digital && af.sas_analog) {
+        sas = "on";
+    } else if (af.sas_digital) {
+        sas = "digital";
+    } else if (af.sas_analog) {
+        sas = "analog";
+    }
+    (void)std::snprintf(
+        b.data(), b.size(),
+        "NR     %6.1f %%\nTHRUST %6.1f kN\nTORQUE %6.1f kN.m\nPOWER  %6.0f kW\n"
+        "B0 %5.2f B1C %5.2f B1S %5.2f deg\nTR THR %6.2f kN\nWOW %s  BRAKES %s\n"
+        "SAS %s  PBA %s",
+        s.rotor_speed_percent, s.main_rotor_thrust * 1e-3, s.main_rotor_torque * 1e-3,
+        s.main_rotor_power * 1e-3, s.coning * kDeg, s.flap_1c * kDeg, s.flap_1s * kDeg,
+        s.tail_rotor_thrust * 1e-3, s.weight_on_wheels ? "yes" : "no",
+        hud.applied.brake_left > 0.5 ? "set" : "off", sas, af.pitch_bias ? "on" : "OFF");
     text(w - 340, 50, 1.6, b.data());
 
     // Status, top.
@@ -743,7 +756,7 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     text(14, h - 186, 1.1, b.data());
 
     if (help) {
-        panel(w / 2.0 - 230, 90, 460, 250);
+        panel(w / 2.0 - 230, 90, 460, 270);
         text(w / 2.0 - 220, 100, 1.5,
              "Esc quit   P pause   R restart   H help\n"
              "1 pad   2 hover   3 60 kt   4 120 kt\n"
@@ -751,12 +764,13 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
              "\n"
              "mouse input: hold left button to fly the cyclic\n"
              "  W/S collective   Z/X pedals   T or right button trim\n"
-             "  B brakes   C trim reset\n"
+             "  B brakes   C trim reset   A SAS   Q pitch bias\n"
              "gamepad (default map): right stick cyclic,\n"
              "  left stick collective (rate) and pedals,\n"
-             "  A trim, B brakes, Y trim reset\n"
+             "  A trim, B brakes, Y trim reset, LB SAS, RB pitch bias\n"
              "\n"
-             "The bare UH-60A has no AFCS yet (M8c): it is unstable.");
+             "SAS and pitch bias start on; no FPS yet (M8c3),\n"
+             "so nothing holds the attitude.");
     }
     glDisable(GL_BLEND);
 }
