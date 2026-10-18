@@ -83,6 +83,11 @@ public:
     // servos, synchronizers) to it, and leaves the others alone. Trim calls it
     // on every state it builds, so these states drop out of its unknowns. The
     // default sets nothing.
+    // Contract: write only the states this sets, every one of them, and don't
+    // depend on the values x arrives with (reading back what was just written
+    // is fine). Trim finds them by calling this on a slice filled with NaN (the
+    // slots written are the IC-mode states) and then starts each of them on
+    // its free-flight orbit (D-045 amendment).
     virtual void steady_states(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
 };
 
