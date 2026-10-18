@@ -769,8 +769,8 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
              "  left stick collective (rate) and pedals,\n"
              "  A trim, B brakes, Y trim reset, LB SAS, RB pitch bias\n"
              "\n"
-             "SAS and pitch bias start on; no FPS yet (M8c3),\n"
-             "so nothing holds the attitude.");
+             "SAS and pitch bias start as --afcs sets them (default on;\n"
+             "the HUD shows them); no FPS yet (M8c3): nothing holds the attitude.");
     }
     glDisable(GL_BLEND);
 }

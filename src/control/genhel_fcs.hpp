@@ -219,6 +219,10 @@ struct GenHelFcsOutputs {
     double xbils = 0.0, xails = 0.0, xpils = 0.0, xbbas = 0.0;
 };
 
+namespace detail {
+struct GenHelAfcsSignals;  // one evaluation's SAS and PBA signals (genhel_fcs.cpp)
+}
+
 class GenHelFcs : public DynamicComponent {
 public:
     // State layout.
@@ -299,6 +303,11 @@ public:
     const GenHelFcsConfig& config() const noexcept { return config_; }
 
 private:
+    // evaluate() with the SAS and PBA signals already computed, so that
+    // derivatives() computes them once.
+    GenHelFcsOutputs evaluate(const SimContext& ctx, std::span<const double> x,
+                              const detail::GenHelAfcsSignals& s) const noexcept;
+
     GenHelFcsConfig config_;
     // Time constant of each first-order SAS and PBA state [s]; 0 for the rest.
     std::array<double, kNumStates> tau_{};

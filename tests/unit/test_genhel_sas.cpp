@@ -231,7 +231,9 @@ Reference reference(const GenHel& g, const Inputs& in, const std::array<double, 
     // The 2:1 gain switch (Fig. 5.1.3(a)): ON/ON 1, one channel alone 2.
     const double sw_d = sw.sas_digital ? (sw.sas_analog ? 1.0 : 2.0) : 0.0;
     const double sw_a = sw.sas_analog ? (sw.sas_digital ? 1.0 : 2.0) : 0.0;
-    // A Padé (1 − sT/4)/(1 + sT/4) of a hold T: lag z of T/4, output 2z − u.
+    // A Padé (1 − sT/4)/(1 + sT/4) of a hold T: lag z of T/4, output 2z − u;
+    // the digital channels clamp it to their limit, as a hold stays within
+    // its input's range.
     const auto hold = [&](std::size_t i, double u, double T) {
         d[i] = (u - s[i]) / (T / 4.0);
         return 2.0 * s[i] - u;
@@ -246,7 +248,7 @@ Reference reference(const GenHel& g, const Inputs& in, const std::array<double, 
     const double pd_sum = g.KRQQPD * s[Fcs::kPitchRateD] + g.KLQQPD * s[Fcs::kPitchLagD];
     d[Fcs::kPitchWashD] = (pd_sum - s[Fcs::kPitchWashD]) / g.TWQQPD;
     const double pd_in = lim(sw_d * (pd_sum - s[Fcs::kPitchWashD]), g.LMPD);
-    o.pd = hold(Fcs::kPitchHoldD, pd_in, g.HOLD);
+    o.pd = lim(hold(Fcs::kPitchHoldD, pd_in, g.HOLD), g.LMPD);
     // Pitch analog: KQQPA (7s)/((.022s+1)(7s+1)), rate + lagged rate, .5, switch, limit.
     d[Fcs::kPitchFilterA] = (in.q - s[Fcs::kPitchFilterA]) / g.TQQPA;
     const double qa = g.KQQPA * s[Fcs::kPitchFilterA];
@@ -263,7 +265,7 @@ Reference reference(const GenHel& g, const Inputs& in, const std::array<double, 
     d[Fcs::kRollLagD] = (p1 - s[Fcs::kRollLagD]) / g.TLPPRD;
     const double rd_temp =
         g.KRPPRD * p1 + g.KLPPRD * s[Fcs::kRollLagD] + g.KPHRD * lim(in.phi, g.LMPHRD);
-    o.rd = hold(Fcs::kRollHoldD, lim(sw_d * rd_temp, g.LMRD), g.HOLD);
+    o.rd = lim(hold(Fcs::kRollHoldD, lim(sw_d * rd_temp, g.LMRD), g.HOLD), g.LMRD);
     // Roll analog: φ → KPHF1/((T1 s+1)(T2 s+1)) = f1 → KPHF2/(A2 s² + A1 s + 1),
     // limit ±75° → KPHF3 s/((T1 s+1)(T2 s+1)) = p2 → KRPHRA, KLPHRA lags; and
     // f1 → KPHR1, limit ±7°, KPHIRA.
@@ -296,7 +298,8 @@ Reference reference(const GenHel& g, const Inputs& in, const std::array<double, 
     d[Fcs::kYawAccelD] = (in.ysens - s[Fcs::kYawAccelD]) / g.TLAYYD;
     const double fade = s[Fcs::kYawFade];
     const double s2 = fade * (g.KLAYYD * s[Fcs::kYawAccelD] + g.KRPPYD * p1);
-    o.yd = hold(Fcs::kYawHoldD, lim(sw_d * (s1 - s[Fcs::kYawWashD] + s2), g.LMYD), g.HOLD);
+    o.yd = lim(hold(Fcs::kYawHoldD, lim(sw_d * (s1 - s[Fcs::kYawWashD] + s2), g.LMYD), g.HOLD),
+               g.LMYD);
     // Yaw analog: KRRFI (2s)/((.027s+1)(2s+1)) = w; KRRRYA lag on w; KLAYRR lag
     // on w below 60 kt, on KLAYF1·Y.SENS above; .5; plus, faded in above
     // 60 kt, KRPPYA on the roll channel's "B"; switch, limit.
@@ -472,6 +475,25 @@ TEST(GenHelSas, InnerLoopInchesJoinTheMixer) {
     EXPECT_NEAR(o.theta0_cmd, base.theta0_cmd, 1e-15);
     // The PBA's 4 % is KPCDGP · 4 = −1.13° of B1S, as the figure's B1SBA.
     EXPECT_NEAR(g.KXBB1S * xbbas, g.KPCDGP * 4.0, 1e-12);
+}
+
+// A saturated digital channel that reverses (+5 % held, −5 % in) gives
+// 2z − u = +15 % from the Padé; a hold never leaves ±5 %, so neither does
+// the channel's output (code review).
+TEST(GenHelSas, DigitalHoldStaysWithinTheLimit) {
+    const GenHel g;
+    const Fcs f(config());
+    SimContext ctx;
+    ctx.air = isa_atmosphere(0.0, 0.0);
+    ctx.controls.afcs.sas_digital = true;
+    std::vector<double> x(Fcs::kNumStates, 0.0);
+    x[Fcs::kPitchHoldD] = g.LMPD * kPct;
+    x[Fcs::kPitchRateD] = 20.0 * kDegree;  // q₁ paths far past the limit, nose up:
+    x[Fcs::kPitchLagD] = 20.0 * kDegree;   // the channel commands −5 %
+    const GenHelFcsOutputs o = f.evaluate(ctx, x);
+    EXPECT_NEAR(o.pitch_d / kPct, g.LMPD, 1e-12);
+    // The hold still moves toward −5 % at its own rate.
+    EXPECT_LT(derivs(f, ctx, x).xdot0[Fcs::kPitchHoldD], 0.0);
 }
 
 // The 2 s fade (Fig. 5.1.3(c)): toward 1 above 60 kt and 0 below, at most

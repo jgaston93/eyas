@@ -14,6 +14,19 @@
 
 namespace eyas {
 
+namespace detail {
+
+// The SAS and PBA at one evaluation (M8c2): the input of every first-order
+// state (a lag's input, a washout's or hold's input, an actuator's command,
+// the fade's target), the channel outputs [-] and the PBA's held command.
+struct GenHelAfcsSignals {
+    std::array<double, GenHelFcs::kNumStates> in{};
+    double pitch_d = 0.0, pitch_a = 0.0, roll_d = 0.0, roll_a = 0.0, yaw_d = 0.0, yaw_a = 0.0;
+    double pba_held = 0.0;  // the hold's output
+};
+
+}  // namespace detail
+
 namespace {
 
 // Inches at normalized input u: collective spans [0, 1], the others [−1, 1].
@@ -141,17 +154,13 @@ double limit(double v, double l) noexcept {
     return std::clamp(v, -l, l);
 }
 
-// The SAS and PBA at one evaluation (M8c2): the input of every first-order
-// state (a lag's input, a washout's or hold's input, an actuator's command,
-// the fade's target), the channel outputs [-] and the PBA's held command.
-struct AfcsSignals {
-    std::array<double, Fcs::kNumStates> in{};
-    double pitch_d = 0.0, pitch_a = 0.0, roll_d = 0.0, roll_a = 0.0, yaw_d = 0.0, yaw_a = 0.0;
-    double pba_held = 0.0;  // the hold's output
-};
+using AfcsSignals = detail::GenHelAfcsSignals;
 
 // A zero-order hold as a first-order Padé of half of it (D-045):
 // (1 − sT/4)/(1 + sT/4) = 2/(1 + sT/4) − 1, a lag z of T/4 with output 2z − u.
+// A hold's output stays within its input's range, the Padé's doesn't (a
+// reversal from +L to −L gives about 3L), so the SAS clamps it to the
+// channel's limit (code review).
 double pade_hold(std::span<const double> x, std::size_t i, double u, AfcsSignals& s) noexcept {
     s.in[i] = u;
     return 2.0 * x[i] - u;
@@ -189,7 +198,8 @@ AfcsSignals afcs_signals(const GenHelFcsConfig& c, const SimContext& ctx,
         p.rate_d.gain * x[Fcs::kPitchRateD] + p.lagged_rate_d.gain * x[Fcs::kPitchLagD];
     in[Fcs::kPitchWashD] = pd;
     o.pitch_d =
-        pade_hold(x, Fcs::kPitchHoldD, limit(gd * (pd - x[Fcs::kPitchWashD]), p.limit_d), o);
+        limit(pade_hold(x, Fcs::kPitchHoldD, limit(gd * (pd - x[Fcs::kPitchWashD]), p.limit_d), o),
+              p.limit_d);
     // Analog: KQQPA TW s/((T s + 1)(TW s + 1)), rate and lagged rate, the .5
     // block, switch, limit.
     in[Fcs::kPitchFilterA] = x[Fcs::kGyroQ];
@@ -211,7 +221,7 @@ AfcsSignals afcs_signals(const GenHelFcsConfig& c, const SimContext& ctx,
     in[Fcs::kRollLagD] = p1;
     const double rd = r.rate_gain_d * p1 + r.lagged_rate_d.gain * x[Fcs::kRollLagD] +
                       r.attitude_gain_d * limit(e.roll, r.attitude_limit_d);
-    o.roll_d = pade_hold(x, Fcs::kRollHoldD, limit(gd * rd, r.limit_d), o);
+    o.roll_d = limit(pade_hold(x, Fcs::kRollHoldD, limit(gd * rd, r.limit_d), o), r.limit_d);
     // Analog, its rate derived from the roll attitude: f1 = KPHF1/((T1 s +
     // 1)(T2 s + 1)) φ, then KPHF2/(A2 s² + A1 s + 1), limit, and KPHF3 s/((T1 s
     // + 1)(T2 s + 1)) = p2, whose s is the second lag's rate; lags on p2, and
@@ -245,7 +255,9 @@ AfcsSignals afcs_signals(const GenHelFcsConfig& c, const SimContext& ctx,
     const double fade = std::clamp(x[Fcs::kYawFade], 0.0, 1.0);
     const double s2 =
         fade * (y.lateral_accel_d.gain * x[Fcs::kYawAccelD] + y.roll_rate_gain_d * p1);
-    o.yaw_d = pade_hold(x, Fcs::kYawHoldD, limit(gd * (s1 - x[Fcs::kYawWashD] + s2), y.limit_d), o);
+    o.yaw_d =
+        limit(pade_hold(x, Fcs::kYawHoldD, limit(gd * (s1 - x[Fcs::kYawWashD] + s2), y.limit_d), o),
+              y.limit_d);
     // Analog: KRRFI TW s/((T s + 1)(TW s + 1)) = w; a lag on w; a lag on w
     // below the switch speed, on KLAYF1 Y.SENS above it; the .5 block; and,
     // faded in above it, KRPPYA on the roll channel's "B"; switch, limit.
@@ -434,10 +446,14 @@ void GenHelFcs::bind(const CouplingRegistry& registry) {
 
 GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx,
                                      std::span<const double> x) const noexcept {
+    return evaluate(ctx, x, afcs_signals(config_, ctx, x));
+}
+
+GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx, std::span<const double> x,
+                                     const AfcsSignals& s) const noexcept {
     const GenHelRigging& r = config_.rigging;
     const GenHelStabilatorLaw& l = config_.stabilator;
     GenHelFcsOutputs o;
-    const AfcsSignals s = afcs_signals(config_, ctx, x);
     o.pitch_d = s.pitch_d;
     o.pitch_a = s.pitch_a;
     o.roll_d = s.roll_d;
@@ -479,7 +495,8 @@ GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx,
 
 void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
                             ComponentDerivs& out) const {
-    const GenHelFcsOutputs o = evaluate(ctx, x);
+    const AfcsSignals s = afcs_signals(config_, ctx, x);
+    const GenHelFcsOutputs o = evaluate(ctx, x, s);
     if (out.coupling != nullptr && theta0_.valid()) {
         out.coupling->set(theta0_, o.theta0);
         out.coupling->set(theta1s_, o.theta1s);
@@ -487,8 +504,8 @@ void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
         out.coupling->set(theta_tr_, o.theta_tr);
         out.coupling->set(stab_, o.stabilator_incidence);
     }
-    const auto run = [&](const ServoConfig& s, double u, std::size_t i) {
-        servo(s, u, x[i], x[i + 1], out.xdot0[i], out.xdot0[i + 1]);
+    const auto run = [&](const ServoConfig& sv, double u, std::size_t i) {
+        servo(sv, u, x[i], x[i + 1], out.xdot0[i], out.xdot0[i + 1]);
     };
     // Primary servos (text p. 5.5-3), on the mixer outputs.
     run(config_.primary_servo, o.theta0_cmd, kServoTheta0);
@@ -527,7 +544,6 @@ void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
     if (!config_.sas) {
         return;
     }
-    const AfcsSignals s = afcs_signals(config_, ctx, x);
     for (std::size_t i = kPitchAd; i < kNumStates; ++i) {
         if (tau_[i] > 0.0) {
             out.xdot0[i] = (s.in[i] - x[i]) / tau_[i];

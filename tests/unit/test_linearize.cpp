@@ -701,12 +701,15 @@ TEST(Linearize, CondenseKeepsRetainedStatesDynamic) {
         EXPECT_NEAR(x.body, control ? 0.0 : 1.0, 1e-12);
         EXPECT_EQ(x.label == "control system", control);
     }
-    // Without weights a retained state counts zero, and a mode with no body
-    // motion at all is all control system.
-    for (const Mode& x : modes(d, 0.0)) {
+    // A weight of zero counts a retained state for nothing; a mode with no
+    // body motion at all is still all control system. Without weights a
+    // model with retained states is refused, so they can't be counted zero
+    // by accident.
+    for (const Mode& x : modes(d, 0.0, {0.0})) {
         const bool control = std::abs(x.eigenvalue.real() + 3.0) < 1e-12;
         EXPECT_EQ(x.body, control ? 0.0 : 1.0);
     }
+    EXPECT_THROW((void)modes(d, 0.0), InitError);
     EXPECT_THROW((void)modes(d, 0.0, {1.0, 2.0}), InitError);
     EXPECT_THROW((void)condense(m, {5}), InitError);  // a body state
     EXPECT_THROW((void)condense(m, {9}), InitError);  // h

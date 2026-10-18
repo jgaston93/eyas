@@ -22,6 +22,7 @@ bool EyasAdapter::initialize(const std::string& aircraft, const host::InitialCon
         c.airspeed = ic.airspeed_kt * kKnot;
         c.altitude = ic.altitude_ft * kFoot;
         c.heading = ic.heading_deg / kDeg;
+        c.afcs = {ic.sas, ic.sas, ic.pitch_bias};
         const eyas::TrimResult r = model_->trim(c);
         if (!r.converged) {
             error = "trim did not converge";
@@ -33,6 +34,8 @@ bool EyasAdapter::initialize(const std::string& aircraft, const host::InitialCon
         trim_.longitudinal = r.controls.lon_cyclic;
         trim_.pedal = -r.controls.pedal;  // to host convention, + left
         trim_.brakes = false;
+        trim_.sas = ic.sas;
+        trim_.pitch_bias = ic.pitch_bias;
     } catch (const std::exception& e) {
         error = e.what();
         model_.reset();
@@ -52,6 +55,7 @@ void EyasAdapter::update(const host::PilotInputs& in, std::int64_t dt_ns) {
     c.lon_cyclic = in.longitudinal;
     c.pedal = -in.pedal;  // host: + left pedal; Eyas: + right pedal (D-024)
     c.brake_left = c.brake_right = in.brakes ? 1.0 : 0.0;
+    c.afcs = {in.sas, in.sas, in.pitch_bias};  // aircraft without them ignore them
     // Real time from here: advance() doesn't allocate, throw or do I/O.
     const eyas::AdvanceStatus s = model_->advance(c, env_, dt_ns);
     // A capped frame dropped sim time (a host hitch); a non-finite step kept

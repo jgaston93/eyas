@@ -219,9 +219,9 @@ struct Mode {
 };
 
 // The modes of a condensed model about a trim with body x velocity u [m/s],
-// one per conjugate pair (Im λ ≥ 0), slowest first. Throws InitError if
-// retained_weights is neither empty nor one per retained state; empty
-// weighs them zero.
+// one per conjugate pair (Im λ ≥ 0), slowest first. Throws InitError unless
+// retained_weights has one weight per retained state (none for a 9-state
+// model).
 std::vector<Mode> modes(const CondensedModel& m, double u,
                         const std::vector<double>& retained_weights = {});
 

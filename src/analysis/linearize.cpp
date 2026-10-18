@@ -499,8 +499,10 @@ Eigen::MatrixXcd frequency_response(const Eigen::MatrixXd& A, const Eigen::Matri
 std::vector<Mode> modes(const CondensedModel& m, double u,
                         const std::vector<double>& retained_weights) {
     const auto extra = static_cast<std::size_t>(m.A.rows()) - 9;
-    if (!retained_weights.empty() && retained_weights.size() != extra) {
-        throw InitError("modes: one weight per retained state, or none");
+    if (retained_weights.size() != extra) {
+        // Weighing retained states zero would label their own roots as body
+        // modes (code review), so a caller must say how much each counts.
+        throw InitError("modes: one weight per retained state");
     }
     const Eigen::EigenSolver<MatX> es(m.A);
     // Weights: 1 m/s, 0.1 rad/s, 0.1 rad (states u v w p q r φ θ ψ_h).
