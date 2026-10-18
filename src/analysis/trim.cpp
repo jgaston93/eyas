@@ -1,6 +1,7 @@
 #include "analysis/trim.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <numbers>
@@ -123,6 +124,15 @@ public:
         for (std::size_t j = 0; j < nc_; ++j) {
             x_[body_layout::kSize + j] = z(static_cast<Eigen::Index>(kHead + j));
         }
+        // States with an algebraic equilibrium on the held body take it
+        // (GenHel's IC mode, D-045); their unknowns in z then have no effect,
+        // and the minimum-norm step leaves them alone.
+        const SimContext ctx = ex_.context(0.0, x_, controls(z), held_.env());
+        for (std::size_t i = 0; i < ex_.num_components(); ++i) {
+            ex_.component(i).steady_states(
+                ctx, std::span<double>(x_).subspan(ex_.component_offset(i), ex_.component_size(i)));
+        }
+        start_ = x_;
         return true;
     }
 
@@ -184,6 +194,138 @@ public:
         return -mean;
     }
 
+    // The states steady_states() sets (GenHel's IC mode, D-045), as indices
+    // into the full state: those it overwrites in a slice filled with NaN.
+    // Empty if z has no valid body state.
+    std::vector<std::size_t> ic_states(const VecX& z) {
+        std::vector<std::size_t> ic;
+        if (!pack(z)) {
+            return ic;
+        }
+        const SimContext ctx = ex_.context(0.0, x_, controls(z), held_.env());
+        for (std::size_t i = 0; i < ex_.num_components(); ++i) {
+            std::vector<double> probe(ex_.component_size(i),
+                                      std::numeric_limits<double>::quiet_NaN());
+            ex_.component(i).steady_states(ctx, probe);
+            for (std::size_t j = 0; j < probe.size(); ++j) {
+                if (!std::isnan(probe[j])) {
+                    ic.push_back(ex_.component_offset(i) + j);
+                }
+            }
+        }
+        return ic;
+    }
+
+    // The IC-mode states on their free-flight periodic orbit (D-045
+    // amendment). steady_states() puts them where the held body leaves them,
+    // but the free body vibrates at 4/rev from t = 0, and these states
+    // (sensors and the servos they drive) respond to that vibration: started
+    // from their held values they ring at their own frequencies, a decaying
+    // transient on every free flight from the trim. Here they are integrated
+    // along the held orbit with the body's velocity and rate free (from the
+    // mean plus `vib`, as solve_trim installs them) under the coupled body
+    // acceleration, position, attitude and every other component state on
+    // the held orbit as D-035 approximates them; the start values that
+    // return after one revolution come from Newton's method on r(w) =
+    // w(T) − w(0), (Φ − I) Δw = −r, with one finite-difference Jacobian Φ − I
+    // (the map is affine up to the rate limits and table corners, which a
+    // trim keeps clear of). `residual` is the largest change over the
+    // revolution at the result. No IC-mode states: nothing to do.
+    struct FreeOrbit {
+        std::vector<std::size_t> index;  // into the full state
+        std::vector<double> value;
+        double residual = 0.0;
+        std::size_t unconverged = 0;  // coupled evaluations (D-023)
+    };
+    FreeOrbit free_ic_orbit(const VecX& z, const Vec6& vib, double tol) {
+        FreeOrbit out;
+        out.index = ic_states(z);
+        if (out.index.empty() || !pack(z)) {
+            out.index.clear();
+            return out;
+        }
+        const Controls u = controls(z);
+        const int steps = held_.steps();
+        const double period = held_.period();
+        const double h = period / steps;
+        const auto nic = static_cast<Eigen::Index>(out.index.size());
+        // The held orbit's RK4 stage states, which this pass reads, not changes.
+        std::vector<std::array<std::vector<double>, 4>> stages(static_cast<std::size_t>(steps));
+        Vec6 ignored = Vec6::Zero();
+        VecX w0(nic);
+        for (Eigen::Index j = 0; j < nic; ++j) {
+            w0(j) = x_[out.index[static_cast<std::size_t>(j)]];
+        }
+        VecX y0(6 + nic);
+        for (int k = 0; k < 3; ++k) {
+            y0(k) = x_[body_layout::kVel + static_cast<std::size_t>(k)] + vib(k);
+            y0(3 + k) = x_[body_layout::kOmega + static_cast<std::size_t>(k)] + vib(3 + k);
+        }
+        for (int s = 0; s < steps; ++s) {
+            held_.step(s, u, x_, ignored, &stages[static_cast<std::size_t>(s)]);
+        }
+        std::vector<double> xc(n_, 0.0);
+        std::vector<double> xd(n_, 0.0);
+        // ẏ for y = [v_b; ω_b; IC-mode states] at RK4 stage k of step s.
+        const auto rate = [&](int s, std::size_t k, double t, const VecX& y) {
+            xc = stages[static_cast<std::size_t>(s)][k];
+            for (std::size_t i = 0; i < 3; ++i) {
+                xc[body_layout::kVel + i] = y(static_cast<Eigen::Index>(i));
+                xc[body_layout::kOmega + i] = y(static_cast<Eigen::Index>(3 + i));
+            }
+            for (Eigen::Index j = 0; j < nic; ++j) {
+                xc[out.index[static_cast<std::size_t>(j)]] = y(6 + j);
+            }
+            if (!ex_.derivatives(t, xc, u, held_.env(), xd)) {
+                ++out.unconverged;
+            }
+            VecX dy(y.size());
+            for (std::size_t i = 0; i < 3; ++i) {
+                dy(static_cast<Eigen::Index>(i)) = xd[body_layout::kVel + i];
+                dy(static_cast<Eigen::Index>(3 + i)) = xd[body_layout::kOmega + i];
+            }
+            for (Eigen::Index j = 0; j < nic; ++j) {
+                dy(6 + j) = xd[out.index[static_cast<std::size_t>(j)]];
+            }
+            return dy;
+        };
+        // w(T) − w(0) for the IC-mode states starting at w.
+        const auto change = [&](const VecX& w) {
+            VecX y = y0;
+            y.tail(nic) = w;
+            for (int s = 0; s < steps; ++s) {
+                const double t = period * static_cast<double>(s) / steps;
+                const VecX k1 = rate(s, 0, t, y);
+                const VecX k2 = rate(s, 1, t + 0.5 * h, y + 0.5 * h * k1);
+                const VecX k3 = rate(s, 2, t + 0.5 * h, y + 0.5 * h * k2);
+                const VecX k4 = rate(s, 3, t + h, y + h * k3);
+                y += h / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+            }
+            return VecX(y.tail(nic) - w);
+        };
+        VecX w = w0;
+        VecX r = change(w);
+        MatX J(nic, nic);
+        for (Eigen::Index j = 0; j < nic; ++j) {
+            const double dw = 1e-6 * std::max(1.0, std::abs(w(j)));
+            VecX wj = w;
+            wj(j) += dw;
+            J.col(j) = (change(wj) - r) / dw;
+        }
+        const Eigen::FullPivLU<MatX> lu(J);
+        constexpr int kMaxIterations = 6;  // spec §7 rule 3
+        for (int it = 0; it < kMaxIterations && r.allFinite() && r.cwiseAbs().maxCoeff() >= tol;
+             ++it) {
+            w -= lu.solve(r);
+            r = change(w);
+        }
+        out.value.assign(w.data(), w.data() + nic);
+        out.residual =
+            r.allFinite() ? r.cwiseAbs().maxCoeff() : std::numeric_limits<double>::quiet_NaN();
+        (void)pack(z);
+        return out;
+    }
+
     // r(z); false if z has no valid body state or the result isn't finite.
     bool residual(const VecX& z, VecX& r) {
         if (!pack(z)) {
@@ -197,7 +339,7 @@ public:
         r.segment<3>(3) = mean.tail<3>() / (weight_ * length_);
         for (std::size_t j = 0; j < nc_; ++j) {
             const auto k = static_cast<Eigen::Index>(kHead + j);
-            r(k) = x_[body_layout::kSize + j] - z(k);
+            r(k) = x_[body_layout::kSize + j] - start_[body_layout::kSize + j];
         }
         return r.allFinite();
     }
@@ -211,6 +353,7 @@ private:
     double length_ = 1.0;
     HeldIntegrator held_;
     std::vector<double> x_;
+    std::vector<double> start_;  // x_ as packed, before the revolution
 };
 
 struct Norms {
@@ -396,17 +539,30 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         m = ok ? norms(r) : invalid;
     }
     const Vec6 vib = ok ? p.vibration(z) : Vec6::Zero();
+    const Problem::FreeOrbit free =
+        ok ? p.free_ic_orbit(z, vib, o.periodic_tol) : Problem::FreeOrbit{};
     (void)p.pack(z);
     x = p.state();
+    // The held orbit's component states, from which a trim or linearization
+    // continues; the start state x differs in its IC-mode states.
+    result.component_states.assign(x.begin() + static_cast<std::ptrdiff_t>(body_layout::kSize),
+                                   x.end());
     result.vel_b = unpack_body(x).vel_b;  // the mean, as the condition asks
     for (std::size_t k = 0; k < 3; ++k) {
         x[body_layout::kVel + k] += vib(static_cast<Eigen::Index>(k));
         x[body_layout::kOmega + k] += vib(static_cast<Eigen::Index>(3 + k));
     }
+    for (std::size_t j = 0; j < free.index.size(); ++j) {
+        x[free.index[j]] = free.value[j];
+    }
+    if (ok && !(free.residual <= m.periodic)) {  // NaN too
+        m.periodic = free.residual;
+    }
     // A non-finite start state (e.g. from a singular coupled solve in the
     // vibration offset) can't be flown on from, whatever the residuals say.
     const bool finite = std::all_of(x.begin(), x.end(), [](double v) { return std::isfinite(v); });
-    result.converged = ok && finite && converged(m, o) && p.evaluations_unconverged() == 0;
+    result.converged = ok && finite && converged(m, o) && p.evaluations_unconverged() == 0 &&
+                       free.unconverged == 0;
     result.iterations = it;
     result.controls = Problem::controls(z);
     result.pitch = z(kPitch);
@@ -414,8 +570,6 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
     result.force_residual = m.force * p.weight();
     result.moment_residual = m.moment * p.weight() * p.length();
     result.periodic_residual = m.periodic;
-    result.component_states.assign(x.begin() + static_cast<std::ptrdiff_t>(body_layout::kSize),
-                                   x.end());
     return result;
 }
 

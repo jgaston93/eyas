@@ -25,6 +25,7 @@ add_library(eyas STATIC
     src/analysis/linearize.cpp
     src/analysis/trim.cpp
     src/airframe/landing_gear.cpp
+    src/control/genhel_fcs.cpp
     src/core/attitude.cpp
     src/core/coupling.cpp
     src/core/rigid_body.cpp

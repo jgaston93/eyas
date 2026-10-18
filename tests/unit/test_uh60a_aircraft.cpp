@@ -12,6 +12,7 @@
 
 #include <gtest/gtest.h>
 
+#include "control/genhel_fcs.hpp"
 #include "eyas/model.hpp"
 #include "support/alloc_counter.hpp"
 #include "support/m6d_fixtures.hpp"
@@ -34,8 +35,8 @@ TEST(Uh60aAircraft, ConfigLoadsWithTheDeclaredPlaceholders) {
     std::sort(p.begin(), p.end());
     std::vector<std::string> expect;
     for (const char* g : {"0", "1", "2"}) {
-        expect.push_back(std::string("components[3].gears[") + g + "].strut.stop_damping");
-        expect.push_back(std::string("components[3].gears[") + g + "].strut.stop_stiffness");
+        expect.push_back(std::string("components[4].gears[") + g + "].strut.stop_damping");
+        expect.push_back(std::string("components[4].gears[") + g + "].strut.stop_stiffness");
     }
     std::sort(expect.begin(), expect.end());
     EXPECT_EQ(p, expect);
@@ -179,7 +180,7 @@ TEST(Uh60aAircraft, OneBrakeTurnsTowardsItsSide) {
 // GenHel Figs. 5.1.6(a)–(d) and p. 5.5-20, the mechanical path in GenHel's
 // own units (inches, degrees), test-side; XB = −XB+1 − XB+2 + XBOLS
 // (verified by human review, DATA_GAPS.md).
-struct GenHelRigging {
+struct GenHelRiggingRef {
     double KXCTH0 = 1.60, KXAA1S = 1.60, KXBB1S = -2.83, KXPTHR = -5.539;
     double BIAS_C = 9.9, BIAS_A = -8.0, BIAS_B = -9.7754, BIAS_P = 21.9;
     double MIX_AC = -0.16, MIX_BC = 0.29, MIX_BP = -0.2936;
@@ -203,46 +204,64 @@ struct GenHelRigging {
     }
 };
 
+// The flight control system's mixer (D-045), with its servos at rest, gives
+// GenHel's rigging, rotor head limits included (p. 5.5-20).
 TEST(Uh60aAircraft, ControlMapsAreGenHelsRigging) {
     const Uh60aHarness ac;
-    const PitchSchedule& main = *ac.get<BladeElementRotor>("main_rotor").config().controls;
-    const PitchSchedule& tail = *ac.get<BaileyRotor>("tail_rotor").config().controls;
-    const GenHelRigging g;
+    const auto& fcs = ac.get<GenHelFcs>("fcs");
+    const GenHelRiggingRef g;
     using tr = test::Travels;
+    BodyState b;
+    b.pos_n = Vec3(0.0, 0.0, -500.0);
+    const std::vector<double> x = ac.initial(b);
+    std::vector<double> xf(fcs.num_states(), 0.0);
+    // The servos' outputs at rest at the mixer's commands.
+    const auto pitch = [&](const Controls& c) {
+        const SimContext ctx = ac.context(0.0, x, c, Environment{});
+        fcs.steady_states(ctx, xf);
+        return fcs.evaluate(ctx, xf);
+    };
     std::mt19937_64 rng(6004);
     std::uniform_real_distribution<double> u(-1.0, 1.0);
-    for (int n = 0; n < 200; ++n) {
+    int limited = 0;
+    for (int n = 0; n < 400; ++n) {
         Controls c;
         c.collective = 0.5 + 0.5 * u(rng);
         c.lat_cyclic = u(rng);
         c.lon_cyclic = u(rng);
         c.pedal = u(rng);
-        const auto o =
+        auto o =
             g(tr::xc(c.collective), tr::xa(c.lat_cyclic), tr::xb2(c.lon_cyclic), tr::xp(c.pedal));
-        const SwashplatePitch p = main.pitch(c);
+        const double b1s = std::clamp(o.b1s, -12.5, 16.3);
+        limited += b1s != o.b1s ? 1 : 0;
+        o.b1s = b1s;
+        o.a1s = std::clamp(o.a1s, -8.0, 8.0);
+        o.theta0 = std::clamp(o.theta0, 9.9, 25.9);
+        const GenHelFcsOutputs p = pitch(c);
         for (int k = 0; k < 12; ++k) {
             const double psi = 2.0 * std::numbers::pi * k / 12;
             const double eyas = p.theta0 + p.theta1c * std::cos(psi) + p.theta1s * std::sin(psi);
             EXPECT_NEAR(eyas / kDeg, g.blade_pitch(o, psi), 1e-7);
         }
-        EXPECT_NEAR(tail.pitch(c).theta0 / kDeg, o.thettr, 1e-7);
+        EXPECT_NEAR(p.theta_tr / kDeg, o.thettr, 1e-7);  // travels written to 1e-9 in
     }
+    EXPECT_GT(limited, 0);  // the B1S limits were exercised
     // Directions (Controls, include/eyas/types.hpp): forward stick tilts the
     // disc forward (θ1s down), right stick to the right (θ1c down for a
     // counter-clockwise rotor), right pedal lowers the tail-rotor pitch.
     Controls c;
-    const SwashplatePitch p0 = main.pitch(c);
+    c.collective = 0.5;
+    const GenHelFcsOutputs p0 = pitch(c);
     c.lon_cyclic = 0.1;
-    EXPECT_LT(main.pitch(c).theta1s, p0.theta1s);
-    c = Controls{};
+    EXPECT_LT(pitch(c).theta1s, p0.theta1s);
+    c.lon_cyclic = 0.0;
     c.lat_cyclic = 0.1;
-    const SwashplatePitch pl = main.pitch(c);
     // With the phase the lateral input also moves θ1s a little; the main
     // effect is on θ1c.
-    EXPECT_LT(pl.theta1c, p0.theta1c);
-    c = Controls{};
+    EXPECT_LT(pitch(c).theta1c, p0.theta1c);
+    c.lat_cyclic = 0.0;
     c.pedal = 0.1;
-    EXPECT_LT(tail.pitch(c).theta0, tail.pitch(Controls{}).theta0);
+    EXPECT_LT(pitch(c).theta_tr, p0.theta_tr);
 }
 
 // ---- Hover yaw balance (D-028 whole aircraft, layer 2) -------------------------------

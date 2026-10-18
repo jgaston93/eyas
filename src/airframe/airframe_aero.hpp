@@ -124,11 +124,19 @@ struct IncidenceSchedule {
     double max = 0.0;
 };
 
+// Reads {table, min, max}: a CSV with columns airspeed, collective and
+// incidence (with units), and the travel limits. Throws InitError.
+IncidenceSchedule incidence_schedule_from_config(const Config& node);
+
 struct PanelConfig {
     Vec3 position_b = Vec3::Zero();  // [m] from the airframe CG, body axes; x < 0 (aft)
     double area = 0.0;               // S [m²]
     double incidence = 0.0;          // [rad] fixed (stabilator: GenHel's STBSET override)
-    std::optional<IncidenceSchedule> schedule;             // stabilator: replaces `incidence`
+    std::optional<IncidenceSchedule> schedule;  // stabilator: replaces `incidence`
+    // Stabilator, instead of `incidence` or `schedule`: the instance whose
+    // <incidence_input>.stabilator_incidence [rad] sets it (D-003), e.g. a
+    // flight control system with the dynamic law (D-045).
+    std::string incidence_input;
     AngleTable cl{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};  // against the panel angle [rad]
     AngleTable cd{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
     // Fuselage wake, against α_WF (stabilator) or ψ_WF (fin) [rad]:
@@ -203,6 +211,7 @@ private:
     CouplingSlot fin_q_factor_;
     CouplingSlot sidewash_;
     CouplingSlot downwash_;
+    CouplingSlot incidence_;  // consumed, with the stabilator's incidence_input
 };
 
 }  // namespace eyas

@@ -22,6 +22,7 @@ add_executable(eyas_unit_tests
     unit/test_linearize.cpp
     unit/test_flap_anchors.cpp
     unit/test_flapping_rotor.cpp
+    unit/test_genhel_fcs.cpp
     unit/test_geodesy.cpp
     unit/test_landing_gear.cpp
     unit/test_model.cpp
@@ -134,3 +135,10 @@ target_include_directories(eyas_m8a_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m8a_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_m8a_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m8a_cases)
+
+# Writes the M8c1 flight-control data (D-045; VALIDATION.md; tools/plot_m8c.py).
+add_executable(eyas_m8c_cases validation/m8c_cases.cpp)
+target_include_directories(eyas_m8c_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m8c_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m8c_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m8c_cases)

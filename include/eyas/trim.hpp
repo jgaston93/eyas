@@ -38,14 +38,18 @@ struct TrimResult {
     // Residuals at the solution: the net force and moment on the held body
     // averaged over one rotor revolution [N], [N·m] (body axes, about the
     // airframe CG), and the largest change of a rotor, inflow or other
-    // component state over the revolution (in that state's own units). NaN
+    // component state over the revolution (in that state's own units),
+    // including the flight control states' free-flight orbit (below). NaN
     // if the solver stopped at a point with no valid residual.
     double force_residual = 0.0;
     double moment_residual = 0.0;
     double periodic_residual = 0.0;
-    // Every component state at the start of the revolution, in the Model's
-    // state order after the body states. Engineering data: pass the result
-    // back to Model::trim as a starting point for a nearby condition.
+    // Every component state at the start of the held revolution, in the
+    // Model's state order after the body states. Engineering data: pass the
+    // result back to Model::trim as a starting point for a nearby condition.
+    // The state Model::trim installs differs in the flight control system's
+    // sensors and servos: there they start on their response to the free
+    // body's 4/rev vibration, as v and ω do (D-045 amendment).
     std::vector<double> component_states;
 };
 

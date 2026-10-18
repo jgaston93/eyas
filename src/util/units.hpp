@@ -46,9 +46,12 @@ enum class Dimension : std::uint8_t {
     volume,           // e.g. a moment per unit dynamic pressure [m³]
     angle_per_force,  // compliance, e.g. a coning angle per unit thrust
     pressure,
-    stiffness,          // force per length, e.g. a tire spring
-    damping,            // force per speed, e.g. a linear damper
-    quadratic_damping,  // force per speed², e.g. an oleo orifice
+    stiffness,               // force per length, e.g. a tire spring
+    damping,                 // force per speed, e.g. a linear damper
+    quadratic_damping,       // force per speed², e.g. an oleo orifice
+    angle_per_length,        // e.g. a control rigging gain [deg/in]
+    angle_per_acceleration,  // e.g. a lateral-acceleration feedback gain
+    time_squared,            // e.g. the s² coefficient of a servo transfer function
 };
 
 // Name used in error messages, e.g. "length".

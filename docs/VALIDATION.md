@@ -1070,3 +1070,74 @@ All are fixed with tests (D-044 verification). Two points weren't acted on as st
   - the missing pitch bias actuator and SAS (M8c, D-029).
 
   Nothing points to a fault; re-check after M8c. The open 80 kt speed-stability gap (M_u < 0, D-041) tends to pitch the nose down rather than up, so it isn't this.
+
+## M8c — The flight control system (M8c1, 2026-10-18)
+
+M8c is the third M8 stage (D-042), the UH-60A's flight control system from GenHel CR-166309 §5.5 (D-029, D-045), in three PRs. M8c1 (this entry): the Fig. 5.1.2 sensors, the mechanical controls and mixer (Figs. 5.1.6(a)–(d)) with the rotor head limits (p. 5.5-20), the primary servos, and the dynamic stabilator (Fig. 5.1.7: airspeed schedule, pitch-rate and lateral-acceleration feedback, servo with its rate limit). M8c2 adds the SAS and the pitch bias actuator, M8c3 the FPS. One component, `genhel_fcs` (`src/control/`), drives both rotors' blade pitch and the stabilator through the D-003 data path. The data come from `data/uh60a/genhel/` (DATA_GAPS.md "UH-60A AFCS (M8c)").
+
+Generator `eyas_m8c_cases` (`tests/validation/m8c_cases.cpp`), plots `tools/plot_m8c.py`; nightly in `full-verification.yml`.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Mixer and head limits against GenHel's rigging | ✅ | `Uh60aAircraft.ControlMapsAreGenHelsRigging`: blade pitch at 12 azimuths and the tail-rotor pitch for 400 random stick positions, against GenHel's mixer written test-side in inches and degrees (1e-7°), with the B1S limits exercised. |
+| Servos, sensors and stabilator network against GenHel's diagrams | ✅ | `GenHelFcs.ServosAndSensorsAreGenHelsTransferFunctions`, `AccelerometerSensesTheSpecificForceAtItsStation`, `StabilatorServoRateLimit`, `SteadyStatesAreAHeldBodyEquilibrium`: every second-order block on its input, the airspeed lag on the equivalent airspeed, IHT0 in GenHel's degrees and knots, and the accelerometer's specific force (xdot0 + G a) against an independent point-acceleration formula. Flipping the gravity sign in the reference fails two of them. Anchor: at rest, rolled 10° right, the accelerometer reads −g sin 10°. |
+| The flying config is GenHel's | ✅ | `GenHelFcs.Uh60aConfigIsGenHels`: the servo, gyro, accelerometer and stabilator constants and the transducer station (FS 307, WL 263) from the shipped config, in GenHel's units. |
+| Acceleration-coupled states linearize exactly | ✅ | `Linearize.AccelerationCoupledStatesAreExact` (D-045). |
+| Real-time rules | ✅ | `GenHelFcs.DerivativesDoNotAllocate`; the whole-aircraft allocation and determinism tests run with the flight control system in. |
+| V1 trims against Ballin (M7c gate) | ✅ | `BallinTrim.*` pass. The GenHel-constraint trims (zero roll above 50 kt) are unchanged to the printed digits, since at zero roll the accelerometer reads no lateral force. Only the zero-sideslip comparison trims move: by up to 5.2 % of longitudinal travel and 2.4° of stabilator at 160 kt. |
+| V2 against Fletcher with the servos in the model | ✅ | `eyas_m7c_fletcher` now takes the primary servos from the model and divides them out for the no-servo curves. Both sets equal M7c's to the CSV's six digits, as they must for a linear unit-gain servo, so the M7c figures stand. |
+| L3 with the lateral-acceleration feedback | ✅ | Below, resolved by the D-045 amendment. |
+| Start-up transient | ✅ | `Trim.FcsStartTransientIsSmall`: under 0.002° of stabilator in the first 2 s (measured 0.0004° at 120 kt; 0.026° before the amendment). |
+| A disturbed flight control system settles | ✅ | `Trim.FcsKickDiesOut`, below. A pitch-rate gain of −0.6 s in place of +0.16 fails it while the trim still converges, which is the case it guards against. |
+| Free flight with the AFCS on, 30 min (D-042 (a)) | M8c3 | With the stabilator alone the aircraft keeps its unstable phugoid (modes below), so a 30-min free flight diverges whatever the integrator does. The check waits for the SAS and FPS. |
+
+**Trims.** Level flight, ISA sea level, 16 638 lbm, zero sideslip, with the lateral-acceleration feedback on and zeroed:
+
+![Trims](validation/m8/m8c_trims.png)
+
+- The stabilator rests on its 39° stop up to 30 kt and follows its airspeed schedule down to about 3° at 80 kt.
+- At zero sideslip a single-rotor helicopter trims with about 1–3° of roll, so the accelerometer reads −g sin φ, 0.18–0.58 m/s². Through the feedback (−1.299 deg per ft/s² above 60 kt) that moves the stabilator by up to 2.5° at 150 kt. The aircraft then trims 1.7° more nose-up, with forward stick up by 0.11 (5.6 % of travel). With the ball centred the accelerometer reads zero, since the ball shows the same lateral specific force. So the shift belongs to the zero-sideslip trim condition, not to how the aircraft is flown. GenHel's zero-roll trims (the V1 gate) read zero too.
+
+**Modes.** Condensed 6-DOF model, with the dynamic stabilator and with the stabilator held at its trimmed incidence (the same trim):
+
+![Modes](validation/m8/m8c_modes.png)
+
+- *Speed stability.* Held, the aircraft has an unstable real root at 60 to 120 kt: +0.39, +0.18 and +0.15 1/s. That is M7c's parked M_u < 0 gap (D-041), which came from the held stabilator in the rotor downwash. With the airspeed-scheduled stabilator that root is gone. A mildly unstable phugoid remains: +0.050 ± 0.369i at 60 kt and +0.022 ± 0.140i at 90 kt.
+- *Dutch roll.* With the stabilator live, its damping drops: ζ 0.31 to 0.27 at 60 kt, 0.28 to 0.07 at 120 kt, 0.21 to 0.05 at 150 kt. That is the lateral-acceleration feedback coupling sideslip into pitch. Nothing checks it against data yet; the SAS (M8c2) adds yaw damping.
+- These are the flying config's modes; M7c's comparison with Fletcher holds the stabilator, as Fletcher's flights did.
+
+**Start-up transient and a kick.**
+
+![Start](validation/m8/m8c_start.png)
+
+![Kick](validation/m8/m8c_kick.png)
+
+- *Start (D-045 amendment).* From the trim's state, the stabilator's change in free flight with the sensors started on their free-flight orbit, against their held-body values. At 150 kt the first swing falls from 0.062° to about 0.0014°. What remains grows slowly, the bare aircraft's own drift.
+- *Kick.* The stabilator servo kicked by 0.5°, the accelerometer by 0.3 m/s² and the pitch gyro by 0.01 rad/s. It swings to −0.6° and settles in about 1.5 s. After that it stays within 0.09° of the unkicked flight, the slow airframe motion fed back through the gyro. The gate is ±0.25° after 1.5 s.
+
+**L3 with the stabilator's lateral-acceleration feedback (resolved 2026-10-18, D-045 amendment).** The gate failed with that feedback on: c0 was 2.1e-4 at 60 kt (collective doublet; floor 1e-4) and 1.1–3.3e-3 at 150 kt (floor 1e-3). There were two causes.
+- At 150 kt the trim started the flight control system's sensors at their held-body values, off the 4/rev they see in free flight. Every free flight then carried a decaying transient, and the perturbed flights' cross term with it reads as a leftover. The trim now starts these states on their free-flight orbit.
+- At 60 kt the collective doublet's error was not yet straight in the amplitude, which biased the fitted intercept. Its largest amplitude is now a quarter of the other controls'. On a √2 amplitude grid down to 1/90 of the old largest, e/a stays within 2.5–3.1 with the feedback on and with it zeroed. So there is no leftover and no corner crossing (either would make e/a grow without bound as the amplitude shrinks). The ±10 % wander in e/a is in both configs; its source is not identified.
+
+`Linearize.PeriodicModelMatchesTheNonlinearResponse` now runs on the flying config with the feedback on and gates |c0|. Worst |c0| over the 12 cases:
+
+| Condition | Worst \|c0\| | Floor |
+|---|---|---|
+| hover | 2e-6 | 1e-4 |
+| 60 kt | 1e-5 | 1e-4 |
+| 80 kt (probe, not gated) | 2e-5 | 1e-3 |
+| 150 kt | 4.3e-4 (p) | 1e-3 |
+
+**The L3 sweep, regenerated** (`eyas_m7b_cases` on the flying config, every 10 kt; M7b's figure and figures are left as that milestone's record):
+
+![L3 sweep](validation/m8/m8c_l3_sweep.png)
+
+- Periodic model: ≤ 4.2e-5 up to 60 kt and ≤ 4.3e-4 above, except at 30 kt (12 %, the tail-rotor fin-blockage corner, as in M7b). M7b recorded 3.2e-5 and 5.4e-4.
+- Averaged model in hover: 1.03e-3 (M7b: 1.04e-3).
+
+**Open items:**
+- *Dutch-roll damping* with the live stabilator (above). Its size rests on two readings not yet verified (DATA_GAPS.md, AFCS: KVYDT's unit and what AYPS1 senses), to re-read first. Then to check once the SAS is in (M8c2).
+- *The L3 misfit's noise allowance* (half the floor) can hide a 3 % curvature in e(a); to tighten in M8c2.
+- *The stabilator schedule's 147 kt node* sits 3 kt below the 150 kt gate trim. A hotter or higher 150 kt condition (EAS below 147 kt) puts V_F on its other slope; not a fault, but L3 at such a condition crosses it.
+
+**Builds:** all 386 tests pass with GCC 13.3 (Release), all 387 with GCC 13.3 and Clang 18.1 (Debug), and all 386 in a Rocky Linux 9 container (GCC 11.5, Release), with and without GLFW. Without GLFW the pilot station's window-only variable broke the GCC 11 build under `-Werror`; it was on main, CI missed it because its Rocky job installs GLFW, and it is fixed here. Under ASan+UBSan the 31 new and changed tests pass (flight control, trim, aircraft, acceleration coupling, Ballin level flight), except `BallinTrim.ClimbAndDescentTrendsAgainstSikorskyGenHel`, stopped after 29 min (in CI's `SLOW_TESTS`; the nightly job runs it). clang-format is clean, and clang-tidy is clean on the changed `src/` files.

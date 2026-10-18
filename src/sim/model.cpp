@@ -10,8 +10,10 @@
 #include <utility>
 #include <vector>
 
+#include "airframe/airframe_aero.hpp"
 #include "airframe/landing_gear.hpp"
 #include "analysis/trim.hpp"
+#include "control/genhel_fcs.hpp"
 #include "core/attitude.hpp"
 #include "env/air_data.hpp"
 #include "env/atmosphere.hpp"
@@ -41,6 +43,8 @@ struct Model::Impl {
     std::size_t main_rotor = kNone;  // the first blade-element rotor
     std::size_t tail_rotor = kNone;  // the first Bailey rotor
     std::vector<std::size_t> gears;  // every landing-gear component
+    std::size_t airframe = kNone;    // the first airframe aerodynamics (stabilator)
+    std::size_t fcs = kNone;         // the first GenHel flight control system
 
     // The inputs the outputs are evaluated with: those of the last advance()
     // that ran, or the trimmed ones (D-043).
@@ -66,8 +70,8 @@ std::unique_ptr<Model::Impl> build(const Config& config, const GeodeticOrigin* o
     Executive executive = build_executive(config, origin_altitude);
     // Read after the build, so that placeholder data files noted by the
     // component readers are included.
-    auto impl = std::make_unique<Model::Impl>(
-        Model::Impl{map, std::move(executive), config.placeholders(), kNone, kNone, {}, {}, {}});
+    auto impl = std::make_unique<Model::Impl>(Model::Impl{
+        map, std::move(executive), config.placeholders(), kNone, kNone, {}, kNone, kNone, {}, {}});
     const Executive& ex = impl->executive;
     for (std::size_t i = 0; i < ex.num_components(); ++i) {
         const DynamicComponent* c = &ex.component(i);
@@ -77,6 +81,10 @@ std::unique_ptr<Model::Impl> build(const Config& config, const GeodeticOrigin* o
             impl->tail_rotor = i;
         } else if (dynamic_cast<const LandingGear*>(c) != nullptr) {
             impl->gears.push_back(i);
+        } else if (impl->airframe == kNone && dynamic_cast<const AirframeAero*>(c) != nullptr) {
+            impl->airframe = i;
+        } else if (impl->fcs == kNone && dynamic_cast<const GenHelFcs*>(c) != nullptr) {
+            impl->fcs = i;
         }
     }
     return impl;
@@ -303,6 +311,20 @@ void Model::update_outputs() noexcept {
         }
     }
     o.weight_on_wheels = wow;
+
+    // Flight controls (D-045)
+    if (impl_->airframe != kNone) {
+        const auto& af = static_cast<const AirframeAero&>(ex.component(impl_->airframe));
+        o.stabilator_incidence = af.evaluate(ctx, states(impl_->airframe)).stabilator_incidence;
+    }
+    if (impl_->fcs != kNone) {
+        const auto& fcs = static_cast<const GenHelFcs&>(ex.component(impl_->fcs));
+        const GenHelFcsOutputs f = fcs.evaluate(ctx, states(impl_->fcs));
+        o.main_rotor_theta0 = f.theta0;
+        o.main_rotor_theta1s = f.theta1s;
+        o.main_rotor_theta1c = f.theta1c;
+        o.tail_rotor_theta0 = f.theta_tr;
+    }
 }
 
 }  // namespace eyas

@@ -27,6 +27,28 @@ airframe:
 
 components:
   # Producers before consumers is the executive's job (D-003); config order is for reading.
+  - type: genhel_fcs
+    name: fcs
+    rigging:  # Figs. 5.1.6(a)-(d), p. 5.5-20; control_rigging_5_5.txt
+      travel: {collective: {lo: "0 in", hi: "10.0 in"}, lat_cyclic: {lo: "0 in", hi: "10.0 in"}, lon_cyclic: {lo: "-3.088530035 in", hi: "6.911469965 in"}, pedal: {lo: "1.6248e-05 in", hi: "5.380016248 in"}}
+      gains: {collective: "1.6 deg/in", lateral: "1.6 deg/in", longitudinal: "-2.83 deg/in", pedal: "-5.539 deg/in"}
+      longitudinal_stick_sign: -1.0
+      mixing: {lateral_collective: -0.16, longitudinal_collective: 0.29, longitudinal_pedal: -0.2936}
+      bias: {collective: "9.9 deg", lateral: "-8.0 deg", longitudinal: "-9.7754 deg", pedal: "21.9 deg"}
+      swashplate_phase: "-9.7 deg"
+    primary_servo: {a2: "0.00114 s^2", a1: "0.0473 s"}
+    rate_gyro: {a2: "0.00014 s^2", a1: "0.016 s"}  # Fig. 5.1.2
+    lateral_accelerometer:
+      a2: "0.0254 s^2"
+      a1: "0.233 s"
+      position: {x: "54.594317 in", y: "0 in", z: "-19.035764 in"}  # p. 5.10-19
+    stabilator:  # Fig. 5.1.7; fig_5_5_1_7_stabilator.txt
+      schedule: {table: airframe/stabilator_schedule.csv, min: "-8.0 deg", max: "39.0 deg"}
+      airspeed_lag: "0.398 s"
+      pitch_rate_gain: "0.16 s"  # deg per deg/s
+      lateral_accel_gain: {gain: "-1.299 deg/(ft/s^2)", from: "30.0 kt", to: "60.0 kt"}
+      servo: {a2: "0.0254 s^2", a1: "0.223 s", rate_limit: "7.0 deg/s"}
+
   - type: blade_element_rotor
     name: main_rotor
     blades: 4
@@ -53,10 +75,7 @@ components:
         delta3: "0 deg"
       dynamic_twist: {gain_table: dynamic_twist_gain.csv, mode_table: dynamic_twist_mode.csv, lag: "0.01 s"}  # D-038; lag numerical
       yawed_flow_drag: true  # D-039 (GenHel resolves its drag on the full segment velocity, p. 5.1-28)
-    controls:
-      theta0: {offset: "9.9 deg", collective: "16.0 deg"}
-      theta1s: {offset: "-0.008575620181 deg", collective: "-4.142331285 deg", lon_cyclic: "-13.94770409 deg", lat_cyclic: "-1.347915037 deg", pedal: "-4.312071778 deg"}
-      theta1c: {offset: "0.001465857602 deg", collective: "3.305191602 deg", lon_cyclic: "2.384124721 deg", lat_cyclic: "-7.885627753 deg", pedal: "0.7370759273 deg"}
+    pitch_input: fcs  # GenHel's mixer, primary servos and head limits (D-045)
 
   - type: airframe_aero
     name: airframe
@@ -70,7 +89,7 @@ components:
     stabilator:
       position: {x: "-338.505683 in", y: "0 in", z: "-0.035764 in"}
       area: "45.0 ft^2"
-      schedule: {table: airframe/stabilator_schedule.csv, min: "-8 deg", max: "39 deg"}
+      incidence_input: fcs  # GenHel Fig. 5.1.7, dynamic (D-045)
       coefficients: airframe/stabilator_coefficients.csv
       q_ratio: airframe/stabilator_q_ratio.csv
       downwash: airframe/stabilator_downwash.csv
@@ -99,8 +118,7 @@ components:
     hub:
       position: {x: "-370.405683 in", y: "14.0 in", z: "-80.735764 in"}
       roll: "70.0 deg"
-    controls:
-      theta0: {offset: "7.0 deg", collective: "16.0 deg", pedal: "-14.89991 deg"}
+    pitch_input: fcs
     main_rotor_wash: {rotor: main_rotor, table: airframe/tail_wash.csv}
     fuselage_wake: {airframe: airframe}
 

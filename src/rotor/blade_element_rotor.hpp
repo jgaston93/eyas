@@ -113,6 +113,10 @@ struct BladeElementRotorConfig {
     ElementSpacing spacing = ElementSpacing::equal_area;
     std::shared_ptr<const Airfoil> airfoil;
     std::shared_ptr<const PitchSchedule> controls;
+    // Instead of `controls`: the instance whose <pitch_input>.theta0, .theta1s
+    // and .theta1c [rad] give the swashplate pitch (D-003), e.g. a flight
+    // control system (D-045). Empty: `controls`.
+    std::string pitch_input;
     std::optional<FlapHinge> flap;  // none: M3 rotor, flapping held at zero
     InflowModel inflow = InflowModel::uniform;
     std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
@@ -197,6 +201,7 @@ public:
     //   tip_speed  ΩR [m/s].
     std::string_view name() const noexcept override { return config_.name; }
     std::vector<std::string> produces() const override;
+    std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
 
     // Aerodynamic loads at rotor states x (empty: every state zero; otherwise
@@ -277,6 +282,9 @@ private:
         CouplingSlot mu_z;
         CouplingSlot beta_1c;
         CouplingSlot tip_speed;
+        CouplingSlot theta0;  // consumed, with pitch_input
+        CouplingSlot theta1s;
+        CouplingSlot theta1c;
     };
     Slots slots_;
     // Hunt-search hints, one per (blade, element). They change only the

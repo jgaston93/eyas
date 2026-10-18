@@ -113,28 +113,40 @@ inline Averages revolution_average(const Uh60aHarness& ac, std::vector<double> x
     return a;
 }
 
-// The Ballin aircraft (or the config at `path`) with the stabilator held at
-// `incidence_deg` (GenHel's STBSET override) instead of its schedule: the
-// config text with its table paths made absolute, read from a string.
-inline Uh60aHarness fixed_stabilator(double incidence_deg,
-                                     const std::filesystem::path& path = config_path()) {
+// The config text at `path` with its table paths made absolute, so that it
+// can be edited and read from a string.
+inline std::string config_text(const std::filesystem::path& path) {
     std::ifstream f(path);
     std::stringstream ss;
     ss << f.rdbuf();
-    std::string text = ss.str();
     const std::string dir = path.parent_path().string() + "/";
-    text = std::regex_replace(text, std::regex(R"(([\s{:,])([A-Za-z0-9_][A-Za-z0-9_./-]*\.csv))"),
-                              "$1" + dir + "$2");
-    const std::regex schedule(R"(schedule: \{[^}]*\})");
-    if (std::distance(std::sregex_iterator(text.begin(), text.end(), schedule),
+    return std::regex_replace(
+        ss.str(), std::regex(R"(([\s{:,])([A-Za-z0-9_][A-Za-z0-9_./-]*\.csv))"), "$1" + dir + "$2");
+}
+
+// The config text at `path` with the stabilator held at `incidence_deg`
+// (GenHel's STBSET override) instead of taking the flight control system's
+// incidence (D-045).
+inline std::string held_stabilator_text(double incidence_deg, const std::filesystem::path& path) {
+    const std::string text = config_text(path);
+    const std::regex input(R"(incidence_input: [A-Za-z0-9_]+[^\n]*)");
+    if (std::distance(std::sregex_iterator(text.begin(), text.end(), input),
                       std::sregex_iterator()) != 1) {
-        throw std::runtime_error("expected exactly one stabilator schedule in " + path.string());
+        throw std::runtime_error("expected exactly one stabilator incidence input in " +
+                                 path.string());
     }
     std::ostringstream inc;
     inc.precision(17);
     inc << "incidence: \"" << incidence_deg << " deg\"";
-    text = std::regex_replace(text, schedule, inc.str());
-    return Uh60aHarness(Config::from_string(text, path.string() + " (stabilator held)"));
+    return std::regex_replace(text, input, inc.str());
+}
+
+// The Ballin aircraft (or the config at `path`) with the stabilator held at
+// `incidence_deg`.
+inline Uh60aHarness fixed_stabilator(double incidence_deg,
+                                     const std::filesystem::path& path = config_path()) {
+    return Uh60aHarness(Config::from_string(held_stabilator_text(incidence_deg, path),
+                                            path.string() + " (stabilator held)"));
 }
 
 // Controls in Ballin's percent scales: longitudinal 0 = full forward,

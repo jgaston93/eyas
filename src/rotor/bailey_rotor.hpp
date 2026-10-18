@@ -91,8 +91,11 @@ struct BaileyRotorConfig {
     double hub_pitch = 0.0;              // [rad]
     double hub_roll = 0.0;               // [rad]
     std::shared_ptr<const PitchSchedule> controls;  // θ_cmd = theta0
-    std::optional<RotorWash> wash;                  // main-rotor wash at the hub
-    std::optional<FuselageWake> fuselage_wake;      // airframe wake at the hub (M6b)
+    // Instead of `controls`: the instance whose <pitch_input>.theta_tr [rad]
+    // is θ_cmd (D-003), e.g. a flight control system (D-045). Empty: `controls`.
+    std::string pitch_input;
+    std::optional<RotorWash> wash;              // main-rotor wash at the hub
+    std::optional<FuselageWake> fuselage_wake;  // airframe wake at the hub (M6b)
 };
 
 struct BaileyRotorLoads {
@@ -156,6 +159,7 @@ private:
     double coning_pitch_;  // (∂a₀/∂T) tan δ₃ [rad/N]
     Mat3 C_hb_;
     Mat3 C_bh_;
+    CouplingSlot pitch_;
     CouplingSlot q_factor_;
     CouplingSlot sidewash_;
     CouplingSlot downwash_;

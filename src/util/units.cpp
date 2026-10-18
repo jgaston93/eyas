@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 51> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 56> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -63,6 +63,11 @@ constexpr std::array<std::pair<std::string_view, Unit>, 51> kRegistry{{
     {"lbf*s/ft",     {kPoundForce / kFoot, D::damping}},
     {"N*s^2/m^2",    {1.0, D::quadratic_damping}},
     {"lbf*s^2/ft^2", {kPoundForce / (kFoot * kFoot), D::quadratic_damping}},
+    {"rad/m",        {1.0, D::angle_per_length}},
+    {"deg/in",       {kDegree / kInch, D::angle_per_length}},
+    {"rad/(m/s^2)",  {1.0, D::angle_per_acceleration}},
+    {"deg/(ft/s^2)", {kDegree / kFoot, D::angle_per_acceleration}},
+    {"s^2",          {1.0, D::time_squared}},
 }};
 // clang-format on
 
@@ -135,6 +140,12 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "damping";
         case Dimension::quadratic_damping:
             return "quadratic damping";
+        case Dimension::angle_per_length:
+            return "angle per length";
+        case Dimension::angle_per_acceleration:
+            return "angle per acceleration";
+        case Dimension::time_squared:
+            return "time squared";
     }
     return "unknown";
 }

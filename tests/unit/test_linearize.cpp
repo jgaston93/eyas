@@ -9,8 +9,12 @@
 #include <array>
 #include <cmath>
 #include <complex>
+#include <memory>
 #include <numbers>
 #include <random>
+#include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -19,6 +23,8 @@
 #include "analysis/linearize.hpp"
 #include "analysis/trim.hpp"
 #include "core/attitude.hpp"
+#include "core/component.hpp"
+#include "core/rigid_body.hpp"
 #include "env/atmosphere.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/multiblade.hpp"
@@ -114,10 +120,16 @@ TEST(ReducedCoordinates, MatchesMultibladeFlap) {
     const Executive ex = uh60a_executive();
     const RC rc(ex, true);
     std::mt19937 rng(3);
-    const auto& rotor = dynamic_cast<const BladeElementRotor&>(ex.component(0));
-    const std::size_t off = ex.component_offset(0);
-    const std::size_t first = rc.body_size();
-    EXPECT_EQ(rc.names()[first], "main_rotor.beta_0");
+    std::size_t main = 0;
+    while (dynamic_cast<const BladeElementRotor*>(&ex.component(main)) == nullptr) {
+        ++main;
+    }
+    const auto& rotor = dynamic_cast<const BladeElementRotor&>(ex.component(main));
+    const std::size_t off = ex.component_offset(main);
+    const auto& names = rc.names();
+    const std::size_t first = static_cast<std::size_t>(
+        std::find(names.begin(), names.end(), "main_rotor.beta_0") - names.begin());
+    ASSERT_LT(first + 4, names.size());
     EXPECT_EQ(rc.names()[first + 3], "main_rotor.beta_d");
     EXPECT_EQ(rc.names()[first + 4], "main_rotor.beta_0_dot");
     for (int trial = 0; trial < 10; ++trial) {
@@ -331,6 +343,136 @@ TEST(Linearize, FeedNothingStatesSplitTheEigenvalues) {
     }
 }
 
+// ---- Acceleration-coupled component states -----------------------------------------
+
+// A first-order lateral accelerometer at r from the CG (D-029, D-045): its
+// state y follows the body-y specific force, ẏ = (f_y − y)/τ, with
+// f = v̇ + ω × v + ω̇ × r + ω × (ω × r) − g affine in a = [v̇; ω̇] through G,
+// as the flight control system's sensor. Publishes probe.y.
+class Probe : public DynamicComponent {
+public:
+    static constexpr double kTau = 0.3;                  // [s]
+    static Vec3 position() { return {1.2, 0.0, -0.5}; }  // [m]
+
+    std::size_t num_states() const override { return 1; }
+    void initial_states(std::span<double> x) const override { x[0] = 0.0; }
+    std::string_view name() const noexcept override { return "probe"; }
+    std::vector<std::string> produces() const override { return {"probe.y"}; }
+    void bind(const CouplingRegistry& registry) override {
+        slot_ = registry.find("probe.y", "probe");
+    }
+    void derivatives(const SimContext& ctx, std::span<const double> x,
+                     ComponentDerivs& out) const override {
+        if (out.coupling != nullptr && slot_.valid()) {
+            out.coupling->set(slot_, x[0]);
+        }
+        const BodyState& b = ctx.body;
+        const Vec3& w = b.omega_b;
+        const Vec3 r = position();
+        const Vec3 g_b = b.q_nb.conjugate() * gravity_n();
+        const double f0 = w.cross(b.vel_b).y() + w.cross(w.cross(r)).y() - g_b.y();
+        out.xdot0[0] = (f0 - x[0]) / kTau;
+        out.G[1] = 1.0 / kTau;     // v̇_y
+        out.G[3] = -r.z() / kTau;  // (ω̇ × r)_y = ω̇_z r_x − ω̇_x r_z
+        out.G[5] = r.x() / kTau;
+    }
+
+private:
+    CouplingSlot slot_;
+};
+
+// Linear damping on every body axis, the controls on X, Y, Z and N, and
+// pitching and yawing moments from the probe's reading (as the stabilator's
+// lateral-acceleration feedback moves the aircraft in pitch).
+class Plant : public DynamicComponent {
+public:
+    static constexpr double kMy = 2000.0;   // [N·m per m/s²]
+    static constexpr double kNy = -1500.0;  // [N·m per m/s²]
+    explicit Plant(double weight) : weight_(weight) {}
+
+    std::size_t num_states() const override { return 0; }
+    void initial_states(std::span<double> /*x*/) const override {}
+    std::string_view name() const noexcept override { return "plant"; }
+    std::vector<std::string> consumes() const override { return {"probe.y"}; }
+    void bind(const CouplingRegistry& registry) override {
+        slot_ = registry.find("probe.y", "plant");
+    }
+    void derivatives(const SimContext& ctx, std::span<const double> /*x*/,
+                     ComponentDerivs& out) const override {
+        const double y = ctx.coupling != nullptr ? ctx.coupling->get(slot_) : 0.0;
+        const Vec3& v = ctx.body.vel_b;
+        const Vec3& w = ctx.body.omega_b;
+        const Controls& c = ctx.controls;
+        out.load0_b.F =
+            Vec3(-200.0 * v.x() + 2e4 * c.lon_cyclic, -300.0 * v.y() + 2e4 * c.lat_cyclic,
+                 -2.0 * weight_ * c.collective - 500.0 * v.z());
+        out.load0_b.M = Vec3(-3000.0 * w.x(), -5000.0 * w.y() + kMy * y,
+                             -4000.0 * w.z() + kNy * y + 1e4 * c.pedal);
+    }
+
+private:
+    double weight_;
+    CouplingSlot slot_;
+};
+
+// The linearization of a component state that depends on the body
+// acceleration (the G path of D-004): at a trim with the body at rest
+// rotationally (ω = 0), velocity (U, 0, W) and attitude (θ, φ), the probe's
+// row of A is exactly
+//   (A_v + U e_r − W e_p + r_x A_r − r_z A_p − g cos θ cos φ e_φ
+//    + g sin θ sin φ e_θ − e_y)/τ
+// from the body rows (f_y = v̇_y + (ω × v)_y + (ω̇ × r)_y − g_y, linearized),
+// and the body's moment rows take the probe through I⁻¹ (0, M_y, N_y).
+// In hover, at 60 and at 150 kt.
+TEST(Linearize, AccelerationCoupledStatesAreExact) {
+    ExecutiveConfig cfg;
+    cfg.mass = make_mass_properties(1000.0, 500.0, 800.0, 900.0, 100.0);
+    const double weight = cfg.mass.mass * units::kStandardGravity;
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(std::make_unique<Plant>(weight));
+    comps.push_back(std::make_unique<Probe>());
+    const Executive ex(cfg, std::move(comps));
+    const Vec3 rp = Probe::position();
+    const double g = units::kStandardGravity;
+    const Eigen::Vector3d dM(0.0, Plant::kMy, Plant::kNy);
+    const Eigen::Vector3d dw = cfg.mass.inertia_b.inverse() * dM;
+    for (double knots : {0.0, 60.0, 150.0}) {
+        SCOPED_TRACE(knots);
+        const TrimCondition c = level(knots);
+        const TrimResult r = trim(ex, c);
+        LinearizeOptions o;
+        o.azimuths = 4;
+        const LinearModel m = linearize(ex, c, r, o);
+        const auto& names = m.states;
+        const auto iy = static_cast<Eigen::Index>(
+            std::find(names.begin(), names.end(), "probe[0]") - names.begin());
+        ASSERT_LT(static_cast<std::size_t>(iy), names.size());
+        const BodyState b = unpack_body(held_orbit_start(ex, c, r));
+        const double U = b.vel_b.x();
+        const double W = b.vel_b.z();
+        const double th = r.pitch;
+        const double ph = r.roll;
+        constexpr auto kV = static_cast<Eigen::Index>(RC::kU) + 1;
+        constexpr auto kPp = static_cast<Eigen::Index>(RC::kP);
+        constexpr auto kRr = kPp + 2;
+        for (const MatX& A : m.A_periodic) {
+            VecX expect = (A.row(kV) + rp.x() * A.row(kRr) - rp.z() * A.row(kPp)).transpose();
+            expect(kRr) += U;
+            expect(kPp) -= W;
+            expect(RC::kPhi) -= g * std::cos(th) * std::cos(ph);
+            expect(RC::kTheta) += g * std::sin(th) * std::sin(ph);
+            expect(iy) -= 1.0;
+            expect /= Probe::kTau;
+            const double scale = std::max(1.0, expect.cwiseAbs().maxCoeff());
+            EXPECT_LT((A.row(iy).transpose() - expect).cwiseAbs().maxCoeff() / scale, 1e-7)
+                << "row " << A.row(iy) << "\nexpect " << expect.transpose();
+            for (int k = 0; k < 3; ++k) {
+                EXPECT_NEAR(A(kPp + k, iy), dw(k), 1e-7 * std::max(1.0, dw.cwiseAbs().maxCoeff()));
+            }
+        }
+    }
+}
+
 // ---- L4: Padfield's closed forms on fixtures ------------------------------------
 
 // Gate L4 (D-035): hover heave damping against Padfield 3rd ed. Table 4.2,
@@ -526,6 +668,11 @@ TEST(Linearize, FrequencyResponseMatchesClosedForms) {
 // vibrates at 4/rev), half the steps. In hover the averaged model is gated
 // too (the multiblade coefficients are almost constant there, SPEC_REVIEW
 // #29).
+// The flying UH-60A, flight control system and the stabilator's lateral-
+// acceleration feedback included (D-045): the free flights start with the
+// flight control system's sensors and servos on their free-flight 4/rev
+// orbit (solve_trim, D-045 amendment). A negative leftover is a fit
+// artifact, so |c0| is gated.
 TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {
     const Executive ex = uh60a_executive();
     TrimResult previous;
@@ -550,7 +697,7 @@ TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {
             EXPECT_EQ(e.unconverged, 0U);
             const test::L3Fit f = test::fit_l3(e.periodic, k.amplitude, 0.5 * floor);
             EXPECT_LT(f.misfit, 0.15);
-            EXPECT_LT(f.c0, floor);
+            EXPECT_LT(std::abs(f.c0), floor);
             if (knots == 0.0) {
                 const test::L3Fit fa = test::fit_l3(e.averaged, k.amplitude, 0.5 * 2e-3);
                 EXPECT_LT(fa.misfit, 0.15) << "averaged";
