@@ -77,6 +77,13 @@ public:
     // state allowed, because it can change the search time but not the result.
     virtual void derivatives(const SimContext& ctx, std::span<const double> x,
                              ComponentDerivs& out) const = 0;
+
+    // GenHel's "IC mode" (CR-166309 p. 5.5-2; D-045): sets the states whose
+    // equilibrium follows algebraically from ctx with the body held (filters,
+    // servos, synchronizers) to it, and leaves the others alone. Trim calls it
+    // on every state it builds, so these states drop out of its unknowns. The
+    // default sets nothing.
+    virtual void steady_states(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
 };
 
 // A stateless model whose load doesn't depend on body acceleration

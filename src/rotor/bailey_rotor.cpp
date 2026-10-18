@@ -54,8 +54,11 @@ void validate(const BaileyRotorConfig& c) {
         !std::isfinite(c.hub_roll)) {
         throw InitError("bailey rotor: hub position and angles must be finite");
     }
-    if (!c.controls) {
-        throw InitError("bailey rotor: no control map");
+    if (!c.controls && c.pitch_input.empty()) {
+        throw InitError("bailey rotor: no control map or pitch input");
+    }
+    if (c.controls && !c.pitch_input.empty()) {
+        throw InitError("bailey rotor: give either a control map or a pitch input, not both");
     }
     if (c.fuselage_wake) {
         if (c.fuselage_wake->airframe.empty()) {
@@ -94,6 +97,9 @@ std::vector<std::string> BaileyRotor::consumes() const {
         names.push_back(a + ".sidewash");
         names.push_back(a + ".downwash");
     }
+    if (!config_.pitch_input.empty()) {
+        names.push_back(config_.pitch_input + ".theta_tr");
+    }
     return names;
 }
 
@@ -107,6 +113,9 @@ void BaileyRotor::bind(const CouplingRegistry& registry) {
         q_factor_ = registry.find(a + ".fin_q_factor", consumer);
         sidewash_ = registry.find(a + ".sidewash", consumer);
         downwash_ = registry.find(a + ".downwash", consumer);
+    }
+    if (!config_.pitch_input.empty()) {
+        pitch_ = registry.find(config_.pitch_input + ".theta_tr", consumer);
     }
 }
 
@@ -183,7 +192,13 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i, c
     // C_T = G(λ t₃₁ + θ t₃₂ + θ_tw t₃₃), solved for C_T (D-028).
     const double rho = ctx.air.density;
     const double q_area = rho * area_ * tip_speed_ * tip_speed_;
-    const double theta_c = c.controls->pitch(ctx.controls).theta0 + c.pitch_bias;
+    double theta_cmd = 0.0;  // a pitch input evaluated on its own: zero (D-003)
+    if (c.controls) {
+        theta_cmd = c.controls->pitch(ctx.controls).theta0;
+    } else if (ctx.coupling != nullptr && pitch_.valid()) {
+        theta_cmd = ctx.coupling->get(pitch_);
+    }
+    const double theta_c = theta_cmd + c.pitch_bias;
     const double k = coning_pitch_ * out.blockage * q_area;
     out.ct = G * (lambda * t31 + theta_c * t32 + c.twist * t33) / (1.0 + G * t32 * k);
     out.pitch = theta_c - k * out.ct;
@@ -228,7 +243,8 @@ std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
     using units::Dimension;
     node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "chord", "lift_slope",
                      "tip_loss", "twist", "delta3", "coning_per_thrust", "pitch_bias", "drag_area",
-                     "blockage", "hub", "controls", "main_rotor_wash", "fuselage_wake"});
+                     "blockage", "hub", "controls", "pitch_input", "main_rotor_wash",
+                     "fuselage_wake"});
     BaileyRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -274,7 +290,14 @@ std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
     c.hub_pitch = hub.contains("pitch") ? hub.quantity("pitch", Dimension::angle) : 0.0;
     c.hub_roll = hub.contains("roll") ? hub.quantity("roll", Dimension::angle) : 0.0;
 
-    c.controls = LinearControlMap::from_config(node.child("controls"));
+    if (node.contains("pitch_input")) {
+        if (node.contains("controls")) {
+            node.fail("pitch_input", "give either controls or pitch_input, not both");
+        }
+        c.pitch_input = node.string("pitch_input");
+    } else {
+        c.controls = LinearControlMap::from_config(node.child("controls"));
+    }
     if (node.contains("main_rotor_wash")) {
         c.wash = RotorWash::from_config(node.child("main_rotor_wash"));
     }

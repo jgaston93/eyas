@@ -22,7 +22,8 @@ HeldIntegrator::HeldIntegrator(const Executive& ex, Environment env, double peri
       k3_(n_, 0.0),
       k4_(n_, 0.0) {}
 
-void HeldIntegrator::step(int s, const Controls& u, std::vector<double>& x, Vec6& integral) {
+void HeldIntegrator::step(int s, const Controls& u, std::vector<double>& x, Vec6& integral,
+                          std::array<std::vector<double>, 4>* stages) {
     const double h = period_ / steps_;
     Vec6 n1;
     Vec6 n2;
@@ -35,20 +36,23 @@ void HeldIntegrator::step(int s, const Controls& u, std::vector<double>& x, Vec6
             tmp_[i] = x[i] + scale * k[i];
         }
     };
-    const auto eval = [&](double t, const std::vector<double>& xs, std::vector<double>& k,
-                          Vec6& net) {
+    const auto eval = [&](std::size_t which, double t, const std::vector<double>& xs,
+                          std::vector<double>& k, Vec6& net) {
+        if (stages != nullptr) {
+            (*stages)[which] = xs;
+        }
         if (!ex_.held_derivatives(t, xs, u, env_, k, net)) {
             ++unconverged_;
         }
     };
     const double t = period_ * static_cast<double>(s) / steps_;
-    eval(t, x, k1_, n1);
+    eval(0, t, x, k1_, n1);
     stage(k1_, 0.5 * h);
-    eval(t + 0.5 * h, tmp_, k2_, n2);
+    eval(1, t + 0.5 * h, tmp_, k2_, n2);
     stage(k2_, 0.5 * h);
-    eval(t + 0.5 * h, tmp_, k3_, n3);
+    eval(2, t + 0.5 * h, tmp_, k3_, n3);
     stage(k3_, h);
-    eval(t + h, tmp_, k4_, n4);
+    eval(3, t + h, tmp_, k4_, n4);
     for (std::size_t i = b; i < n_; ++i) {
         x[i] += h / 6.0 * (k1_[i] + 2.0 * k2_[i] + 2.0 * k3_[i] + k4_[i]);
     }

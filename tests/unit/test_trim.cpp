@@ -4,6 +4,7 @@
 // physics requires. The geometry of the trimmed body state and the Model API
 // are checked on their own.
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <random>
@@ -11,12 +12,15 @@
 
 #include <gtest/gtest.h>
 
+#include "analysis/held_orbit.hpp"
 #include "analysis/trim.hpp"
+#include "control/genhel_fcs.hpp"
 #include "core/attitude.hpp"
 #include "eyas/model.hpp"
 #include "sim/build.hpp"
 #include "support/alloc_counter.hpp"
 #include "support/m6d_fixtures.hpp"
+#include "support/m7_fixtures.hpp"
 #include "util/error.hpp"
 
 namespace eyas {
@@ -235,6 +239,8 @@ TEST(Trim, IndependentOfHeadingAndSteadyWind) {
 // from the residual study in VALIDATION.md M7a. Up to 60 kt they are at the
 // solver's tolerance; above, the held-body trim leaves out the blades'
 // response to the airframe's own 4/rev vibration, which grows with speed.
+// The flight control system flies too, its sensors and servos started on
+// their free-flight orbit (D-045 amendment).
 TEST(Trim, Uh60aFliesOnFromTrim) {
     Model m = Model::from_file(test::uh60a_config_path());
     TrimResult prev;
@@ -244,6 +250,7 @@ TEST(Trim, Uh60aFliesOnFromTrim) {
         return static_cast<int>(std::lround(revs * period * 1000.0));
     };
     for (int kt = 0; kt <= 150; kt += 30) {
+        SCOPED_TRACE(kt);
         const TrimCondition c = level(kt);
         const TrimResult r = have ? m.trim(c, prev) : m.trim(c);
         ASSERT_TRUE(r.converged);
@@ -261,7 +268,6 @@ TEST(Trim, Uh60aFliesOnFromTrim) {
         const double T = steps * 1e-3;
         const double vdot = ((b1.vel_b - b0.vel_b) / T).norm();      // [m/s²]
         const double wdot = ((b1.omega_b - b0.omega_b) / T).norm();  // [rad/s²]
-        SCOPED_TRACE(kt);
         if (kt <= 60) {
             EXPECT_LT(vdot, 5e-5);
             EXPECT_LT(wdot, 2e-5);
@@ -269,6 +275,84 @@ TEST(Trim, Uh60aFliesOnFromTrim) {
             EXPECT_LT(vdot, 2.5e-3);  // measured ≤ 1.2e-3
             EXPECT_LT(wdot, 1e-3);    // measured ≤ 2.8e-4
         }
+    }
+}
+
+// D-045 amendment: the trim starts the flight control system's sensors and
+// servos on their free-flight 4/rev orbit, not at their held-body values, so
+// free flight from it has no start-up transient through the stabilator's
+// lateral-acceleration feedback. Over the first 2 s the incidence moves less
+// than 0.002° (measured 1e-5° at 60 kt and 0.0004° at 120 kt, the slow drift
+// of the free aircraft; from the held-body values it was 0.026° at 120 kt)
+// and the rotor pitch less than 1e-4 rad (servos at rest on unchanged
+// commands).
+TEST(Trim, FcsStartTransientIsSmall) {
+    Model m = Model::from_file(test::uh60a_config_path());
+    for (const int kt : {60, 120}) {
+        SCOPED_TRACE(kt);
+        const TrimResult r = m.trim(level(kt));
+        ASSERT_TRUE(r.converged);
+        const AircraftState o0 = m.outputs();
+        double stab = 0.0;
+        double pitch = 0.0;
+        for (int k = 0; k < 2000; ++k) {
+            ASSERT_FALSE(m.advance(r.controls, Environment{}, 1'000'000).non_finite);
+            const AircraftState o = m.outputs();
+            stab = std::max(stab, std::abs(o.stabilator_incidence - o0.stabilator_incidence));
+            pitch = std::max({pitch, std::abs(o.main_rotor_theta0 - o0.main_rotor_theta0),
+                              std::abs(o.main_rotor_theta1s - o0.main_rotor_theta1s),
+                              std::abs(o.main_rotor_theta1c - o0.main_rotor_theta1c),
+                              std::abs(o.tail_rotor_theta0 - o0.tail_rotor_theta0)});
+        }
+        EXPECT_LT(stab, 0.002 * units::kDegree);
+        EXPECT_LT(pitch, 1e-4);
+    }
+}
+
+// The trim starts the flight control system on its free-flight orbit
+// (D-045 amendment), which it finds whether or not that orbit attracts: an
+// unstable loop would trim as cleanly. So from each trim the stabilator
+// servo is kicked by 0.5°, with the accelerometer and pitch gyro states
+// (+0.3 m/s², +0.01 rad/s), and the kick must die out: after 1.5 s the
+// incidence stays within 0.25° of the unkicked flight's (measured ≤ 0.09°,
+// the bare airframe's slow motion fed back through the gyro; the servo and
+// sensors settle in about 1 s). In hover and at 30 kt the stabilator rests
+// on its 39° stop, where the kick doesn't reach the incidence.
+TEST(Trim, FcsKickDiesOut) {
+    const Executive ex = uh60a_executive();
+    std::size_t off = 0;
+    while (dynamic_cast<const GenHelFcs*>(&ex.component(off)) == nullptr) {
+        ++off;
+    }
+    off = ex.component_offset(off);
+    const std::size_t stab = off + GenHelFcs::kServoStab;
+    TrimResult prev;
+    bool have = false;
+    for (const int kt : {60, 90, 120, 150}) {
+        SCOPED_TRACE(kt);
+        const TrimCondition c = level(kt);
+        std::vector<double> x;
+        const TrimResult r = solve_trim(ex, c, have ? &prev : nullptr, x);
+        ASSERT_TRUE(r.converged);
+        prev = r;
+        have = true;
+        const Environment env = trim_environment(c);
+        const double dt = trim_period(ex) / 256;
+        const int steps = static_cast<int>(3.0 / dt);
+        const auto controls = [&](double) { return r.controls; };
+        std::size_t missed = 0;
+        const auto base = test::free_flight(ex, env, x, controls, dt, steps, &missed);
+        x[off + GenHelFcs::kAccelY] += 0.3;
+        x[off + GenHelFcs::kGyroQ] += 0.01;
+        x[stab] += 0.5 * units::kDegree;
+        const auto kicked = test::free_flight(ex, env, x, controls, dt, steps, &missed);
+        EXPECT_EQ(missed, 0U);
+        double late = 0.0;
+        for (int n = static_cast<int>(1.5 / dt); n <= steps; ++n) {
+            const auto i = static_cast<std::size_t>(n);
+            late = std::max(late, std::abs(kicked[i][stab] - base[i][stab]));
+        }
+        EXPECT_LT(late, 0.25 * units::kDegree);
     }
 }
 
@@ -287,9 +371,21 @@ TEST(Trim, ModelStartsFromTrimAndKeepsTheRealTimeRules) {
     EXPECT_EQ(m.outputs().sim_time_ns, 0);
     EXPECT_NEAR(m.outputs().pitch, r.pitch, 1e-12);
     EXPECT_NEAR(m.outputs().roll, r.roll, 1e-12);
+    // The component states are the trim's, except the flight control
+    // system's, which start on their free-flight orbit (D-045 amendment;
+    // FcsStartTransientIsSmall).
+    const Executive ex = uh60a_executive();
+    std::size_t fcs = 0;
+    while (dynamic_cast<const GenHelFcs*>(&ex.component(fcs)) == nullptr) {
+        ++fcs;
+    }
+    const std::size_t fcs_lo = ex.component_offset(fcs);
+    const std::size_t fcs_hi = fcs_lo + ex.component_size(fcs);
     const std::vector<double> x0(m.state().begin(), m.state().end());
     for (std::size_t i = body_layout::kSize; i < x0.size(); ++i) {
-        EXPECT_DOUBLE_EQ(x0[i], r.component_states[i - body_layout::kSize]);
+        if (i < fcs_lo || i >= fcs_hi) {
+            EXPECT_DOUBLE_EQ(x0[i], r.component_states[i - body_layout::kSize]);
+        }
     }
 
     Snapshot s = m.make_snapshot();

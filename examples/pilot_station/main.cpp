@@ -337,7 +337,8 @@ int run(const Options& opt) {
             }
             reported_stale = input_stale;
         }
-        const bool last_frame = frame_limit >= 0 && frames_flown + 1 >= frame_limit;
+        [[maybe_unused]] const bool last_frame =
+            frame_limit >= 0 && frames_flown + 1 >= frame_limit;
         if (quit || (frame_limit >= 0 && frames_flown >= frame_limit)) {
             break;
         }

@@ -86,6 +86,19 @@ struct AircraftState {
     double tail_rotor_azimuth = detail::kNan;
     bool weight_on_wheels = false;  // some gear carries a normal load
 
+    // ---- Flight controls (M8c, D-045) -----------------------------------------
+    // NaN when the aircraft has no such part. Stabilator: trailing edge down
+    // positive, from the airframe (scheduled, held or from the flight control
+    // system). Blade pitch: the flight control system's outputs after its
+    // servos and the rotor head limits; main rotor θ = θ0 + θ1c cos ψ + θ1s sin ψ
+    // at the hub centre (Padfield 3rd ed. Eq. 3.59), tail rotor its collective
+    // before the rotor's own pitch bias.
+    double stabilator_incidence = detail::kNan;  // [rad]
+    double main_rotor_theta0 = detail::kNan;     // [rad]
+    double main_rotor_theta1s = detail::kNan;    // [rad] + nose-down disc tilt needs θ1s < 0
+    double main_rotor_theta1c = detail::kNan;    // [rad]
+    double tail_rotor_theta0 = detail::kNan;     // [rad]
+
     // ---- Tier 5: diagnostics ------------------------------------------------
     AdvanceStatus last_advance;  // status of the most recent advance()
     // [-] max |‖q‖ − 1| before renormalization over the last advance() that

@@ -31,11 +31,15 @@ struct L3Case {
 
 // Every body coordinate (u v w p q r φ θ) and every control, with
 // amplitudes small enough that the largest stays clear of the UH-60A's
-// nearby table nodes (VALIDATION.md M7b).
+// nearby table nodes (VALIDATION.md M7b). The collective doublet's is a
+// quarter of the other controls' (D-045 amendment): its response is the
+// most nonlinear, and at 0.0025 its error, about 60 times the 60 kt floor,
+// isn't yet straight in a (it halves by 1.95, 1.84, 1.81, then 2.08), which
+// moves a straight line's intercept by twice that floor.
 inline std::vector<L3Case> l3_cases() {
-    return {{0, -1, 0.0625}, {1, -1, 0.0625}, {2, -1, 0.0625}, {3, -1, 0.005},
-            {4, -1, 0.005},  {5, -1, 0.005},  {6, -1, 0.0025}, {7, -1, 0.0025},
-            {-1, 0, 0.0025}, {-1, 1, 0.0025}, {-1, 2, 0.0025}, {-1, 3, 0.0025}};
+    return {{0, -1, 0.0625},   {1, -1, 0.0625}, {2, -1, 0.0625}, {3, -1, 0.005},
+            {4, -1, 0.005},    {5, -1, 0.005},  {6, -1, 0.0025}, {7, -1, 0.0025},
+            {-1, 0, 0.000625}, {-1, 1, 0.0025}, {-1, 2, 0.0025}, {-1, 3, 0.0025}};
 }
 
 // The relative errors of the periodic and the averaged linear models'

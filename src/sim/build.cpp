@@ -9,6 +9,7 @@
 
 #include "airframe/airframe_aero.hpp"
 #include "airframe/landing_gear.hpp"
+#include "control/genhel_fcs.hpp"
 #include "rotor/bailey_rotor.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/ideal_thrust.hpp"
@@ -76,6 +77,8 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
             components.push_back(BladeElementRotor::from_config(c));
         } else if (type == "landing_gear") {
             components.push_back(LandingGear::from_config(c));
+        } else if (type == "genhel_fcs") {
+            components.push_back(GenHelFcs::from_config(c));
         } else {
             c.fail("type", "unknown component '" + type + "'");
         }

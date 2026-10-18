@@ -10,10 +10,11 @@
 // p, q, r per inch of control: lateral cyclic right positive, longitudinal
 // cyclic aft positive (Fletcher's sign: q/delta_lon is in phase at mid
 // frequency), collective up positive, with the travels of the config (10 in
-// lateral and longitudinal, 10 in collective). Eyas has no control actuators
-// (D-024); the flight data include them, so the responses are also written
-// through GenHel's primary servo, 1/(0.00114 s^2 + 0.0473 s + 1)
-// (CR-166309 Figs. 5.1.6(a)-(c); control_rigging_5_5.txt).
+// lateral and longitudinal, 10 in collective). The model includes GenHel's
+// primary servos, 1/(0.00114 s^2 + 0.0473 s + 1) (CR-166309 Figs.
+// 5.1.6(a)-(c), D-045), as the flight data do; the responses are also
+// written without them, divided out exactly (the servos are linear and
+// unit-gain), for comparison with M7c, which had none.
 //
 // Also writes, at both conditions, the condensed 6-DOF model's modes and
 // derivatives (Padfield App. 4B form, as M7b) and the averaged model's roots
@@ -50,7 +51,7 @@ const std::array<const char*, 13> kCols = {"u",     "v",   "w",   "p",   "q",   
                                            "theta", "psi", "col", "lat", "lon", "ped"};
 
 std::complex<double> servo(double w) {
-    // GenHel primary servo, 1/(0.00114 s^2 + 0.0473 s + 1).
+    // GenHel primary servo, 1/(0.00114 s^2 + 0.0473 s + 1); the config's.
     const std::complex<double> s(0.0, w);
     return 1.0 / (0.00114 * s * s + 0.0473 * s + 1.0);
 }
@@ -148,9 +149,11 @@ void write(const std::filesystem::path& dir) {
                     break;
                 }
                 const Eigen::MatrixXcd H = frequency_response(m.A, m.B, w);
-                const std::complex<double> h =
+                // With the servos (the model), and without them.
+                const std::complex<double> hs =
                     H(static_cast<Eigen::Index>(rp.state), static_cast<Eigen::Index>(rp.input)) *
                     rp.per_inch;
+                const std::complex<double> h = hs / servo(w);
                 double ph = std::arg(h) / kDeg;
                 if (!first) {  // unwrap
                     while (ph + unwrap - prev > 180.0) {
@@ -163,7 +166,6 @@ void write(const std::filesystem::path& dir) {
                 ph += unwrap;
                 prev = ph;
                 first = false;
-                const std::complex<double> hs = h * servo(w);
                 const double phs = ph + std::arg(servo(w)) / kDeg;
                 out << cs.name << "," << rp.name << "," << w << ","
                     << 20.0 * std::log10(std::abs(h)) << "," << ph << ","

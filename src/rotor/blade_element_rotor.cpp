@@ -62,8 +62,11 @@ void validate(const BladeElementRotorConfig& c) {
     if (!c.airfoil) {
         fail("no airfoil");
     }
-    if (!c.controls) {
-        fail("no control map");
+    if (!c.controls && c.pitch_input.empty()) {
+        fail("no control map or pitch input");
+    }
+    if (c.controls && !c.pitch_input.empty()) {
+        fail("give either a control map or a pitch input, not both");
     }
     if (c.flap) {
         const FlapHinge& f = *c.flap;
@@ -168,7 +171,12 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     k.v_hub_h = C_hb_ * v_hub_b;
     k.omega_h = C_hb_ * b.omega_b;
     k.psi = azimuth(ctx.t);
-    k.pitch = config_.controls->pitch(ctx.controls);
+    if (config_.controls) {
+        k.pitch = config_.controls->pitch(ctx.controls);
+    } else if (ctx.coupling != nullptr && slots_.theta0.valid()) {
+        k.pitch = {ctx.coupling->get(slots_.theta0), ctx.coupling->get(slots_.theta1s),
+                   ctx.coupling->get(slots_.theta1c)};
+    }  // else: a pitch input evaluated on its own, zero pitch (D-003)
     k.rho = ctx.air.density;
     k.a = ctx.air.speed_of_sound;
     const double v_xy = std::hypot(k.v_hub_h.x(), k.v_hub_h.y());
@@ -521,7 +529,21 @@ std::vector<std::string> BladeElementRotor::produces() const {
     return {n + ".lambda0", n + ".mu_x", n + ".mu_z", n + ".beta_1c", n + ".tip_speed"};
 }
 
+std::vector<std::string> BladeElementRotor::consumes() const {
+    const std::string& p = config_.pitch_input;
+    if (p.empty()) {
+        return {};
+    }
+    return {p + ".theta0", p + ".theta1s", p + ".theta1c"};
+}
+
 void BladeElementRotor::bind(const CouplingRegistry& registry) {
+    if (!config_.pitch_input.empty()) {
+        const std::string& p = config_.pitch_input;
+        slots_.theta0 = registry.find(p + ".theta0", config_.name);
+        slots_.theta1s = registry.find(p + ".theta1s", config_.name);
+        slots_.theta1c = registry.find(p + ".theta1c", config_.name);
+    }
     if (config_.name.empty()) {
         return;
     }
@@ -703,7 +725,7 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
 
 std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& node) {
     node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "direction", "inflow",
-                     "hub", "blade", "controls"});
+                     "hub", "blade", "controls", "pitch_input"});
     BladeElementRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -808,7 +830,14 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         c.flap = h;
     }
 
-    c.controls = LinearControlMap::from_config(node.child("controls"));
+    if (node.contains("pitch_input")) {
+        if (node.contains("controls")) {
+            node.fail("pitch_input", "give either controls or pitch_input, not both");
+        }
+        c.pitch_input = node.string("pitch_input");
+    } else {
+        c.controls = LinearControlMap::from_config(node.child("controls"));
+    }
     return node.in_context("", [&] { return std::make_unique<BladeElementRotor>(std::move(c)); });
 }
 

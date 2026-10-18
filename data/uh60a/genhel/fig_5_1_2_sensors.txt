@@ -1,0 +1,28 @@
+# Transcribed by eye from rendered page images (110-400 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981):
+#   Figure 5.1.2 "Black Hawk helicopter motion sensors", p. 5.5-6 (PDF p. 182), handwritten;
+#   §5.5.3 "Flight controls module input/output data transfer", p. 5.5-19 (PDF p. 195);
+#   §5.10.4 notation (AYPS1), p. 5.10-17 (PDF p. 340); §5.10.5 motion module input data, item 3
+#   "Lateral acceleration transducer", p. 5.10-19 (PDF p. 342).
+# status: read with high confidence, not reviewed by a person (only doubtful readings are sent for
+# review).
+#
+# Sensor models (Fig. 5.1.2):
+#   THETAB, PHIB, PSIB [deg]  attitude gyros: Euler pitch, roll, heading, no dynamics
+#   VXBIKT [kt]               airspeed, no dynamics here (equivalent airspeed, D-040)
+#   QSENSR, PSENSR, RSENSR [deg/s] = (QDEG, PDEG, RDEG) / (RG_A2 s^2 + RG_A1 s + 1)   rate gyros
+#   Y.SENS [ft/s^2]           = AYPS1 / (LA_A2 s^2 + LA_A1 s + 1)                    lateral accel.
+# AYPS1 is the body-y acceleration of "point of interest #1" [ft/s^2] (p. 5.10-17), the lateral
+# acceleration transducer at FSPS/WLPS/BLPS (p. 5.10-19). GenHel's flight-control module receives
+# QDEG, PDEG, RDEG, THETAB, PHIB, PSIB, VXBIKT, AYPS1 from the motion module, the pilot inputs
+# XA+2, XB+2, XC+2, XP+2 from the cockpit and XA+1 ... XP+1 from the trimmer, and sends A1S, B1S,
+# THETA0 to the main rotor, IHT and IVT to the empennage and THETTR to the tail rotor (p. 5.5-19).
+#
+# name      value      unit     confidence
+RG_A2       0.00014    s^2      high  (".00014S^2")
+RG_A1       0.016      s        high
+LA_A2       0.0254     s^2      high
+LA_A1       0.233      s        high  (".233S"; the stabilator servo on Fig. 5.1.7 is .223)
+FSPS        307.0      in       high  (p. 5.10-19)
+WLPS        263.0      in       high
+BLPS        0          in       high

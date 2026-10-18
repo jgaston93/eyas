@@ -141,6 +141,9 @@ std::vector<std::string> AirframeAero::consumes() const {
             }
         }
     }
+    if (!config_.stabilator.incidence_input.empty()) {
+        names.push_back(config_.stabilator.incidence_input + ".stabilator_incidence");
+    }
     return names;
 }
 
@@ -151,6 +154,10 @@ void AirframeAero::bind(const CouplingRegistry& registry) {
     }
     if (config_.tail_wash) {
         config_.tail_wash->bind(registry, consumer);
+    }
+    if (!config_.stabilator.incidence_input.empty()) {
+        incidence_ =
+            registry.find(config_.stabilator.incidence_input + ".stabilator_incidence", consumer);
     }
     if (!config_.name.empty()) {
         alpha_wf_ = registry.find(config_.name + ".alpha_wf", consumer);
@@ -224,7 +231,13 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
         out.q_h = 0.5 * rho * v_b.squaredNorm();
         const FlowAngles fa = flow_angles(v_b, sin_fade);
         out.stabilator_incidence = h.incidence;
-        if (h.schedule) {
+        if (incidence_.valid()) {
+            // From the flight control system (D-045); evaluated on its own
+            // (no coupling) it keeps `incidence`, zero.
+            if (ctx.coupling != nullptr) {
+                out.stabilator_incidence = ctx.coupling->get(incidence_);
+            }
+        } else if (h.schedule) {
             // GenHel Fig. 5.1.7, steady state (D-028), on the equivalent
             // airspeed u √(ρ/ρ0) the air-data sensors give (D-040).
             const double u_eas = u * std::sqrt(rho / isa::kSeaLevelDensity);
@@ -331,8 +344,8 @@ IncidenceSchedule schedule(const Config& node) {
 PanelConfig panel(const Config& node, const std::string& angle, const std::string& wake_arg,
                   const std::string& wake_key, bool schedulable) {
     if (schedulable) {
-        node.allow_keys(
-            {"position", "area", "incidence", "schedule", "coefficients", "q_ratio", wake_key});
+        node.allow_keys({"position", "area", "incidence", "schedule", "incidence_input",
+                         "coefficients", "q_ratio", wake_key});
     } else {
         node.allow_keys({"position", "area", "incidence", "coefficients", "q_ratio", wake_key});
     }
@@ -345,6 +358,12 @@ PanelConfig panel(const Config& node, const std::string& angle, const std::strin
             node.fail("schedule", "give either incidence or schedule, not both");
         }
         p.schedule = node.in_context("schedule", [&] { return schedule(node.child("schedule")); });
+    }
+    if (schedulable && node.contains("incidence_input")) {
+        if (node.contains("incidence") || node.contains("schedule")) {
+            node.fail("incidence_input", "give one of incidence, schedule and incidence_input");
+        }
+        p.incidence_input = node.string("incidence_input");
     }
     const Columns coef = read_columns(node, "coefficients", angle);
     node.in_context("coefficients", [&] {
@@ -361,6 +380,10 @@ PanelConfig panel(const Config& node, const std::string& angle, const std::strin
 }
 
 }  // namespace
+
+IncidenceSchedule incidence_schedule_from_config(const Config& node) {
+    return schedule(node);
+}
 
 std::unique_ptr<AirframeAero> AirframeAero::from_config(const Config& node) {
     node.allow_keys(

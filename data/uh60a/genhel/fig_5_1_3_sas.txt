@@ -1,0 +1,118 @@
+# Transcribed by eye from rendered page images (110-500 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), handwritten block diagrams (pages rotated):
+#   Figure 5.1.3(a) "Black Hawk pitch SAS channels", p. 5.5-7 (PDF p. 183)
+#   Figure 5.1.3(b) "Black Hawk roll SAS channels",  p. 5.5-8 (PDF p. 184)
+#   Figure 5.1.3(c) "Black Hawk yaw SAS channels",   p. 5.5-9 (PDF p. 185)
+#   text §5.5.1(b) and (e), pp. 5.5-2, 5.5-3 (PDF pp. 178-179)
+# status: read with high confidence, not reviewed by a person, except where a line says otherwise
+# (docs/DATA_GAPS.md, "UH-60A AFCS (M8c)"). Leading minus signs drawn against a box edge are read
+# as minus: every rate and attitude gain of a channel then opposes the motion (damping), and the
+# digital and analog channels of each axis agree in sign and, within about 10 %, in gain.
+#
+# Units: inputs in deg, deg/s, ft/s^2 (sensors, fig_5_1_2_sensors.txt); outputs in percent of
+# control authority. "x%/%" is the 2:1 gain switch; LMxx limits are on the channel output.
+# Each axis has a DIGITAL and an ANALOG channel. Their outputs are summed and pass through the SAS
+# actuator 1/(.00032 s^2 + .025 s + 1) and the descaling KPCDG*/KX** into the inner-loop inputs
+# XBILS, XAILS, XPILS [in] (text p. 5.5-3; control_rigging_5_5.txt). No collective SAS is drawn.
+#
+# Gain switch (Fig. 5.1.3(a), applies to all axes):
+#   digital: DSASSW=1, ASASSW=0 -> 2 %/%;  DSASSW=1, ASASSW=1 -> 1 %/%;  DSASSW=0 -> 0
+#   analog:  DSASSW=0, ASASSW=1 -> 2 %/%;  DSASSW=1, ASASSW=1 -> 1 %/%;  ASASSW=0 -> 0
+# ZOH: the digital channels end in a zero-order hold, t = .025 s ("airborne computer update delay").
+#
+# ---- PITCH (Fig. 5.1.3(a)) ----
+# digital: q1 = QSENSR/(P_AD s + 1)                                  (A/D filter, LGQQP1)
+#          PDSASO = ZOH(limit(SW_D * WSQQPD(s) * [KRQQPD/(TRQQPD s+1) + KLQQPD/(TLQQPD s+1)] q1, LMPD))
+#          WSQQPD(s) = TWQQPD s/(TWQQPD s + 1)
+# analog:  q2 = KQQPA/(TQQPA s + 1) * TWQQPA s/(TWQQPA s + 1) * QSENSR   (LGQQP4, WSQQPA)
+#          PASASO = limit(SW_A * 0.5 * [KRQQPA/(TRQQPA s+1) + KLQQPA/(TLQQPA s+1)] q2, LMPA)
+# q1 (LGQQP1+2) is also the "conditioned" pitch rate of the PBA and pitch FPS.
+#
+# name      value      unit         confidence
+P_AD        0.026      s            high
+KRQQPD      -0.5425    %/(deg/s)    VERIFIED by human review (2026-10-17): third digit unclear (4 or 1);
+#                                    4 accepted on the analog channel's equivalent gain, 0.553 (DATA_GAPS)
+TRQQPD      0.023      s            high
+KLQQPD      -0.541     %/(deg/s)    high
+TLQQPD      2.0        s            high
+TWQQPD      7.0        s            high
+LMPD        5.0        %            high  (+-)
+KQQPA       0.1785     -            high
+TQQPA       0.022      s            high
+TWQQPA      7.0        s            high
+KRQQPA      -6.194     %/(deg/s)    high
+TRQQPA      0.024      s            high
+KLQQPA      -6.047     %/(deg/s)    high
+TLQQPA      1.993      s            high
+KPA_HALF    0.5        %/%          high
+LMPA        5.5        %            high  (+-)
+#
+# ---- ROLL (Fig. 5.1.3(b)) ----
+# digital: p1 = PSENSR/(R_AD s + 1)                                  (LGPPR1; p1 = LGPPR1+2, "A" to yaw)
+#          RDSASO = ZOH(limit(SW_D * ([KRPPRD + KLPPRD/(TLPPRD s+1)] p1 + KPHRD*limit(PHIB, LMPHRD)), LMRD))
+# analog (roll rate derived from the vertical gyro; no washout, no 0.5 block):
+#          f1 = KPHF1/((T1PHF1 s+1)(T2PHF1 s+1)) PHIB                (LLPHR1, f1 = LLPHR1+10)
+#          p2 = KPHF3 s/((T1PHF3 s+1)(T2PHF3 s+1)) limit(KPHF2/(A2PHF2 s^2 + A1PHF2 s + 1) f1, LMPHR1)
+#          r_a = KRPHRA/(TRPHRA s+1) p2                               (LGPHR2; r_a = LGPHR2+2, "B" to yaw)
+#          RASASO = limit(SW_A * (r_a + KLPHRA/(TLPHRA s+1) p2 + KPHIRA*limit(KPHR1 f1, LMPHRA)), LMRA)
+#
+R_AD        0.026      s            high
+KRPPRD      -0.2085    %/(deg/s)    high
+KLPPRD      -0.1035    %/(deg/s)    high
+TLPPRD      1.02       s            high
+LMPHRD      7.0        deg          high  (+-)
+KPHRD       -0.139     %/deg        high
+LMRD        5.0        %            high  (+-)
+KPHF1       0.0885     deg/deg      high
+T1PHF1      0.0058     s            high
+T2PHF1      0.00154    s            high
+KPHF2       1.06       deg/deg      high
+A2PHF2      0.00203    s^2          high
+A1PHF2      0.0655     s            high
+LMPHR1      75.0       deg          high  ("+-75" with a degree mark, clear at 900 dpi; on a signal of
+#                                    about 0.094 PHIB it is reached only beyond 800 deg of roll, so never)
+KPHF3       1.24       s            high
+T1PHF3      0.0091     s            high
+T2PHF3      0.00195    s            high
+KRPHRA      -1.738     %/(deg/s)    high
+TRPHRA      0.0112     s            high
+KLPHRA      -0.847     %/(deg/s)    high
+TLPHRA      0.996      s            high
+KPHR1       -0.703     deg/deg      high
+LMPHRA      7.0        deg          high  (+-)
+KPHIRA      2.413      %/deg        high
+LMRA        5.5        %            high  (+-)
+#
+# ---- YAW (Fig. 5.1.3(c)) ----
+# digital: r1 = RSENSR/(Y_AD s + 1)                                  (LGRRY1)
+#          s1 = KRRRYD/(TRRRYD s+1) r1 + [V < 60 kt] KLRRYD/(TLRRYD s+1) r1
+#          s2 = [2-s fade in above 60 kt] (KLAYYD/(TLAYYD s+1) Y.SENS + KRPPYD p1)
+#          YDSASO = ZOH(limit(SW_D * (TWRRYD s/(TWRRYD s+1) s1 + s2), LMYD))
+# analog:  w = KRRFI/(TRRFI s+1) * TWRRYA s/(TWRRYA s+1) * RSENSR    (LGRRY4, WSRRYA; w = WSRRYA+4)
+#          u = (V < 60 kt) ? w : KLAYF1/(TLAYF1 s+1) Y.SENS          (switch VG60SW)
+#          s3 = 0.5 * (KRRRYA/(TRRRYA s+1) w + KLAYRR/(TLAYRR s+1) u)
+#          YASASO = limit(SW_A * (s3 + [2-s fade in above 60 kt] KRPPYA r_a), LMYA)
+#
+Y_AD        0.026      s            high
+KRRRYD      -0.557     %/(deg/s)    high
+TRRRYD      0.047      s            high
+KLRRYD      -0.901     %/(deg/s)    high
+TLRRYD      1.0        s            high
+TWRRYD      2.0        s            high
+KLAYYD      -1.1       %/(ft/s^2)   high (printed "%/FT/SEC"; Y.SENS is ft/s^2, Fig. 5.1.5(c))
+TLAYYD      1.0        s            high
+KRPPYD      0.1378     %/(deg/s)    high
+LMYD        5.0        %            high  (+-)
+KRRFI       0.072      -            high
+TRRFI       0.027      s            high
+TWRRYA      2.0        s            high
+KRRRYA      -16.95     %/(deg/s)    high
+TRRRYA      0.047      s            high
+KLAYF1      0.0876     -            high (printed "%/FT./SEC")
+TLAYF1      0.0001     s            high (below the 1 ms step: unity gain, GenHel p. 5.5-2)
+KLAYRR      -28.11     -            high
+TLAYRR      1.045      s            high
+KRPPYA      0.296      %/(deg/s)    high
+LMYA        5.5        %            high  (+-)
+V_SW        60         kt           high  (VG60SW; both channels)
+T_FADE      2.0        s            high  ("2 SEC FADE")

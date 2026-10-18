@@ -40,7 +40,10 @@ bool trim_body_state(const TrimCondition& c, double pitch, double roll, double o
 // Trims `ex`'s aircraft for `c`, starting from `start` if given (a nearby
 // trim) or from a cold start. `x` receives the full state at t = 0 (rotor
 // azimuth zero), the start of the periodic orbit, whether or not the trim
-// converged. Throws InitError on an invalid condition.
+// converged: the held orbit's component states, except those steady_states()
+// sets, which start on their free-flight orbit (D-045 amendment), and the
+// body's mean velocity and rate plus their 4/rev vibration (D-035). Throws
+// InitError on an invalid condition.
 TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimResult* start,
                       std::vector<double>& x, const TrimOptions& options = {});
 

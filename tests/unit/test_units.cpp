@@ -101,6 +101,19 @@ TEST(Units, GearUnits) {
     EXPECT_NEAR(*si_scale("lbf*s^2/ft^2"), kSlug / kFoot, 1e-12);
 }
 
+// Flight-control units (GenHel §5.5, M8c): rigging gains in deg/in and a
+// lateral-acceleration feedback gain in deg/(ft/s²).
+TEST(Units, FlightControlUnits) {
+    const auto dim = [](std::string_view u) { return find_unit(u)->dimension; };
+    EXPECT_EQ(dim("deg/in"), Dimension::angle_per_length);
+    EXPECT_EQ(dim("rad/m"), Dimension::angle_per_length);
+    EXPECT_NEAR(*si_scale("deg/in"), kDegree / 0.0254, 1e-12);
+    EXPECT_EQ(dim("deg/(ft/s^2)"), Dimension::angle_per_acceleration);
+    EXPECT_EQ(dim("rad/(m/s^2)"), Dimension::angle_per_acceleration);
+    EXPECT_NEAR(*si_scale("deg/(ft/s^2)"), kDegree / 0.3048, 1e-12);
+    EXPECT_EQ(dim("s^2"), Dimension::time_squared);
+}
+
 TEST(Units, RejectsUnknownAndAmbiguous) {
     EXPECT_FALSE(si_scale("lb").has_value());
     EXPECT_FALSE(si_scale("furlong").has_value());

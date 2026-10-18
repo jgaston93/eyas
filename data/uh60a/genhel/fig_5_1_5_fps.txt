@@ -1,0 +1,75 @@
+# Transcribed by eye from rendered page images (110-700 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), handwritten block diagrams (pages rotated):
+#   Figure 5.1.5(a) "Black Hawk pitch FPS channel", p. 5.5-11 (PDF p. 187)
+#   Figure 5.1.5(b) "Black Hawk roll FPS channel",  p. 5.5-12 (PDF p. 188)
+#   Figure 5.1.5(c) "Black Hawk yaw FPS channel",   p. 5.5-13 (PDF p. 189)
+#   text §5.5.1(d), p. 5.5-3 (PDF p. 179)
+# status: read with high confidence, not reviewed by a person, except where a line says otherwise
+# (docs/DATA_GAPS.md, "UH-60A AFCS (M8c)").
+#
+# Switches (as printed): FPSSW = 1 FPS on; TURNSW = 1 turn switch on; NTRNSW = 1 turn switch off.
+# "SYNC = 0": the synchronizer tracks its input (output 0) while the control signal is 0.
+# "= 0 HOLD": the integrator holds while the control signal is 0.
+# Text p. 5.5-3: the synchronizers track during trim (IC mode) and with the FPS off. Turn switch:
+# "FPS ON, VXBIKT > 60 kts, plus trim release pressed, plus phi_b > 2 deg"; exit by feet on the
+# pedals and trim release pressed; "for analysis purposes the turn switch can be enabled as
+# required". Trim actuator: 100 % authority, rate limited at 10 %/s.
+#
+# Every channel ends the same way (KxOTAM 24.1 on the yaw figure, unnamed on the others):
+#   e = ZOH_.10(xOTEMP) (FPSSW = 1) or 0 (FPSSW = 0);   trim actuator a:
+#   a' = limit(TA_GAIN*(e - a), TA_RATE),  a limited to +-TA_AUTH  [%]
+#   pitch: B1SOL = KPCDGP*a [deg], XBOLS = B1SOL/KXBB1S [in]
+#   roll:  A1SOL = KPCDGR*a,       XAOLS = A1SOL/KXAA1S
+#   yaw:   THROL = KPCDGY*a,       XPOLS = THROL/KXPTHR    (control_rigging_5_5.txt)
+#
+# name      value      unit         confidence
+ZOH_FPS     0.10       s            high  ("t = .10 SEC", all three)
+TA_GAIN     24.1       1/s          high
+TA_RATE     10         %/s          high  (+-; text: "rate limited at 10%/sec")
+TA_AUTH     100        %            high  (+-)
+#
+# ---- PITCH (Fig. 5.1.5(a)) ----
+#   POTEMP = KRQQPO*q1 + KSTHPO*sync(THETAB; FPSSW) + limit(KSVXPO*dv, LMVX) + KIVXPO*integral(dv)
+#   dv = sync(VXBIKT; VG30SW)   [kt];   VG30SW = 0 when VXBIKT < 30 kt;  integral held when FPSSW = 0
+#   q1 = conditioned pitch rate (LGQQP1+2, fig_5_1_3_sas.txt)
+KRQQPO      -0.336     %/(deg/s)    high
+KSTHPO      -1.42      %/deg        high
+KSVXPO      0.22       %/kt         high
+LMVX        1.6        %            high  (+-)
+KIVXPO      0.0188     %/(kt s)     high
+V_HOLD      30         kt           high  (VG30SW)
+#
+# ---- ROLL (Fig. 5.1.5(b)) ----
+#   ROTEMP = KRPRO*p1 + G(sync(PHIB; FPSSW)) + INPHRO
+#   G(x) = KPHRO1*x for |x| <= BPPHRO, slope KPHRO2 beyond (odd, continuous)
+#   INPHRO = KIPHRO*integral(sync(PHIB; FPSSW)), held when NTRNSW = 0 (turn switch on)
+#   p1 = conditioned roll rate (LGPPR1+2)
+KRPRO       -0.189     %/(deg/s)    high  ("-.189", last digit slightly blurred)
+KPHRO1      -0.75      %/deg        high
+KPHRO2      -0.375     %/deg        high
+BPPHRO      7.9        deg          high  ("7.9" and "-7.9")
+KIPHRO      -0.0868    %/(deg s)    high
+#
+# ---- YAW (Fig. 5.1.5(c)) ----
+#   dpsi = sync(PSIB; NTRNSW) [deg]  (tracks while the turn switch is on)
+#   ay = Y.SENS/(TLAYYO s + 1) [ft/s^2]                                  (LGAYYO)
+#   YOTEMP = KSPSYO*dpsi + INAYYO + [TURNSW] (KRPPYO*p_roll + KLAYYO*ay) + YOTMP1*LMIXYO(V_rl)
+#   INAYYO = integral(NTRNSW = 0 ? VGPSYO*deadband(dpsi, DBPSYO) : KIAYYO*ay), held when FPSSW = 0
+#            as printed (reading VERIFIED by human review 2026-10-17): heading path at the "=0"
+#            contact (turn switch on), lateral acceleration at "=1". Taken literally the heading
+#            path is inert (dpsi is synced to 0 while the turn switch is on); interpretation open
+#            for M8c3 (DATA_GAPS).
+#   YOTMP1 = KSXCYO*sync(XCPC; FPSSW)   (collective stick position [%])
+#   V_rl = VXBIKT rate limited to +-KLVXYO;  LMIXYO = 1 below 40 kt, 0 above 100 kt, linear between
+#   p_roll = roll rate (LGPPR1+2 as labelled "LGPPR1+2"; read as the conditioned roll rate)
+KRPPYO      0.11       %/(deg/s)    high
+KSPSYO      -2.2       %/deg        high
+DBPSYO      1.0        deg          high  (+-, deadband)
+VGPSYO      -0.348     %/(deg s)    high
+KIAYYO      -0.656     %/(ft/s^2 s) high
+TLAYYO      1.0        s            high
+KLAYYO      -2.38      %/(ft/s^2)   high
+KSXCYO      -0.625     %/%          high
+KLVXYO      10         kt/s         high  (+-)
+LMIXYO_V0   40         kt           high
+LMIXYO_V1   100        kt           high

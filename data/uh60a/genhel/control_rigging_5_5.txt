@@ -46,7 +46,16 @@ SIGN_XB2    -1        -        VERIFIED by human review (2026-10-14): "-" at the
 #                                    channels; XBOLS is "+". With -1, positive XB+2 raises B1S
 #                                    (forward stick).
 #
-# Rotor head blade pitch travel limits (p. 5.5-20), "for piloted simulation" (not applied, M8):
+# Servos (Figs. 5.1.6(a)-(d), the same on all four channels): primary servo
+# 1/(PSERVO_A2 s^2 + PSERVO_A1 s + 1) after the mixer; SAS actuator (inner-loop servo)
+# 1/(SASACT_A2 s^2 + SASACT_A1 s + 1) on the SAS inches. Used from M8c (D-045).
+PSERVO_A2   0.00114   s^2      high
+PSERVO_A1   0.0473    s        high
+SASACT_A2   0.00032   s^2      high
+SASACT_A1   0.025     s        high
+#
+# Rotor head blade pitch travel limits (p. 5.5-20), "for piloted simulation". Applied from M8c to
+# THETA0, A1S and B1S (D-045); THR is not applied (DATA_GAPS.md, "UH-60A AFCS (M8c)"):
 A1S_UL      8.0       deg      high
 A1S_LL      -8.0      deg      high
 B1S_UL      16.3      deg      high

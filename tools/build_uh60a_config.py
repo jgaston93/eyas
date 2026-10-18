@@ -72,6 +72,15 @@ def constants(name):
     return out
 
 
+def constant_range(name, key):
+    """(lo, hi) of a two-value row of a constants transcription, e.g. a limit."""
+    for line in (SRC / name).read_text(encoding="utf-8").splitlines():
+        parts = line.split("#", 1)[0].split()
+        if parts and parts[0] == key:
+            return float(parts[1]), float(parts[2])
+    raise ValueError(f"{name}: no {key}")
+
+
 def fmt(v):
     """Shortest round-trip text of a float, -0 written as 0."""
     if v == 0.0:
@@ -268,6 +277,57 @@ def control_map(rig, mr, tv):
     return travel, main, tail, lon_spread
 
 
+def fcs_block(rig, mr, travel, sens, stab, pos, head_limits):
+    """The genhel_fcs component (D-045): GenHel's mixer in inches, the primary servos, the
+    Fig. 5.1.2 sensors and the dynamic stabilator law (Fig. 5.1.7). The rotor head limits
+    are GenHel's "for piloted simulation" (p. 5.5-20): the flying aircraft has them, the
+    validation variants (GenHel analysis runs) don't."""
+    def lims(lo, hi):
+        return f'{{min: "{fmt(rig[lo])} deg", max: "{fmt(rig[hi])} deg"}}'
+
+    def tr(k):
+        lo, hi = travel[k]
+        return f'{{lo: "{fmt(round(lo, 9))} in", hi: "{fmt(round(hi, 9))} in"}}'
+
+    # Fig. 5.1.7's KVYDT * limit(VF - 30, 0, LMKDT) as a gain ramping from 0 at 30 kt to its
+    # full value at 30 + LMKDT kt. KVYDT's unit isn't printed; with Y.SENS in ft/s^2 (Fig.
+    # 5.1.5(c)) and VF in kt it is deg per (ft/s^2 kt) (assumption, DATA_GAPS.md).
+    head = ""
+    if head_limits:
+        head = (f'      head_limits: {{theta0: {lims("TH0_LL", "TH0_UL")}, '
+                f'a1s: {lims("A1S_LL", "A1S_UL")}, b1s: {lims("B1S_LL", "B1S_UL")}}}  '
+                f'# p. 5.5-20; THR not applied (DATA_GAPS.md)\n')
+    lo_kt = -stab["BIAS_VX1"]
+    kdt_lo, kdt_hi = constant_range("fig_5_5_1_7_stabilator.txt", "LMKDT")
+    if kdt_lo != 0.0:
+        raise ValueError("LMKDT: the ramp form assumes a lower limit of 0")
+    ay_full = stab["KVYDT"] * kdt_hi
+    stab_lo, stab_hi = constant_range("fig_5_5_1_7_stabilator.txt", "LMSTAB")
+    return f"""\
+  - type: genhel_fcs
+    name: fcs
+    rigging:  # Figs. 5.1.6(a)-(d), p. 5.5-20; control_rigging_5_5.txt
+      travel: {{collective: {tr("collective")}, lat_cyclic: {tr("lat_cyclic")}, lon_cyclic: {tr("lon_cyclic")}, pedal: {tr("pedal")}}}
+      gains: {{collective: "{fmt(rig["KXCTH0"])} deg/in", lateral: "{fmt(rig["KXAA1S"])} deg/in", longitudinal: "{fmt(rig["KXBB1S"])} deg/in", pedal: "{fmt(rig["KXPTHR"])} deg/in"}}
+      longitudinal_stick_sign: {fmt(rig["SIGN_XB2"])}
+      mixing: {{lateral_collective: {fmt(rig["MIX_AC"])}, longitudinal_collective: {fmt(rig["MIX_BC"])}, longitudinal_pedal: {fmt(rig["MIX_BP"])}}}
+      bias: {{collective: "{fmt(rig["BIAS_C"])} deg", lateral: "{fmt(rig["BIAS_A"])} deg", longitudinal: "{fmt(rig["BIAS_B"])} deg", pedal: "{fmt(rig["BIAS_P"])} deg"}}
+      swashplate_phase: "{fmt(mr["DSP"])} deg"
+{head}    primary_servo: {{a2: "{fmt(rig["PSERVO_A2"])} s^2", a1: "{fmt(rig["PSERVO_A1"])} s"}}
+    rate_gyro: {{a2: "{fmt(sens["RG_A2"])} s^2", a1: "{fmt(sens["RG_A1"])} s"}}  # Fig. 5.1.2
+    lateral_accelerometer:
+      a2: "{fmt(sens["LA_A2"])} s^2"
+      a1: "{fmt(sens["LA_A1"])} s"
+      position: {pos(sens["FSPS"], sens["BLPS"], sens["WLPS"])}  # p. 5.10-19
+    stabilator:  # Fig. 5.1.7; fig_5_5_1_7_stabilator.txt
+      schedule: {{table: airframe/stabilator_schedule.csv, min: "{fmt(stab_lo)} deg", max: "{fmt(stab_hi)} deg"}}
+      airspeed_lag: "{fmt(stab["TAU"])} s"
+      pitch_rate_gain: "{fmt(stab["KVTDT"])} s"  # deg per deg/s
+      lateral_accel_gain: {{gain: "{fmt(round(ay_full, 12))} deg/(ft/s^2)", from: "{fmt(lo_kt)} kt", to: "{fmt(lo_kt + kdt_hi)} kt"}}
+      servo: {{a2: "{fmt(stab["SERVO_A2"])} s^2", a1: "{fmt(stab["SERVO_A1"])} s", rate_limit: "{fmt(stab["RATE_LIMIT"])} deg/s"}}
+"""
+
+
 def map_rows(rows, indent, placeholders=()):
     """YAML for a linear control map; the (row, input) pairs in `placeholders` are tagged."""
     order = ("offset", "collective", "lon_cyclic", "lat_cyclic", "pedal")
@@ -307,6 +367,8 @@ def build(variant=None):
 
     tv = constants("control_travels_6_3.txt")
     travel, main_map, tail_map, lon_spread = control_map(rig, mr, tv)
+    sens = constants("fig_5_1_2_sensors.txt")
+    stab = constants("fig_5_5_1_7_stabilator.txt")
     k_main = 10.0 * vertical_slope("main_tire_vertical.csv", gear["PM"])
     k_tail = 10.0 * vertical_slope("tail_tire_vertical.csv", gear["PN"])
 
@@ -381,6 +443,7 @@ airframe:
 
 components:
   # Producers before consumers is the executive's job (D-003); config order is for reading.
+{fcs_block(rig, mr, travel, sens, stab, pos, variant is None)}
   - type: blade_element_rotor
     name: main_rotor
     blades: {int(mr["NB"])}
@@ -407,8 +470,7 @@ components:
         delta3: "{fmt(mr["DELTA_3"])} deg"
       dynamic_twist: {{gain_table: dynamic_twist_gain.csv, mode_table: dynamic_twist_mode.csv, lag: "0.01 s"}}  # D-038; lag numerical
       yawed_flow_drag: true  # D-039 (GenHel resolves its drag on the full segment velocity, p. 5.1-28)
-    controls:
-{map_rows(main_map, "      ")}
+    pitch_input: fcs  # GenHel's mixer, primary servos and head limits (D-045)
 
   - type: airframe_aero
     name: airframe
@@ -422,7 +484,7 @@ components:
     stabilator:
       position: {pos(af["FS_H1"], af["BL_H1"], af["WL_H1"])}
       area: "{fmt(af["SA_H1"])} ft^2"
-      schedule: {{table: airframe/stabilator_schedule.csv, min: "-8 deg", max: "39 deg"}}
+      incidence_input: fcs  # GenHel Fig. 5.1.7, dynamic (D-045)
       coefficients: airframe/stabilator_coefficients.csv
       q_ratio: airframe/stabilator_q_ratio.csv
       downwash: airframe/stabilator_downwash.csv
@@ -451,8 +513,7 @@ components:
     hub:
       position: {pos(tr["FS_TR"], tr["BL_TR"], tr["WL_TR"])}
       roll: "{fmt(tr["GAMMA_TR"])} deg"
-    controls:
-{map_rows(tail_map, "      ")}
+    pitch_input: fcs
     main_rotor_wash: {{rotor: main_rotor, table: airframe/tail_wash.csv}}
     fuselage_wake: {{airframe: airframe}}
 

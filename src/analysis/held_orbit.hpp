@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <vector>
 
@@ -21,8 +22,10 @@ public:
     // so every revolution sees the same azimuths): advances the component
     // part of x (num_states() long; the body part stays) and adds the step's
     // integral of the net wrench into `integral`, with RK4's weights, so it
-    // is the RK4 solution of İ = net. [s]
-    void step(int s, const Controls& u, std::vector<double>& x, Vec6& integral);
+    // is the RK4 solution of İ = net. [s] If `stages` is given, it receives
+    // the four RK4 stage states (at t, t + h/2, t + h/2, t + h).
+    void step(int s, const Controls& u, std::vector<double>& x, Vec6& integral,
+              std::array<std::vector<double>, 4>* stages = nullptr);
 
     const Environment& env() const noexcept { return env_; }
     double period() const noexcept { return period_; }
