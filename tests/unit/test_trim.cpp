@@ -526,16 +526,18 @@ private:
 };
 
 // One state of each kind: [0] free, a lag on the collective, which trim
-// solves; [1] orbit, a lag on the body-x velocity; [2] held, a synchronizer's
-// reference of the body-x velocity, which holds (ẋ = 0) and which
-// steady_states() sets to the velocity plus kOffset, so that an orbit label
-// would be visible. `mislabel` labels state 1 free while steady_states()
-// still writes it, breaking the contract.
+// solves; [1] orbit, a lag on the body-x velocity; [2] held, an integrator
+// whose input isn't zero in trim (as an FPS integrator's in a trim that
+// isn't coordinated), which steady_states() starts at the velocity plus
+// kOffset. `labels` breaks the labelling for the tests below.
+enum class Labels { right, written_free, unwritten_held, drifting_orbit };
+
 class ThreeKinds : public DynamicComponent {
 public:
     static constexpr double kTau = 0.5;     // [s]
     static constexpr double kOffset = 0.7;  // [m/s]
-    explicit ThreeKinds(bool mislabel = false) : mislabel_(mislabel) {}
+    static constexpr double kDrift = 0.01;  // [m/s²], the held state's rate
+    explicit ThreeKinds(Labels labels) : labels_(labels) {}
     std::size_t num_states() const override { return 3; }
     void initial_states(std::span<double> x) const override { std::fill(x.begin(), x.end(), 0.0); }
     std::string_view name() const noexcept override { return "three_kinds"; }
@@ -543,38 +545,38 @@ public:
                      ComponentDerivs& out) const override {
         out.xdot0[0] = (ctx.controls.collective - x[0]) / kTau;
         out.xdot0[1] = (ctx.body.vel_b.x() - x[1]) / kTau;
-        out.xdot0[2] = 0.0;
+        out.xdot0[2] = kDrift;
     }
     void steady_states(const SimContext& ctx, std::span<double> x) const override {
         x[1] = ctx.body.vel_b.x();
         x[2] = ctx.body.vel_b.x() + kOffset;
     }
     void steady_kinds(std::span<SteadyKind> kinds) const override {
-        kinds[0] = SteadyKind::free;
-        kinds[1] = mislabel_ ? SteadyKind::free : SteadyKind::orbit;
-        kinds[2] = SteadyKind::held;
+        kinds[0] = labels_ == Labels::unwritten_held ? SteadyKind::held : SteadyKind::free;
+        kinds[1] = labels_ == Labels::written_free ? SteadyKind::free : SteadyKind::orbit;
+        kinds[2] = labels_ == Labels::drifting_orbit ? SteadyKind::orbit : SteadyKind::held;
     }
 
 private:
-    bool mislabel_;
+    Labels labels_;
 };
 
-Executive three_kinds_executive(bool mislabel) {
+Executive three_kinds_executive(Labels labels) {
     ExecutiveConfig cfg;
     cfg.mass = make_mass_properties(1000.0, 500.0, 800.0, 900.0, 100.0);
     std::vector<std::unique_ptr<DynamicComponent>> comps;
     comps.push_back(std::make_unique<DampedPlant>(cfg.mass.mass * units::kStandardGravity));
-    comps.push_back(std::make_unique<ThreeKinds>(mislabel));
+    comps.push_back(std::make_unique<ThreeKinds>(labels));
     return Executive(cfg, std::move(comps));
 }
 
 // Trim honours each label: the free state is solved (the lag at the trimmed
-// collective), the orbit state starts at its input, and the held state keeps
-// the value steady_states() gave it, offset and all. (x's body velocity adds
-// the trim's vibration offset, D-035, about 1e-10 m/s here, to the mean
-// velocity steady_states() saw.)
+// collective), the orbit state starts at its input, and the held state starts
+// at the value steady_states() gave it, offset and all, although it drifts
+// over the revolution. (x's body velocity adds the trim's vibration offset,
+// D-035, about 1e-10 m/s here, to the mean velocity steady_states() saw.)
 TEST(Trim, SteadyKindsAreHonoured) {
-    const Executive ex = three_kinds_executive(false);
+    const Executive ex = three_kinds_executive(Labels::right);
     for (const double kt : {0.0, 60.0}) {
         SCOPED_TRACE(kt);
         std::vector<double> x;
@@ -588,12 +590,21 @@ TEST(Trim, SteadyKindsAreHonoured) {
     }
 }
 
-// A component whose steady_states() writes a state its steady_kinds()
-// labels free breaks the contract; trim says so instead of guessing.
-TEST(Trim, SteadyKindsMismatchIsRejected) {
-    const Executive ex = three_kinds_executive(true);
+// The held label is what lets that trim converge: labelled orbit, the same
+// drifting state leaves a change over the revolution that no unknown can
+// remove (D-045).
+TEST(Trim, DriftingStateLabelledOrbitDoesNotTrim) {
+    const Executive ex = three_kinds_executive(Labels::drifting_orbit);
     std::vector<double> x;
-    EXPECT_THROW((void)solve_trim(ex, level(60.0), nullptr, x), InitError);
+    EXPECT_FALSE(solve_trim(ex, level(60.0), nullptr, x).converged);
+}
+
+// The executive checks the labels against steady_states() when it is built,
+// both ways: a state set but labelled free, and one labelled held but not set.
+TEST(Trim, SteadyKindsMismatchIsRejected) {
+    EXPECT_THROW((void)three_kinds_executive(Labels::written_free), InitError);
+    EXPECT_THROW((void)three_kinds_executive(Labels::unwritten_held), InitError);
+    EXPECT_NO_THROW((void)three_kinds_executive(Labels::right));
 }
 
 // ---- Model API -----------------------------------------------------------------------

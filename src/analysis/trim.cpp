@@ -6,7 +6,6 @@
 #include <limits>
 #include <numbers>
 #include <span>
-#include <string>
 
 #include <Eigen/Dense>
 
@@ -197,32 +196,14 @@ public:
         return -mean;
     }
 
-    // The states steady_kinds() labels orbit (GenHel's IC mode, D-045), as
-    // indices into the full state; held ones keep their steady_states()
-    // value. Checks the contract on the way: steady_states() writes exactly
-    // the states labelled orbit or held, which a slice filled with NaN shows
-    // (throws InitError otherwise). Empty if z has no valid body state.
-    std::vector<std::size_t> orbit_states(const VecX& z) {
+    // The states labelled orbit (GenHel's IC mode, D-045), as indices into
+    // the full state; the executive checked the labels when it was built.
+    std::vector<std::size_t> orbit_states() const {
         std::vector<std::size_t> orbit;
-        if (!pack(z)) {
-            return orbit;
-        }
-        const SimContext ctx = ex_.context(0.0, x_, controls(z), held_.env());
-        for (std::size_t i = 0; i < ex_.num_components(); ++i) {
-            const DynamicComponent& c = ex_.component(i);
-            std::vector<SteadyKind> kinds(ex_.component_size(i), SteadyKind::free);
-            c.steady_kinds(kinds);
-            std::vector<double> probe(kinds.size(), std::numeric_limits<double>::quiet_NaN());
-            c.steady_states(ctx, probe);
-            for (std::size_t j = 0; j < probe.size(); ++j) {
-                if (std::isnan(probe[j]) != (kinds[j] == SteadyKind::free)) {
-                    throw InitError("trim: component '" + std::string(c.name()) + "' state " +
-                                    std::to_string(j) +
-                                    ": steady_states() and steady_kinds() disagree (D-045)");
-                }
-                if (kinds[j] == SteadyKind::orbit) {
-                    orbit.push_back(ex_.component_offset(i) + j);
-                }
+        const std::span<const SteadyKind> kinds = ex_.steady_kinds();
+        for (std::size_t i = 0; i < kinds.size(); ++i) {
+            if (kinds[i] == SteadyKind::orbit) {
+                orbit.push_back(i);
             }
         }
         return orbit;
@@ -251,7 +232,7 @@ public:
     };
     FreeOrbit free_ic_orbit(const VecX& z, const Vec6& vib, double tol) {
         FreeOrbit out;
-        out.index = orbit_states(z);
+        out.index = orbit_states();
         if (out.index.empty() || !pack(z)) {
             out.index.clear();
             return out;
@@ -349,9 +330,14 @@ public:
         r.resize(static_cast<Eigen::Index>(unknowns()));
         r.head<3>() = mean.head<3>() / weight_;
         r.segment<3>(3) = mean.tail<3>() / (weight_ * length_);
+        // A held state's change over the revolution doesn't count: it stays
+        // at its steady value through the trim, as GenHel's IC mode holds
+        // integrators (p. 5.5-2), and no unknown could remove it (D-045).
+        const std::span<const SteadyKind> kinds = ex_.steady_kinds();
         for (std::size_t j = 0; j < nc_; ++j) {
-            const auto k = static_cast<Eigen::Index>(kHead + j);
-            r(k) = x_[body_layout::kSize + j] - start_[body_layout::kSize + j];
+            const std::size_t i = body_layout::kSize + j;
+            r(static_cast<Eigen::Index>(kHead + j)) =
+                kinds[i] == SteadyKind::held ? 0.0 : x_[i] - start_[i];
         }
         return r.allFinite();
     }

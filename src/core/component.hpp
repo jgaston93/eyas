@@ -94,7 +94,8 @@ public:
     // default sets nothing.
     // Contract: write exactly the states steady_kinds() labels orbit or held,
     // and don't depend on the values x arrives with (reading back what was
-    // just written is fine). Trim checks the first part once per solve.
+    // just written is fine). The executive checks the first part when it is
+    // built (InitError).
     virtual void steady_states(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
 
     // Labels every state (kinds.size() == num_states()) for trim: free,
