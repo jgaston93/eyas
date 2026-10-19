@@ -15,7 +15,10 @@
 //   1.0,0,0,0.03,0
 //
 // Increments from the start controls, each held from its row's time until
-// the next row (zero-order hold). Lines starting with '#' are comments.
+// the next row (zero-order hold). Lines starting with '#' are comments. An
+// optional last column, afcs, gives the flight control system's switches
+// from that row on ('+'-separated names, common/afcs.hpp; M8c3), which the
+// pilot station records; without it the start's switches hold throughout.
 namespace examples {
 
 struct ControlRow {
@@ -24,15 +27,20 @@ struct ControlRow {
     double d_lat = 0.0;
     double d_lon = 0.0;
     double d_pedal = 0.0;
+    bool has_afcs = false;    // the file has the afcs column
+    eyas::AfcsSwitches afcs;  // the switches from this row on, if it has
 };
 
 inline constexpr const char* kControlHeader =
     "time_s,d_collective,d_lat_cyclic,d_lon_cyclic,d_pedal";
+inline constexpr const char* kControlHeaderAfcs =
+    "time_s,d_collective,d_lat_cyclic,d_lon_cyclic,d_pedal,afcs";
 
 // Init time: throws std::runtime_error naming the file and line.
 std::vector<ControlRow> read_controls(const std::string& path);
 
-// Writes one row (17 significant digits, so it reads back exactly).
+// Writes one row (17 significant digits, so it reads back exactly), with its
+// afcs column if it has one.
 void write_control_row(std::ostream& out, const ControlRow& r);
 
 // Plays rows in sim-time order. Real time (no allocation): the rows are
@@ -43,7 +51,8 @@ public:
     explicit ControlSchedule(const std::vector<ControlRow>& rows) noexcept : rows_(&rows) {}
 
     // The controls at sim time t: start plus the last row at or before t
-    // (start alone before the first row). t must not decrease between calls.
+    // (start alone before the first row), with that row's switches if the
+    // file has them. t must not decrease between calls.
     eyas::Controls at(const eyas::Controls& start, double t) noexcept;
     // The last row at or before the last t passed to at(); null before the first.
     const ControlRow* current() const noexcept;

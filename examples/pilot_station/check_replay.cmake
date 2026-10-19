@@ -3,7 +3,10 @@
 # the command in its header; the two state histories must be byte-identical.
 #
 #   cmake -DSTATION=... -DDRIVE=... -DCONFIG=... -DCONTROLS=... -DWORK=<dir>
-#         -P check_replay.cmake
+#         [-DAFCS=<switches>] -P check_replay.cmake
+#
+# AFCS, if given, is the station's --afcs (its start switches); a control
+# file with an afcs column switches them in flight (M8c3).
 
 file(MAKE_DIRECTORY ${WORK})
 set(rec ${WORK}/recording.csv)
@@ -12,10 +15,14 @@ set(drive_out ${WORK}/drive_state.csv)
 file(REMOVE ${rec} ${station_out} ${drive_out})
 
 # An origin other than the config's, so the override is exercised too.
+set(afcs_args)
+if(AFCS)
+    set(afcs_args --afcs ${AFCS})
+endif()
 execute_process(
     COMMAND ${STATION} --config ${CONFIG} --headless --no-pace --input script
             --controls ${CONTROLS} --start 60 --origin 51.47,-0.45,25 --duration 10
-            --record ${rec} --out ${station_out}
+            --record ${rec} --out ${station_out} ${afcs_args}
     RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "the station failed (exit ${rc})")

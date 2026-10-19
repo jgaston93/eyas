@@ -15,6 +15,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -23,6 +24,7 @@
 #include <gtest/gtest.h>
 
 #include "common/afcs.hpp"
+#include "common/control_file.hpp"
 #include "common/frames.hpp"
 #include "common/origin.hpp"
 #include "controls_map.hpp"
@@ -278,18 +280,91 @@ TEST(StationControls, AfcsButtonsToggle) {
 }
 
 // --afcs text: the station writes it into the replay command, eyas_drive
-// reads it back.
+// reads it back; with '+' it is the control files' afcs column (M8c3).
 TEST(StationControls, AfcsTextRoundTrips) {
-    for (int bits = 0; bits < 8; ++bits) {
-        const eyas::AfcsSwitches s{(bits & 1) != 0, (bits & 2) != 0, (bits & 4) != 0};
-        const eyas::AfcsSwitches r = examples::parse_afcs(examples::afcs_text(s));
-        EXPECT_EQ(r.sas_digital, s.sas_digital) << bits;
-        EXPECT_EQ(r.sas_analog, s.sas_analog) << bits;
-        EXPECT_EQ(r.pitch_bias, s.pitch_bias) << bits;
+    for (int bits = 0; bits < 64; ++bits) {
+        const auto on = [bits](int k) { return (bits & (1 << k)) != 0; };
+        const eyas::AfcsSwitches s{on(0), on(1), on(2), on(3), on(4), on(5)};
+        for (const char sep : {',', '+'}) {
+            const eyas::AfcsSwitches r = examples::parse_afcs(examples::afcs_text(s, sep), sep);
+            EXPECT_TRUE(examples::same_switches(r, s)) << bits << sep;
+        }
     }
     EXPECT_EQ(examples::afcs_text({true, true, true}), "sas,pba");
+    EXPECT_EQ(examples::afcs_text({true, true, true, true, true, true}, '+'),
+              "sas+pba+fps+fps_turn+trim_release");
     EXPECT_EQ(examples::afcs_text({}), "none");
-    EXPECT_THROW((void)examples::parse_afcs("sas,fps"), std::runtime_error);
+    EXPECT_THROW((void)examples::parse_afcs("sas,autopilot"), std::runtime_error);
+}
+
+// M8c3: the FPS button toggles the FPS, and the trim button is the AFCS's
+// trim release while held.
+TEST(StationControls, FpsButtonAndTrimRelease) {
+    ControlsMapConfig cfg;
+    cfg.trim_button = 0;
+    cfg.fps_button = 5;
+    eyas::Controls start = start_controls();
+    start.afcs = {true, true, true};
+    ControlsMap m(cfg, start);
+    RawInput in;
+    EXPECT_FALSE(m.update(in, 0.1).afcs.fps);
+    in.buttons[5] = true;
+    EXPECT_TRUE(m.update(in, 0.1).afcs.fps);
+    EXPECT_TRUE(m.update(in, 0.1).afcs.fps);  // held: no second toggle
+    in.buttons[5] = false;
+    EXPECT_FALSE(m.update(in, 0.1).afcs.trim_release);
+    in.buttons[0] = true;
+    EXPECT_TRUE(m.update(in, 0.1).afcs.trim_release);
+    in.buttons[0] = false;
+    const eyas::Controls c = m.update(in, 0.1);
+    EXPECT_FALSE(c.afcs.trim_release);
+    EXPECT_TRUE(c.afcs.fps && c.afcs.sas_digital && c.afcs.pitch_bias);
+    m.restart(start);
+    EXPECT_FALSE(m.afcs().fps);
+}
+
+// GenHel's turn switch latch (p. 5.5-3): on with the FPS on, VXBIKT above
+// 60 kt, the trim release pressed and more than 2° of bank; off with the
+// feet on the pedals and the trim release pressed, or the FPS off; held
+// otherwise.
+TEST(StationControls, TurnSwitchLatchesAsGenHel) {
+    constexpr double kDeg = std::numbers::pi / 180.0;
+    eyas::AfcsSwitches s;
+    s.fps = true;
+    s.trim_release = true;
+    const TurnSwitchInputs turning{100.0, 10.0 * kDeg};
+    EXPECT_TRUE(latch_turn_switch(false, s, false, turning));
+    EXPECT_FALSE(latch_turn_switch(false, s, false, {59.0, 10.0 * kDeg}));  // too slow
+    EXPECT_FALSE(latch_turn_switch(false, s, false, {100.0, 1.0 * kDeg}));  // wings level
+    EXPECT_FALSE(latch_turn_switch(false, s, true, turning));               // feet on
+    s.trim_release = false;
+    EXPECT_FALSE(latch_turn_switch(false, s, false, turning));   // trim release needed
+    EXPECT_TRUE(latch_turn_switch(true, s, true, turning));      // latched: feet alone
+    EXPECT_TRUE(latch_turn_switch(true, s, false, {0.0, 0.0}));  // keep it
+    s.trim_release = true;
+    EXPECT_FALSE(latch_turn_switch(true, s, true, {0.0, 0.0}));  // feet and trim: off
+    s.fps = false;
+    s.trim_release = false;
+    EXPECT_FALSE(latch_turn_switch(true, s, false, turning));  // FPS off
+
+    // Through the map: trim held in a bank at 100 kt latches it; feet on
+    // the pedals (beyond feet_on_pedals) with trim held unlatches it.
+    ControlsMapConfig cfg;
+    cfg.trim_button = 0;
+    cfg.pedal = absolute(1);
+    eyas::Controls start = start_controls();
+    start.afcs = {true, true, true, true, false, false};
+    ControlsMap m(cfg, start);
+    RawInput in;
+    EXPECT_FALSE(m.update(in, 0.1, turning).afcs.fps_turn);
+    in.buttons[0] = true;
+    EXPECT_TRUE(m.update(in, 0.1, turning).afcs.fps_turn);
+    in.buttons[0] = false;
+    EXPECT_TRUE(m.update(in, 0.1, {120.0, 0.0}).afcs.fps_turn);
+    in.axes[1] = 0.5;  // feet on, trim up: stays
+    EXPECT_TRUE(m.update(in, 0.1, turning).afcs.fps_turn);
+    in.buttons[0] = true;  // and trim pressed: off
+    EXPECT_FALSE(m.update(in, 0.1, turning).afcs.fps_turn);
 }
 
 // ---- Mapping files ----------------------------------------------------------------
@@ -316,7 +391,8 @@ TEST(StationMapping, FileOverridesTheDefaults) {
 TEST(StationMapping, WrittenMapReadsBack) {
     for (const InputSource s : {InputSource::gamepad, InputSource::joystick,
                                 InputSource::mouse_keyboard, InputSource::flightgear}) {
-        const ControlsMapConfig m = default_map(s);
+        ControlsMapConfig m = default_map(s);
+        m.feet_on_pedals = 0.3;  // not the default, so the read-back shows
         std::ostringstream out;
         write_map(out, m);
         const ControlsMapConfig r = parse_map(out.str(), ControlsMapConfig{}, "written");
@@ -334,9 +410,16 @@ TEST(StationMapping, WrittenMapReadsBack) {
         EXPECT_EQ(m.trim_button, r.trim_button);
         EXPECT_EQ(m.trim_reset_button, r.trim_reset_button);
         EXPECT_EQ(m.brake_button, r.brake_button);
+        EXPECT_EQ(m.sas_button, r.sas_button);
+        EXPECT_EQ(m.pba_button, r.pba_button);
+        EXPECT_EQ(m.fps_button, r.fps_button);
+        EXPECT_GE(m.fps_button, 0);  // every device source has one (M8c3)
         EXPECT_EQ(m.recentre, r.recentre);
         EXPECT_EQ(m.pickup, r.pickup);
+        EXPECT_EQ(m.feet_on_pedals, r.feet_on_pedals);
     }
+    EXPECT_THROW((void)parse_map("feet_on_pedals = 1.5\n", ControlsMapConfig{}, "t"),
+                 std::runtime_error);
 }
 
 TEST(StationMapping, BadLinesNameFileAndLine) {
@@ -734,9 +817,10 @@ TEST(StationRecorder, BrakeChangeIsMarked) {
     EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s"), 1);
 }
 
-// M8c2: the start's AFCS switches go into the replay command, and switching
-// them in flight marks the rest as not replayable (eyas_drive holds them).
-TEST(StationRecorder, AfcsChangeIsMarked) {
+// The start's AFCS switches go into the replay command (M8c2), and every
+// row carries the switches, a new row where they change, so eyas_drive
+// replays them (M8c3): no NOT REPLAYABLE mark.
+TEST(StationRecorder, AfcsChangesAreRecorded) {
     Station& st = uh60a();
     ASSERT_TRUE(st.start(1));
     EXPECT_TRUE(st.starts()[1].controls.afcs.sas_digital);  // the station's default
@@ -754,7 +838,19 @@ TEST(StationRecorder, AfcsChangeIsMarked) {
     }
     const std::string text = read_file(path);
     EXPECT_EQ(count(text, " --afcs sas,pba "), 1);
-    EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.25 s: the AFCS switches changed"), 1);
+    EXPECT_EQ(count(text, "NOT REPLAYABLE"), 0);
+    EXPECT_EQ(count(text, "\n0,0,0,0,0,sas+pba\n"), 1);
+    EXPECT_EQ(count(text, "\n0.25,0,0,0,0,sas\n"), 1);
+    EXPECT_EQ(count(text, "\n0.29999999999999999,"), 0);  // unchanged: no row
+    // And it reads back with the switches.
+    const std::vector<examples::ControlRow> rows = examples::read_controls(path);
+    ASSERT_EQ(rows.size(), 2U);
+    EXPECT_TRUE(rows[0].has_afcs && rows[0].afcs.pitch_bias);
+    EXPECT_TRUE(rows[1].has_afcs && !rows[1].afcs.pitch_bias && rows[1].afcs.sas_digital);
+    eyas::Controls start;
+    examples::ControlSchedule sched(rows);
+    EXPECT_TRUE(sched.at(start, 0.1).afcs.pitch_bias);
+    EXPECT_FALSE(sched.at(start, 0.3).afcs.pitch_bias);
 }
 
 // The exact FlightGear sequence (code review): the untouched throttle reads

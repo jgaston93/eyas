@@ -7,7 +7,7 @@
 //              [--controls <in.csv>] [--trim-speed <kt>] [--altitude <m>]
 //              [--rate <Hz>] [--duration <s>]
 //              [--origin <lat deg>,<lon deg>,<alt m>] [--ground <m>]
-//              [--afcs <sas,pba|...|none>]
+//              [--afcs <sas,pba,fps|...|none>]
 //
 // The aircraft is trimmed in level flight at --trim-speed (true airspeed,
 // default 0: hover) and --altitude (default 0 m MSL, ISA, no wind), then
@@ -27,7 +27,9 @@
 // ground at that height above MSL (default: no ground), so a run recorded
 // by the pilot station (--record) replays exactly. --afcs sets the flight
 // control system's switches for the trim and the run (default none; a list
-// of sas, sas_digital, sas_analog, pba). Exit codes: 0
+// of sas, sas_digital, sas_analog, pba, fps, fps_turn, trim_release); a
+// control file's optional afcs column changes them from its rows on, as the
+// station records them (M8c3). Exit codes: 0
 // done; 1 a frame failed (AdvanceStatus non_finite, rejected or capped);
 // 2 usage or input error; 3 trim did not converge.
 

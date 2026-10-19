@@ -36,16 +36,20 @@ std::string_view source_name(InputSource s) noexcept;
 //  gamepad (GLFW_GAMEPAD_*): axes 0 left X, 1 left Y (+ down), 2 right X,
 //    3 right Y (+ down), 4 left trigger, 5 right trigger; buttons 0 A, 1 B,
 //    2 X, 3 Y. Right stick cyclic, left stick Y rate collective, left
-//    stick X pedals; A trim, B brakes, Y trim reset.
+//    stick X pedals; A trim, B brakes, X FPS, Y trim reset, LB SAS, RB
+//    pitch bias.
 //  flightgear: FlightGear's joystick[0] axes and buttons as FG numbers them.
 //    The defaults assume an Xbox pad on Windows (axes 0 left X, 1 left Y,
 //    3 right Y, 4 right X, as FG's own Xbox 360 binding file reads them);
-//    check them with FG's joystick dialog and override as needed.
+//    check them with FG's joystick dialog and override as needed. Buttons
+//    as the gamepad's.
 //  joystick: 0 roll, 1 pitch (+ aft), 2 twist (pedals), 3 throttle lever
-//    (absolute collective, + down); buttons 0 trim, 1 brakes, 2 trim reset.
+//    (absolute collective, + down); buttons 0 trim, 1 brakes, 2 trim reset,
+//    3 SAS, 4 pitch bias, 5 FPS.
 //  mouse_keyboard: the window fills axes 0 mouse X, 1 mouse Y (+ down) from
 //    the pointer, 2 the collective keys and 3 the pedal keys; buttons 0 trim,
-//    1 brakes, 2 trim reset (see the station's key help).
+//    1 brakes, 2 trim reset, 3 SAS, 4 pitch bias, 5 FPS (see the station's
+//    key help).
 ControlsMapConfig default_map(InputSource s) noexcept;
 
 // Applies a mapping file's text over `base`. `origin` names it in errors.

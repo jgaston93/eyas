@@ -5,6 +5,8 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "afcs.hpp"
+
 namespace examples {
 
 std::vector<ControlRow> read_controls(const std::string& path) {
@@ -21,8 +23,10 @@ std::vector<ControlRow> read_controls(const std::string& path) {
             break;
         }
     }
-    if (!line.starts_with(kControlHeader)) {
-        throw std::runtime_error(path + ": expected header " + kControlHeader);
+    const bool with_afcs = line.starts_with(kControlHeaderAfcs);
+    if (!with_afcs && !line.starts_with(kControlHeader)) {
+        throw std::runtime_error(path + ": expected header " + kControlHeader + " or " +
+                                 kControlHeaderAfcs);
     }
     std::vector<ControlRow> rows;
     while (std::getline(in, line)) {
@@ -41,6 +45,19 @@ std::vector<ControlRow> read_controls(const std::string& path) {
             c1 != ',' || c2 != ',' || c3 != ',' || c4 != ',') {
             throw std::runtime_error(path + ":" + std::to_string(n) + ": bad row");
         }
+        if (with_afcs) {
+            char c5 = 0;
+            std::string text;
+            if (!(s >> c5 >> text) || c5 != ',') {
+                throw std::runtime_error(path + ":" + std::to_string(n) + ": bad row (afcs)");
+            }
+            try {
+                r.afcs = parse_afcs(text, '+');
+            } catch (const std::runtime_error& e) {
+                throw std::runtime_error(path + ":" + std::to_string(n) + ": " + e.what());
+            }
+            r.has_afcs = true;
+        }
         if (!rows.empty() && r.t < rows.back().t) {
             throw std::runtime_error(path + ":" + std::to_string(n) + ": time goes backwards");
         }
@@ -51,8 +68,11 @@ std::vector<ControlRow> read_controls(const std::string& path) {
 
 void write_control_row(std::ostream& out, const ControlRow& r) {
     const auto old = out.precision(17);
-    out << r.t << ',' << r.d_collective << ',' << r.d_lat << ',' << r.d_lon << ',' << r.d_pedal
-        << '\n';
+    out << r.t << ',' << r.d_collective << ',' << r.d_lat << ',' << r.d_lon << ',' << r.d_pedal;
+    if (r.has_afcs) {
+        out << ',' << afcs_text(r.afcs, '+');
+    }
+    out << '\n';
     out.precision(old);
 }
 
@@ -69,6 +89,9 @@ eyas::Controls ControlSchedule::at(const eyas::Controls& start, double t) noexce
         c.lat_cyclic += row->d_lat;
         c.lon_cyclic += row->d_lon;
         c.pedal += row->d_pedal;
+        if (row->has_afcs) {
+            c.afcs = row->afcs;
+        }
     }
     return c;
 }

@@ -33,8 +33,9 @@ int main(int argc, char** argv) {
     host::InitialCondition ic;
     ic.airspeed_kt = 60.0;
     ic.altitude_ft = 1000.0;
-    ic.sas = true;  // as the UH-60A flies (M8c2)
+    ic.sas = true;  // as the UH-60A flies (M8c2, M8c3)
     ic.pitch_bias = true;
+    ic.fps = true;
     if (!fm->initialize(argv[1], ic, error)) {
         std::cerr << "error: " << error << '\n';
         return 1;

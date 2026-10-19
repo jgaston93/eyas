@@ -2,6 +2,8 @@
 
 #include <ostream>
 
+#include "afcs.hpp"
+
 namespace examples {
 
 void write_state_header(std::ostream& out) {
@@ -17,7 +19,7 @@ void write_state_header(std::ostream& out) {
            "vertical_speed_mps,outside_air_temperature_K,"
            "rotor_speed_percent,main_rotor_thrust_N,main_rotor_torque_Nm,main_rotor_power_W,"
            "coning_rad,flap_1c_rad,flap_1s_rad,main_rotor_azimuth_rad,tail_rotor_thrust_N,"
-           "tail_rotor_azimuth_rad,weight_on_wheels,quat_norm_error\n";
+           "tail_rotor_azimuth_rad,weight_on_wheels,quat_norm_error,afcs\n";
 }
 
 void write_state_row(std::ostream& out, const eyas::Controls& c, const eyas::AircraftState& o) {
@@ -41,7 +43,8 @@ void write_state_row(std::ostream& out, const eyas::Controls& c, const eyas::Air
         << o.rotor_speed_percent << ',' << o.main_rotor_thrust << ',' << o.main_rotor_torque << ','
         << o.main_rotor_power << ',' << o.coning << ',' << o.flap_1c << ',' << o.flap_1s << ','
         << o.main_rotor_azimuth << ',' << o.tail_rotor_thrust << ',' << o.tail_rotor_azimuth << ','
-        << (o.weight_on_wheels ? 1 : 0) << ',' << o.quat_norm_error << '\n';
+        << (o.weight_on_wheels ? 1 : 0) << ',' << o.quat_norm_error << ',' << afcs_text(c.afcs, '+')
+        << '\n';
 }
 
 }  // namespace examples

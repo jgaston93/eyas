@@ -77,6 +77,7 @@ ControlsMapConfig default_map(InputSource s) noexcept {
             m.trim_reset_button = 3;
             m.sas_button = 4;
             m.pba_button = 5;
+            m.fps_button = 2;
             break;
         case InputSource::flightgear:
             m.collective = axis(1, true, AxisMode::rate, kCollectiveRate, 0.1);
@@ -88,6 +89,7 @@ ControlsMapConfig default_map(InputSource s) noexcept {
             m.trim_reset_button = 3;
             m.sas_button = 4;
             m.pba_button = 5;
+            m.fps_button = 2;
             break;
         case InputSource::joystick:
             m.lat_cyclic = axis(0, false, AxisMode::absolute, 1.0);
@@ -99,6 +101,7 @@ ControlsMapConfig default_map(InputSource s) noexcept {
             m.trim_reset_button = 2;
             m.sas_button = 3;
             m.pba_button = 4;
+            m.fps_button = 5;
             break;
         case InputSource::mouse_keyboard:
             m.lat_cyclic = axis(0, false, AxisMode::absolute, 1.0, 0.0);
@@ -110,6 +113,7 @@ ControlsMapConfig default_map(InputSource s) noexcept {
             m.trim_reset_button = 2;
             m.sas_button = 3;
             m.pba_button = 4;
+            m.fps_button = 5;
             break;
         case InputSource::script:
         case InputSource::none:
@@ -236,6 +240,13 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
             m.sas_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "pba_button") {
             m.pba_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "fps_button") {
+            m.fps_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "feet_on_pedals") {
+            m.feet_on_pedals = to_double(value, origin, n);
+            if (std::isnan(m.feet_on_pedals) || m.feet_on_pedals < 0.0 || m.feet_on_pedals > 1.0) {
+                fail(origin, n, "feet_on_pedals must be in [0, 1] (fraction of the pedal travel)");
+            }
         } else if (key == "recentre") {
             m.recentre = to_double(value, origin, n);
         } else if (key == "pickup") {
@@ -305,8 +316,10 @@ void write_map(std::ostream& out, const ControlsMapConfig& map) {
         << "brake_button = " << index_text(map.brake_button, kButtonsPerDevice) << '\n'
         << "sas_button = " << index_text(map.sas_button, kButtonsPerDevice) << '\n'
         << "pba_button = " << index_text(map.pba_button, kButtonsPerDevice) << '\n'
+        << "fps_button = " << index_text(map.fps_button, kButtonsPerDevice) << '\n'
         << "recentre = " << map.recentre << '\n'
-        << "pickup = " << map.pickup << '\n';
+        << "pickup = " << map.pickup << '\n'
+        << "feet_on_pedals = " << map.feet_on_pedals << '\n';
 }
 
 }  // namespace station

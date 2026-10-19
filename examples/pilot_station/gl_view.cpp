@@ -252,6 +252,7 @@ void GlView::Impl::read_mouse_keyboard(RawInput& raw) const {
     raw.buttons[2] = key(GLFW_KEY_C);
     raw.buttons[3] = key(GLFW_KEY_A);
     raw.buttons[4] = key(GLFW_KEY_Q);
+    raw.buttons[5] = key(GLFW_KEY_F);
 }
 
 ViewCommands GlView::poll(RawInput& raw) {
@@ -277,7 +278,7 @@ void GlView::Impl::text(double x, double y, double scale, const char* s, float r
                         float b) {
     // stb_easy_font takes a non-const string and returns quads of 4 vertices
     // of 16 bytes (x, y, z float; RGBA bytes).
-    std::array<char, 512> copy{};
+    std::array<char, 1024> copy{};
     (void)std::snprintf(copy.data(), copy.size(), "%s", s);
     const int quads = stb_easy_font_print(0.0F, 0.0F, copy.data(), nullptr, text_buf.data(),
                                           static_cast<int>(text_buf.size()));
@@ -608,11 +609,12 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
         b.data(), b.size(),
         "NR     %6.1f %%\nTHRUST %6.1f kN\nTORQUE %6.1f kN.m\nPOWER  %6.0f kW\n"
         "B0 %5.2f B1C %5.2f B1S %5.2f deg\nTR THR %6.2f kN\nWOW %s  BRAKES %s\n"
-        "SAS %s  PBA %s",
+        "SAS %s  PBA %s  FPS %s%s",
         s.rotor_speed_percent, s.main_rotor_thrust * 1e-3, s.main_rotor_torque * 1e-3,
         s.main_rotor_power * 1e-3, s.coning * kDeg, s.flap_1c * kDeg, s.flap_1s * kDeg,
         s.tail_rotor_thrust * 1e-3, s.weight_on_wheels ? "yes" : "no",
-        hud.applied.brake_left > 0.5 ? "set" : "off", sas, af.pitch_bias ? "on" : "OFF");
+        hud.applied.brake_left > 0.5 ? "set" : "off", sas, af.pitch_bias ? "on" : "OFF",
+        af.fps ? "on" : "OFF", af.fps_turn ? "  TURN" : "");
     text(w - 340, 50, 1.6, b.data());
 
     // Status, top.
@@ -756,7 +758,7 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     text(14, h - 186, 1.1, b.data());
 
     if (help) {
-        panel(w / 2.0 - 230, 90, 460, 270);
+        panel(w / 2.0 - 230, 90, 520, 290);
         text(w / 2.0 - 220, 100, 1.5,
              "Esc quit   P pause   R restart   H help\n"
              "1 pad   2 hover   3 60 kt   4 120 kt\n"
@@ -764,13 +766,14 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
              "\n"
              "mouse input: hold left button to fly the cyclic\n"
              "  W/S collective   Z/X pedals   T or right button trim\n"
-             "  B brakes   C trim reset   A SAS   Q pitch bias\n"
+             "  B brakes   C trim reset   A SAS   Q pitch bias   F FPS\n"
              "gamepad (default map): right stick cyclic,\n"
-             "  left stick collective (rate) and pedals,\n"
-             "  A trim, B brakes, Y trim reset, LB SAS, RB pitch bias\n"
+             "  left stick collective (rate) and pedals, A trim,\n"
+             "  B brakes, X FPS, Y trim reset, LB SAS, RB pitch bias\n"
              "\n"
-             "SAS and pitch bias start as --afcs sets them (default on;\n"
-             "the HUD shows them); no FPS yet (M8c3): nothing holds the attitude.");
+             "AFCS at start: --afcs (default SAS and pitch bias).\n"
+             "Trim also releases the FPS: fly there, let go.\n"
+             "Banked above 60 kt with trim held: FPS turn switch (TURN).");
     }
     glDisable(GL_BLEND);
 }

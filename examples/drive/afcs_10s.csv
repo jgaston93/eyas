@@ -1,0 +1,10 @@
+time_s,d_collective,d_lat_cyclic,d_lon_cyclic,d_pedal,afcs
+# The AFCS switched in flight (M8c3), from a 60 kt trim with the SAS, PBA
+# and FPS on: the trim release held while the stick rolls right, the turn
+# switch latched on, then the FPS switched off; 10 s in all.
+0.0,0,0,0,0,sas+pba+fps
+1.0,0,0.03,0,0,sas+pba+fps+trim_release
+2.0,0,0,0,0,sas+pba+fps+trim_release
+2.5,0,0,0,0,sas+pba+fps+fps_turn
+6.0,0,0,0,0,sas+pba
+10.0,0,0,0,0,sas+pba
