@@ -667,9 +667,9 @@ Each milestone ends with all of its tests passing and a short entry in `VALIDATI
 
 ## 12. Open Questions (to resolve with the team)
 
-1. **Required outputs.** What exact fields does the host application read from the reference model today, with their units and frames? This finalizes Tiers 1–3 of `AircraftState` and defines what the `EyasAdapter` must produce. Known so far: the reference model is read over shared memory at about 60 Hz; it supplies engine power but not fuel.
+1. **Required outputs.** What exact fields does the host application read from the reference model today, with their units and frames? This finalizes Tiers 1–3 of `AircraftState` and defines what the `EyasAdapter` must produce. Known so far: the reference model is read over shared memory at about 60 Hz; it supplies engine power but not fuel. *Answered 2026-10-19 (D-047): geodetic position and MSL and ellipsoidal altitude, Euler angles, weight on wheels, outside air temperature, groundspeed, radar altitude, and NED and body-axis position, velocity and acceleration, body rates and angular accelerations. Two gaps: the angular accelerations and the geoid height.*
 2. Which aircraft does the simulator actually need, after the UH-60 reference? Does its data exist in a usable form?
 3. What validation tolerances do the stakeholders accept for "replaces the reference model"?
 4. What are the target hardware and OS for real-time (RTOS or Linux PREEMPT_RT)?
 5. Is autorotation or engine failure in scope for the first piloted release? If so, pull the rotor-speed degree of freedom from M9 into M8.
-6. **Reference-model license terms (blocking for comparisons).** Does the license, or any vendor agreement, restrict using its outputs to benchmark an independent replacement? Does any vendor-supplied model data carry restrictions? See Section 2.1.
+6. **Reference-model license terms (blocking for comparisons).** Does the license, or any vendor agreement, restrict using its outputs to benchmark an independent replacement? Does any vendor-supplied model data carry restrictions? See Section 2.1. *Moot, 2026-10-19 (D-047): no comparison against the reference model is planned. It isn't a UH-60 model.*
