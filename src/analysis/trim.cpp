@@ -196,26 +196,17 @@ public:
         return -mean;
     }
 
-    // The states steady_states() sets (GenHel's IC mode, D-045), as indices
-    // into the full state: those it overwrites in a slice filled with NaN.
-    // Empty if z has no valid body state.
-    std::vector<std::size_t> ic_states(const VecX& z) {
-        std::vector<std::size_t> ic;
-        if (!pack(z)) {
-            return ic;
-        }
-        const SimContext ctx = ex_.context(0.0, x_, controls(z), held_.env());
-        for (std::size_t i = 0; i < ex_.num_components(); ++i) {
-            std::vector<double> probe(ex_.component_size(i),
-                                      std::numeric_limits<double>::quiet_NaN());
-            ex_.component(i).steady_states(ctx, probe);
-            for (std::size_t j = 0; j < probe.size(); ++j) {
-                if (!std::isnan(probe[j])) {
-                    ic.push_back(ex_.component_offset(i) + j);
-                }
+    // The states labelled orbit (GenHel's IC mode, D-045), as indices into
+    // the full state; the executive checked the labels when it was built.
+    std::vector<std::size_t> orbit_states() const {
+        std::vector<std::size_t> orbit;
+        const std::span<const SteadyKind> kinds = ex_.steady_kinds();
+        for (std::size_t i = 0; i < kinds.size(); ++i) {
+            if (kinds[i] == SteadyKind::orbit) {
+                orbit.push_back(i);
             }
         }
-        return ic;
+        return orbit;
     }
 
     // The IC-mode states on their free-flight periodic orbit (D-045
@@ -241,7 +232,7 @@ public:
     };
     FreeOrbit free_ic_orbit(const VecX& z, const Vec6& vib, double tol) {
         FreeOrbit out;
-        out.index = ic_states(z);
+        out.index = orbit_states();
         if (out.index.empty() || !pack(z)) {
             out.index.clear();
             return out;
@@ -339,9 +330,14 @@ public:
         r.resize(static_cast<Eigen::Index>(unknowns()));
         r.head<3>() = mean.head<3>() / weight_;
         r.segment<3>(3) = mean.tail<3>() / (weight_ * length_);
+        // A held state's change over the revolution doesn't count: it stays
+        // at its steady value through the trim, as GenHel's IC mode holds
+        // integrators (p. 5.5-2), and no unknown could remove it (D-045).
+        const std::span<const SteadyKind> kinds = ex_.steady_kinds();
         for (std::size_t j = 0; j < nc_; ++j) {
-            const auto k = static_cast<Eigen::Index>(kHead + j);
-            r(k) = x_[body_layout::kSize + j] - start_[body_layout::kSize + j];
+            const std::size_t i = body_layout::kSize + j;
+            r(static_cast<Eigen::Index>(kHead + j)) =
+                kinds[i] == SteadyKind::held ? 0.0 : x_[i] - start_[i];
         }
         return r.allFinite();
     }

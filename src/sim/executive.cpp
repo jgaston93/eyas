@@ -1,7 +1,9 @@
 #include "sim/executive.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <string>
 
 #include <Eigen/Cholesky>
@@ -141,6 +143,37 @@ Executive::Executive(const ExecutiveConfig& config,
     order_ = order_and_bind(components_, registry);
     coupling_ = CouplingOutputs(registry.size());
     pack_body(BodyState{}, x_);
+    label_steady_states();
+}
+
+// A slot steady_states() writes holds the same value whatever x arrives
+// with (its contract); one it leaves keeps the value it arrived with. So two
+// probes filled differently tell them apart, a written NaN included.
+void Executive::label_steady_states() {
+    steady_kinds_.assign(x_.size(), SteadyKind::free);
+    const SimContext ctx = context(0.0, x_, Controls{}, Environment{});
+    for (std::size_t i = 0; i < components_.size(); ++i) {
+        const DynamicComponent& c = *components_[i];
+        const std::span<SteadyKind> kinds =
+            std::span(steady_kinds_).subspan(offsets_[i], sizes_[i]);
+        c.steady_kinds(kinds);
+        std::vector<double> a(sizes_[i], 0.0);
+        std::vector<double> b(sizes_[i], 1.0);
+        c.steady_states(ctx, a);
+        c.steady_states(ctx, b);
+        for (std::size_t j = 0; j < sizes_[i]; ++j) {
+            const bool written =
+                std::bit_cast<std::uint64_t>(a[j]) == std::bit_cast<std::uint64_t>(b[j]);
+            if (written == (kinds[j] == SteadyKind::free)) {
+                throw InitError("executive: component '" + std::string(c.name()) + "' state " +
+                                std::to_string(j) +
+                                (written ? ": steady_states() sets it but steady_kinds() labels it "
+                                           "free (D-045)"
+                                         : ": steady_kinds() labels it orbit or held but "
+                                           "steady_states() doesn't set it (D-045)"));
+            }
+        }
+    }
 }
 
 void Executive::set_body_state(const BodyState& body) {

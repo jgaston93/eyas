@@ -7,8 +7,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <memory>
 #include <numbers>
 #include <random>
+#include <span>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -17,12 +20,15 @@
 #include "analysis/trim.hpp"
 #include "control/genhel_fcs.hpp"
 #include "core/attitude.hpp"
+#include "core/component.hpp"
+#include "core/rigid_body.hpp"
 #include "eyas/model.hpp"
 #include "sim/build.hpp"
 #include "support/alloc_counter.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "support/m7_fixtures.hpp"
 #include "util/error.hpp"
+#include "util/units.hpp"
 
 namespace eyas {
 namespace {
@@ -493,6 +499,112 @@ TEST(Trim, SasDampsTheDutchRoll) {
             EXPECT_LT(ratio[0], 4.0);  // the gate would catch the SAS missing
         }
     }
+}
+
+// ---- Steady kinds (D-045, M8c3 amendment) --------------------------------------------
+
+// Linear damping on every body axis and the controls on X, Y, Z and N: a
+// stateless aircraft that trims at any airspeed.
+class DampedPlant : public DynamicComponent {
+public:
+    explicit DampedPlant(double weight) : weight_(weight) {}
+    std::size_t num_states() const override { return 0; }
+    void initial_states(std::span<double> /*x*/) const override {}
+    void derivatives(const SimContext& ctx, std::span<const double> /*x*/,
+                     ComponentDerivs& out) const override {
+        const Vec3& v = ctx.body.vel_b;
+        const Vec3& w = ctx.body.omega_b;
+        const Controls& c = ctx.controls;
+        out.load0_b.F =
+            Vec3(-200.0 * v.x() + 2e4 * c.lon_cyclic, -300.0 * v.y() + 2e4 * c.lat_cyclic,
+                 -2.0 * weight_ * c.collective - 500.0 * v.z());
+        out.load0_b.M = Vec3(-3000.0 * w.x(), -5000.0 * w.y(), -4000.0 * w.z() + 1e4 * c.pedal);
+    }
+
+private:
+    double weight_;
+};
+
+// One state of each kind: [0] free, a lag on the collective, which trim
+// solves; [1] orbit, a lag on the body-x velocity; [2] held, an integrator
+// whose input isn't zero in trim (as an FPS integrator's in a trim that
+// isn't coordinated), which steady_states() starts at the velocity plus
+// kOffset. `labels` breaks the labelling for the tests below.
+enum class Labels { right, written_free, unwritten_held, drifting_orbit };
+
+class ThreeKinds : public DynamicComponent {
+public:
+    static constexpr double kTau = 0.5;     // [s]
+    static constexpr double kOffset = 0.7;  // [m/s]
+    static constexpr double kDrift = 0.01;  // [m/s²], the held state's rate
+    explicit ThreeKinds(Labels labels) : labels_(labels) {}
+    std::size_t num_states() const override { return 3; }
+    void initial_states(std::span<double> x) const override { std::fill(x.begin(), x.end(), 0.0); }
+    std::string_view name() const noexcept override { return "three_kinds"; }
+    void derivatives(const SimContext& ctx, std::span<const double> x,
+                     ComponentDerivs& out) const override {
+        out.xdot0[0] = (ctx.controls.collective - x[0]) / kTau;
+        out.xdot0[1] = (ctx.body.vel_b.x() - x[1]) / kTau;
+        out.xdot0[2] = kDrift;
+    }
+    void steady_states(const SimContext& ctx, std::span<double> x) const override {
+        x[1] = ctx.body.vel_b.x();
+        x[2] = ctx.body.vel_b.x() + kOffset;
+    }
+    void steady_kinds(std::span<SteadyKind> kinds) const override {
+        kinds[0] = labels_ == Labels::unwritten_held ? SteadyKind::held : SteadyKind::free;
+        kinds[1] = labels_ == Labels::written_free ? SteadyKind::free : SteadyKind::orbit;
+        kinds[2] = labels_ == Labels::drifting_orbit ? SteadyKind::orbit : SteadyKind::held;
+    }
+
+private:
+    Labels labels_;
+};
+
+Executive three_kinds_executive(Labels labels) {
+    ExecutiveConfig cfg;
+    cfg.mass = make_mass_properties(1000.0, 500.0, 800.0, 900.0, 100.0);
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(std::make_unique<DampedPlant>(cfg.mass.mass * units::kStandardGravity));
+    comps.push_back(std::make_unique<ThreeKinds>(labels));
+    return Executive(cfg, std::move(comps));
+}
+
+// Trim honours each label: the free state is solved (the lag at the trimmed
+// collective), the orbit state starts at its input, and the held state starts
+// at the value steady_states() gave it, offset and all, although it drifts
+// over the revolution. (x's body velocity adds the trim's vibration offset,
+// D-035, about 1e-10 m/s here, to the mean velocity steady_states() saw.)
+TEST(Trim, SteadyKindsAreHonoured) {
+    const Executive ex = three_kinds_executive(Labels::right);
+    for (const double kt : {0.0, 60.0}) {
+        SCOPED_TRACE(kt);
+        std::vector<double> x;
+        const TrimResult r = solve_trim(ex, level(kt), nullptr, x);
+        ASSERT_TRUE(r.converged);
+        const std::size_t off = ex.component_offset(1);
+        const double u = unpack_body(x).vel_b.x();
+        EXPECT_NEAR(x[off], r.controls.collective, 1e-9);
+        EXPECT_NEAR(x[off + 1], u, 1e-9);
+        EXPECT_NEAR(x[off + 2], u + ThreeKinds::kOffset, 1e-9);
+    }
+}
+
+// The held label is what lets that trim converge: labelled orbit, the same
+// drifting state leaves a change over the revolution that no unknown can
+// remove (D-045).
+TEST(Trim, DriftingStateLabelledOrbitDoesNotTrim) {
+    const Executive ex = three_kinds_executive(Labels::drifting_orbit);
+    std::vector<double> x;
+    EXPECT_FALSE(solve_trim(ex, level(60.0), nullptr, x).converged);
+}
+
+// The executive checks the labels against steady_states() when it is built,
+// both ways: a state set but labelled free, and one labelled held but not set.
+TEST(Trim, SteadyKindsMismatchIsRejected) {
+    EXPECT_THROW((void)three_kinds_executive(Labels::written_free), InitError);
+    EXPECT_THROW((void)three_kinds_executive(Labels::unwritten_held), InitError);
+    EXPECT_NO_THROW((void)three_kinds_executive(Labels::right));
 }
 
 // ---- Model API -----------------------------------------------------------------------

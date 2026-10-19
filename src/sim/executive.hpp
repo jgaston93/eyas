@@ -99,6 +99,10 @@ public:
     const DynamicComponent& component(std::size_t i) const noexcept { return *components_[i]; }
     std::size_t component_offset(std::size_t i) const noexcept { return offsets_[i]; }
     std::size_t component_size(std::size_t i) const noexcept { return sizes_[i]; }
+    // Every state's label for trim (D-045): the body's free, each
+    // component's from its steady_kinds(), checked against its
+    // steady_states() at construction.
+    std::span<const SteadyKind> steady_kinds() const noexcept { return steady_kinds_; }
     const MassProperties& airframe_mass() const noexcept { return mass_; }
     double origin_altitude() const noexcept { return origin_altitude_; }
     std::span<const double> state() const noexcept { return x_; }
@@ -121,6 +125,10 @@ public:
     std::span<const std::size_t> evaluation_order() const noexcept { return order_; }
 
 private:
+    // Fills steady_kinds_ and checks the steady_states() contract (D-045);
+    // throws InitError naming the component and state on a mismatch.
+    void label_steady_states();
+
     // Shared by derivatives() and held_derivatives(): evaluates the force
     // models and the components at (t, x), writing xdot0_ and G_, adding the
     // loads into `rhs` and their H into `A`, and each component's load0 into
@@ -142,9 +150,10 @@ private:
 
     std::vector<std::unique_ptr<DynamicComponent>> components_;
     std::vector<std::unique_ptr<ForceModel>> forces_;
-    std::vector<std::size_t> offsets_;  // each component's first state index
-    std::vector<std::size_t> sizes_;    // each component's state count, fixed at init
-    std::vector<std::size_t> order_;    // evaluation order, producers first (D-003)
+    std::vector<std::size_t> offsets_;      // each component's first state index
+    std::vector<std::size_t> sizes_;        // each component's state count, fixed at init
+    std::vector<SteadyKind> steady_kinds_;  // one per state (D-045)
+    std::vector<std::size_t> order_;        // evaluation order, producers first (D-003)
 
     std::vector<double> x_;
     std::vector<double> x_prev_;  // state before the current step
