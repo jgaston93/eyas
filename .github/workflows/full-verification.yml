@@ -1,7 +1,8 @@
 name: Full verification
 
 # The slow end of verification, off the per-push path (D-037): every test
-# under ASan+UBSan, including the slow ones ci.yml skips there, and every
+# under ASan+UBSan and with Clang (Debug), including the slow ones ci.yml
+# runs on a PR in Release only, and every
 # validation generator with its plots, uploaded as an artifact for
 # comparison with docs/VALIDATION.md. Nightly on main, and on demand from
 # the Actions tab.
@@ -42,6 +43,34 @@ jobs:
         run: cmake --build --preset asan
       - name: Test (all, slow ones included)
         run: ctest --preset asan --parallel "$(nproc)"
+
+  clang:
+    name: Ubuntu Clang Debug, all tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CC: clang
+      CXX: clang++
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Ninja and ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache libglfw3-dev libgl-dev
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-ubuntu-clang-debug-${{ github.sha }}
+          restore-keys: ccache-ubuntu-clang-debug-
+      - name: Configure
+        run: >-
+          cmake --preset debug
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: cmake --build --preset debug
+      - name: Test (all, slow ones included)
+        run: ctest --preset debug --parallel "$(nproc)"
 
   validation:
     name: Validation generators and plots (Release)
