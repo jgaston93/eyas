@@ -16,7 +16,7 @@
 # The longitudinal rows put neutral cyclic in three places 0.812 in apart; neutral is the
 # pinned row's, the end nearest the fit to Ballin's GenHel longitudinal stick (D-035 M7c amendment).
 #
-# Validation variant (ballin_app_d/uh60a_file509.yaml): WEIGHT and CG from Ballin, NASA TM-88360 (1987), Table C1 (p. 37), file 509 (Fig. D7): gross weight 15510 lb, CG station 352.0 in, CG waterline 232.0 in; CG buttline 0 (App. C).
+# Validation variant (ballin_app_d/uh60a_file509.yaml): WEIGHT and CG from Ballin, NASA TM-88360 (1987), Table C1 (p. 37), file 509 (Fig. D7): gross weight 15510 lbm, CG station 352.0 in, CG waterline 232.0 in; CG buttline 0 (App. C).
 # Inertias are GenHel's (D-002); not for use as the aircraft's own data.
 
 geodetic_origin: {latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}  # scenario, not aircraft data

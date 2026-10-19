@@ -138,6 +138,7 @@ struct TestAtmosphere {
     double density = 0.0;  // [kg/m³]
 };
 
+// Geometric altitude [m] of geopotential altitude [m'] (USSA Eq. 19).
 inline double geometric(double geopotential) {
     return isa::kEarthRadius * geopotential / (isa::kEarthRadius - geopotential);
 }
@@ -172,14 +173,15 @@ inline TestAtmosphere test_atmosphere(const Case& c) {
     throw std::runtime_error("test atmosphere did not converge for file " + c.file);
 }
 
-// True airspeed [m/s] from the equivalent airspeed: V = V_E √(ρ0/ρ).
+// True airspeed [m/s] from the equivalent airspeed: V = V_E √(ρ0/ρ)
+// (Gracey Eq. 3.20).
 inline double true_airspeed(const Case& c, const TestAtmosphere& a) {
     return c.eas_kt * units::kKnot * std::sqrt(isa::kSeaLevelDensity / a.density);
 }
 
 // One digitized time history (a figure's quantity and series), read linearly
 // between the samples; before the first sample its first value, after the
-// last NaN.
+// last its last (some histories end a sample before the 6 s run does).
 class History {
 public:
     History(const std::string& figure, const std::string& quantity, const std::string& series) {
@@ -217,8 +219,8 @@ public:
         if (t <= t_.front()) {
             return y_.front();
         }
-        if (t > t_.back() + 1e-9) {
-            return std::numeric_limits<double>::quiet_NaN();
+        if (t >= t_.back()) {
+            return y_.back();
         }
         std::size_t i = 1;
         while (i < t_.size() - 1 && t_[i] < t) {
@@ -250,10 +252,7 @@ struct Inputs {
     // pedal, the normalized ranges [0, 1] and [−1, 1]).
     Controls at(const Controls& trim, double t) const {
         Controls u = trim;
-        auto d = [t](const History& h) {
-            const double v = h(t);
-            return std::isfinite(v) ? v - h.first() : 0.0;
-        };
+        auto d = [t](const History& h) { return h(t) - h.first(); };
         u.collective += d(coll) / 10.0;
         u.lat_cyclic += 2.0 * d(lat) / 10.0;
         u.lon_cyclic -= 2.0 * d(lon) / 10.0;
@@ -346,29 +345,34 @@ inline Run fly(const Case& c, Servo servo, double duration = 6.0, double dt = 1e
         tc.isa_delta_T = run.air.delta_T;
         return tc;
     };
-    // GenHel's constraint switches at 50 kt (Ballin Fig. B1; SPEC_REVIEW #31)
+    // GenHel's constraint switches at 50 kt (Ballin Fig. B1; SPEC_REVIEW #31);
+    // above it the sideslip is solved, each trim starting from the last one's
+    // (as ballin::genhel_trim)
+    double sideslip = 3.0 * kDeg;
     auto trim = [&](const Uh60aHarness& ac, const TrimResult* start, std::vector<double>& x) {
         TrimCondition tc = at_condition(TrimCondition{});
         if (run.airspeed_kt < ballin::kRollSwitch) {
             return solve_trim(ac.executive(), tc, start, x);
         }
-        tc.sideslip = 3.0 * kDeg;
+        tc.sideslip = sideslip;
         const RollTrimResult r = solve_trim_at_roll(ac.executive(), tc, 0.0, start, x);
+        sideslip = r.sideslip;
         TrimResult t = r.trim;
         t.converged = r.converged;
         return t;
     };
+    const Environment env{.isa_delta_T = run.air.delta_T};
     std::vector<double> x;
     const Uh60aHarness scheduled = aircraft(c, std::numeric_limits<double>::quiet_NaN(), servo);
     const TrimResult first = trim(scheduled, nullptr, x);
-    run.stabilator_deg = ballin::revolution_average(scheduled, x, first.controls).stabilator / kDeg;
+    run.stabilator_deg =
+        ballin::revolution_average(scheduled, x, first.controls, env).stabilator / kDeg;
     const Uh60aHarness ac = aircraft(c, run.stabilator_deg, servo);
     run.trim = trim(ac, &first, x);
     run.trim_converged = first.converged && run.trim.converged;
 
     const Inputs in(c.figure);
     const Controls trim_u = run.trim.controls;
-    const Environment env{.isa_delta_T = run.air.delta_T};
     const auto [fs_cg, wl_cg] = airframe_cg(c);
     const Vec3 r_acc{-(kAccelFs - fs_cg) * kInch, -(kAccelBl - 0.0) * kInch,
                      -(kAccelWl - wl_cg) * kInch};

@@ -74,7 +74,7 @@ def table_c1_variants():
         out[f"ballin_app_d/uh60a_file{r['file']}{suffix}.yaml"] = (
             float(r["gross_weight_lbm"]), float(r["cg_station_in"]), 0.0, float(wl),
             f"Ballin, NASA TM-88360 (1987), Table C1 (p. 37), file {r['file']} (Fig. "
-            f"{r['figure']}): gross weight {r['gross_weight_lbm']} lb, CG station "
+            f"{r['figure']}): gross weight {r['gross_weight_lbm']} lbm, CG station "
             f"{r['cg_station_in']} in, CG waterline {r['cg_waterline_in']} in; CG buttline 0 "
             f"(App. C){note}")
 
@@ -667,7 +667,7 @@ def relocate(text, name):
     if not up:
         return text
     import re
-    return re.sub(r"([\s{:,])([A-Za-z0-9_][A-Za-z0-9_./-]*\.csv)", r"\g<1>" + up + r"\g<2>", text)
+    return re.sub(r"([\s{:,])([A-Za-z0-9_.][A-Za-z0-9_./-]*\.csv)", r"\g<1>" + up + r"\g<2>", text)
 
 
 def main():
