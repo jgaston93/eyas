@@ -113,15 +113,16 @@ inline Averages revolution_average(const Uh60aHarness& ac, std::vector<double> x
     return a;
 }
 
-// The config text at `path` with its table paths made absolute, so that it
-// can be edited and read from a string.
+// The config text at `path` with its table paths (relative, "../" allowed)
+// made absolute, so that it can be edited and read from a string.
 inline std::string config_text(const std::filesystem::path& path) {
     std::ifstream f(path);
     std::stringstream ss;
     ss << f.rdbuf();
     const std::string dir = path.parent_path().string() + "/";
-    return std::regex_replace(
-        ss.str(), std::regex(R"(([\s{:,])([A-Za-z0-9_][A-Za-z0-9_./-]*\.csv))"), "$1" + dir + "$2");
+    return std::regex_replace(ss.str(),
+                              std::regex(R"(([\s{:,])([A-Za-z0-9_.][A-Za-z0-9_./-]*\.csv))"),
+                              "$1" + dir + "$2");
 }
 
 // The config text at `path` with the stabilator held at `incidence_deg`

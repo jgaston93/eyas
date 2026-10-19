@@ -1,0 +1,31 @@
+# source: Ballin, M. G., Validation of a Real-Time Engineering Simulation of the UH-60A Helicopter, NASA TM-88360 (1987), App. C, Table C1 (p. 37, PDF p. 39): aircraft configurations and test conditions for the transient responses of App. D and E. Transcribed from the rendered page image.
+# status: transcribed 2026-10-18; a typed table, read clearly. File 210's CG waterline (243.8 in, against 231.6-232.7 in for every other file): the reading is confirmed by the human reviewer (2026-10-19), the value is doubtful as data (DATA_GAPS.md); its case is also run at a stand-in, for comparison (tools/build_uh60a_config.py).
+# App. C (p. 36) for every transient response: Ixx 4659, Iyy 38512, Izz 36796, Ixz 1882 slug-ft^2; CG buttline 0 in; pitch bias actuator disabled and centred; flight-path stabilization and SAS disabled; stabilator fixed at the trim value set by the control system. Sensors: CG accelerometer FS 389, BL -31, WL 207.7 in; translational velocity transducer FS 248, BL 70, WL 265 in. Test data 100 samples/s, filter break 30 Hz.
+# figure: the App. D or E figure plotting the file (none: not plotted).
+file,flight,run,figure,gross_weight_lbm,cg_station_in,cg_waterline_in,density_altitude_ft,pressure_altitude_ft,equivalent_airspeed_kt,rotor_speed_rad_s
+102,18,20,D16,15990,348.8,231.7,6809,5500,93.0,27.0
+103,18,10,D17,16150,349.5,231.6,6565,5256,91.9,26.86
+201,47,27,D1,15870,359.3,232.6,6658,5582,0,27.0
+202,47,31,D2,15760,359.2,232.7,6673,5493,0,27.0
+204,48,21,D3,15950,359.4,232.5,6510,5370,0,27.0
+205,48,23,E1,15870,359.4,232.6,6777,5584,0,27.0
+206,48,26,none,15720,359.2,232.7,6834,5562,0,27.0
+209,49,35,D5,15750,359.3,232.7,6659,5742,0,26.93
+210,50,27,E2,15940,359.4,243.8,6705,5776,0,26.90
+212,50,24,D4,16030,359.4,232.5,6296,5411,0,26.87
+401,45,16,D13,16530,359.6,232.3,5084,4484,93.3,27.0
+403,45,44,none,15840,359.5,232.6,6270,5641,91.0,27.05
+404,46,12,D15,16540,359.5,232.3,5001,4455,92.8,27.0
+405,46,14,D8,16490,359.5,232.3,4872,4401,55.8,27.01
+409,43,15,E3,16410,359.6,232.3,4360,4556,93.3,26.53
+412,49,16,none,16470,359.7,232.3,4995,4554,92.8,26.95
+502,69,18,D11,16110,351.1,232.4,6268,4969,56.9,27.0
+503,69,20,D12,16050,351.1,232.4,6313,5020,54.6,27.0
+504,14,23,D6,15770,348.3,231.7,5718,4514,54.4,26.57
+505,14,24,none,15760,348.3,231.7,5796,4636,55.0,26.59
+509,25,47,D7,15510,352.0,232.0,6969,5953,53.1,26.85
+510,29,30,D9,15720,351.4,231.8,5930,5515,53.96,26.90
+512,29,36,D10,15600,351.4,231.9,5631,5948,53.1,26.90
+706,17,48,D14,15410,351.9,232.1,7427,6450,92.8,26.90
+710,18,33,none,15740,347.6,231.8,7015,5636,89.8,27.03
+711,18,37,none,15690,347.4,231.8,6988,5615,90.3,27.01

@@ -2,7 +2,7 @@
 
 Reads the as-printed constants in data/uh60a/genhel/ (GenHel, NASA CR-166309) and writes the
 whole-aircraft config the model loads (DECISIONS.md D-034), plus the validation variants at
-the weight and CG of a published test (D-035 M7c amendment; VARIANTS below):
+the weight and CG of a published test (D-035 M7c amendment, D-046; VARIANTS below):
 
     python3 tools/build_uh60a_config.py            # write the configs
     python3 tools/build_uh60a_config.py --check    # fail if a config is stale
@@ -53,6 +53,49 @@ VARIANTS = {
         "Fletcher, 21st ERF (1995) Paper VII-4, p. VII-4-6: takeoff gross weight approximately "
         "14,350 lb, CG at station 360; no waterline given, so GenHel's WLCG is kept (DATA_GAPS.md)"),
 }
+
+# Ballin's transient responses (App. D and E; D-046): one variant per plotted test file, at
+# its gross weight and CG from Table C1 (CG buttline 0, App. C), written to ballin_app_d/.
+# File 210's CG waterline is printed clearly as 243.8 in, against 231.6-232.7 in for every
+# other file (DATA_GAPS.md, doubtful). Its case is run as printed and, for comparison, at the
+# waterline of file 212, the same flight (50) with the same CG station: a stand-in that
+# shows how much the waterline matters, not a reading (uh60a_file210_wl232.5.yaml).
+TABLE_C1 = DATA / "validation" / "ballin_table_c1.csv"
+TABLE_C1_STAND_INS = {"210": ("212", "cg_waterline_in")}  # file: (file it borrows from, field)
+
+
+def table_c1_variants():
+    import csv
+    out = {}
+    with TABLE_C1.open(encoding="utf-8") as f:
+        rows = {r["file"]: r for r in csv.DictReader(line for line in f if not line.startswith("#"))}
+
+    def variant(r, wl, suffix="", note=""):
+        out[f"ballin_app_d/uh60a_file{r['file']}{suffix}.yaml"] = (
+            float(r["gross_weight_lbm"]), float(r["cg_station_in"]), 0.0, float(wl),
+            f"Ballin, NASA TM-88360 (1987), Table C1 (p. 37), file {r['file']} (Fig. "
+            f"{r['figure']}): gross weight {r['gross_weight_lbm']} lb, CG station "
+            f"{r['cg_station_in']} in, CG waterline {r['cg_waterline_in']} in; CG buttline 0 "
+            f"(App. C){note}")
+
+    for r in rows.values():
+        if r["figure"] == "none":
+            continue
+        doubtful = r["file"] in TABLE_C1_STAND_INS
+        variant(r, r["cg_waterline_in"],
+                note=". CG waterline as printed, doubtful (DATA_GAPS.md)" if doubtful else "")
+        if doubtful:
+            other, field = TABLE_C1_STAND_INS[r["file"]]
+            assert field == "cg_waterline_in"
+            wl = rows[other][field]
+            variant(r, wl, f"_wl{wl}",
+                    f". STAND-IN: CG waterline {wl} in, file {other}'s (the same flight), in "
+                    f"place of the printed {r[field]} in, which is doubtful (DATA_GAPS.md); "
+                    "for comparison only, not a reading")
+    return out
+
+
+VARIANTS.update(table_c1_variants())
 
 SLUG_LBM = 32.17404855643044  # lbm per slug (g0 / ft)
 LBF_LBM = 1.0                 # a GenHel weight in lb is the same number in lbm
@@ -617,12 +660,23 @@ components:
     return text
 
 
+def relocate(text, name):
+    """Config text written to a subdirectory of DATA (name "dir/file.yaml"): the table paths,
+    relative to the config's own directory, gain one "../" per level."""
+    up = "../" * name.count("/")
+    if not up:
+        return text
+    import re
+    return re.sub(r"([\s{:,])([A-Za-z0-9_][A-Za-z0-9_./-]*\.csv)", r"\g<1>" + up + r"\g<2>", text)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="fail if the config is stale")
     args = parser.parse_args()
     gain, mode = dynamic_twist_tables()
-    outputs = [(OUT, build())] + [(DATA / name, build(name)) for name in VARIANTS] + [
+    outputs = [(OUT, build())] + [(DATA / name, relocate(build(name), name))
+                                  for name in VARIANTS] + [
         (DATA / "dynamic_twist_gain.csv", gain), (DATA / "dynamic_twist_mode.csv", mode)]
     stale = 0
     for path, text in outputs:
@@ -632,6 +686,7 @@ def main():
                       file=sys.stderr)
                 stale = 1
             continue
+        path.parent.mkdir(exist_ok=True)
         path.write_text(text, encoding="utf-8")
         print(f"wrote {path.relative_to(ROOT)}")
     return stale

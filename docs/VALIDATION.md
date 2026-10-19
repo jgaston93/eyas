@@ -739,7 +739,8 @@ Every M7c difference that isn't explained by the data's accuracy, with where it 
 | Yaw rate to collective, hover | −3.8 dB mean, +43° | Rotor speed and engine dynamics (Fletcher) | M9 drivetrain |
 | Yaw rate to collective, 80 kt | −8 dB | Unexplained; Fletcher's BE model misses it too | Parked |
 | Tail-rotor torque | Not modelled | DATA_GAPS.md | M9 |
-| Steady turns (B5), step responses (App. D) | Not compared | Needs an interface change, lag and the AFCS | M8 or later (D-035) |
+| Steady turns (B5) | Not compared | Needs an interface change | M8 or later (D-035) |
+| Step responses (App. D and E) | Reported | Below, "Ballin App. D and E" | D-046 |
 
 **Builds:** all 312 tests pass with GCC 13.3 and Clang 18.1 (Debug), including both `BallinTrim` gates.
 
@@ -1197,3 +1198,54 @@ GenHel's SAS (Figs. 5.1.3(a)–(c): a digital and an analog channel per axis, th
 **Cost.** `eyas_bench` (Release, GCC 13.3, the development machine): 13.6–14.0 µs mean per physics step (M8a: 12.5 µs, before the whole flight control system); worst `advance()` 556 µs against the D-005 budget of 8333 µs. Computing the SAS signals once per derivative call (code review) saved about 0.2 µs per step.
 
 **Builds:** all 404 tests pass with GCC 13.3 (Release) and all 405 with GCC 13.3 and Clang 18.1 (Debug). In a Rocky Linux 9 container (GCC 11, Release) all 403 passed with and without GLFW before the code-review fixes; CI's Rocky job covers the final state. Under ASan+UBSan the 95 new and changed tests pass, and the 34 the review fixes touched again after them (SAS, flight control, units, trim, the linearization tests touched, aircraft data, the station's controls, mapping and recorder). `Trim.Uh60aTrimsFromHoverTo150Knots` now takes 14 min there (13.7 s in Release, with the longer trims), so it and the two new SAS trim tests join CI's `SLOW_TESTS`; the nightly job runs them. clang-format is clean; clang-tidy is clean on the changed files, and CI now runs it on `src/control/` too (M8c1 left it out).
+
+## Ballin App. D and E — step responses (2026-10-19; readings reviewed)
+
+Ballin, NASA TM-88360 (1987), App. D (17 cases: Ames real-time GenHel against USAAEFA flight test) and App. E (3 cases, with the Sikorsky GenHel too), deferred from M7c (D-035) and taken up now that the flight control system is in (D-046). Each case is trimmed at its Table C1 weight, CG and atmosphere, the stabilator held at the control system's trim incidence, and flown for 6 s through the digitized control histories, as Ballin flew the Ames simulation. Reported, not gated (D-046). The readings were checked by a human reviewer, panel by panel, against overlays on the scan (DATA_GAPS.md); 40 stretches the tool misread were traced by hand by the reviewer and replace its readings. E2 is flagged: Table C1 prints its CG waterline as 243.8 in, 11 in above every other file and doubtful (DATA_GAPS.md), so it is flown both as printed and with file 212's 232.5 in (the same flight) as a stand-in; its Sikorsky GenHel vertical acceleration was not accepted in review and is left out.
+
+Generator `eyas_ballin_app_d_cases` (`tests/validation/ballin_app_d_cases.cpp`), plots and `ballin_app_d_differences.csv` from `tools/plot_ballin_app_d.py`; nightly in `full-verification.yml`.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Every case trims at its test conditions | ✅ | 20 of 20, E2 at both waterlines, with both servo sets; no unconverged evaluation in flight. The held stabilator comes out at 39° in hover (the schedule's stop), 22–25° at 60 kt and 3.3–3.9° at 100 kt; Ballin quotes 3.75° from the control system for a 100 kt case (p. 13). |
+| Readings reviewed | ✅ | 206 of 206 panels checked (2026-10-18/19); 205 accepted, E2's vertical acceleration not (the Sikorsky GenHel's line is buried in the Ames one). DATA_GAPS.md. |
+| Gate | — | To be chosen from these results (D-046). |
+
+**On-axis response,** RMS difference over the 2 s from the stepped control's first movement, Eyas with GenHel's servos unless marked; the last column is Ballin's own simulation against the flight test, for scale:
+
+| Fig. | Input | On-axis | Eyas − Ames GenHel | Eyas (Ames servos) − Ames GenHel | Eyas − flight test | Ames GenHel − flight test |
+|---|---|---|---|---|---|---|
+| D1 | 1-in. right cyclic, hover | roll rate [deg/s] | 4.41 | 4.42 | 1.21 | 3.58 |
+| D2 | 1-in. left cyclic, hover | roll rate [deg/s] | 6.98 | 6.96 | 1.26 | 6.28 |
+| D3 | 0.5-in. forward cyclic, hover | pitch rate [deg/s] | 1.18 | 1.13 | 0.96 | 2.13 |
+| D4 | 1-in. up collective, hover | vertical accel. [ft/s²] | 0.78 | 0.55 | 0.79 | 0.71 |
+| D5 | 1-in. left pedal, hover | yaw rate [deg/s] | 2.39 | 2.06 | 5.12 | 2.77 |
+| D6 | 1-in. left cyclic, 60 kt | roll rate [deg/s] | 1.72 | 1.56 | 0.59 | 1.33 |
+| D7 | 1-in. aft cyclic, 60 kt | pitch rate [deg/s] | 1.17 | 0.93 | 1.85 | 1.50 |
+| D8 | 0.5-in. down collective, 60 kt | vertical accel. [ft/s²] | 0.45 | 0.42 | 1.34 | 1.14 |
+| D9 | 0.5-in. up collective, 60 kt | vertical accel. [ft/s²] | 0.77 | 0.71 | 0.87 | 1.51 |
+| D10 | 1-in. down collective, 60 kt | vertical accel. [ft/s²] | 1.29 | 1.14 | 1.40 | 2.54 |
+| D11 | 0.5-in. right pedal, 60 kt | yaw rate [deg/s] | 1.18 | 0.99 | 2.17 | 2.54 |
+| D12 | 1-in. left pedal, 60 kt | yaw rate [deg/s] | 0.90 | 0.86 | 2.70 | 3.19 |
+| D13 | 1-in. aft cyclic, 100 kt | pitch rate [deg/s] | 0.78 | 0.53 | 1.35 | 1.28 |
+| D14 | 1-in. forward cyclic, 100 kt | pitch rate [deg/s] | 1.71 | 1.64 | 2.09 | 1.91 |
+| D15 | 0.5-in. up collective, 100 kt | vertical accel. [ft/s²] | 1.37 | 1.34 | 5.30 | 4.12 |
+| D16 | 1-in. right pedal, 100 kt | yaw rate [deg/s] | 1.62 | 1.27 | 2.94 | 2.78 |
+| D17 | 1-in. left pedal, 100 kt | yaw rate [deg/s] | 3.74 | 3.96 | 2.98 | 5.60 |
+| E1 | 0.5-in. aft cyclic, hover | pitch rate [deg/s] | 1.40 | 1.33 | 2.07 | 3.39 |
+| E2 ⚑ | 0.5-in. down collective, hover (WL 243.8 as printed) | vertical accel. [ft/s²] | 0.49 | 0.37 | 1.25 | 1.03 |
+| E2 ⚑ | same, WL 232.5 (stand-in) | vertical accel. [ft/s²] | 0.49 | 0.36 | 1.24 | 1.03 |
+| E3 | 1-in. right lateral, 100 kt | roll rate [deg/s] | 1.55 | 1.21 | 1.12 | 1.57 |
+
+**Findings.**
+- *Against the flight test,* Eyas is closer than Ballin's GenHel on-axis in 11 of the 20 cases, and within 0.1 of it in two more (D4, D13). The largest gains are the hover lateral steps: from its trim, the Ames GenHel's roll rate peaks at 14.1 deg/s in D1 and −20.4 deg/s in D2, the test at 9.4 and −13.3, Eyas at 10.1 and −14.1. In App. E the Sikorsky GenHel is 2.81 (E1) and 0.98 (E3) from the test, so Eyas is closer than both GenHels in E1 and just behind the Sikorsky one in E3.
+- *Against the Ames GenHel,* Eyas is within 2.4 units RMS on-axis except those two hover lateral steps and D17 (3.7). Ames's faster servos bring Eyas closer to the Ames curves in 18 of the 20 cases, by up to 0.35, and the two Eyas runs are otherwise hard to tell apart over 2 s.
+- *Hover left pedal (D5)* is the one case where Eyas is clearly further from the test than GenHel (yaw rate 5.12 against 2.77 deg/s RMS): Ballin attributes the hover yaw response to the rotor-speed and engine dynamics (p. 12), which Eyas gets at M9. D15 (up collective, 100 kt) is the other case more than 0.5 further, where both simulations are far from the test (5.3 and 4.1 ft/s²).
+- *E2 (⚑, down collective in hover)* is insensitive to its doubtful waterline. Lowering the CG from 243.8 to 232.5 in changes Eyas's trim pitch from 4.78° to 4.52° and roll from −2.55° to −2.40°, and every on-axis and off-axis RMS difference by 0.17 or less (pitch rate, the most affected, 0.67 → 0.83 deg/s from the test). That is well below Eyas's distance from either GenHel, so neither the test nor Ballin's curves can tell which waterline Ballin's simulations used. On-axis, Eyas is 0.22 ft/s² further from the test than the Ames GenHel. Off-axis, both GenHels pitch nose-up by about 9° over the 6 s and Eyas by about 5°, while the test holds within 1°; Ballin puts the hover collective response down to the rotor-speed and engine dynamics (p. 12), M9.
+- *Off-axis* (pitch and yaw to lateral, roll to longitudinal): all three simulations miss parts of the test's off-axis response, as Ballin says of GenHel (p. 11, the linear mechanical mixing). Not yet compared in detail.
+
+![D1](validation/m8/ballin_app_d_d1.png)
+![D13](validation/m8/ballin_app_d_d13.png)
+![D4](validation/m8/ballin_app_d_d4.png)
+![D5](validation/m8/ballin_app_d_d5.png)
+![E2, both waterlines](validation/m8/ballin_app_d_e2.png)

@@ -124,6 +124,13 @@ target_link_libraries(eyas_m7c_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_m7c_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m7c_cases)
 
+# Writes Eyas's responses to Ballin's App. D and E inputs (D-046; tools/plot_ballin_app_d.py).
+add_executable(eyas_ballin_app_d_cases validation/ballin_app_d_cases.cpp)
+target_include_directories(eyas_ballin_app_d_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_ballin_app_d_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_ballin_app_d_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_ballin_app_d_cases)
+
 add_executable(eyas_m7c_fletcher validation/m7c_fletcher.cpp)
 target_include_directories(eyas_m7c_fletcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m7c_fletcher PRIVATE eyas_internal)
