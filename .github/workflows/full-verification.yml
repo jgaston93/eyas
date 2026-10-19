@@ -89,6 +89,10 @@ jobs:
           ./build/release/tests/eyas_m7c_fletcher validation-output/data/m7c_fletcher
           python tools/plot_m7c_fletcher.py validation-output/data/m7c_fletcher validation-output/plots/m7c_fletcher
           echo "::endgroup::"
+          echo "::group::ballin_app_d"
+          ./build/release/tests/eyas_ballin_app_d_cases validation-output/data/ballin_app_d
+          python tools/plot_ballin_app_d.py validation-output/data/ballin_app_d validation-output/plots/ballin_app_d
+          echo "::endgroup::"
       - uses: actions/upload-artifact@v4
         with:
           name: validation-output-${{ github.sha }}

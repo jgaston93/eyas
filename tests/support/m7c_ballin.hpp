@@ -93,9 +93,10 @@ struct Averages {
 };
 
 // Loads averaged over the trimmed revolution with the body held (the trim's
-// own orbit, at its own step), as m7_cases.cpp.
-inline Averages revolution_average(const Uh60aHarness& ac, std::vector<double> x,
-                                   const Controls& c) {
+// own orbit, at its own step), as m7_cases.cpp, on the day `env` (the one
+// the trim was solved on).
+inline Averages revolution_average(const Uh60aHarness& ac, std::vector<double> x, const Controls& c,
+                                   const Environment& env = {}) {
     const auto& mr = ac.get<BladeElementRotor>("main_rotor");
     const auto& af = ac.get<AirframeAero>("airframe");
     const double T = trim_period(ac.executive());
@@ -103,25 +104,26 @@ inline Averages revolution_average(const Uh60aHarness& ac, std::vector<double> x
     Averages a;
     double t = 0.0;
     for (int k = 0; k < N; ++k) {
-        (void)ac.evaluate(t, x, c, Environment{});
-        const SimContext ctx = ac.context(t, x, c, Environment{});
+        (void)ac.evaluate(t, x, c, env);
+        const SimContext ctx = ac.context(t, x, c, env);
         a.power += mr.evaluate(ctx, ac.states(x, ac.index("main_rotor"))).power / N;
         a.stabilator +=
             af.evaluate(ctx, ac.states(x, ac.index("airframe"))).stabilator_incidence / N;
-        ac.hold(t, x, c, Environment{}, T / N, 1);
+        ac.hold(t, x, c, env, T / N, 1);
     }
     return a;
 }
 
-// The config text at `path` with its table paths made absolute, so that it
-// can be edited and read from a string.
+// The config text at `path` with its table paths (relative, "../" allowed)
+// made absolute, so that it can be edited and read from a string.
 inline std::string config_text(const std::filesystem::path& path) {
     std::ifstream f(path);
     std::stringstream ss;
     ss << f.rdbuf();
     const std::string dir = path.parent_path().string() + "/";
-    return std::regex_replace(
-        ss.str(), std::regex(R"(([\s{:,])([A-Za-z0-9_][A-Za-z0-9_./-]*\.csv))"), "$1" + dir + "$2");
+    return std::regex_replace(ss.str(),
+                              std::regex(R"(([\s{:,])([A-Za-z0-9_.][A-Za-z0-9_./-]*\.csv))"),
+                              "$1" + dir + "$2");
 }
 
 // The config text at `path` with the stabilator held at `incidence_deg`
