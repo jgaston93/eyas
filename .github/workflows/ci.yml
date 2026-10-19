@@ -9,8 +9,15 @@ permissions:
   contents: read
 
 env:
-  # Tests too slow to run under ASan on every push (also in full-verification.yml).
-  SLOW_TESTS: ^(Linearize\.(PeriodicModelMatchesTheNonlinearResponse|HoverRateDerivativesMatchPadfield)|BallinTrim\..*|Trim\.(Uh60aTrimsFromHoverTo150Knots|SasAndPbaMoveOnlyTheStick|SasDampsTheDutchRoll)|Uh60aFps\..*|RealTime\.(HeldOrbitRepeatsFor60s|ParkedAircraftSettlesFor60s|AfcsFreeFlightFor60s)|Station(Starts|RealTime|Recorder)\..*|ExampleStation\..*)$
+  # The slow tests: every test over about 1 s in Release (whole-aircraft
+  # trims, linearizations and flights, long runs, the station's start points;
+  # 49 tests, 317 of the suite's 332 s). On a PR they run in the Release
+  # jobs only (GCC and Rocky); the Debug, Clang and ASan jobs skip them, as
+  # those builds are 3-60x slower and look for memory, UB and assertion
+  # faults that the fast tests reach through the same code. The nightly
+  # full-verification.yml runs every test under ASan (a Debug build) and
+  # Clang. Add a test here if it takes more than about 1 s in Release.
+  SLOW_TESTS: ^(BallinTrim\..*|Uh60aFps\..*|Station(Starts|RealTime|Recorder)\..*|ExampleStation\..*|Linearize\.(PeriodicModelMatchesTheNonlinearResponse|HoverRateDerivativesMatchPadfield|GravityAndKinematicEntriesAreExact|SymmetricHoverIsConstantCoefficient|FeedNothingStatesSplitTheEigenvalues|HoverHeaveDampingMatchesPadfield)|Trim\.(Uh60aTrimsFromHoverTo150Knots|SasAndPbaMoveOnlyTheStick|SasDampsTheDutchRoll|Uh60aFliesOnFromTrim|FcsKickDiesOut|IndependentOfTheIntegrationStep|IndependentOfHeadingAndSteadyWind|FcsStartTransientIsSmall)|TrimAtRoll\.(InvertsTheSideslipTrim|ZeroRollIsReached)|RealTime\.(HeldOrbitRepeatsFor60s|ParkedAircraftSettlesFor60s|AfcsFreeFlightFor60s|HostRateDecoupling|JitteredHostRate)|FlapAnchors\.(HoverConingMatchesJohnson|CyclicStepPhaseLag|CentreSpringFlappingMatchesPadfield|OffsetHingeFlappingMatchesJohnson)|Executive\.OneHourAtSixtyHzGivesExactStepCount|Bench\.Smoke|DynamicTwist\.Uh60aTrimIsGenHelsFixedPointAndIndependentOfTheLag)$
 
 jobs:
   ubuntu:
@@ -48,13 +55,13 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
-      # The ASan build skips the slowest tests (sanitizers slow them about
-      # 60x); full-verification.yml runs them under ASan nightly and on
-      # demand. Every other job runs them on every push.
+      # Release runs every test; Debug, Clang and ASan skip the slow ones
+      # (SLOW_TESTS above), which full-verification.yml runs nightly and
+      # on demand.
       - name: Test
         run: >-
           ctest --preset ${{ matrix.preset }} --parallel "$(nproc)"
-          ${{ matrix.preset == 'asan' && format('--exclude-regex "{0}"', env.SLOW_TESTS) || '' }}
+          ${{ matrix.preset != 'release' && format('--exclude-regex "{0}"', env.SLOW_TESTS) || '' }}
       - name: Compiler cache statistics
         run: ccache --show-stats
 
