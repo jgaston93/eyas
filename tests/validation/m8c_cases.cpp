@@ -1,4 +1,4 @@
-// Writes the M8c1 data to CSV for VALIDATION.md (tools/plot_m8c.py; D-045):
+// Writes the M8c data to CSV for VALIDATION.md (tools/plot_m8c.py; D-045):
 // the flying UH-60A (data/uh60a/uh60a.yaml), ISA sea level, level flight,
 // - trims from hover to 150 kt with the flight control system, with the
 //   stabilator's lateral-acceleration feedback on and zeroed;
@@ -8,7 +8,15 @@
 //   flight control system started on its free-flight orbit (D-045
 //   amendment) and at its held-body values (before it);
 // - the stabilator's response to a 0.5° kick of its servo, with the
-//   accelerometer and pitch gyro kicked too (Trim.FcsKickDiesOut).
+//   accelerometer and pitch gyro kicked too (Trim.FcsKickDiesOut);
+// and the M8c2 data:
+// - the trims' stick with the SAS and PBA on against off
+//   (Trim.SasAndPbaMoveOnlyTheStick);
+// - the modes with the SAS and PBA off and on, the flight control system's
+//   states kept dynamic (condense() with them retained), and with the SAS
+//   off and them quasi-static, as M8c1 had them;
+// - the yaw rate after a 0.05 rad/s kick, SAS off and on
+//   (Trim.SasDampsTheDutchRoll).
 //
 // Usage: eyas_m8c_cases <output-dir>
 
@@ -226,6 +234,167 @@ void start_and_kick(const std::filesystem::path& dir) {
     }
 }
 
+// ---- M8c2 ----------------------------------------------------------------------
+
+constexpr AfcsSwitches kAllOn{true, true, true};
+
+void sas_trims(const std::filesystem::path& dir) {
+    std::ofstream f(dir / "m8c2_trims.csv");
+    f.precision(12);
+    f << "# UH-60A level trims, SAS and PBA off and on, ISA sea level (M8c2, D-045)\n"
+         "afcs,knots,collective,lon_cyclic,lat_cyclic,pedal,pitch_deg,roll_deg\n";
+    const Executive ex = executive(flying_text(), "flying");
+    TrimResult prev;
+    bool have = false;
+    for (int kt = 0; kt <= 150; kt += 10) {
+        for (const bool on : {false, true}) {
+            TrimCondition c = level(kt);
+            if (on) {
+                c.afcs = kAllOn;
+            }
+            std::vector<double> x;
+            const TrimResult r = solve_trim(ex, c, have ? &prev : nullptr, x);
+            require(r.converged, "trim did not converge at " + std::to_string(kt) + " kt");
+            if (!on) {
+                prev = r;
+                have = true;
+            }
+            f << (on ? 1 : 0) << ',' << kt << ',' << r.controls.collective << ','
+              << r.controls.lon_cyclic << ',' << r.controls.lat_cyclic << ',' << r.controls.pedal
+              << ',' << r.pitch / kDegree << ',' << r.roll / kDegree << '\n';
+        }
+    }
+    std::cout << "M8c2 trims done\n";
+}
+
+// The flight control system's states in a linear model, to keep dynamic in
+// condense(), and their weights for modes(): one over a typical size, with
+// the sensors' and filters' tenfold below the body's (they echo the body's
+// rates and attitudes, so equal weights would give every body mode half to
+// them); channel signals per 0.1 %, actuators per 0.025 in.
+void fcs_retained(const LinearModel& m, std::vector<std::size_t>& retained,
+                  std::vector<double>& weights) {
+    using F = GenHelFcs;
+    for (std::size_t i = 0; i < m.states.size(); ++i) {
+        if (m.states[i].rfind("fcs[", 0) != 0) {
+            continue;
+        }
+        const auto j = static_cast<std::size_t>(std::stoi(m.states[i].substr(4)));
+        double w = 1.0;  // rad, rad/s: a tenth of the body's
+        if (j == F::kAccelY || j == F::kAccelY + 1 || j == F::kAirspeedLag || j == F::kYawAccelD) {
+            w = 0.1;  // m/s², m/s
+        }
+        for (const std::size_t k : {F::kPitchWashD, F::kPitchHoldD, F::kRollHoldD, F::kYawWashD,
+                                    F::kYawHoldD, F::kPbaHold, F::kPba}) {
+            if (j == k) {
+                w = 10.0;  // fractions
+            }
+        }
+        for (const std::size_t k : {F::kPitchAct, F::kRollAct, F::kYawAct}) {
+            if (j == k || j == k + 1) {
+                w = 40.0;  // m, m/s
+            }
+        }
+        if (j == F::kYawFade) {
+            w = 0.0;
+        }
+        retained.push_back(i);
+        weights.push_back(w);
+    }
+}
+
+void sas_modes(const std::filesystem::path& dir) {
+    std::ofstream f(dir / "m8c2_modes.csv");
+    f.precision(12);
+    f << "# UH-60A modes, SAS and PBA off and on (M8c2): 'quasi-static' condenses every "
+         "non-body state (M8c1); 'dynamic' keeps the flight control system's states\n"
+         "variant,knots,label,re,im,wn,zeta,longitudinal,body\n";
+    const Executive ex = executive(flying_text(), "flying");
+    TrimResult prev;
+    bool have = false;
+    // Not 60 kt: a level trim's body-x airspeed sits on the SAS's switches.
+    for (const double kt : {0.0, 30.0, 90.0, 120.0, 150.0}) {
+        for (const bool on : {false, true}) {
+            TrimCondition c = level(kt);
+            if (on) {
+                c.afcs = kAllOn;
+            }
+            std::vector<double> x;
+            const TrimResult r = solve_trim(ex, c, have ? &prev : nullptr, x);
+            require(r.converged, "trim did not converge at " + std::to_string(kt) + " kt");
+            if (!on) {
+                prev = r;
+                have = true;
+            }
+            const LinearModel m = linearize(ex, c, r);
+            require(m.unconverged == 0, "linearize: unconverged evaluations");
+            std::vector<std::size_t> retained;
+            std::vector<double> weights;
+            fcs_retained(m, retained, weights);
+            const auto write = [&](const std::string& variant, const std::vector<Mode>& ms) {
+                for (const Mode& md : ms) {
+                    f << variant << ',' << kt << ',' << md.label << ',' << md.eigenvalue.real()
+                      << ',' << md.eigenvalue.imag() << ',' << md.frequency << ',' << md.damping
+                      << ',' << md.longitudinal << ',' << md.body << '\n';
+                }
+            };
+            if (!on) {
+                write("off_quasi_static", modes(condense(m), r.vel_b.x()));
+            }
+            write(on ? "on" : "off", modes(condense(m, retained), r.vel_b.x(), weights));
+        }
+        std::cout << "M8c2 modes at " << kt << " kt done\n";
+    }
+}
+
+void sas_kick(const std::filesystem::path& dir) {
+    std::ofstream f(dir / "m8c2_kick.csv");
+    f.precision(12);
+    f << "# Yaw rate after a 0.05 rad/s kick, kicked minus unkicked, SAS and PBA off and on "
+         "(M8c2)\nafcs,knots,time_s,yaw_rate_difference_deg_s\n";
+    const Executive ex = executive(flying_text(), "flying");
+    TrimResult prev;
+    bool have = false;
+    for (const double kt : {0.0, 30.0, 60.0, 90.0, 120.0, 150.0}) {
+        for (const bool on : {false, true}) {
+            TrimCondition c = level(kt);
+            if (on) {
+                c.afcs = kAllOn;
+            }
+            std::vector<double> x;
+            const TrimResult r = solve_trim(ex, c, have ? &prev : nullptr, x);
+            require(r.converged, "trim did not converge at " + std::to_string(kt) + " kt");
+            if (!on) {
+                prev = r;
+                have = true;
+            }
+            if (kt < 90.0) {
+                continue;
+            }
+            const Environment env = trim_environment(c);
+            const double dt = trim_period(ex) / 64;
+            const int steps = static_cast<int>(12.0 / dt);
+            const auto controls = [&](double) { return r.controls; };
+            std::size_t missed = 0;
+            const auto base = test::free_flight(ex, env, x, controls, dt, steps, &missed);
+            std::vector<double> xk = x;
+            xk[body_layout::kOmega + 2] += 0.05;
+            const auto kicked = test::free_flight(ex, env, xk, controls, dt, steps, &missed);
+            require(missed == 0, "free flight: unconverged evaluations");
+            for (int n = 0; n <= steps; n += 4) {
+                const auto i = static_cast<std::size_t>(n);
+                f << (on ? 1 : 0) << ',' << kt << ',' << n * dt << ','
+                  << (kicked[i][body_layout::kOmega + 2] - base[i][body_layout::kOmega + 2]) /
+                         kDegree
+                  << '\n';
+            }
+        }
+        if (kt >= 90.0) {
+            std::cout << "M8c2 kick at " << kt << " kt done\n";
+        }
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -239,6 +408,9 @@ int main(int argc, char** argv) {
         trims(dir);
         modes_csv(dir);
         start_and_kick(dir);
+        sas_trims(dir);
+        sas_modes(dir);
+        sas_kick(dir);
     } catch (const std::exception& e) {
         std::cerr << "eyas_m8c_cases: " << e.what() << "\n";
         return 1;

@@ -116,3 +116,5 @@ KRPPYA      0.296      %/(deg/s)    high
 LMYA        5.5        %            high  (+-)
 V_SW        60         kt           high  (VG60SW; both channels)
 T_FADE      2.0        s            high  ("2 SEC FADE")
+KYA_HALF    0.5        %/%          high  (the yaw analog channel's ".5%/%" block)
+ZOH_SAS     0.025      s            high  (the digital zero-order hold, "t = .025", each axis)

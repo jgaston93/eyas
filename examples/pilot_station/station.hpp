@@ -19,6 +19,9 @@ struct StationOptions {
     // leave the gear clear of the ground (checked at init).
     double hover_height = 30.48;
     int rate = 60;  // [Hz] host frame rate
+    // The flight control system's switches at every start: the SAS and PBA
+    // on, as the aircraft flies (M8c2, D-045). The pilot toggles them in flight.
+    eyas::AfcsSwitches afcs{true, true, true};
 };
 
 // A place to fly from, prepared at init so a reposition is a restore()

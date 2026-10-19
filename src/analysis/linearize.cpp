@@ -496,7 +496,14 @@ Eigen::MatrixXcd frequency_response(const Eigen::MatrixXd& A, const Eigen::Matri
     return lu.solve(B.cast<std::complex<double>>());
 }
 
-std::vector<Mode> modes(const CondensedModel& m, double u) {
+std::vector<Mode> modes(const CondensedModel& m, double u,
+                        const std::vector<double>& retained_weights) {
+    const auto extra = static_cast<std::size_t>(m.A.rows()) - 9;
+    if (retained_weights.size() != extra) {
+        // Weighing retained states zero would label their own roots as body
+        // modes (code review), so a caller must say how much each counts.
+        throw InitError("modes: one weight per retained state");
+    }
     const Eigen::EigenSolver<MatX> es(m.A);
     // Weights: 1 m/s, 0.1 rad/s, 0.1 rad (states u v w p q r φ θ ψ_h).
     const std::array<double, 9> w = {1.0, 1.0, 1.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0};
@@ -516,9 +523,18 @@ std::vector<Mode> modes(const CondensedModel& m, double u) {
         }
         const double lon = e[0] + e[2] + e[4] + e[7];
         const double lat = e[1] + e[3] + e[5] + e[6] + e[8];
-        md.longitudinal = lon / (lon + lat);
+        md.longitudinal = lon + lat > 0.0 ? lon / (lon + lat) : 0.0;
+        double rest = 0.0;
+        for (std::size_t k = 0; k < retained_weights.size(); ++k) {
+            rest += std::norm(es.eigenvectors()(static_cast<Eigen::Index>(9 + k), i) *
+                              retained_weights[k]);
+        }
+        // No body motion at all (a retained state's own root): all control system.
+        md.body = lon + lat > 0.0 ? (lon + lat) / (lon + lat + rest) : 0.0;
         const bool oscillatory = l.imag() > 1e-9 && md.damping < 0.9;
-        if (md.frequency < 1e-6) {
+        if (md.body < 0.5) {
+            md.label = "control system";
+        } else if (md.frequency < 1e-6) {
             md.label = "heading";
         } else if (lon >= lat) {
             if (oscillatory) {
@@ -583,16 +599,29 @@ std::vector<std::size_t> feed_nothing_states(const MatX& A, std::size_t first) {
     return s;
 }
 
-CondensedModel condense(const LinearModel& m) {
+CondensedModel condense(const LinearModel& m, const std::vector<std::size_t>& retained) {
     constexpr std::size_t nb = 9;  // u v w p q r φ θ ψ_h
     const auto n = static_cast<std::size_t>(m.A.rows());
-    // Keep everything but h (as Padfield's Eq. 4.44).
+    std::vector<bool> is_retained(n, false);
+    for (const std::size_t i : retained) {
+        if (i < m.body_size || i >= n || is_retained[i]) {
+            throw InitError("condense: retained states must be distinct non-body states");
+        }
+        is_retained[i] = true;
+    }
+    // Keep everything but h (as Padfield's Eq. 4.44): the body states, the
+    // retained ones, then the rest.
     std::vector<std::size_t> keep;
-    for (std::size_t i = 0; i < n; ++i) {
-        if (i < nb || i >= m.body_size) {
+    for (std::size_t i = 0; i < nb; ++i) {
+        keep.push_back(i);
+    }
+    keep.insert(keep.end(), retained.begin(), retained.end());
+    for (std::size_t i = m.body_size; i < n; ++i) {
+        if (!is_retained[i]) {
             keep.push_back(i);
         }
     }
+    const std::size_t lead = nb + retained.size();  // never removed nor condensed
     const auto sub = [](const MatX& M, const std::vector<std::size_t>& rows,
                         const std::vector<std::size_t>& cols) {
         MatX S(static_cast<Eigen::Index>(rows.size()), static_cast<Eigen::Index>(cols.size()));
@@ -606,7 +635,7 @@ CondensedModel condense(const LinearModel& m) {
     };
     const MatX A1 = sub(m.A, keep, keep);
     CondensedModel out;
-    std::vector<std::size_t> drop_local = feed_nothing_states(A1, nb);
+    std::vector<std::size_t> drop_local = feed_nothing_states(A1, lead);
     std::vector<bool> dropped(keep.size(), false);
     for (std::size_t j : drop_local) {
         dropped[j] = true;
@@ -618,7 +647,7 @@ CondensedModel condense(const LinearModel& m) {
     std::vector<std::size_t> body;
     std::vector<std::size_t> rest;
     for (std::size_t i = 0; i < keep.size(); ++i) {
-        if (i < nb) {
+        if (i < lead) {
             body.push_back(keep[i]);
         } else if (!dropped[i]) {
             rest.push_back(keep[i]);
@@ -632,6 +661,9 @@ CondensedModel condense(const LinearModel& m) {
     const MatX Bb = sub(m.B, body, inputs);
     const MatX Br = sub(m.B, rest, inputs);
     out.states.assign(m.states.begin(), m.states.begin() + static_cast<std::ptrdiff_t>(nb));
+    for (const std::size_t i : retained) {
+        out.states.push_back(m.states[i]);
+    }
     if (rest.empty()) {
         out.A = Abb;
         out.B = Bb;

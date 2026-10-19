@@ -46,6 +46,43 @@ components:
       pitch_rate_gain: "0.16 s"  # deg per deg/s
       lateral_accel_gain: {gain: "-1.299 deg/(ft/s^2)", from: "30.0 kt", to: "60.0 kt"}
       servo: {a2: "0.0254 s^2", a1: "0.223 s", rate_limit: "7.0 deg/s"}
+    sas:  # Figs. 5.1.3(a)-(c), pp. 5.5-2, 5.5-7 to 5.5-9; fig_5_1_3_sas.txt (M8c2)
+      hold: "0.025 s"  # digital zero-order hold, "airborne computer update delay"
+      switch_speed: "60.0 kt"
+      fade_time: "2.0 s"
+      actuator: {a2: "0.00032 s^2", a1: "0.025 s"}
+      descaling: {pitch: "-0.283 deg/%", roll: "0.16 deg/%", yaw: "-0.298 deg/%"}  # p. 5.5-20
+      pitch:
+        digital: {ad_lag: "0.026 s", rate: {gain: "-0.5425 %/(deg/s)", lag: "0.023 s"}, lagged_rate: {gain: "-0.541 %/(deg/s)", lag: "2.0 s"}, washout: "7.0 s", limit: "5.0 %"}
+        analog: {filter: {gain: 0.1785, lag: "0.022 s"}, washout: "7.0 s", rate: {gain: "-6.194 %/(deg/s)", lag: "0.024 s"}, lagged_rate: {gain: "-6.047 %/(deg/s)", lag: "1.993 s"}, scale: 0.5, limit: "5.5 %"}
+      roll:
+        digital: {ad_lag: "0.026 s", rate_gain: "-0.2085 %/(deg/s)", lagged_rate: {gain: "-0.1035 %/(deg/s)", lag: "1.02 s"}, attitude: {gain: "-0.139 %/deg", limit: "7.0 deg"}, limit: "5.0 %"}
+        analog:
+          attitude_filter: {gain: 0.0885, lag1: "0.0058 s", lag2: "0.00154 s"}
+          shaping: {gain: 1.06, a2: "0.00203 s^2", a1: "0.0655 s", limit: "75.0 deg"}
+          derivative: {gain: 1.24, lag1: "0.0091 s", lag2: "0.00195 s"}
+          rate: {gain: "-1.738 %/(deg/s)", lag: "0.0112 s"}
+          lagged_rate: {gain: "-0.847 %/(deg/s)", lag: "0.996 s"}
+          attitude: {gain: -0.703, limit: "7.0 deg", output_gain: "2.413 %/deg"}
+          limit: "5.5 %"
+      yaw:
+        digital: {ad_lag: "0.026 s", rate: {gain: "-0.557 %/(deg/s)", lag: "0.047 s"}, lagged_rate: {gain: "-0.901 %/(deg/s)", lag: "1.0 s"}, washout: "2.0 s", lateral_accel: {gain: "-1.1 %/(ft/s^2)", lag: "1.0 s"}, roll_rate_gain: "0.1378 %/(deg/s)", limit: "5.0 %"}
+        analog:
+          filter: {gain: 0.072, lag: "0.027 s"}
+          washout: "2.0 s"
+          rate: {gain: "-16.95 %/(deg/s)", lag: "0.047 s"}
+          lateral_accel_gain: "0.0876 (deg/s)/(ft/s^2)"  # KLAYF1; its 0.0001 s lag is unity (p. 5.5-2)
+          lagged: {gain: "-28.11 %/(deg/s)", lag: "1.045 s"}
+          scale: 0.5
+          roll_rate_gain: 0.296  # on the roll analog rate path's output ("B"; DATA_GAPS.md)
+          limit: "5.5 %"
+    pitch_bias:  # Fig. 5.1.4, pp. 5.5-2, 5.5-3, 5.5-10; fig_5_1_4_pba.txt (M8c2)
+      attitude: {gain: "-0.375 %/deg", limit: "20.0 deg"}
+      pitch_rate: {gain: "-0.13125 %/(deg/s)", limit: "34.5 deg/s"}  # on the pitch SAS's A/D output
+      airspeed: {gain: "0.0525 %/kt", from: "80.0 kt", range: "100.0 kt"}
+      bias: "-4.9 %"
+      hold: "0.1 s"
+      actuator: {gain: "10.0 1/s", rate_limit: "3.0 %/s", authority: "15.0 %"}
 
   - type: blade_element_rotor
     name: main_rotor

@@ -6,7 +6,7 @@
 //       [--input gamepad|joystick|mouse|fg|script|none] [--map <file>] [--print-map]
 //       [--controls <csv>]            (for --input script: an eyas_drive control file)
 //       [--start pad|hover|60|120] [--origin <lat deg>,<lon deg>,<alt m>]
-//       [--hover-height <m>] [--rate <Hz>]
+//       [--hover-height <m>] [--rate <Hz>] [--afcs <sas,pba|...|none>]
 //       [--fg <host:port>] [--listen <port>]
 //       [--record <csv>] [--out <csv>] [--duration <s>] [--headless] [--no-pace]
 //       [--view chase|cg|observer] [--screenshot <ppm>] [--no-help]
@@ -19,6 +19,9 @@
 // points are prepared at init: on the pad (settled on the gear, brakes set)
 // and trimmed level flight in hover, at 60 kt and 120 kt, --hover-height
 // (default 100 ft) above the ground, which is level at the origin's altitude.
+// --afcs sets the flight control system's switches at every start (default
+// sas,pba: the SAS and pitch bias actuator on, as the aircraft flies; M8c2);
+// the map's sas_button and pba_button toggle them in flight.
 // --record writes an eyas_drive control file that replays the flight (see
 // its header); --out writes the state history in eyas_drive's format.
 // --headless runs without a window (FlightGear, a script or none);
@@ -50,6 +53,7 @@
 #include <thread>
 #include <vector>
 
+#include "common/afcs.hpp"
 #include "common/control_file.hpp"
 #include "common/frames.hpp"
 #include "common/origin.hpp"
@@ -128,6 +132,12 @@ Options parse(int argc, char** argv) {
             }
         } else if (a == "--rate") {
             opt.station.rate = std::stoi(value());
+        } else if (a == "--afcs") {
+            try {
+                opt.station.afcs = examples::parse_afcs(value());
+            } catch (const std::runtime_error& e) {
+                throw UsageError(e.what());
+            }
         } else if (a == "--fg") {
             opt.fg = value();
         } else if (a == "--listen") {
@@ -375,6 +385,7 @@ int run(const Options& opt) {
         } else {
             applied = station::apply(map.start(), map.deltas());
             applied.brake_left = applied.brake_right = map.brakes_set() ? 1.0 : 0.0;
+            applied.afcs = map.afcs();
         }
         fg.send(st.outputs());
 

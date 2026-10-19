@@ -23,6 +23,7 @@ add_executable(eyas_unit_tests
     unit/test_flap_anchors.cpp
     unit/test_flapping_rotor.cpp
     unit/test_genhel_fcs.cpp
+    unit/test_genhel_sas.cpp
     unit/test_geodesy.cpp
     unit/test_landing_gear.cpp
     unit/test_model.cpp

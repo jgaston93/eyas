@@ -148,8 +148,12 @@ std::vector<Eigen::VectorXd> linear_response(const LinearModel& m, const Eigen::
 // states are u, v, w, p, q, r, φ, θ, ψ_h; the moment rows are Padfield's
 // primed derivatives (Eqs. 4.47–4.48), and gravity and the kinematic terms
 // are included, as in Padfield's App. 4B charts (p. 187).
+// `retained` (indices into m.states, none of them body states) are kept as
+// dynamic states after the body states, in that order, and never removed:
+// for slow non-body states that quasi-static elimination would misstate, e.g.
+// a flight control system's washouts, whose output it sets to zero (M8c2).
 struct CondensedModel {
-    std::vector<std::string> states;
+    std::vector<std::string> states;  // the 9 body states, then the retained ones
     Eigen::MatrixXd A;
     Eigen::MatrixXd B;
     std::vector<std::size_t> dropped;  // retained-model indices removed as feeding nothing
@@ -157,7 +161,7 @@ struct CondensedModel {
 };
 
 // Throws InitError if the quasi-static block is singular.
-CondensedModel condense(const LinearModel& m);
+CondensedModel condense(const LinearModel& m, const std::vector<std::size_t>& retained = {});
 
 // The monodromy matrix Φ(T) of the free system over one revolution, in
 // reduced coordinates with h (options.height must be true, else InitError):
@@ -201,17 +205,25 @@ FloquetModes floquet(const Eigen::MatrixXd& monodromy, double period,
 // oscillating); roll subsidence (p and φ dominant, ω_n > 0.5 rad/s), yaw
 // subsidence (r dominant, ω_n > 0.1 rad/s), spiral (other). ω_n < 1e-6:
 // heading (neutral).
+// With retained states, `retained_weights` gives each one's weight (one over
+// its typical size); body is the body states' weighted share of the
+// eigenvector (0 for a mode with no body motion), and a mode with body < 0.5
+// is labelled "control system".
 struct Mode {
     std::complex<double> eigenvalue;
     double frequency = 0.0;     // ω_n [rad/s]
     double damping = 0.0;       // ζ [-]
-    double longitudinal = 0.0;  // weighted longitudinal share of the eigenvector [-]
+    double longitudinal = 0.0;  // weighted longitudinal share of the body part [-]
+    double body = 1.0;          // weighted body share of the eigenvector [-]
     std::string label;
 };
 
 // The modes of a condensed model about a trim with body x velocity u [m/s],
-// one per conjugate pair (Im λ ≥ 0), slowest first.
-std::vector<Mode> modes(const CondensedModel& m, double u);
+// one per conjugate pair (Im λ ≥ 0), slowest first. Throws InitError unless
+// retained_weights has one weight per retained state (none for a 9-state
+// model).
+std::vector<Mode> modes(const CondensedModel& m, double u,
+                        const std::vector<double>& retained_weights = {});
 
 // Frequency response of ẋ = A x + B u at ω [rad/s]: H(iω) = (iωI − A)⁻¹ B,
 // states by inputs, in the units of x per unit of u (the Laplace transfer

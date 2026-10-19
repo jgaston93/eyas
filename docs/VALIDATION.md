@@ -1071,7 +1071,7 @@ All are fixed with tests (D-044 verification). Two points weren't acted on as st
 
   Nothing points to a fault; re-check after M8c. The open 80 kt speed-stability gap (M_u < 0, D-041) tends to pitch the nose down rather than up, so it isn't this.
 
-## M8c — The flight control system (M8c1, 2026-10-18)
+## M8c — The flight control system (M8c1 and M8c2, 2026-10-18)
 
 M8c is the third M8 stage (D-042), the UH-60A's flight control system from GenHel CR-166309 §5.5 (D-029, D-045), in three PRs. M8c1 (this entry): the Fig. 5.1.2 sensors, the mechanical controls and mixer (Figs. 5.1.6(a)–(d)) with the rotor head limits (p. 5.5-20), the primary servos, and the dynamic stabilator (Fig. 5.1.7: airspeed schedule, pitch-rate and lateral-acceleration feedback, servo with its rate limit). M8c2 adds the SAS and the pitch bias actuator, M8c3 the FPS. One component, `genhel_fcs` (`src/control/`), drives both rotors' blade pitch and the stabilator through the D-003 data path. The data come from `data/uh60a/genhel/` (DATA_GAPS.md "UH-60A AFCS (M8c)").
 
@@ -1103,7 +1103,7 @@ Generator `eyas_m8c_cases` (`tests/validation/m8c_cases.cpp`), plots `tools/plot
 ![Modes](validation/m8/m8c_modes.png)
 
 - *Speed stability.* Held, the aircraft has an unstable real root at 60 to 120 kt: +0.39, +0.18 and +0.15 1/s. That is M7c's parked M_u < 0 gap (D-041), which came from the held stabilator in the rotor downwash. With the airspeed-scheduled stabilator that root is gone. A mildly unstable phugoid remains: +0.050 ± 0.369i at 60 kt and +0.022 ± 0.140i at 90 kt.
-- *Dutch roll.* With the stabilator live, its damping drops: ζ 0.31 to 0.27 at 60 kt, 0.28 to 0.07 at 120 kt, 0.21 to 0.05 at 150 kt. That is the lateral-acceleration feedback coupling sideslip into pitch. Nothing checks it against data yet; the SAS (M8c2) adds yaw damping.
+- *Dutch roll.* With the stabilator live, its damping drops: ζ 0.31 to 0.27 at 60 kt, 0.28 to 0.07 at 120 kt, 0.21 to 0.05 at 150 kt. That is the lateral-acceleration feedback coupling sideslip into pitch. Nothing checks it against data yet; the SAS (M8c2) adds yaw damping. **Corrected in M8c2:** these modes made the flight control system's states quasi-static, the lateral accelerometer (ω_n 6.3 rad/s) among them, which drops part of the loop's lag. Kept dynamic, the drop is larger: ζ 0.019 at 120 kt and 0.000 at 150 kt (M8c2 below).
 - These are the flying config's modes; M7c's comparison with Fletcher holds the stabilator, as Fletcher's flights did.
 
 **Start-up transient and a kick.**
@@ -1136,8 +1136,64 @@ Generator `eyas_m8c_cases` (`tests/validation/m8c_cases.cpp`), plots `tools/plot
 - Averaged model in hover: 1.03e-3 (M7b: 1.04e-3).
 
 **Open items:**
-- *Dutch-roll damping* with the live stabilator (above). The two readings it rests on are confirmed from GenHel's own equations (DATA_GAPS.md, AFCS, 2026-10-18): KVYDT is in deg per (ft/s² · kt), and AYPS1 is the specific force at the transducer, as modelled. The drop is therefore GenHel's stabilator law as written, still unchecked against flight data, since Fletcher's lateral data were flown with the stabilator held. To check once the SAS is in (M8c2), with the whole system.
-- *The L3 misfit's noise allowance* (half the floor) can hide a 3 % curvature in e(a); to tighten in M8c2.
+- *Dutch-roll damping* with the live stabilator (above). The two readings it rests on are confirmed from GenHel's own equations (DATA_GAPS.md, AFCS, 2026-10-18): KVYDT is in deg per (ft/s² · kt), and AYPS1 is the specific force at the transducer, as modelled. The drop is therefore GenHel's stabilator law as written, still unchecked against flight data, since Fletcher's lateral data were flown with the stabilator held. M8c2: with the SAS in, ζ is 0.33–0.44 at 90–150 kt; corrected value with the SAS off, ζ ≈ 0 at 150 kt.
+- *The L3 misfit's noise allowance* (half the floor) can hide a 3 % curvature in e(a). Tightened to a tenth of the floor in M8c2.
 - *The stabilator schedule's 147 kt node* sits 3 kt below the 150 kt gate trim. A hotter or higher 150 kt condition (EAS below 147 kt) puts V_F on its other slope; not a fault, but L3 at such a condition crosses it.
 
 **Builds:** all 386 tests pass with GCC 13.3 (Release), all 387 with GCC 13.3 and Clang 18.1 (Debug), and all 386 in a Rocky Linux 9 container (GCC 11.5, Release), with and without GLFW. Without GLFW the pilot station's window-only variable broke the GCC 11 build under `-Werror`; it was on main, CI missed it because its Rocky job installs GLFW, and it is fixed here. Under ASan+UBSan the 31 new and changed tests pass (flight control, trim, aircraft, acceleration coupling, Ballin level flight), except `BallinTrim.ClimbAndDescentTrendsAgainstSikorskyGenHel`, stopped after 29 min (in CI's `SLOW_TESTS`; the nightly job runs it). clang-format is clean, and clang-tidy is clean on the changed `src/` files.
+
+### M8c2 — SAS and pitch bias actuator (2026-10-18)
+
+GenHel's SAS (Figs. 5.1.3(a)–(c): a digital and an analog channel per axis, the 2:1 gain switch, 5 % authority limits, washouts, the 60 kt switches and 2 s fade, the SAS actuators) and pitch bias actuator (Fig. 5.1.4) in `genhel_fcs`, switched by `Controls::afcs` (default off; D-045 M8c2 amendment). The pilot station starts with them on. Same generator and plot script as M8c1 (`m8c2_*` files).
+
+| Check | Status | Evidence |
+|---|---|---|
+| Every SAS and PBA state against GenHel's diagrams | ✅ | `GenHelSas.ChannelsAreGenHelsDiagrams`: the rates of all 39 states and the six channel outputs and PBA position, at 400 random states, flight conditions and switch positions (both sides of 60 kt), against the diagrams written test-side in GenHel's units (deg, %, ft/s², kt, in); `InnerLoopInchesJoinTheMixer` (XAILS, XBILS, XBBAS, XPILS into Figs. 5.1.6(b)–(d)); `YawFadeRunsOverTwoSeconds`; `PitchBiasActuatorLimits` (rate limit, stop, off). |
+| The digital holds stay within their limits | ✅ | `GenHelSas.DigitalHoldStaysWithinTheLimit`: a saturated channel reversing would read +15 % from the Padé; clamped after the hold, as a real hold's output never leaves its input's range (code review). |
+| The zero-order holds' Padé | ✅ | `GenHelSas.HoldPadeMatchesTheZeroOrderHold`: against the hold's exact response, within 1° and 3 % up to 5 Hz (25 ms) and 1 Hz (0.1 s); worst 0.28° and 2.6 % (SAS), 0.15° and 1.7 % (PBA). |
+| IC mode and switched off | ✅ | `GenHelSas.SteadyStatesAreAHeldBodyEquilibrium` (every rate zero to 1e-9, any switches); `SwitchedOffAddsNothing` (the M8c1 aircraft's states, exactly). |
+| The flying config is GenHel's | ✅ | `GenHelSas.Uh60aConfigIsGenHels`: every SAS and PBA constant of the shipped config, in GenHel's units. |
+| Real-time rules | ✅ | `GenHelSas.DoesNotAllocate`; `Trim.ModelStartsFromTrimAndKeepsTheRealTimeRules` now trims and flies with the SAS and PBA on (no allocation, bit-identical repeats). |
+| In trim the SAS and PBA move only the stick | ✅ | `Trim.SasAndPbaMoveOnlyTheStick` (0, 100, 150 kt): attitude, velocity and blade pitch equal to 1e-6; the stick moves by GenHel's steady SAS and PBA output computed test-side from the trimmed φ, θ, Y.SENS and VXBIKT, to 1e-5 in. |
+| The SAS damps the Dutch roll (nonlinear) | ✅ | `Trim.SasDampsTheDutchRoll`, below. |
+| L3 with the SAS and PBA on | ✅ | `Linearize.PeriodicModelMatchesTheNonlinearResponse` adds hover and 150 kt with them on (not 60 kt, below). Worst \|c0\| 9e-7 (hover), 4.4e-4 (150 kt); floors 1e-4 and 1e-3. |
+| L3 misfit noise allowance | ✅ | A tenth of the floor (was half; M8c1 open item). Worst misfit 0.118 (150 kt collective, SAS off) against 0.15; with no allowance at all it is 0.26. |
+| Against flight data | — | No SAS-on flight data in the library (Ballin's and Fletcher's were flown with the SAS off or the stabilator held). The AFCS is verified against GenHel's design, not the aircraft. |
+
+**In trim** (level, ISA sea level; on minus off):
+
+![Trim stick](validation/m8/m8c2_trims.png)
+
+- *Longitudinal:* the PBA puts the stick 10–14 % of half travel aft below 100 kt, 2 % at 150 kt (KTHBA on the nose-up hover attitude, the −4.9 % bias, KVXBA above 80 kt). At 100 kt that is 4.7 % of full travel; M7c estimated 4.3 % against GenHel's curve, and the flight test's PBA-on and PBA-off sticks differ by 4.0 % (VALIDATION.md M7c, pitch bias actuator).
+- *Lateral:* 0.6–2 % of half travel left, the roll attitude paths (KPHRD, KPHIRA KPHR1 KPHF1) on the 1.5–3.4° of roll a zero-sideslip trim holds.
+- *Pedal:* zero to 60 kt; above it the yaw lateral-acceleration paths (KLAYYD, and KLAYRR on KLAYF1·Y.SENS) hold up to 4.4 % of SAS at 150 kt, 9 % of half pedal travel. That step at 60 kt is GenHel's hard switch; a level trim at 60 kt has 0.95° of pitch, so its body-x airspeed is 59.99 kt, just below it.
+- The aircraft's own trim (attitude, blade pitch) is unchanged, to the trims' convergence.
+
+**Modes** (90–150 kt; every flight control state kept dynamic, `condense(m, retained)`; the M8c1 method, all quasi-static, shown for SAS off):
+
+![Modes](validation/m8/m8c2_modes.png)
+
+| Speed | Dutch roll ζ (ω_n): SAS off, quasi-static (M8c1) | SAS off, dynamic | SAS and PBA on | Phugoid ζ: off / on |
+|---|---|---|---|---|
+| 90 kt | 0.164 (1.19) | 0.151 (1.11) | 0.441 (0.79) | −0.205 / 0.307 |
+| 120 kt | 0.067 (1.46) | 0.019 (1.35) | 0.371 (1.03) | (long-period lateral-longitudinal, −0.25) / 0.367 |
+| 150 kt | 0.051 (1.73) | 0.000 (1.60) | 0.327 (1.26) | (−0.83) / 0.847 |
+
+- *Correction to M8c1.* Keeping the flight control states dynamic, the bare aircraft's Dutch roll with the live stabilator is neutrally damped at 150 kt, not ζ 0.05. The quasi-static accelerometer (ω_n 6.3 rad/s against a 1.6 rad/s Dutch roll) dropped part of the lateral-acceleration loop's lag. The M8c1 figure (`m8c_modes.png`) is left as that milestone's record.
+- *With the SAS on,* the Dutch roll has ζ 0.33–0.44 and the unstable phugoid becomes stable (the PBA's attitude and airspeed terms). In hover one lateral phugoid stays unstable (ζ −0.10, −0.47 with the SAS off): the SAS damps rates; holding attitude is the FPS's job (M8c3).
+- Not at 60 kt: the trim sits on the SAS's switches, where the linearization's u perturbation crosses them.
+
+**Dutch roll in free flight** (yaw rate after a 0.05 rad/s kick, kicked minus unkicked):
+
+![Kick](validation/m8/m8c2_kick.png)
+
+- With the SAS on the swing falls 52×, 30× and 68× over 6 s at 90, 120 and 150 kt; with it off 4.2×, 1.8× and 1.9×. `Trim.SasDampsTheDutchRoll` gates 4× with it on (the linear ζ ω_n predicts 9× or more) and fails if it is off at 120 and 150 kt.
+
+**Open items:**
+- *Flight data with the SAS on.* None in the library. The USAAEFA Project 79-24 report (DATA_GAPS.md) may have SAS-on responses.
+- *Interpretations* (DATA_GAPS.md, AFCS, M8c2): the yaw analog roll-rate cross-feed's input (equivalent gain 0.060 %/(deg/s) against the digital 0.138), the KLAYRR/KLAYF1 units, the fade-out, VXBIKT.
+- *Trim cost.* Every SAS and PBA state is solved on the free-flight orbit, so each trim takes about 1.85× as long.
+
+**Cost.** `eyas_bench` (Release, GCC 13.3, the development machine): 13.6–14.0 µs mean per physics step (M8a: 12.5 µs, before the whole flight control system); worst `advance()` 556 µs against the D-005 budget of 8333 µs. Computing the SAS signals once per derivative call (code review) saved about 0.2 µs per step.
+
+**Builds:** all 404 tests pass with GCC 13.3 (Release) and all 405 with GCC 13.3 and Clang 18.1 (Debug). In a Rocky Linux 9 container (GCC 11, Release) all 403 passed with and without GLFW before the code-review fixes; CI's Rocky job covers the final state. Under ASan+UBSan the 95 new and changed tests pass, and the 34 the review fixes touched again after them (SAS, flight control, units, trim, the linearization tests touched, aircraft data, the station's controls, mapping and recorder). `Trim.Uh60aTrimsFromHoverTo150Knots` now takes 14 min there (13.7 s in Release, with the longer trims), so it and the two new SAS trim tests join CI's `SLOW_TESTS`; the nightly job runs them. clang-format is clean; clang-tidy is clean on the changed files, and CI now runs it on `src/control/` too (M8c1 left it out).

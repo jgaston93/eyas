@@ -16,6 +16,8 @@ struct PilotInputs {
     double longitudinal = 0.0;  // [-1, 1] forward stick
     double pedal = 0.0;         // [-1, 1] LEFT pedal (host convention)
     bool brakes = false;
+    bool sas = false;         // cockpit switch: stability augmentation, both channels
+    bool pitch_bias = false;  // cockpit switch: pitch bias actuator
 };
 
 // Where to start: steady level flight (airspeed > 0 or hover).
@@ -23,6 +25,8 @@ struct InitialCondition {
     double airspeed_kt = 0.0;  // true airspeed
     double altitude_ft = 0.0;  // MSL
     double heading_deg = 0.0;  // true
+    bool sas = false;          // the switches the aircraft is trimmed with
+    bool pitch_bias = false;
 };
 
 struct Pose {

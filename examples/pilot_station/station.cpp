@@ -42,6 +42,7 @@ Station::Station(const StationOptions& options)
         eyas::TrimCondition c;
         c.airspeed = kt * kKnot;
         c.altitude = origin_.altitude + options.hover_height;
+        c.afcs = options.afcs;
         const eyas::TrimResult r = model_.trim(c);
         if (!r.converged) {
             throw std::runtime_error("trim at " + std::to_string(static_cast<int>(kt)) +

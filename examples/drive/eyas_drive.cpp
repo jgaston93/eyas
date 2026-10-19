@@ -7,6 +7,7 @@
 //              [--controls <in.csv>] [--trim-speed <kt>] [--altitude <m>]
 //              [--rate <Hz>] [--duration <s>]
 //              [--origin <lat deg>,<lon deg>,<alt m>] [--ground <m>]
+//              [--afcs <sas,pba|...|none>]
 //
 // The aircraft is trimmed in level flight at --trim-speed (true airspeed,
 // default 0: hover) and --altitude (default 0 m MSL, ISA, no wind), then
@@ -24,7 +25,9 @@
 // frames as documented in include/eyas/aircraft_state.hpp). --origin
 // replaces the config's geodetic origin (D-044) and --ground sets a level
 // ground at that height above MSL (default: no ground), so a run recorded
-// by the pilot station (--record) replays exactly. Exit codes: 0
+// by the pilot station (--record) replays exactly. --afcs sets the flight
+// control system's switches for the trim and the run (default none; a list
+// of sas, sas_digital, sas_analog, pba). Exit codes: 0
 // done; 1 a frame failed (AdvanceStatus non_finite, rejected or capped);
 // 2 usage or input error; 3 trim did not converge.
 
@@ -40,6 +43,7 @@
 #include <string_view>
 #include <vector>
 
+#include "common/afcs.hpp"
 #include "common/control_file.hpp"
 #include "common/frames.hpp"
 #include "common/origin.hpp"
@@ -60,6 +64,7 @@ struct Options {
     double duration = -1.0;                                    // [s]; < 0: from the control file
     std::string origin;                                        // empty: the config's
     double ground = std::numeric_limits<double>::quiet_NaN();  // [m] MSL; NaN: none
+    eyas::AfcsSwitches afcs;                                   // all off
 };
 
 Options parse(int argc, char** argv) {
@@ -90,6 +95,8 @@ Options parse(int argc, char** argv) {
             opt.origin = value();
         } else if (args[i] == "--ground") {
             opt.ground = std::stod(value());
+        } else if (args[i] == "--afcs") {
+            opt.afcs = examples::parse_afcs(value());
         } else {
             throw std::runtime_error("unknown option " + std::string(args[i]));
         }
@@ -121,6 +128,7 @@ int run(const Options& opt) {
     eyas::TrimCondition condition;
     condition.airspeed = opt.trim_speed_kt * kKnot;
     condition.altitude = opt.altitude;
+    condition.afcs = opt.afcs;  // the trimmed controls carry them through the run
     const eyas::TrimResult trim = model.trim(condition);
     if (!trim.converged) {
         std::cerr << "error: trim did not converge\n";

@@ -1,7 +1,7 @@
 """Plots for the M8c entry in docs/VALIDATION.md.
 
-Reads the CSVs written by the eyas_m8c_cases executable (M8c1, D-045) and
-writes PNGs.
+Reads the CSVs written by the eyas_m8c_cases executable (M8c1 and M8c2,
+D-045) and writes PNGs.
 
     cmake --build --preset release
     ./build/release/tests/eyas_m8c_cases build/m8c_cases
@@ -17,9 +17,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-# Two variants per panel: blue solid and orange dashed (identity by style too).
+# Two variants per panel: blue solid and orange dashed (identity by style too);
+# a third, where needed, grey dotted.
 A = dict(color="C0", ls="-", marker="o", ms=4, lw=2)
 B = dict(color="C1", ls="--", marker="s", ms=4, lw=2)
+C = dict(color="0.45", ls=":", marker="^", ms=4, lw=2)
 
 
 def load(path, skip=1):
@@ -118,6 +120,74 @@ def kick(data, out):
     plt.close(fig)
 
 
+def sas_trims(data, out):
+    d = load(data / "m8c2_trims.csv")
+    off = d[d["afcs"] == 0]
+    on = d[d["afcs"] == 1]
+    fig, ax = plt.subplots(1, 3, figsize=(12, 3.6), sharex=True)
+    panels = (("lon_cyclic", "longitudinal cyclic [%, fwd +]"),
+              ("lat_cyclic", "lateral cyclic [%, right +]"),
+              ("pedal", "pedal [%, right +]"))
+    for a, (col, label) in zip(ax, panels):
+        a.plot(on["knots"], 100.0 * (on[col] - off[col]), **A)
+        a.axhline(0.0, color="k", lw=0.8)
+        a.set_ylabel(label)
+        a.set_xlabel("airspeed [kt]")
+        a.grid(True, alpha=0.3)
+    fig.suptitle("Stick in trim, SAS and PBA on minus off (half travel = 100 %): "
+                 "the aircraft's state is the same (Trim.SasAndPbaMoveOnlyTheStick)")
+    fig.tight_layout()
+    fig.savefig(out / "m8c2_trims.png", dpi=110)
+    plt.close(fig)
+
+
+def sas_modes(data, out):
+    d = load(data / "m8c2_modes.csv")
+    fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+    variants = (("off_quasi_static", C, "SAS off, FCS quasi-static (as M8c1 reported)"),
+                ("off", B, "SAS off, FCS dynamic"),
+                ("on", A, "SAS and PBA on"))
+    for a, label, title in ((ax[0], "Dutch roll", "Dutch roll"),
+                            (ax[1], "phugoid", "phugoid")):
+        for v, style, name in variants:
+            # In forward flight only: at 30 kt two lateral oscillations both
+            # take the heuristic's Dutch-roll label.
+            m = (d["variant"] == v) & (d["label"] == label) & (d["knots"] >= 90)
+            a.plot(d["knots"][m], d["zeta"][m], label=name, **style)
+        a.axhline(0.0, color="k", lw=0.8)
+        a.set_title(title)
+        a.set_xlabel("airspeed [kt]")
+        a.set_ylabel("damping ratio ζ [-]")
+        a.grid(True, alpha=0.3)
+    ax[0].legend(fontsize=8, loc="upper right")
+    fig.suptitle("UH-60A modes, 90-150 kt; flight control system states kept dynamic "
+                 "unless marked (below 0: unstable)")
+    fig.tight_layout()
+    fig.savefig(out / "m8c2_modes.png", dpi=110)
+    plt.close(fig)
+
+
+def sas_kick(data, out):
+    d = load(data / "m8c2_kick.csv")
+    speeds = sorted(set(d["knots"]))
+    fig, ax = plt.subplots(1, len(speeds), figsize=(12, 3.6), sharey=True)
+    for a, kt in zip(ax, speeds):
+        for on, style, name in ((0, B, "SAS and PBA off"), (1, A, "SAS and PBA on")):
+            m = (d["knots"] == kt) & (d["afcs"] == on)
+            a.plot(d["time_s"][m], d["yaw_rate_difference_deg_s"][m], color=style["color"],
+                   ls=style["ls"], lw=2, label=name)
+        a.axhline(0.0, color="k", lw=0.5, alpha=0.5)
+        a.set_title(f"{kt:.0f} kt")
+        a.set_xlabel("time [s]")
+        a.grid(True, alpha=0.3)
+    ax[0].set_ylabel("kicked − unkicked yaw rate [deg/s]")
+    ax[0].legend(fontsize=8, loc="upper right")
+    fig.suptitle("Dutch roll after a 0.05 rad/s yaw-rate kick (Trim.SasDampsTheDutchRoll)")
+    fig.tight_layout()
+    fig.savefig(out / "m8c2_kick.png", dpi=110)
+    plt.close(fig)
+
+
 def main():
     if len(sys.argv) != 3:
         print(__doc__)
@@ -128,6 +198,9 @@ def main():
     modes(data, out)
     start(data, out)
     kick(data, out)
+    sas_trims(data, out)
+    sas_modes(data, out)
+    sas_kick(data, out)
     return 0
 
 

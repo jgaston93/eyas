@@ -30,6 +30,7 @@ void ControlsMap::restart(const eyas::Controls& start) noexcept {
     latched_ = {};
     trim_held_ = false;
     brakes_ = start.brake_left > 0.5 || start.brake_right > 0.5;
+    afcs_ = start.afcs;
     // A lever holds the start until it is brought to it (pickup).
     rearm_pickup();
 }
@@ -138,6 +139,20 @@ eyas::Controls ControlsMap::update(const RawInput& in, double dt) noexcept {
     }
     brake_was_pressed_ = brake_now;
 
+    // The SAS toggles both channels: off if either is on, else both on.
+    const bool sas_now = pressed(in, config_.sas_button);
+    if (sas_now && !sas_was_pressed_) {
+        const bool on = !(afcs_.sas_digital || afcs_.sas_analog);
+        afcs_.sas_digital = on;
+        afcs_.sas_analog = on;
+    }
+    sas_was_pressed_ = sas_now;
+    const bool pba_now = pressed(in, config_.pba_button);
+    if (pba_now && !pba_was_pressed_) {
+        afcs_.pitch_bias = !afcs_.pitch_bias;
+    }
+    pba_was_pressed_ = pba_now;
+
     if (config_.collective.mode == AxisMode::absolute) {
         update_lever(config_.collective, in);
     } else {
@@ -161,6 +176,7 @@ eyas::Controls ControlsMap::update(const RawInput& in, double dt) noexcept {
     eyas::Controls c = apply(start_, delta_);
     c.brake_left = brakes_ ? 1.0 : 0.0;
     c.brake_right = c.brake_left;
+    c.afcs = afcs_;
     return c;
 }
 

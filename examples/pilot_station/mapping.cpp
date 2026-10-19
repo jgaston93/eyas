@@ -75,6 +75,8 @@ ControlsMapConfig default_map(InputSource s) noexcept {
             m.trim_button = 0;
             m.brake_button = 1;
             m.trim_reset_button = 3;
+            m.sas_button = 4;
+            m.pba_button = 5;
             break;
         case InputSource::flightgear:
             m.collective = axis(1, true, AxisMode::rate, kCollectiveRate, 0.1);
@@ -84,6 +86,8 @@ ControlsMapConfig default_map(InputSource s) noexcept {
             m.trim_button = 0;
             m.brake_button = 1;
             m.trim_reset_button = 3;
+            m.sas_button = 4;
+            m.pba_button = 5;
             break;
         case InputSource::joystick:
             m.lat_cyclic = axis(0, false, AxisMode::absolute, 1.0);
@@ -93,6 +97,8 @@ ControlsMapConfig default_map(InputSource s) noexcept {
             m.trim_button = 0;
             m.brake_button = 1;
             m.trim_reset_button = 2;
+            m.sas_button = 3;
+            m.pba_button = 4;
             break;
         case InputSource::mouse_keyboard:
             m.lat_cyclic = axis(0, false, AxisMode::absolute, 1.0, 0.0);
@@ -102,6 +108,8 @@ ControlsMapConfig default_map(InputSource s) noexcept {
             m.trim_button = 0;
             m.brake_button = 1;
             m.trim_reset_button = 2;
+            m.sas_button = 3;
+            m.pba_button = 4;
             break;
         case InputSource::script:
         case InputSource::none:
@@ -224,6 +232,10 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
             m.trim_reset_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "brake_button") {
             m.brake_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "sas_button") {
+            m.sas_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "pba_button") {
+            m.pba_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "recentre") {
             m.recentre = to_double(value, origin, n);
         } else if (key == "pickup") {
@@ -291,6 +303,8 @@ void write_map(std::ostream& out, const ControlsMapConfig& map) {
     out << "trim_button = " << index_text(map.trim_button, kButtonsPerDevice) << '\n'
         << "trim_reset_button = " << index_text(map.trim_reset_button, kButtonsPerDevice) << '\n'
         << "brake_button = " << index_text(map.brake_button, kButtonsPerDevice) << '\n'
+        << "sas_button = " << index_text(map.sas_button, kButtonsPerDevice) << '\n'
+        << "pba_button = " << index_text(map.pba_button, kButtonsPerDevice) << '\n'
         << "recentre = " << map.recentre << '\n'
         << "pickup = " << map.pickup << '\n';
 }

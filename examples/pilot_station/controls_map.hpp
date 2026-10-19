@@ -65,6 +65,8 @@ struct ControlsMapConfig {
     int trim_button = -1;        // held: force trim release (cyclic and pedal)
     int trim_reset_button = -1;  // pressed: trim points back to the start controls
     int brake_button = -1;       // pressed: toggles the wheel brakes, set or released
+    int sas_button = -1;         // pressed: toggles the SAS, both channels together (M8c2)
+    int pba_button = -1;         // pressed: toggles the pitch bias actuator
     // After a trim release the control holds at its trim point until the
     // shaped axis value comes back within this of centre (a spring-centred
     // stick returns into its deadband), so letting go of the stick doesn't
@@ -93,7 +95,7 @@ public:
     ControlsMap(const ControlsMapConfig& config, const eyas::Controls& start) noexcept;
 
     // Starts again from `start`: trim points at it, deltas zero, the brakes
-    // as `start` has them.
+    // and the flight control system's switches as `start` has them.
     void restart(const eyas::Controls& start) noexcept;
 
     // One host frame of dt seconds. Returns the applied controls, each
@@ -124,6 +126,7 @@ public:
     // (e.g. FlightGear's first real reading of an untouched axis), not a pass.
     static constexpr double kPickupStep = 0.05;
     bool brakes_set() const noexcept { return brakes_; }
+    const eyas::AfcsSwitches& afcs() const noexcept { return afcs_; }
 
 private:
     // A trimmable control (cyclic, pedal) or a rate collective.
@@ -148,6 +151,9 @@ private:
     bool trim_held_ = false;
     bool brakes_ = false;
     bool brake_was_pressed_ = false;
+    eyas::AfcsSwitches afcs_;
+    bool sas_was_pressed_ = false;
+    bool pba_was_pressed_ = false;
     bool reset_was_pressed_ = false;
     bool lever_held_ = true;
     double lever_prev_ = std::numeric_limits<double>::quiet_NaN();
@@ -158,7 +164,7 @@ private:
 // The applied controls for a delta: start + delta, the sum eyas_drive makes,
 // so both programs compute the same doubles. ControlsMap keeps each delta
 // at clamp(start + d) − start, which puts the sum within its range to an
-// ulp. The brakes are the start's.
+// ulp. The brakes and the flight control system's switches are the start's.
 eyas::Controls apply(const eyas::Controls& start, const ControlDeltas& d) noexcept;
 
 }  // namespace station

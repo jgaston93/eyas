@@ -83,6 +83,38 @@ TEST(Units, Dimensions) {
     EXPECT_FALSE(find_unit("lb").has_value());
 }
 
+// AFCS units (GenHel §5.5, M8c2): the SAS and PBA work in percent of control
+// authority, a fraction in SI (1 % = 0.01). A gain in % per deg/s is a
+// fraction per angular rate, kept apart from time (deg per deg/s, a time),
+// as per angle is from dimensionless.
+TEST(Units, AfcsUnits) {
+    const auto dim = [](std::string_view u) { return find_unit(u)->dimension; };
+    EXPECT_EQ(dim("%"), Dimension::dimensionless);
+    EXPECT_EQ(*si_scale("%"), 0.01);
+    EXPECT_EQ(dim("%/s"), Dimension::frequency);
+    EXPECT_EQ(dim("%/deg"), Dimension::per_angle);
+    EXPECT_EQ(*si_scale("%/deg"), 0.01 / kDegree);
+    EXPECT_EQ(dim("%/(deg/s)"), Dimension::per_angular_rate);
+    EXPECT_EQ(dim("1/(rad/s)"), Dimension::per_angular_rate);
+    EXPECT_EQ(*si_scale("%/(deg/s)"), 0.01 / kDegree);
+    EXPECT_EQ(dim("%/kt"), Dimension::per_speed);
+    EXPECT_EQ(dim("s/m"), Dimension::per_speed);
+    EXPECT_EQ(*si_scale("%/kt"), 0.01 / kKnot);
+    EXPECT_EQ(dim("%/(ft/s^2)"), Dimension::per_acceleration);
+    EXPECT_EQ(dim("s^2/m"), Dimension::per_acceleration);
+    EXPECT_EQ(*si_scale("%/(ft/s^2)"), 0.01 / kFoot);
+    EXPECT_EQ(dim("(deg/s)/(ft/s^2)"), Dimension::rate_per_acceleration);
+    EXPECT_EQ(dim("(rad/s)/(m/s^2)"), Dimension::rate_per_acceleration);
+    EXPECT_EQ(*si_scale("(deg/s)/(ft/s^2)"), kDegree / kFoot);
+    EXPECT_EQ(dim("deg/%"), Dimension::angle);
+    EXPECT_EQ(*si_scale("deg/%"), kDegree / 0.01);
+    EXPECT_NE(Dimension::per_angular_rate, Dimension::time);
+    EXPECT_NE(dimension_name(Dimension::per_angular_rate), "unknown");
+    EXPECT_NE(dimension_name(Dimension::per_speed), "unknown");
+    EXPECT_NE(dimension_name(Dimension::per_acceleration), "unknown");
+    EXPECT_NE(dimension_name(Dimension::rate_per_acceleration), "unknown");
+}
+
 // Landing-gear units (GenHel §5.7.5): tire pressure, tire stiffness in lbf/in
 // and lbf/ft, linear and quadratic damping. NIST: 1 psi = 6894.757293168 Pa.
 TEST(Units, GearUnits) {

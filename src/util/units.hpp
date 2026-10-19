@@ -52,6 +52,11 @@ enum class Dimension : std::uint8_t {
     angle_per_length,        // e.g. a control rigging gain [deg/in]
     angle_per_acceleration,  // e.g. a lateral-acceleration feedback gain
     time_squared,            // e.g. the s² coefficient of a servo transfer function
+    // AFCS gains (GenHel §5.5), output a fraction of authority ("%"):
+    per_angular_rate,       // e.g. a rate gain [%/(deg/s)]
+    per_speed,              // e.g. an airspeed gain [%/kt]
+    per_acceleration,       // e.g. a lateral-acceleration gain [%/(ft/s²)]
+    rate_per_acceleration,  // an acceleration scaled into a rate path [(deg/s)/(ft/s²)]
 };
 
 // Name used in error messages, e.g. "length".

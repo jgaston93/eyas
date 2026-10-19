@@ -325,6 +325,69 @@ def fcs_block(rig, mr, travel, sens, stab, pos, head_limits):
       pitch_rate_gain: "{fmt(stab["KVTDT"])} s"  # deg per deg/s
       lateral_accel_gain: {{gain: "{fmt(round(ay_full, 12))} deg/(ft/s^2)", from: "{fmt(lo_kt)} kt", to: "{fmt(lo_kt + kdt_hi)} kt"}}
       servo: {{a2: "{fmt(stab["SERVO_A2"])} s^2", a1: "{fmt(stab["SERVO_A1"])} s", rate_limit: "{fmt(stab["RATE_LIMIT"])} deg/s"}}
+{afcs_block(rig)}"""
+
+
+def afcs_block(rig):
+    """The SAS (Figs. 5.1.3(a)-(c)) and pitch bias actuator (Fig. 5.1.4) of the genhel_fcs
+    component, M8c2 (D-045), in GenHel's units: percent of authority, deg, deg/s, ft/s^2, kt.
+    Each limit is printed as +-L; the PBA's as (lo, hi). The SAS output reaches the blade pitch
+    through KPCDG* [deg/%] (p. 5.5-20); every config switches them on per flight (Controls)."""
+    s = constants("fig_5_1_3_sas.txt")
+    b = constants("fig_5_1_4_pba.txt")
+
+    def lag(gain, tau, unit=None):
+        g = fmt(s[gain]) if unit is None else f'"{fmt(s[gain])} {unit}"'
+        return f'{{gain: {g}, lag: "{fmt(s[tau])} s"}}'
+
+    def pm(key, table="fig_5_1_4_pba.txt"):
+        lo, hi = constant_range(table, key)
+        if lo != -hi:
+            raise ValueError(f"{key}: expected a symmetric limit, got {lo}, {hi}")
+        return hi
+
+    r = "%/(deg/s)"
+    vx_lo, vx_hi = constant_range("fig_5_1_4_pba.txt", "LMVXBA")
+    if vx_lo != 0.0:
+        raise ValueError("LMVXBA: the airspeed term assumes a lower limit of 0")
+    return f"""\
+    sas:  # Figs. 5.1.3(a)-(c), pp. 5.5-2, 5.5-7 to 5.5-9; fig_5_1_3_sas.txt (M8c2)
+      hold: "{fmt(s["ZOH_SAS"])} s"  # digital zero-order hold, "airborne computer update delay"
+      switch_speed: "{fmt(s["V_SW"])} kt"
+      fade_time: "{fmt(s["T_FADE"])} s"
+      actuator: {{a2: "{fmt(rig["SASACT_A2"])} s^2", a1: "{fmt(rig["SASACT_A1"])} s"}}
+      descaling: {{pitch: "{fmt(rig["KPCDGP"])} deg/%", roll: "{fmt(rig["KPCDGR"])} deg/%", yaw: "{fmt(rig["KPCDGY"])} deg/%"}}  # p. 5.5-20
+      pitch:
+        digital: {{ad_lag: "{fmt(s["P_AD"])} s", rate: {lag("KRQQPD", "TRQQPD", r)}, lagged_rate: {lag("KLQQPD", "TLQQPD", r)}, washout: "{fmt(s["TWQQPD"])} s", limit: "{fmt(s["LMPD"])} %"}}
+        analog: {{filter: {lag("KQQPA", "TQQPA")}, washout: "{fmt(s["TWQQPA"])} s", rate: {lag("KRQQPA", "TRQQPA", r)}, lagged_rate: {lag("KLQQPA", "TLQQPA", r)}, scale: {fmt(s["KPA_HALF"])}, limit: "{fmt(s["LMPA"])} %"}}
+      roll:
+        digital: {{ad_lag: "{fmt(s["R_AD"])} s", rate_gain: "{fmt(s["KRPPRD"])} {r}", lagged_rate: {lag("KLPPRD", "TLPPRD", r)}, attitude: {{gain: "{fmt(s["KPHRD"])} %/deg", limit: "{fmt(s["LMPHRD"])} deg"}}, limit: "{fmt(s["LMRD"])} %"}}
+        analog:
+          attitude_filter: {{gain: {fmt(s["KPHF1"])}, lag1: "{fmt(s["T1PHF1"])} s", lag2: "{fmt(s["T2PHF1"])} s"}}
+          shaping: {{gain: {fmt(s["KPHF2"])}, a2: "{fmt(s["A2PHF2"])} s^2", a1: "{fmt(s["A1PHF2"])} s", limit: "{fmt(s["LMPHR1"])} deg"}}
+          derivative: {{gain: {fmt(s["KPHF3"])}, lag1: "{fmt(s["T1PHF3"])} s", lag2: "{fmt(s["T2PHF3"])} s"}}
+          rate: {lag("KRPHRA", "TRPHRA", r)}
+          lagged_rate: {lag("KLPHRA", "TLPHRA", r)}
+          attitude: {{gain: {fmt(s["KPHR1"])}, limit: "{fmt(s["LMPHRA"])} deg", output_gain: "{fmt(s["KPHIRA"])} %/deg"}}
+          limit: "{fmt(s["LMRA"])} %"
+      yaw:
+        digital: {{ad_lag: "{fmt(s["Y_AD"])} s", rate: {lag("KRRRYD", "TRRRYD", r)}, lagged_rate: {lag("KLRRYD", "TLRRYD", r)}, washout: "{fmt(s["TWRRYD"])} s", lateral_accel: {lag("KLAYYD", "TLAYYD", "%/(ft/s^2)")}, roll_rate_gain: "{fmt(s["KRPPYD"])} {r}", limit: "{fmt(s["LMYD"])} %"}}
+        analog:
+          filter: {lag("KRRFI", "TRRFI")}
+          washout: "{fmt(s["TWRRYA"])} s"
+          rate: {lag("KRRRYA", "TRRRYA", r)}
+          lateral_accel_gain: "{fmt(s["KLAYF1"])} (deg/s)/(ft/s^2)"  # KLAYF1; its {fmt(s["TLAYF1"])} s lag is unity (p. 5.5-2)
+          lagged: {lag("KLAYRR", "TLAYRR", r)}
+          scale: {fmt(s["KYA_HALF"])}
+          roll_rate_gain: {fmt(s["KRPPYA"])}  # on the roll analog rate path's output ("B"; DATA_GAPS.md)
+          limit: "{fmt(s["LMYA"])} %"
+    pitch_bias:  # Fig. 5.1.4, pp. 5.5-2, 5.5-3, 5.5-10; fig_5_1_4_pba.txt (M8c2)
+      attitude: {{gain: "{fmt(b["KTHBA"])} %/deg", limit: "{fmt(pm("LMTHBA"))} deg"}}
+      pitch_rate: {{gain: "{fmt(b["KQQBA"])} {r}", limit: "{fmt(pm("LMQQBA"))} deg/s"}}  # on the pitch SAS's A/D output
+      airspeed: {{gain: "{fmt(b["KVXBA"])} %/kt", from: "{fmt(-b["BIAS_VXBA"])} kt", range: "{fmt(vx_hi)} kt"}}
+      bias: "{fmt(b["BIAS_BA"])} %"
+      hold: "{fmt(b["ZOH_BA"])} s"
+      actuator: {{gain: "{fmt(b["GAIN_BA"])} 1/s", rate_limit: "{fmt(pm("RATE_BA"))} %/s", authority: "{fmt(pm("AUTH_BA"))} %"}}
 """
 
 

@@ -22,6 +22,7 @@
 
 #include <gtest/gtest.h>
 
+#include "common/afcs.hpp"
 #include "common/frames.hpp"
 #include "common/origin.hpp"
 #include "controls_map.hpp"
@@ -237,6 +238,58 @@ TEST(StationControls, BrakeButtonToggles) {
     parked.brake_left = parked.brake_right = 1.0;
     m.restart(parked);
     EXPECT_TRUE(m.brakes_set());
+}
+
+// M8c2: the SAS button toggles both SAS channels together (off if either is
+// on), the PBA button the pitch bias actuator; a restart takes the start's.
+TEST(StationControls, AfcsButtonsToggle) {
+    ControlsMapConfig cfg;
+    cfg.sas_button = 3;
+    cfg.pba_button = 4;
+    eyas::Controls start = start_controls();
+    start.afcs = {true, true, true};
+    ControlsMap m(cfg, start);
+    RawInput in;
+    eyas::Controls c = m.update(in, 0.1);
+    EXPECT_TRUE(c.afcs.sas_digital && c.afcs.sas_analog && c.afcs.pitch_bias);
+    in.buttons[3] = true;
+    c = m.update(in, 0.1);
+    EXPECT_FALSE(c.afcs.sas_digital || c.afcs.sas_analog);
+    EXPECT_TRUE(c.afcs.pitch_bias);
+    c = m.update(in, 0.1);  // held: no second toggle
+    EXPECT_FALSE(c.afcs.sas_digital);
+    in.buttons[3] = false;
+    in.buttons[4] = true;
+    c = m.update(in, 0.1);
+    EXPECT_FALSE(c.afcs.pitch_bias);
+    in.buttons[4] = false;
+    (void)m.update(in, 0.1);
+    in.buttons[3] = true;
+    c = m.update(in, 0.1);
+    EXPECT_TRUE(c.afcs.sas_digital && c.afcs.sas_analog);
+    // One channel on counts as on: the button turns the SAS off.
+    start.afcs = {true, false, false};
+    m.restart(start);
+    EXPECT_TRUE(m.afcs().sas_digital && !m.afcs().sas_analog);
+    in = RawInput{};
+    (void)m.update(in, 0.1);
+    in.buttons[3] = true;
+    EXPECT_FALSE(m.update(in, 0.1).afcs.sas_digital);
+}
+
+// --afcs text: the station writes it into the replay command, eyas_drive
+// reads it back.
+TEST(StationControls, AfcsTextRoundTrips) {
+    for (int bits = 0; bits < 8; ++bits) {
+        const eyas::AfcsSwitches s{(bits & 1) != 0, (bits & 2) != 0, (bits & 4) != 0};
+        const eyas::AfcsSwitches r = examples::parse_afcs(examples::afcs_text(s));
+        EXPECT_EQ(r.sas_digital, s.sas_digital) << bits;
+        EXPECT_EQ(r.sas_analog, s.sas_analog) << bits;
+        EXPECT_EQ(r.pitch_bias, s.pitch_bias) << bits;
+    }
+    EXPECT_EQ(examples::afcs_text({true, true, true}), "sas,pba");
+    EXPECT_EQ(examples::afcs_text({}), "none");
+    EXPECT_THROW((void)examples::parse_afcs("sas,fps"), std::runtime_error);
 }
 
 // ---- Mapping files ----------------------------------------------------------------
@@ -679,6 +732,29 @@ TEST(StationRecorder, BrakeChangeIsMarked) {
     const std::string text = read_file(path);
     EXPECT_EQ(count(text, "# Replay: eyas_drive "), 1);
     EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s"), 1);
+}
+
+// M8c2: the start's AFCS switches go into the replay command, and switching
+// them in flight marks the rest as not replayable (eyas_drive holds them).
+TEST(StationRecorder, AfcsChangeIsMarked) {
+    Station& st = uh60a();
+    ASSERT_TRUE(st.start(1));
+    EXPECT_TRUE(st.starts()[1].controls.afcs.sas_digital);  // the station's default
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "eyas_station_afcs.csv").string();
+    {
+        Recorder rec(path, "", "cfg.yaml", "", 60);
+        rec.begin(st, st.outputs());
+        eyas::Controls c = st.starts()[1].controls;
+        rec.frame(0.0, {}, c, st.outputs());
+        c.afcs.pitch_bias = false;
+        rec.frame(0.25, {}, c, st.outputs());
+        rec.frame(0.3, {}, c, st.outputs());
+        rec.end();
+    }
+    const std::string text = read_file(path);
+    EXPECT_EQ(count(text, " --afcs sas,pba "), 1);
+    EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.25 s: the AFCS switches changed"), 1);
 }
 
 // The exact FlightGear sequence (code review): the untouched throttle reads

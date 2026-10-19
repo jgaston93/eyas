@@ -11,13 +11,14 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 56> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 69> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
     {"in",         {kInch, D::length}},
     {"s",          {1.0, D::time}},
     {"Hz",         {1.0, D::frequency}},
+    {"1/s",        {1.0, D::frequency}},  // a rate constant, e.g. an actuator's gain
     {"kg",         {1.0, D::mass}},
     {"slug",       {kSlug, D::mass}},
     {"lbm",        {kPoundMass, D::mass}},
@@ -68,6 +69,19 @@ constexpr std::array<std::pair<std::string_view, Unit>, 56> kRegistry{{
     {"rad/(m/s^2)",  {1.0, D::angle_per_acceleration}},
     {"deg/(ft/s^2)", {kDegree / kFoot, D::angle_per_acceleration}},
     {"s^2",          {1.0, D::time_squared}},
+    // Percent of AFCS authority, a fraction in SI (GenHel §5.5).
+    {"%",                {0.01, D::dimensionless}},
+    {"%/s",              {0.01, D::frequency}},
+    {"%/deg",            {0.01 / kDegree, D::per_angle}},
+    {"1/(rad/s)",        {1.0, D::per_angular_rate}},
+    {"%/(deg/s)",        {0.01 / kDegree, D::per_angular_rate}},
+    {"s/m",              {1.0, D::per_speed}},
+    {"%/kt",             {0.01 / kKnot, D::per_speed}},
+    {"s^2/m",            {1.0, D::per_acceleration}},
+    {"%/(ft/s^2)",       {0.01 / kFoot, D::per_acceleration}},
+    {"(rad/s)/(m/s^2)",  {1.0, D::rate_per_acceleration}},
+    {"(deg/s)/(ft/s^2)", {kDegree / kFoot, D::rate_per_acceleration}},
+    {"deg/%",            {kDegree / 0.01, D::angle}},
 }};
 // clang-format on
 
@@ -146,6 +160,14 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "angle per acceleration";
         case Dimension::time_squared:
             return "time squared";
+        case Dimension::per_angular_rate:
+            return "per angular rate";
+        case Dimension::per_speed:
+            return "per speed";
+        case Dimension::per_acceleration:
+            return "per acceleration";
+        case Dimension::rate_per_acceleration:
+            return "angular rate per acceleration";
     }
     return "unknown";
 }
