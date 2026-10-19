@@ -292,6 +292,9 @@ public:
     // input with the body acceleration zero, the airspeed lag at the
     // equivalent airspeed (D-045).
     void steady_states(const SimContext& ctx, std::span<double> x) const override;
+    // Every state orbit: each has dynamics of its own, so trim starts it on
+    // its free-flight orbit (D-045).
+    void steady_kinds(std::span<SteadyKind> kinds) const override;
 
     std::string_view name() const noexcept override { return config_.name; }
     std::vector<std::string> produces() const override;

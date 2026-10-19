@@ -6,6 +6,7 @@
 #include <limits>
 #include <numbers>
 #include <span>
+#include <string>
 
 #include <Eigen/Dense>
 
@@ -196,26 +197,35 @@ public:
         return -mean;
     }
 
-    // The states steady_states() sets (GenHel's IC mode, D-045), as indices
-    // into the full state: those it overwrites in a slice filled with NaN.
-    // Empty if z has no valid body state.
-    std::vector<std::size_t> ic_states(const VecX& z) {
-        std::vector<std::size_t> ic;
+    // The states steady_kinds() labels orbit (GenHel's IC mode, D-045), as
+    // indices into the full state; held ones keep their steady_states()
+    // value. Checks the contract on the way: steady_states() writes exactly
+    // the states labelled orbit or held, which a slice filled with NaN shows
+    // (throws InitError otherwise). Empty if z has no valid body state.
+    std::vector<std::size_t> orbit_states(const VecX& z) {
+        std::vector<std::size_t> orbit;
         if (!pack(z)) {
-            return ic;
+            return orbit;
         }
         const SimContext ctx = ex_.context(0.0, x_, controls(z), held_.env());
         for (std::size_t i = 0; i < ex_.num_components(); ++i) {
-            std::vector<double> probe(ex_.component_size(i),
-                                      std::numeric_limits<double>::quiet_NaN());
-            ex_.component(i).steady_states(ctx, probe);
+            const DynamicComponent& c = ex_.component(i);
+            std::vector<SteadyKind> kinds(ex_.component_size(i), SteadyKind::free);
+            c.steady_kinds(kinds);
+            std::vector<double> probe(kinds.size(), std::numeric_limits<double>::quiet_NaN());
+            c.steady_states(ctx, probe);
             for (std::size_t j = 0; j < probe.size(); ++j) {
-                if (!std::isnan(probe[j])) {
-                    ic.push_back(ex_.component_offset(i) + j);
+                if (std::isnan(probe[j]) != (kinds[j] == SteadyKind::free)) {
+                    throw InitError("trim: component '" + std::string(c.name()) + "' state " +
+                                    std::to_string(j) +
+                                    ": steady_states() and steady_kinds() disagree (D-045)");
+                }
+                if (kinds[j] == SteadyKind::orbit) {
+                    orbit.push_back(ex_.component_offset(i) + j);
                 }
             }
         }
-        return ic;
+        return orbit;
     }
 
     // The IC-mode states on their free-flight periodic orbit (D-045
@@ -241,7 +251,7 @@ public:
     };
     FreeOrbit free_ic_orbit(const VecX& z, const Vec6& vib, double tol) {
         FreeOrbit out;
-        out.index = ic_states(z);
+        out.index = orbit_states(z);
         if (out.index.empty() || !pack(z)) {
             out.index.clear();
             return out;

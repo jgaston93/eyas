@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <limits>
 #include <span>
@@ -52,6 +53,14 @@ struct ComponentDerivs {
     CouplingOutputs* coupling = nullptr;
 };
 
+// How trim treats one state of a component (D-045, M8c3 amendment): its
+// label from DynamicComponent::steady_kinds().
+enum class SteadyKind : unsigned char {
+    free,   // not set by steady_states(); trim solves it as an unknown
+    orbit,  // set by steady_states(), then started on its free-flight orbit
+    held,   // set by steady_states() and kept there (integrators, synchronizers)
+};
+
 // A model with states: blades, inflow, gear, ... (spec §6; D-004).
 class DynamicComponent {
 public:
@@ -83,12 +92,17 @@ public:
     // servos, synchronizers) to it, and leaves the others alone. Trim calls it
     // on every state it builds, so these states drop out of its unknowns. The
     // default sets nothing.
-    // Contract: write only the states this sets, every one of them, and don't
-    // depend on the values x arrives with (reading back what was just written
-    // is fine). Trim finds them by calling this on a slice filled with NaN (the
-    // slots written are the IC-mode states) and then starts each of them on
-    // its free-flight orbit (D-045 amendment).
+    // Contract: write exactly the states steady_kinds() labels orbit or held,
+    // and don't depend on the values x arrives with (reading back what was
+    // just written is fine). Trim checks the first part once per solve.
     virtual void steady_states(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
+
+    // Labels every state (kinds.size() == num_states()) for trim: free,
+    // orbit or held (SteadyKind). Fixed for a configured component. The
+    // default labels every state free, matching the default steady_states().
+    virtual void steady_kinds(std::span<SteadyKind> kinds) const {
+        std::fill(kinds.begin(), kinds.end(), SteadyKind::free);
+    }
 };
 
 // A stateless model whose load doesn't depend on body acceleration

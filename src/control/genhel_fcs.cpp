@@ -604,6 +604,10 @@ void GenHelFcs::steady_states(const SimContext& ctx, std::span<double> x) const 
     x[kServoStab] = o.stabilator_cmd;
 }
 
+void GenHelFcs::steady_kinds(std::span<SteadyKind> kinds) const {
+    std::fill(kinds.begin(), kinds.end(), SteadyKind::orbit);
+}
+
 namespace {
 
 using units::Dimension;
