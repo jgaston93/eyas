@@ -19,10 +19,24 @@ using Quat = Eigen::Quaterniond;
 // both on each works at gain 1, with one on that one works at gain 2. The
 // pitch bias actuator (PBA) drives back to centre at its rate limit when
 // switched off.
+//
+// The flight path stabilization (FPS) holds the pitch and roll attitude, the
+// airspeed above 30 kt and the heading, through trim actuators of 100 %
+// authority. Switched off, its references follow the aircraft and its trim
+// actuators drive back to centre at their rate limit. The turn switch hands
+// heading hold over to turn coordination; the host latches it (GenHel p.
+// 5.5-3: on with the FPS on, above 60 kt, the trim release pressed and more
+// than 2° of bank; off with the feet on the pedals and the trim release
+// pressed). While the trim release is held with the FPS on, its references
+// follow the aircraft, its integrators stop and its trim actuators stay
+// where they are, so the pilot can fly to a new attitude and let go there.
 struct AfcsSwitches {
-    bool sas_digital = false;  // GenHel DSASSW
-    bool sas_analog = false;   // GenHel ASASSW
-    bool pitch_bias = false;   // pitch bias actuator
+    bool sas_digital = false;   // GenHel DSASSW
+    bool sas_analog = false;    // GenHel ASASSW
+    bool pitch_bias = false;    // pitch bias actuator
+    bool fps = false;           // GenHel FPSSW
+    bool fps_turn = false;      // GenHel TURNSW (NTRNSW is its inverse)
+    bool trim_release = false;  // momentary, held while pressed
 };
 
 // Normalized pilot inputs (sign conventions per D-024).

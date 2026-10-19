@@ -10,7 +10,7 @@ permissions:
 
 env:
   # Tests too slow to run under ASan on every push (also in full-verification.yml).
-  SLOW_TESTS: ^(Linearize\.(PeriodicModelMatchesTheNonlinearResponse|HoverRateDerivativesMatchPadfield)|BallinTrim\..*|Trim\.(Uh60aTrimsFromHoverTo150Knots|SasAndPbaMoveOnlyTheStick|SasDampsTheDutchRoll)|RealTime\.(HeldOrbitRepeatsFor60s|ParkedAircraftSettlesFor60s)|Station(Starts|RealTime|Recorder)\..*|ExampleStation\..*)$
+  SLOW_TESTS: ^(Linearize\.(PeriodicModelMatchesTheNonlinearResponse|HoverRateDerivativesMatchPadfield)|BallinTrim\..*|Trim\.(Uh60aTrimsFromHoverTo150Knots|SasAndPbaMoveOnlyTheStick|SasDampsTheDutchRoll)|Uh60aFps\..*|RealTime\.(HeldOrbitRepeatsFor60s|ParkedAircraftSettlesFor60s|AfcsFreeFlightFor60s)|Station(Starts|RealTime|Recorder)\..*|ExampleStation\..*)$
 
 jobs:
   ubuntu:

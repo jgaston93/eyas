@@ -113,6 +113,18 @@ TEST(Units, AfcsUnits) {
     EXPECT_NE(dimension_name(Dimension::per_speed), "unknown");
     EXPECT_NE(dimension_name(Dimension::per_acceleration), "unknown");
     EXPECT_NE(dimension_name(Dimension::rate_per_acceleration), "unknown");
+    // FPS integrator gains (GenHel Fig. 5.1.5) and the airspeed rate limit:
+    // %/(ft/s²·s) is a gain per speed, %/(kt·s) one per length.
+    EXPECT_EQ(dim("%/(deg*s)"), Dimension::per_angle_time);
+    EXPECT_EQ(*si_scale("%/(deg*s)"), 0.01 / kDegree);
+    EXPECT_EQ(dim("%/(kt*s)"), Dimension::per_length);
+    EXPECT_EQ(*si_scale("%/(kt*s)"), 0.01 / kKnot);
+    EXPECT_EQ(dim("%/(ft/s^2*s)"), Dimension::per_speed);
+    EXPECT_EQ(*si_scale("%/(ft/s^2*s)"), 0.01 / kFoot);
+    EXPECT_EQ(dim("kt/s"), Dimension::acceleration);
+    EXPECT_EQ(*si_scale("kt/s"), kKnot);
+    EXPECT_NE(dimension_name(Dimension::per_angle_time), "unknown");
+    EXPECT_NE(dimension_name(Dimension::per_length), "unknown");
 }
 
 // Landing-gear units (GenHel §5.7.5): tire pressure, tire stiffness in lbf/in

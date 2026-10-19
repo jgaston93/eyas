@@ -1,9 +1,9 @@
 // Real-time timing benchmark (spec §7 rule 5, as replaced by D-005): the
 // UH-60A's step() and advance() time, mean, p99 and max, in a hover trim, a
-// 120 kt trim and on the ground. D-005's rule: the worst advance() of a
-// nominal host frame stays below 50 % of the frame; equivalently, the worst
-// step() × ceil(dt_host / dt_physics) does. Run the release build on the
-// target (D-005, D-037), idle and with --load.
+// 120 kt trim (both with the whole AFCS on, M8c3) and on the ground. D-005's rule: the worst
+// advance() of a nominal host frame stays below 50 % of the frame; equivalently, the worst step() ×
+// ceil(dt_host / dt_physics) does. Run the release build on the target (D-005, D-037), idle and
+// with --load.
 //
 // Usage: eyas_bench [--config <uh60a.yaml>] [--frames N] [--rate HZ]
 //                   [--load THREADS] [--csv <file>]
@@ -91,6 +91,9 @@ std::vector<Case> make_cases(Model& m) {
     for (const double kt : {0.0, 120.0}) {
         TrimCondition c;
         c.airspeed = kt * units::kKnot;
+        // The whole AFCS on, as a pilot flies (SAS, PBA, FPS; M8c3). A
+        // config without one ignores the switches.
+        c.afcs = {true, true, true, true, false, false};
         const TrimResult r = m.trim(c);
         if (!r.converged) {
             throw std::runtime_error("trim did not converge at " + std::to_string(kt) + " kt");

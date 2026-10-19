@@ -85,6 +85,23 @@ components:
       bias: "-4.9 %"
       hold: "0.1 s"
       actuator: {gain: "10.0 1/s", rate_limit: "3.0 %/s", authority: "15.0 %"}
+    fps:  # Figs. 5.1.5(a)-(c), pp. 5.5-3, 5.5-11 to 5.5-13; fig_5_1_5_fps.txt (M8c3)
+      hold: "0.1 s"  # zero-order hold, "airborne computer update delay"
+      trim_actuator: {gain: "24.1 1/s", rate_limit: "10.0 %/s", authority: "100.0 %"}
+      pitch:
+        rate_gain: "-0.336 %/(deg/s)"  # on the pitch SAS's A/D output
+        attitude_gain: "-1.42 %/deg"
+        airspeed: {gain: "0.22 %/kt", limit: "1.6 %", integral_gain: "0.0188 %/(kt*s)", hold_above: "30.0 kt"}
+      roll:
+        rate_gain: "-0.189 %/(deg/s)"  # on the roll SAS's A/D output
+        attitude: {gain: "-0.75 %/deg", breakpoint: "7.9 deg", gain_beyond: "-0.375 %/deg"}
+        integral_gain: "-0.0868 %/(deg*s)"
+      yaw:
+        heading: {gain: "-2.2 %/deg", integral_gain: "-0.348 %/(deg*s)", deadband: "1.0 deg"}
+        lateral_accel: {lag: "1.0 s", gain: "-2.38 %/(ft/s^2)", integral_gain: "-0.656 %/(ft/s^2*s)"}
+        roll_rate_gain: "0.11 %/(deg/s)"  # turn switch on
+        collective: {gain: -0.625, airspeed_rate_limit: "10.0 kt/s", fade_from: "40.0 kt", fade_to: "100.0 kt"}  # %/%
+        integrator_wiring: physical  # DATA_GAPS.md, "UH-60A AFCS"
 
   - type: blade_element_rotor
     name: main_rotor

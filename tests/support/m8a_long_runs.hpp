@@ -2,8 +2,9 @@
 
 // The D-042 long runs, shared by the M8a unit gates (60 s) and the
 // VALIDATION.md generator (tests/validation/m8a_cases.cpp, 30 min):
-// (b) the UH-60A's held periodic orbit, (c) the M2 dummy-rotor equilibrium
-// and (d) the free UH-60A parked on its gear.
+// (a) the free UH-60A with its whole AFCS on (M8c3), (b) the UH-60A's held
+// periodic orbit, (c) the M2 dummy-rotor equilibrium and (d) the free UH-60A
+// parked on its gear.
 
 #include <algorithm>
 #include <cmath>
@@ -70,6 +71,60 @@ inline HeldOrbitDrift held_orbit_drift(double kt, int revolutions, int steps = 2
     }
     d.unconverged = held.unconverged();
     return d;
+}
+
+// (a) The free UH-60A with its whole AFCS on (SAS, PBA and FPS, the turn
+// switch off; M8c3), trimmed level at `kt` (ISA sea level) by Model::trim and
+// flown hands-off at 60 Hz for `seconds`, the trim's controls held. One
+// sample per second of the outputs, as the parked run's (below); `speed` is
+// the true airspeed. Empty if the trim fails.
+struct AfcsSample {
+    std::int64_t t_ns = 0;         // [ns] sim time, exact
+    double t = 0.0;                // [s]
+    Vec3 pos_n = Vec3::Zero();     // [m]
+    double roll = 0.0;             // [rad]
+    double pitch = 0.0;            // [rad]
+    double heading = 0.0;          // [rad]
+    double speed = 0.0;            // [m/s]
+    double rate = 0.0;             // |ω_b| [rad/s]
+    double quat_norm_error = 0.0;  // max over the second's frames [-]
+    bool finite = true;            // every state finite, no frame flagged non_finite
+};
+
+inline std::vector<AfcsSample> afcs_free_flight(double kt, int seconds) {
+    Model m = Model::from_file(uh60a_config_path());
+    TrimCondition c;
+    c.airspeed = kt * units::kKnot;
+    c.afcs = {true, true, true, true, false, false};
+    const TrimResult r = m.trim(c);
+    std::vector<AfcsSample> out;
+    if (!r.converged) {
+        return out;
+    }
+    const Environment env{c.isa_delta_T, c.wind_n};  // no ground, as trimmed
+    for (int sec = 1; sec <= seconds; ++sec) {
+        AfcsSample p;
+        for (int f = 0; f < 60; ++f) {
+            const AdvanceStatus st =
+                m.advance(r.controls, env, f % 3 == 2 ? 16'666'666 : 16'666'667);
+            p.finite = p.finite && !st.non_finite;
+            p.quat_norm_error = std::max(p.quat_norm_error, m.outputs().quat_norm_error);
+        }
+        const AircraftState& o = m.outputs();
+        p.t_ns = o.sim_time_ns;
+        p.t = o.sim_time;
+        p.pos_n = o.pos_n;
+        p.roll = o.roll;
+        p.pitch = o.pitch;
+        p.heading = o.heading;
+        p.speed = o.true_airspeed;
+        p.rate = o.omega_b.norm();
+        const auto x = m.state();
+        p.finite =
+            p.finite && std::all_of(x.begin(), x.end(), [](double v) { return std::isfinite(v); });
+        out.push_back(p);
+    }
+    return out;
 }
 
 // (d) The free UH-60A dropped onto level ground from 2.2 m (first contact at

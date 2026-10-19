@@ -325,22 +325,28 @@ public:
             return false;
         }
         Vec6 integral;
+        held_.clear_held_change();
         hold(1, controls(z), integral);
         const Vec6 mean = integral / held_.period();
         r.resize(static_cast<Eigen::Index>(unknowns()));
         r.head<3>() = mean.head<3>() / weight_;
         r.segment<3>(3) = mean.tail<3>() / (weight_ * length_);
-        // A held state's change over the revolution doesn't count: it stays
-        // at its steady value through the trim, as GenHel's IC mode holds
-        // integrators (p. 5.5-2), and no unknown could remove it (D-045).
-        const std::span<const SteadyKind> kinds = ex_.steady_kinds();
+        // A held state stays at its steady value through the revolution (the
+        // held integrator keeps it, as GenHel's IC mode holds integrators, p.
+        // 5.5-2; D-045), so its residual is zero. The change it would have
+        // made is reported as a mean rate instead (held_drift_rate()).
+        held_drift_ = 0.0;
         for (std::size_t j = 0; j < nc_; ++j) {
             const std::size_t i = body_layout::kSize + j;
-            r(static_cast<Eigen::Index>(kHead + j)) =
-                kinds[i] == SteadyKind::held ? 0.0 : x_[i] - start_[i];
+            r(static_cast<Eigen::Index>(kHead + j)) = x_[i] - start_[i];
+            held_drift_ = std::max(held_drift_, std::abs(held_.held_change()[i]) / held_.period());
         }
-        return r.allFinite();
+        return r.allFinite() && std::isfinite(held_drift_);
     }
+
+    // The largest mean rate of a held state over the revolution of the last
+    // residual() [its units per second].
+    double held_drift_rate() const { return held_drift_; }
 
 private:
     const Executive& ex_;
@@ -352,6 +358,7 @@ private:
     HeldIntegrator held_;
     std::vector<double> x_;
     std::vector<double> start_;  // x_ as packed, before the revolution
+    double held_drift_ = 0.0;
 };
 
 struct Norms {
@@ -568,6 +575,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
     result.force_residual = m.force * p.weight();
     result.moment_residual = m.moment * p.weight() * p.length();
     result.periodic_residual = m.periodic;
+    result.held_drift_rate = ok ? p.held_drift_rate() : nan;
     return result;
 }
 

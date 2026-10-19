@@ -11,18 +11,23 @@
 #include "env/atmosphere.hpp"
 #include "util/config.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 
 namespace eyas {
 
 namespace detail {
 
-// The SAS and PBA at one evaluation (M8c2): the input of every first-order
-// state (a lag's input, a washout's or hold's input, an actuator's command,
-// the fade's target), the channel outputs [-] and the PBA's held command.
+// The SAS, PBA and FPS at one evaluation (M8c2, M8c3): the input of every
+// first-order state (a lag's input, a washout's or hold's input, an
+// actuator's command, the fade's target), the channel outputs [-] and the
+// PBA's held command. For the FPS states `in` is their steady value (a
+// reference's input, an integrator's zero) and `fps_rate` their rates.
 struct GenHelAfcsSignals {
     std::array<double, GenHelFcs::kNumStates> in{};
     double pitch_d = 0.0, pitch_a = 0.0, roll_d = 0.0, roll_a = 0.0, yaw_d = 0.0, yaw_a = 0.0;
     double pba_held = 0.0;  // the hold's output
+    double potemp = 0.0, rotemp = 0.0, yotemp = 0.0;
+    std::array<double, GenHelFcs::kNumFpsStates> fps_rate{};
 };
 
 }  // namespace detail
@@ -42,9 +47,11 @@ struct Mixer {
 };
 
 // The automatic inputs to the mixer's sums [m]: the SAS inner loop XAILS,
-// XBILS, XPILS and the PBA's XBBAS (M8c2; the FPS joins in M8c3).
+// XBILS, XPILS, the PBA's XBBAS (M8c2) and the FPS's XAOLS, XBOLS, XPOLS
+// (M8c3).
 struct InnerLoop {
     double xa = 0.0, xb = 0.0, xp = 0.0;
+    double xaols = 0.0, xbols = 0.0, xpols = 0.0;  // the FPS's share of them
 };
 
 // GenHel Figs. 5.1.6(a)–(d) (p. 5.5-14 to 5.5-17; control_rigging_5_5.txt):
@@ -53,9 +60,9 @@ struct InnerLoop {
 //   A1S    = KXAA1S XASUM + MIX_AC THOSUM + BIAS_A
 //   B1S    = KXBB1S XBSUM + MIX_BC THOSUM + MIX_BP THRSUM + BIAS_B
 //   THETTR = THRSUM + THOSUM + BIAS_P
-// with XBSUM = SIGN_XB2 XB+2 + XBILS + XBBAS, XASUM = XA+2 + XAILS, XPSUM =
-// XP+2 + XPILS, XCSUM = XC+2, then the rotor head limits of p. 5.5-20 on
-// THETA0, A1S and B1S (D-045).
+// with XBSUM = SIGN_XB2 XB+2 + XBOLS + XBILS + XBBAS, XASUM = XA+2 + XAOLS +
+// XAILS, XPSUM = XP+2 + XPOLS + XPILS, XCSUM = XC+2, then the rotor head
+// limits of p. 5.5-20 on THETA0, A1S and B1S (D-045).
 Mixer mix(const GenHelRigging& r, const Controls& c, const InnerLoop& il) noexcept {
     const double xc = inches(r.collective, c.collective, true);
     const double xa = inches(r.lat_cyclic, c.lat_cyclic, false) + il.xa;
@@ -164,6 +171,127 @@ using AfcsSignals = detail::GenHelAfcsSignals;
 double pade_hold(std::span<const double> x, std::size_t i, double u, AfcsSignals& s) noexcept {
     s.in[i] = u;
     return 2.0 * x[i] - u;
+}
+
+// The FPS synchronizers' tracking time constant (numerical, D-045 M8c3):
+// GenHel's synchronizer outputs zero while it tracks, then holds the input
+// it last had. Here the reference follows the input as a lag of this time
+// constant, so the output on engaging is the input's rate times it: 0.1° at
+// 10°/s. RK4 at 1 ms is stable for it (h/τ = 0.1).
+constexpr double kSyncTau = 0.01;  // [s]
+
+// The FPS's airspeed rate limiter (KLVXYO) approaches its input as the
+// SAS's fade does: at most the limit, proportional within limit/k of it.
+constexpr double kRateLimiterGain = kFadeGain;  // [1/s]
+
+// v within ±d is zero; beyond, the excess (Fig. 5.1.5(c)'s deadband).
+double deadband(double v, double d) noexcept {
+    if (v > d) {
+        return v - d;
+    }
+    return v < -d ? v + d : 0.0;
+}
+
+// Fig. 5.1.5(b)'s attitude gain: KPHRO1 within ±BPPHRO, KPHRO2 beyond, odd
+// and continuous.
+double fps_roll_attitude(const GenHelFpsRoll& r, double phi) noexcept {
+    const double b = r.attitude_breakpoint;
+    if (std::abs(phi) <= b) {
+        return r.attitude_gain * phi;
+    }
+    const double edge = std::copysign(b, phi);
+    return r.attitude_gain * edge + r.attitude_gain_beyond * (phi - edge);
+}
+
+// GenHel Figs. 5.1.5(a)–(c) (FPS) and the text p. 5.5-3; signal names as
+// fig_5_1_5_fps.txt. Inputs as the SAS's: the vertical gyro's attitude and
+// heading (the Euler angles), VXBIKT `v`, the conditioned rates q₁ and p₁
+// (the SAS A/D outputs), Y.SENS, and the collective stick [0, 1] for XCPC.
+// Each synchronizer holds (output: input − reference) or tracks (output 0,
+// the reference following its input; kSyncTau). Every synchronizer tracks
+// with the FPS off (text p. 5.5-3) or the trim release held (an Eyas
+// assumption, D-045 M8c3); the airspeed's also below VG30SW, the heading's
+// with the turn switch on. The integrators run only with the FPS on and the
+// trim release up; the roll integrator stops with the turn switch on.
+void fps_signals(const GenHelFps& f, const SimContext& ctx, std::span<const double> x,
+                 const EulerAngles& e, double v, double q1, double p1, double ysens,
+                 AfcsSignals& o) noexcept {
+    const AfcsSwitches& sw = ctx.controls.afcs;
+    const bool sync_all = !sw.fps || sw.trim_release;
+    const bool run = sw.fps && !sw.trim_release;
+    auto& in = o.in;
+    const auto rate = [&](std::size_t i) -> double& { return o.fps_rate[i - Fcs::kFpsBegin]; };
+    // `diff` is the input less the reference.
+    const auto sync = [&](std::size_t i, double input, double diff, bool track) {
+        in[i] = input;
+        rate(i) = track ? diff / kSyncTau : 0.0;
+        return track ? 0.0 : diff;
+    };
+    const auto integrate = [&](std::size_t i, double u, bool running) {
+        in[i] = 0.0;
+        rate(i) = running ? u : 0.0;
+        return x[i];
+    };
+
+    // Pitch, Fig. 5.1.5(a).
+    const GenHelFpsPitch& pp = f.pitch;
+    const double dtheta =
+        sync(Fcs::kFpsThetaRef, e.pitch, e.pitch - x[Fcs::kFpsThetaRef], sync_all);
+    const double dv =
+        sync(Fcs::kFpsSpeedRef, v, v - x[Fcs::kFpsSpeedRef], sync_all || v < pp.speed_hold_above);
+    const double iv = integrate(Fcs::kFpsSpeedInt, pp.speed_integral_gain * dv, run);
+    o.potemp = pp.rate_gain * q1 + pp.attitude_gain * dtheta +
+               limit(pp.speed_gain * dv, pp.speed_limit) + iv;
+
+    // Roll, Fig. 5.1.5(b).
+    const GenHelFpsRoll& rr = f.roll;
+    const double dphi = sync(Fcs::kFpsPhiRef, e.roll, e.roll - x[Fcs::kFpsPhiRef], sync_all);
+    const double iphi = integrate(Fcs::kFpsRollInt, rr.integral_gain * dphi, run && !sw.fps_turn);
+    o.rotemp = rr.rate_gain * p1 + fps_roll_attitude(rr, dphi) + iphi;
+
+    // Yaw, Fig. 5.1.5(c): heading, its deadbanded integral or the lateral
+    // acceleration's (YawIntegratorWiring), roll rate and lateral
+    // acceleration in turns, and the collective, faded out with airspeed.
+    const GenHelFpsYaw& y = f.yaw;
+    const double dpsi = sync(Fcs::kFpsPsiRef, e.heading, wrap_pi(e.heading - x[Fcs::kFpsPsiRef]),
+                             sync_all || sw.fps_turn);
+    in[Fcs::kFpsAccelLag] = ysens;  // a lag (tau_)
+    const double ay = x[Fcs::kFpsAccelLag];
+    const bool heading_path =
+        (y.wiring == YawIntegratorWiring::physical) ? !sw.fps_turn : sw.fps_turn;
+    const double integrand = heading_path
+                                 ? y.heading_integral_gain * deadband(dpsi, y.heading_deadband)
+                                 : y.accel_integral_gain * ay;
+    const double ipsi = integrate(Fcs::kFpsYawInt, integrand, run);
+    const double xc = ctx.controls.collective;
+    const double dxc = sync(Fcs::kFpsCollRef, xc, xc - x[Fcs::kFpsCollRef], sync_all);
+    in[Fcs::kFpsSpeedRl] = v;
+    rate(Fcs::kFpsSpeedRl) =
+        limit(kRateLimiterGain * (v - x[Fcs::kFpsSpeedRl]), y.speed_rate_limit);
+    const double lmix = std::clamp((y.collective_fade_to - x[Fcs::kFpsSpeedRl]) /
+                                       (y.collective_fade_to - y.collective_fade_from),
+                                   0.0, 1.0);
+    const double turn = sw.fps_turn ? y.roll_rate_gain * p1 + y.accel_gain * ay : 0.0;
+    o.yotemp = y.heading_gain * dpsi + ipsi + turn + y.collective_gain * dxc * lmix;
+
+    // Each axis: the 0.1 s hold, FPSSW, the trim actuator (rate limited, it
+    // stops at its travel as the PBA's does, D-045). With the FPS off it
+    // drives back to centre, trim release or not (code review); with the FPS
+    // on and the trim release held it stays.
+    const bool freeze = sw.fps && sw.trim_release;
+    const auto channel = [&](std::size_t hold, std::size_t act, double temp) {
+        const double held = pade_hold(x, hold, temp, o);
+        const double cmd = sw.fps ? held : 0.0;
+        in[act] = limit(cmd, f.authority);
+        double a = freeze ? 0.0 : limit(f.actuator_gain * (cmd - x[act]), f.rate_limit);
+        if ((x[act] >= f.authority && a > 0.0) || (x[act] <= -f.authority && a < 0.0)) {
+            a = 0.0;
+        }
+        rate(act) = a;
+    };
+    channel(Fcs::kFpsPitchHold, Fcs::kFpsPitchAct, o.potemp);
+    channel(Fcs::kFpsRollHold, Fcs::kFpsRollAct, o.rotemp);
+    channel(Fcs::kFpsYawHold, Fcs::kFpsYawAct, o.yotemp);
 }
 
 // GenHel Figs. 5.1.3(a)–(c) (SAS) and 5.1.4 (PBA), with the text pp. 5.5-2,
@@ -290,7 +418,21 @@ AfcsSignals afcs_signals(const GenHelFcsConfig& c, const SimContext& ctx,
                 : 0.0;
         o.pba_held = pade_hold(x, Fcs::kPbaHold, batemp, o);
     }
+    if (c.fps) {
+        fps_signals(*c.fps, ctx, x, e, v, q1, p1, ysens, o);
+    }
     return o;
+}
+
+// The FPS trim actuators' inches XBOLS, XAOLS, XPOLS at states x: percent →
+// blade pitch (KPCDG*) → inches (1/KX*), Figs. 5.1.5(a)–(c). The FPS needs
+// the SAS, whose section holds the KPCDG* gains.
+void fps_inches(const GenHelFps& f, const GenHelSas& s, const GenHelRigging& r,
+                std::span<const double> x, InnerLoop& il) noexcept {
+    const double auth = f.authority;
+    il.xbols = limit(x[Fcs::kFpsPitchAct], auth) * s.descale_pitch / r.k_longitudinal;
+    il.xaols = limit(x[Fcs::kFpsRollAct], auth) * s.descale_roll / r.k_lateral;
+    il.xpols = limit(x[Fcs::kFpsYawAct], auth) * s.descale_yaw / r.k_pedal;
 }
 
 // The automatic inches into the mixer at states x.
@@ -303,6 +445,12 @@ InnerLoop inner_loop(const GenHelFcsConfig& c, std::span<const double> x) noexce
         if (c.pitch_bias) {
             const double pba = limit(x[Fcs::kPba], c.pitch_bias->authority);
             il.xb += pba * c.sas->descale_pitch / c.rigging.k_longitudinal;  // XBBAS
+        }
+        if (c.fps) {
+            fps_inches(*c.fps, *c.sas, c.rigging, x, il);
+            il.xb += il.xbols;
+            il.xa += il.xaols;
+            il.xp += il.xpols;
         }
     }
     return il;
@@ -417,6 +565,33 @@ GenHelFcs::GenHelFcs(GenHelFcsConfig config)
         }
         tau_[kPbaHold] = b.hold / 4.0;
     }
+    if (config_.fps) {
+        const GenHelFps& f = *config_.fps;
+        if (!config_.sas) {
+            throw InitError("genhel_fcs: the fps needs the sas (its rates and descaling)");
+        }
+        const GenHelFpsYaw& y = f.yaw;
+        if (!(f.hold > 0.0) || !(f.actuator_gain > 0.0) || !(f.rate_limit > 0.0) ||
+            !(f.authority > 0.0) || !(y.accel_lag > 0.0) || !(y.speed_rate_limit > 0.0)) {
+            throw InitError(
+                "genhel_fcs: the fps needs hold, actuator gain, rate limit and authority, the "
+                "lateral acceleration lag and the airspeed rate limit > 0");
+        }
+        if (!(f.pitch.speed_limit >= 0.0) || !(f.pitch.speed_hold_above >= 0.0) ||
+            !(f.roll.attitude_breakpoint >= 0.0) || !(y.heading_deadband >= 0.0)) {
+            throw InitError(
+                "genhel_fcs: the fps airspeed limit and hold speed, roll breakpoint and heading "
+                "deadband must be >= 0");
+        }
+        if (!(y.collective_fade_from < y.collective_fade_to)) {
+            throw InitError("genhel_fcs: the fps collective fade needs from < to");
+        }
+        const double hold = f.hold / 4.0;  // the Padé's lag (pade_hold())
+        tau_[kFpsPitchHold] = hold;
+        tau_[kFpsRollHold] = hold;
+        tau_[kFpsYawHold] = hold;
+        tau_[kFpsAccelLag] = y.accel_lag;
+    }
 }
 
 void GenHelFcs::initial_states(std::span<double> x) const {
@@ -465,10 +640,22 @@ GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx, std::span<const doub
         o.xbils = x[kPitchAct];
         o.xails = x[kRollAct];
         o.xpils = x[kYawAct];
-        o.xbbas = il.xb - o.xbils;
     }
-    if (config_.pitch_bias) {
+    if (config_.sas && config_.pitch_bias) {
         o.pba = limit(x[kPba], config_.pitch_bias->authority);
+        o.xbbas = o.pba * config_.sas->descale_pitch / r.k_longitudinal;
+    }
+    if (config_.fps) {
+        const double auth = config_.fps->authority;
+        o.potemp = s.potemp;
+        o.rotemp = s.rotemp;
+        o.yotemp = s.yotemp;
+        o.fps_pitch = limit(x[kFpsPitchAct], auth);
+        o.fps_roll = limit(x[kFpsRollAct], auth);
+        o.fps_yaw = limit(x[kFpsYawAct], auth);
+        o.xbols = il.xbols;
+        o.xaols = il.xaols;
+        o.xpols = il.xpols;
     }
     const Mixer m = mix(r, ctx.controls, il);
     o.theta0_cmd = m.theta0;
@@ -569,6 +756,16 @@ void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
         }
         out.xdot0[kPba] = v;
     }
+    // FPS (M8c3): the holds and the lag ran with the others above; the
+    // references, integrators, rate limiter and trim actuators have their
+    // rates from fps_signals().
+    if (config_.fps) {
+        for (std::size_t i = kFpsBegin; i < kNumStates; ++i) {
+            if (tau_[i] == 0.0) {
+                out.xdot0[i] = s.fps_rate[i - kFpsBegin];
+            }
+        }
+    }
 }
 
 void GenHelFcs::steady_states(const SimContext& ctx, std::span<double> x) const {
@@ -579,10 +776,12 @@ void GenHelFcs::steady_states(const SimContext& ctx, std::span<double> x) const 
     x[kGyroR] = b.omega_b.z();
     x[kAccelY] = lateral_specific_force0(b, config_.accelerometer_b);
     x[kAirspeedLag] = body_x_eas(ctx);
-    // SAS and PBA (GenHel's IC mode, p. 5.5-2: integrators at their initial
-    // values): every state at its input, pass by pass down the chains, so the
-    // washouts read zero and the lags their steady input; the fade at its
-    // target; the PBA at its held command within its travel.
+    // SAS, PBA and FPS (GenHel's IC mode, p. 5.5-2: integrators at their
+    // initial values, synchronizers tracking): every state at its input, pass
+    // by pass down the chains, so the washouts read zero and the lags their
+    // steady input; the fade at its target; the PBA at its held command
+    // within its travel; the FPS references at their inputs, its integrators
+    // at zero and its trim actuators at their held commands within travel.
     if (config_.sas) {
         for (int pass = 0; pass < kSteadyPasses; ++pass) {
             const AfcsSignals s = afcs_signals(config_, ctx, x);
@@ -606,6 +805,15 @@ void GenHelFcs::steady_states(const SimContext& ctx, std::span<double> x) const 
 
 void GenHelFcs::steady_kinds(std::span<SteadyKind> kinds) const {
     std::fill(kinds.begin(), kinds.end(), SteadyKind::orbit);
+    if (!config_.fps) {
+        std::fill(kinds.begin() + static_cast<std::ptrdiff_t>(kFpsBegin), kinds.end(),
+                  SteadyKind::held);  // zero, with no dynamics
+        return;
+    }
+    for (const std::size_t i : {kFpsThetaRef, kFpsSpeedRef, kFpsSpeedInt, kFpsPhiRef, kFpsRollInt,
+                                kFpsPsiRef, kFpsYawInt, kFpsCollRef}) {
+        kinds[i] = SteadyKind::held;
+    }
 }
 
 namespace {
@@ -848,11 +1056,72 @@ GenHelPitchBias pitch_bias_from_config(const Config& node) {
     return b;
 }
 
+GenHelFps fps_from_config(const Config& node) {
+    node.allow_keys({"hold", "trim_actuator", "pitch", "roll", "yaw"});
+    GenHelFps f;
+    f.hold = node.quantity("hold", Dimension::time);
+    const Config ac = node.child("trim_actuator");
+    ac.allow_keys({"gain", "rate_limit", "authority"});
+    f.actuator_gain = ac.quantity("gain", Dimension::frequency);
+    f.rate_limit = ac.quantity("rate_limit", Dimension::frequency);
+    f.authority = ac.quantity("authority", Dimension::dimensionless);
+
+    const Config p = node.child("pitch");
+    p.allow_keys({"rate_gain", "attitude_gain", "airspeed"});
+    f.pitch.rate_gain = p.quantity("rate_gain", Dimension::per_angular_rate);
+    f.pitch.attitude_gain = p.quantity("attitude_gain", Dimension::per_angle);
+    const Config pv = p.child("airspeed");
+    pv.allow_keys({"gain", "limit", "integral_gain", "hold_above"});
+    f.pitch.speed_gain = pv.quantity("gain", Dimension::per_speed);
+    f.pitch.speed_limit = pv.quantity("limit", Dimension::dimensionless);
+    f.pitch.speed_integral_gain = pv.quantity("integral_gain", Dimension::per_length);
+    f.pitch.speed_hold_above = pv.quantity("hold_above", Dimension::speed);
+
+    const Config r = node.child("roll");
+    r.allow_keys({"rate_gain", "attitude", "integral_gain"});
+    f.roll.rate_gain = r.quantity("rate_gain", Dimension::per_angular_rate);
+    const Config ra = r.child("attitude");
+    ra.allow_keys({"gain", "breakpoint", "gain_beyond"});
+    f.roll.attitude_gain = ra.quantity("gain", Dimension::per_angle);
+    f.roll.attitude_breakpoint = ra.quantity("breakpoint", Dimension::angle);
+    f.roll.attitude_gain_beyond = ra.quantity("gain_beyond", Dimension::per_angle);
+    f.roll.integral_gain = r.quantity("integral_gain", Dimension::per_angle_time);
+
+    const Config y = node.child("yaw");
+    y.allow_keys({"heading", "lateral_accel", "roll_rate_gain", "collective", "integrator_wiring"});
+    const Config yh = y.child("heading");
+    yh.allow_keys({"gain", "integral_gain", "deadband"});
+    f.yaw.heading_gain = yh.quantity("gain", Dimension::per_angle);
+    f.yaw.heading_integral_gain = yh.quantity("integral_gain", Dimension::per_angle_time);
+    f.yaw.heading_deadband = yh.quantity("deadband", Dimension::angle);
+    const Config ya = y.child("lateral_accel");
+    ya.allow_keys({"lag", "gain", "integral_gain"});
+    f.yaw.accel_lag = ya.quantity("lag", Dimension::time);
+    f.yaw.accel_gain = ya.quantity("gain", Dimension::per_acceleration);
+    f.yaw.accel_integral_gain = ya.quantity("integral_gain", Dimension::per_speed);
+    f.yaw.roll_rate_gain = y.quantity("roll_rate_gain", Dimension::per_angular_rate);
+    const Config yc = y.child("collective");
+    yc.allow_keys({"gain", "airspeed_rate_limit", "fade_from", "fade_to"});
+    f.yaw.collective_gain = yc.number("gain");
+    f.yaw.speed_rate_limit = yc.quantity("airspeed_rate_limit", Dimension::acceleration);
+    f.yaw.collective_fade_from = yc.quantity("fade_from", Dimension::speed);
+    f.yaw.collective_fade_to = yc.quantity("fade_to", Dimension::speed);
+    const std::string wiring = y.string("integrator_wiring");
+    if (wiring == "physical") {
+        f.yaw.wiring = YawIntegratorWiring::physical;
+    } else if (wiring == "as_printed") {
+        f.yaw.wiring = YawIntegratorWiring::as_printed;
+    } else {
+        y.fail("integrator_wiring", "must be physical or as_printed");
+    }
+    return f;
+}
+
 }  // namespace
 
 std::unique_ptr<GenHelFcs> GenHelFcs::from_config(const Config& node) {
     node.allow_keys({"type", "name", "rigging", "primary_servo", "rate_gyro",
-                     "lateral_accelerometer", "stabilator", "sas", "pitch_bias"});
+                     "lateral_accelerometer", "stabilator", "sas", "pitch_bias", "fps"});
     GenHelFcsConfig c;
     c.name = node.string("name");
     c.rigging =
@@ -877,6 +1146,9 @@ std::unique_ptr<GenHelFcs> GenHelFcs::from_config(const Config& node) {
     }
     if (node.contains("pitch_bias")) {
         c.pitch_bias = pitch_bias_from_config(node.child("pitch_bias"));
+    }
+    if (node.contains("fps")) {
+        c.fps = node.in_context("fps", [&] { return fps_from_config(node.child("fps")); });
     }
     return node.in_context("", [&] { return std::make_unique<GenHelFcs>(std::move(c)); });
 }
