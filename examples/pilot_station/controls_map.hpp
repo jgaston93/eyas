@@ -3,6 +3,7 @@
 #include <array>
 #include <limits>
 
+#include "common/afcs.hpp"
 #include "eyas/types.hpp"
 
 // Pilot-station control mapping (D-044): raw device axes and buttons to
@@ -94,19 +95,9 @@ struct ControlDeltas {
 // Deadband, then expo: odd, continuous, 0 inside the deadband, ±1 at ±1.
 double shape(double raw, double deadband, double expo) noexcept;
 
-// What the FPS turn switch's latch reads of the aircraft (GenHel CR-166309
-// p. 5.5-3), from the outputs of the frame before.
-struct TurnSwitchInputs {
-    double airspeed_kt = 0.0;  // VXBIKT: the body-x equivalent airspeed [kt]
-    double roll = 0.0;         // φ [rad]
-};
-
-// The latch (GenHel p. 5.5-3; D-045 M8c3): latched on with the FPS on,
-// VXBIKT above 60 kt, the trim release pressed and more than 2° of bank;
-// off with the feet on the pedals and the trim release pressed, or with the
-// FPS off. Returns the new switch position.
-bool latch_turn_switch(bool on, const eyas::AfcsSwitches& s, bool feet_on_pedals,
-                       const TurnSwitchInputs& f) noexcept;
+// The FPS turn switch's latch (common/afcs.hpp).
+using examples::latch_turn_switch;
+using examples::TurnSwitchInputs;
 
 class ControlsMap {
 public:

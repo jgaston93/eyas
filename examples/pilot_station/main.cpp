@@ -72,8 +72,6 @@
 
 namespace {
 
-constexpr double kKnot = 1852.0 / 3600.0;  // [m/s]
-
 using station::InputSource;
 
 struct Options {
@@ -378,10 +376,7 @@ int run(const Options& opt) {
                 // The turn switch's latch reads the frame before's VXBIKT
                 // (body-x equivalent airspeed) and bank.
                 const eyas::AircraftState& o = st.outputs();
-                const station::TurnSwitchInputs turn{o.equivalent_airspeed *
-                                                         std::cos(o.angle_of_attack) *
-                                                         std::cos(o.sideslip) / kKnot,
-                                                     o.roll};
+                const station::TurnSwitchInputs turn{examples::vxbikt_kt(o), o.roll};
                 applied = map.update(raw, dt, turn);
                 d = map.deltas();
             }

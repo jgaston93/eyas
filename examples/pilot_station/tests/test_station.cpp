@@ -287,7 +287,7 @@ TEST(StationControls, AfcsTextRoundTrips) {
         const eyas::AfcsSwitches s{on(0), on(1), on(2), on(3), on(4), on(5)};
         for (const char sep : {',', '+'}) {
             const eyas::AfcsSwitches r = examples::parse_afcs(examples::afcs_text(s, sep), sep);
-            EXPECT_TRUE(examples::same_switches(r, s)) << bits << sep;
+            EXPECT_EQ(r, s) << bits << sep;
         }
     }
     EXPECT_EQ(examples::afcs_text({true, true, true}), "sas,pba");
@@ -851,6 +851,32 @@ TEST(StationRecorder, AfcsChangesAreRecorded) {
     examples::ControlSchedule sched(rows);
     EXPECT_TRUE(sched.at(start, 0.1).afcs.pitch_bias);
     EXPECT_FALSE(sched.at(start, 0.3).afcs.pitch_bias);
+}
+
+// Control files: exactly one of the two headers, and nothing after the last
+// column, so a misspelt afcs column can't be read as a file without switches
+// (code review, M8c3).
+TEST(StationRecorder, ControlFileReaderIsStrict) {
+    const std::filesystem::path dir = std::filesystem::temp_directory_path();
+    const auto read = [&](const std::string& name, const std::string& text) {
+        const std::string path = (dir / name).string();
+        std::ofstream(path) << text;
+        return examples::read_controls(path);
+    };
+    const std::string old_header = "time_s,d_collective,d_lat_cyclic,d_lon_cyclic,d_pedal\n";
+    EXPECT_THROW(read("eyas_cf_upper.csv",
+                      "time_s,d_collective,d_lat_cyclic,d_lon_cyclic,"
+                      "d_pedal,AFCS\n0,0,0,0,0,sas\n"),
+                 std::runtime_error);
+    EXPECT_THROW(read("eyas_cf_extra.csv", old_header + "0,0,0,0,0,sas+fps\n"), std::runtime_error);
+    EXPECT_THROW(read("eyas_cf_bad.csv",
+                      std::string(examples::kControlHeaderAfcs) + "\n0,0,0,0,0,sas+autopilot\n"),
+                 std::runtime_error);
+    const auto rows = read("eyas_cf_crlf.csv",
+                           std::string(examples::kControlHeaderAfcs) + "\r\n0,0,0,0,0,sas+fps\r\n");
+    ASSERT_EQ(rows.size(), 1U);
+    EXPECT_TRUE(rows[0].has_afcs && rows[0].afcs.fps && rows[0].afcs.sas_analog);
+    EXPECT_EQ(read("eyas_cf_old.csv", old_header + "0,0,0,0,0\n").size(), 1U);
 }
 
 // The exact FlightGear sequence (code review): the untouched throttle reads

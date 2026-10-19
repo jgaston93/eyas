@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <numbers>
 
 namespace station {
 
@@ -17,22 +16,6 @@ double shape(double raw, double deadband, double expo) noexcept {
     const double e = std::clamp(expo, 0.0, 1.0);
     const double y = (1.0 - e) * x + e * x * x * x;
     return raw < 0.0 ? -y : y;
-}
-
-bool latch_turn_switch(bool on, const eyas::AfcsSwitches& s, bool feet_on_pedals,
-                       const TurnSwitchInputs& f) noexcept {
-    constexpr double kLatchSpeed = 60.0;                           // [kt]
-    constexpr double kLatchBank = 2.0 * std::numbers::pi / 180.0;  // [rad]
-    if (!s.fps) {
-        return false;
-    }
-    if (s.trim_release && feet_on_pedals) {
-        return false;
-    }
-    if (s.trim_release && f.airspeed_kt > kLatchSpeed && std::abs(f.roll) > kLatchBank) {
-        return true;
-    }
-    return on;
 }
 
 ControlsMap::ControlsMap(const ControlsMapConfig& config, const eyas::Controls& start) noexcept

@@ -19,7 +19,8 @@ struct PilotInputs {
     bool sas = false;                // cockpit switch: stability augmentation, both channels
     bool pitch_bias = false;         // cockpit switch: pitch bias actuator
     bool fps = false;                // cockpit switch: flight path stabilization
-    bool turn_coordination = false;  // the FPS turn mode, latched by the host's logic
+    bool turn_coordination = false;  // the FPS turn mode, latched by the host
+                                     // (e.g. with examples::latch_turn_switch)
     bool trim_release = false;       // cyclic button, held
 };
 

@@ -1,16 +1,21 @@
 #pragma once
 
+#include <cmath>
+#include <numbers>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 
+#include "common/units.hpp"
+#include "eyas/aircraft_state.hpp"
 #include "eyas/types.hpp"
 
 // The flight control system's switches as text: a list of sas (both SAS
 // channels), sas_digital, sas_analog, pba, fps, fps_turn and trim_release, or
 // none. --afcs in eyas_drive and the pilot station separates them with
 // commas (M8c2); the control files' and state histories' afcs column with
-// '+', so the CSV keeps its commas (M8c3).
+// '+', so the CSV keeps its commas (M8c3). Also GenHel's FPS turn-switch
+// latch, which a host runs itself (the library leaves the switch to it).
 namespace examples {
 
 inline std::string afcs_text(const eyas::AfcsSwitches& s, char separator = ',') {
@@ -76,10 +81,38 @@ inline eyas::AfcsSwitches parse_afcs(std::string_view text, char separator = ','
     return s;
 }
 
-inline bool same_switches(const eyas::AfcsSwitches& a, const eyas::AfcsSwitches& b) noexcept {
-    return a.sas_digital == b.sas_digital && a.sas_analog == b.sas_analog &&
-           a.pitch_bias == b.pitch_bias && a.fps == b.fps && a.fps_turn == b.fps_turn &&
-           a.trim_release == b.trim_release;
+// What GenHel's FPS turn-switch latch reads of the aircraft (CR-166309 p.
+// 5.5-3), from the outputs of the frame before.
+struct TurnSwitchInputs {
+    double airspeed_kt = 0.0;  // VXBIKT: the body-x equivalent airspeed [kt]
+    double roll = 0.0;         // φ [rad]
+};
+
+// VXBIKT from the public outputs [kt]: the body-x equivalent airspeed, as the
+// library's flight control system reads it (genhel_fcs, D-040). u_air = V
+// cos α cos β, so it is the equivalent airspeed times cos α cos β.
+inline double vxbikt_kt(const eyas::AircraftState& o) noexcept {
+    return o.equivalent_airspeed * std::cos(o.angle_of_attack) * std::cos(o.sideslip) / kKnot;
+}
+
+// The latch (GenHel p. 5.5-3; D-045 M8c3), for a host to run with its
+// switches: latched on with the FPS on, VXBIKT above 60 kt, the trim release
+// pressed and more than 2° of bank; off with the feet on the pedals and the
+// trim release pressed, or with the FPS off. Returns the new switch position.
+inline bool latch_turn_switch(bool on, const eyas::AfcsSwitches& s, bool feet_on_pedals,
+                              const TurnSwitchInputs& f) noexcept {
+    constexpr double kLatchSpeed = 60.0;                           // [kt]
+    constexpr double kLatchBank = 2.0 * std::numbers::pi / 180.0;  // [rad]
+    if (!s.fps) {
+        return false;
+    }
+    if (s.trim_release && feet_on_pedals) {
+        return false;
+    }
+    if (s.trim_release && f.airspeed_kt > kLatchSpeed && std::abs(f.roll) > kLatchBank) {
+        return true;
+    }
+    return on;
 }
 
 }  // namespace examples

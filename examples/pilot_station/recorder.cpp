@@ -104,8 +104,7 @@ void Recorder::frame(double t, const ControlDeltas& d, const eyas::Controls& c,
     // switches replay from the afcs column; M8c3).
     if (controls_.is_open() &&
         (first_ || d.collective != last_.collective || d.lat_cyclic != last_.lat_cyclic ||
-         d.lon_cyclic != last_.lon_cyclic || d.pedal != last_.pedal ||
-         !examples::same_switches(c.afcs, last_afcs_))) {
+         d.lon_cyclic != last_.lon_cyclic || d.pedal != last_.pedal || c.afcs != last_afcs_)) {
         examples::write_control_row(
             controls_, {t, d.collective, d.lat_cyclic, d.lon_cyclic, d.pedal, true, c.afcs});
         last_ = d;

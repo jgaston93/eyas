@@ -37,6 +37,9 @@ struct AfcsSwitches {
     bool fps = false;           // GenHel FPSSW
     bool fps_turn = false;      // GenHel TURNSW (NTRNSW is its inverse)
     bool trim_release = false;  // momentary, held while pressed
+
+    // Every switch alike (so a switch added later is compared too).
+    friend bool operator==(const AfcsSwitches&, const AfcsSwitches&) = default;
 };
 
 // Normalized pilot inputs (sign conventions per D-024).

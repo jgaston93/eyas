@@ -3,10 +3,13 @@
 # the command in its header; the two state histories must be byte-identical.
 #
 #   cmake -DSTATION=... -DDRIVE=... -DCONFIG=... -DCONTROLS=... -DWORK=<dir>
-#         [-DAFCS=<switches>] -P check_replay.cmake
+#         [-DAFCS=<switches>] [-DSWITCH_SETS=<n>] -P check_replay.cmake
 #
 # AFCS, if given, is the station's --afcs (its start switches); a control
-# file with an afcs column switches them in flight (M8c3).
+# file with an afcs column switches them in flight (M8c3). SWITCH_SETS, if
+# given, is how many different sets of switches the state history must show
+# (its afcs column), so that a replay that dropped the switches can't pass by
+# agreeing with a station that dropped them too (code review).
 
 file(MAKE_DIRECTORY ${WORK})
 set(rec ${WORK}/recording.csv)
@@ -50,5 +53,18 @@ file(STRINGS ${station_out} lines)
 list(LENGTH lines n)
 if(NOT n EQUAL 602)
     message(FATAL_ERROR "expected 602 lines (header, t = 0, 600 frames), got ${n}")
+endif()
+if(SWITCH_SETS)
+    set(sets)
+    foreach(line IN LISTS lines)
+        string(REGEX MATCH "[^,]*$" last "${line}")
+        list(APPEND sets "${last}")
+    endforeach()
+    list(REMOVE_AT sets 0)  # the header
+    list(REMOVE_DUPLICATES sets)
+    list(LENGTH sets n_sets)
+    if(NOT n_sets EQUAL SWITCH_SETS)
+        message(FATAL_ERROR "expected ${SWITCH_SETS} sets of AFCS switches, got ${n_sets}: ${sets}")
+    endif()
 endif()
 message(STATUS "replay identical: ${n} lines")

@@ -23,8 +23,11 @@ std::vector<ControlRow> read_controls(const std::string& path) {
             break;
         }
     }
-    const bool with_afcs = line.starts_with(kControlHeaderAfcs);
-    if (!with_afcs && !line.starts_with(kControlHeader)) {
+    // Exactly one of the two headers (trailing blanks and a CR allowed), so a
+    // misspelt afcs column isn't read as a file without one (code review).
+    line.erase(line.find_last_not_of(" \t\r") + 1);
+    const bool with_afcs = line == kControlHeaderAfcs;
+    if (!with_afcs && line != kControlHeader) {
         throw std::runtime_error(path + ": expected header " + kControlHeader + " or " +
                                  kControlHeaderAfcs);
     }
@@ -57,6 +60,12 @@ std::vector<ControlRow> read_controls(const std::string& path) {
                 throw std::runtime_error(path + ":" + std::to_string(n) + ": " + e.what());
             }
             r.has_afcs = true;
+        }
+        if (std::string rest; s >> rest) {
+            std::string what = path + ":" + std::to_string(n) + ": unexpected '";
+            what += rest;
+            what += "' after the last column";
+            throw std::runtime_error(what);
         }
         if (!rows.empty() && r.t < rows.back().t) {
             throw std::runtime_error(path + ":" + std::to_string(n) + ": time goes backwards");

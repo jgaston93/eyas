@@ -7,12 +7,13 @@
 #include <stdexcept>
 
 #include "common/frames.hpp"
+#include "common/units.hpp"
 
 namespace station {
 
 namespace {
 
-constexpr double kKnot = 1852.0 / 3600.0;  // [m/s]
+using examples::kKnot;
 
 eyas::Model build(const StationOptions& o) {
     return o.origin ? eyas::Model::from_file(o.config, *o.origin)
