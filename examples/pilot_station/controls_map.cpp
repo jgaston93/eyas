@@ -121,7 +121,8 @@ void ControlsMap::rearm_pickup() noexcept {
     lever_seen_ = false;
 }
 
-eyas::Controls ControlsMap::update(const RawInput& in, double dt) noexcept {
+eyas::Controls ControlsMap::update(const RawInput& in, double dt,
+                                   const TurnSwitchInputs& f) noexcept {
     const bool trim_now = pressed(in, config_.trim_button);
     const bool released = trim_held_ && !trim_now;
     trim_held_ = trim_now;
@@ -152,6 +153,18 @@ eyas::Controls ControlsMap::update(const RawInput& in, double dt) noexcept {
         afcs_.pitch_bias = !afcs_.pitch_bias;
     }
     pba_was_pressed_ = pba_now;
+    const bool fps_now = pressed(in, config_.fps_button);
+    if (fps_now && !fps_was_pressed_) {
+        afcs_.fps = !afcs_.fps;
+    }
+    fps_was_pressed_ = fps_now;
+    // The force trim release is the AFCS's trim release too (D-045 M8c3),
+    // and with the pedals it works the FPS turn switch's latch.
+    afcs_.trim_release = trim_now;
+    const double pedal =
+        shape(axis_value(in, config_.pedal), config_.pedal.deadband, config_.pedal.expo);
+    const bool feet = config_.pedal.axis >= 0 && std::abs(pedal) > config_.feet_on_pedals;
+    afcs_.fps_turn = latch_turn_switch(afcs_.fps_turn, afcs_, feet, f);
 
     if (config_.collective.mode == AxisMode::absolute) {
         update_lever(config_.collective, in);

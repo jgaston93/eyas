@@ -79,6 +79,20 @@ if(EYAS_BUILD_TESTS)
                 -DWORK=${CMAKE_CURRENT_BINARY_DIR}/station_replay
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/check_replay.cmake)
 
+    # The same with the AFCS switched in flight (M8c3): the recording's afcs
+    # column replays them, and the state histories, which carry the
+    # switches, must still be byte-identical and show the script's four sets
+    # of switches. (The script sets the turn switch itself; the station's
+    # latch has its own unit test.)
+    add_test(NAME ExampleStation.AfcsRecordingReplaysExactly
+        COMMAND ${CMAKE_COMMAND}
+                -DSTATION=$<TARGET_FILE:eyas_pilot_station> -DDRIVE=$<TARGET_FILE:eyas_drive>
+                -DCONFIG=${EYAS_UH60A_CONFIG}
+                -DCONTROLS=${CMAKE_CURRENT_SOURCE_DIR}/drive/afcs_10s.csv
+                -DAFCS=sas,pba,fps -DSWITCH_SETS=4
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/station_replay_afcs
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/check_replay.cmake)
+
     add_test(NAME ExampleStation.ScriptRunsFromTheStartPoint
         COMMAND ${CMAKE_COMMAND}
                 -DSTATION=$<TARGET_FILE:eyas_pilot_station> -DCONFIG=${EYAS_UH60A_CONFIG}

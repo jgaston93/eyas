@@ -1265,7 +1265,8 @@ GenHel's flight path stabilization (Figs. 5.1.5(a)–(c), text p. 5.5-3) in `gen
 - *KRPRO's last digit* (DATA_GAPS.md): reviewed, inconclusive, −0.189 used; the 0.5 % alternative changes no result.
 - *The stabilator's lateral-acceleration loop* (above): neutral at 150 kt with the FPS on. A decision for the spec owner; the data to judge KVYDT against are not in the library.
 - *KSXCYO overcorrects* at 20 kt; revisit with rotor speed and the engine (M9).
-- *Turn switch latch, trim release button, recordings:* the pilot station (next PR).
+
+**Pilot station (M8c3 step 3).** The FPS button (gamepad X, keyboard F), the trim button as the FPS's trim release, and GenHel's turn-switch latch (`StationControls.FpsButtonAndTrimRelease`, `TurnSwitchLatchesAsGenHel`). Recordings carry the switches and replay exactly (`StationRecorder.AfcsChangesAreRecorded`, `ExampleStation.AfcsRecordingReplaysExactly`: 601 frames from 60 kt through the trim release, the turn switch and the FPS switched off, byte-identical in eyas_drive).
 
 **Cost.** `eyas_bench` (Release, GCC 13.3, the development machine; trims now with the whole AFCS on): 13.8–14.4 µs mean per physics step (M8c2: 13.6–14.0 µs); worst `advance()` 637 µs against the D-005 budget of 8333 µs.
 

@@ -3,7 +3,13 @@
 # the command in its header; the two state histories must be byte-identical.
 #
 #   cmake -DSTATION=... -DDRIVE=... -DCONFIG=... -DCONTROLS=... -DWORK=<dir>
-#         -P check_replay.cmake
+#         [-DAFCS=<switches>] [-DSWITCH_SETS=<n>] -P check_replay.cmake
+#
+# AFCS, if given, is the station's --afcs (its start switches); a control
+# file with an afcs column switches them in flight (M8c3). SWITCH_SETS, if
+# given, is how many different sets of switches the state history must show
+# (its afcs column), so that a replay that dropped the switches can't pass by
+# agreeing with a station that dropped them too (code review).
 
 file(MAKE_DIRECTORY ${WORK})
 set(rec ${WORK}/recording.csv)
@@ -12,10 +18,14 @@ set(drive_out ${WORK}/drive_state.csv)
 file(REMOVE ${rec} ${station_out} ${drive_out})
 
 # An origin other than the config's, so the override is exercised too.
+set(afcs_args)
+if(AFCS)
+    set(afcs_args --afcs ${AFCS})
+endif()
 execute_process(
     COMMAND ${STATION} --config ${CONFIG} --headless --no-pace --input script
             --controls ${CONTROLS} --start 60 --origin 51.47,-0.45,25 --duration 10
-            --record ${rec} --out ${station_out}
+            --record ${rec} --out ${station_out} ${afcs_args}
     RESULT_VARIABLE rc)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "the station failed (exit ${rc})")
@@ -43,5 +53,18 @@ file(STRINGS ${station_out} lines)
 list(LENGTH lines n)
 if(NOT n EQUAL 602)
     message(FATAL_ERROR "expected 602 lines (header, t = 0, 600 frames), got ${n}")
+endif()
+if(SWITCH_SETS)
+    set(sets)
+    foreach(line IN LISTS lines)
+        string(REGEX MATCH "[^,]*$" last "${line}")
+        list(APPEND sets "${last}")
+    endforeach()
+    list(REMOVE_AT sets 0)  # the header
+    list(REMOVE_DUPLICATES sets)
+    list(LENGTH sets n_sets)
+    if(NOT n_sets EQUAL SWITCH_SETS)
+        message(FATAL_ERROR "expected ${SWITCH_SETS} sets of AFCS switches, got ${n_sets}: ${sets}")
+    endif()
 endif()
 message(STATUS "replay identical: ${n} lines")

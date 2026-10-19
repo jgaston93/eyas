@@ -6,7 +6,7 @@
 //       [--input gamepad|joystick|mouse|fg|script|none] [--map <file>] [--print-map]
 //       [--controls <csv>]            (for --input script: an eyas_drive control file)
 //       [--start pad|hover|60|120] [--origin <lat deg>,<lon deg>,<alt m>]
-//       [--hover-height <m>] [--rate <Hz>] [--afcs <sas,pba|...|none>]
+//       [--hover-height <m>] [--rate <Hz>] [--afcs <sas,pba,fps|...|none>]
 //       [--fg <host:port>] [--listen <port>]
 //       [--record <csv>] [--out <csv>] [--duration <s>] [--headless] [--no-pace]
 //       [--view chase|cg|observer] [--screenshot <ppm>] [--no-help]
@@ -20,8 +20,10 @@
 // and trimmed level flight in hover, at 60 kt and 120 kt, --hover-height
 // (default 100 ft) above the ground, which is level at the origin's altitude.
 // --afcs sets the flight control system's switches at every start (default
-// sas,pba: the SAS and pitch bias actuator on, as the aircraft flies; M8c2);
-// the map's sas_button and pba_button toggle them in flight.
+// sas,pba: the SAS and pitch bias actuator on; add fps for the FPS; M8c2,
+// M8c3); the map's sas_button, pba_button and fps_button toggle them in
+// flight. The trim button is also the FPS's trim release, and the FPS turn
+// switch latches as GenHel's does (p. 5.5-3; controls_map.hpp).
 // --record writes an eyas_drive control file that replays the flight (see
 // its header); --out writes the state history in eyas_drive's format.
 // --headless runs without a window (FlightGear, a script or none);
@@ -371,7 +373,11 @@ int run(const Options& opt) {
                     d = {r->d_collective, r->d_lat, r->d_lon, r->d_pedal};
                 }
             } else {
-                applied = map.update(raw, dt);
+                // The turn switch's latch reads the frame before's VXBIKT
+                // (body-x equivalent airspeed) and bank.
+                const eyas::AircraftState& o = st.outputs();
+                const station::TurnSwitchInputs turn{examples::vxbikt_kt(o), o.roll};
+                applied = map.update(raw, dt, turn);
                 d = map.deltas();
             }
             (void)st.frame(applied);

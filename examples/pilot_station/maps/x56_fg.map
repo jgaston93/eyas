@@ -32,3 +32,9 @@ collective.gain = 1
 trim_button = 1:0
 brake_button = 2:0
 trim_reset_button = 2:2
+# The AFCS switches aren't mapped on the HOTAS yet: pick buttons and add, e.g.,
+#   fps_button = 1:4
+#   sas_button = 2:3
+#   pba_button = 2:4
+# (device:button as above). Unmapped, they fall back to the default map's
+# device 0 (the gamepad), or start them with --afcs sas,pba,fps.

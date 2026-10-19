@@ -3,6 +3,7 @@
 #include <array>
 #include <limits>
 
+#include "common/afcs.hpp"
 #include "eyas/types.hpp"
 
 // Pilot-station control mapping (D-044): raw device axes and buttons to
@@ -67,11 +68,16 @@ struct ControlsMapConfig {
     int brake_button = -1;       // pressed: toggles the wheel brakes, set or released
     int sas_button = -1;         // pressed: toggles the SAS, both channels together (M8c2)
     int pba_button = -1;         // pressed: toggles the pitch bias actuator
+    int fps_button = -1;         // pressed: toggles the FPS (M8c3)
     // After a trim release the control holds at its trim point until the
     // shaped axis value comes back within this of centre (a spring-centred
     // stick returns into its deadband), so letting go of the stick doesn't
     // move the control; resuming then moves it by at most gain × recentre.
     double recentre = 0.02;
+    // "Feet on the pedals" for the FPS turn switch (GenHel p. 5.5-3): the
+    // pedal axis, shaped, beyond this fraction of its travel (a station
+    // assumption, D-045 M8c3). [0, 1]
+    double feet_on_pedals = 0.1;
     // A lever collective takes over once within this fraction of its travel
     // of the held value (or when it passes it in a small step): pickup, so
     // that a start doesn't jump the collective to the lever. [0, 0.5].
@@ -89,6 +95,10 @@ struct ControlDeltas {
 // Deadband, then expo: odd, continuous, 0 inside the deadband, ±1 at ±1.
 double shape(double raw, double deadband, double expo) noexcept;
 
+// The FPS turn switch's latch (common/afcs.hpp).
+using examples::latch_turn_switch;
+using examples::TurnSwitchInputs;
+
 class ControlsMap {
 public:
     ControlsMap() = default;
@@ -99,8 +109,10 @@ public:
     void restart(const eyas::Controls& start) noexcept;
 
     // One host frame of dt seconds. Returns the applied controls, each
-    // within its D-024 range.
-    eyas::Controls update(const RawInput& in, double dt) noexcept;
+    // within its D-024 range. The trim button is also the AFCS's trim
+    // release (held: AfcsSwitches::trim_release), and `f` drives the FPS
+    // turn switch's latch (latch_turn_switch()).
+    eyas::Controls update(const RawInput& in, double dt, const TurnSwitchInputs& f = {}) noexcept;
 
     const ControlDeltas& deltas() const noexcept { return delta_; }
     // The trim points (increments from start) for the display.
@@ -154,6 +166,7 @@ private:
     eyas::AfcsSwitches afcs_;
     bool sas_was_pressed_ = false;
     bool pba_was_pressed_ = false;
+    bool fps_was_pressed_ = false;
     bool reset_was_pressed_ = false;
     bool lever_held_ = true;
     double lever_prev_ = std::numeric_limits<double>::quiet_NaN();

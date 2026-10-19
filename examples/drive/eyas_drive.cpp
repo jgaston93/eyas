@@ -7,7 +7,7 @@
 //              [--controls <in.csv>] [--trim-speed <kt>] [--altitude <m>]
 //              [--rate <Hz>] [--duration <s>]
 //              [--origin <lat deg>,<lon deg>,<alt m>] [--ground <m>]
-//              [--afcs <sas,pba|...|none>]
+//              [--afcs <sas,pba,fps|...|none>]
 //
 // The aircraft is trimmed in level flight at --trim-speed (true airspeed,
 // default 0: hover) and --altitude (default 0 m MSL, ISA, no wind), then
@@ -26,8 +26,11 @@
 // replaces the config's geodetic origin (D-044) and --ground sets a level
 // ground at that height above MSL (default: no ground), so a run recorded
 // by the pilot station (--record) replays exactly. --afcs sets the flight
-// control system's switches for the trim and the run (default none; a list
-// of sas, sas_digital, sas_analog, pba). Exit codes: 0
+// control system's switches for the trim and the run (a list of sas,
+// sas_digital, sas_analog, pba, fps, fps_turn, trim_release; default: the
+// control file's at t = 0, else none); a control file's optional afcs column
+// changes them from its rows on, as the station records them (M8c3). Exit
+// codes: 0
 // done; 1 a frame failed (AdvanceStatus non_finite, rejected or capped);
 // 2 usage or input error; 3 trim did not converge.
 
@@ -38,6 +41,7 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -48,11 +52,12 @@
 #include "common/frames.hpp"
 #include "common/origin.hpp"
 #include "common/state_csv.hpp"
+#include "common/units.hpp"
 #include "eyas/model.hpp"
 
 namespace {
 
-constexpr double kKnot = 1852.0 / 3600.0;  // [m/s]
+using examples::kKnot;
 
 struct Options {
     std::string config;
@@ -64,7 +69,7 @@ struct Options {
     double duration = -1.0;                                    // [s]; < 0: from the control file
     std::string origin;                                        // empty: the config's
     double ground = std::numeric_limits<double>::quiet_NaN();  // [m] MSL; NaN: none
-    eyas::AfcsSwitches afcs;                                   // all off
+    std::optional<eyas::AfcsSwitches> afcs;                    // --afcs; none: see run()
 };
 
 Options parse(int argc, char** argv) {
@@ -114,6 +119,15 @@ int run(const Options& opt) {
     const std::vector<examples::ControlRow> rows = opt.controls.empty()
                                                        ? std::vector<examples::ControlRow>{}
                                                        : examples::read_controls(opt.controls);
+    // The trim's switches: --afcs, else the control file's switches at
+    // t = 0 (its afcs column), so a file run without --afcs doesn't start
+    // from a trim without its switches (code review), else none. With both,
+    // --afcs trims and the rows take over from t = 0, as the station flew it
+    // (a recording's first row can differ, e.g. the trim release held).
+    eyas::AfcsSwitches afcs = opt.afcs.value_or(eyas::AfcsSwitches{});
+    if (!opt.afcs && !rows.empty() && rows.front().t <= 0.0 && rows.front().has_afcs) {
+        afcs = rows.front().afcs;
+    }
     double duration = opt.duration;
     if (duration < 0.0) {
         duration = rows.empty() ? 10.0 : rows.back().t;
@@ -128,7 +142,7 @@ int run(const Options& opt) {
     eyas::TrimCondition condition;
     condition.airspeed = opt.trim_speed_kt * kKnot;
     condition.altitude = opt.altitude;
-    condition.afcs = opt.afcs;  // the trimmed controls carry them through the run
+    condition.afcs = afcs;  // the trimmed controls carry them through the run
     const eyas::TrimResult trim = model.trim(condition);
     if (!trim.converged) {
         std::cerr << "error: trim did not converge\n";
