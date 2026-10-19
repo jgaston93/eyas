@@ -9,8 +9,10 @@
 
 // The held-body orbit of a trim (D-035): the body held at its trim state
 // while every component state (blades, inflow, lags, gear) is integrated
-// through azimuth by RK4 at a step that divides the revolution. Shared by
-// the trim solver and the linearization. Init-time: allocates.
+// through azimuth by RK4 at a step that divides the revolution, except the
+// states labelled SteadyKind::held, which stay where they are, as GenHel's IC
+// mode holds integrators (CR-166309 p. 5.5-2; D-045 M8c3). Shared by the trim
+// solver and the linearization. Init-time: allocates.
 namespace eyas {
 
 class HeldIntegrator {
@@ -20,12 +22,19 @@ public:
 
     // One held RK4 step from node s of the revolution (t = period·s/steps,
     // so every revolution sees the same azimuths): advances the component
-    // part of x (num_states() long; the body part stays) and adds the step's
-    // integral of the net wrench into `integral`, with RK4's weights, so it
-    // is the RK4 solution of İ = net. [s] If `stages` is given, it receives
-    // the four RK4 stage states (at t, t + h/2, t + h/2, t + h).
+    // part of x (num_states() long; the body part and the held states stay)
+    // and adds the step's integral of the net wrench into `integral`, with
+    // RK4's weights, so it is the RK4 solution of İ = net. [s] If `stages`
+    // is given, it receives the four RK4 stage states (at t, t + h/2,
+    // t + h/2, t + h).
     void step(int s, const Controls& u, std::vector<double>& x, Vec6& integral,
               std::array<std::vector<double>, 4>* stages = nullptr);
+
+    // The change each held state would have made, by the same RK4 weights,
+    // over the steps since construction or the last clear (num_states() long,
+    // zero elsewhere) [its units].
+    const std::vector<double>& held_change() const noexcept { return held_change_; }
+    void clear_held_change();
 
     const Environment& env() const noexcept { return env_; }
     double period() const noexcept { return period_; }
@@ -46,6 +55,8 @@ private:
     std::vector<double> k2_;
     std::vector<double> k3_;
     std::vector<double> k4_;
+    std::vector<std::size_t> held_;  // the held states' indices
+    std::vector<double> held_change_;
     std::size_t unconverged_ = 0;
 };
 

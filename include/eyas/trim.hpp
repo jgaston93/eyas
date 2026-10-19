@@ -47,6 +47,16 @@ struct TrimResult {
     double force_residual = 0.0;
     double moment_residual = 0.0;
     double periodic_residual = 0.0;
+    // The fastest any state the trim holds at its start value would move,
+    // as its mean rate over the held revolution [that state's units per
+    // second] (D-045: GenHel's IC mode holds the flight control system's
+    // integrators and references through the trim). With the body held a
+    // reference's input is constant, so in practice this is an FPS
+    // integrator's rate [fraction of authority per second]. Not part of
+    // `converged`: nonzero means the flight control system would still
+    // retrim after release, e.g. an FPS integrating a lateral acceleration
+    // that the trim's sideslip leaves.
+    double held_drift_rate = 0.0;
     // Every component state at the start of the held revolution, in the
     // Model's state order after the body states. Engineering data: pass the
     // result back to Model::trim as a starting point for a nearby condition.

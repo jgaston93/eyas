@@ -44,7 +44,7 @@ V_HOLD      30         kt           high  (VG30SW)
 #   G(x) = KPHRO1*x for |x| <= BPPHRO, slope KPHRO2 beyond (odd, continuous)
 #   INPHRO = KIPHRO*integral(sync(PHIB; FPSSW)), held when NTRNSW = 0 (turn switch on)
 #   p1 = conditioned roll rate (LGPPR1+2)
-KRPRO       -0.189     %/(deg/s)    high  ("-.189", last digit slightly blurred)
+KRPRO       -0.189     %/(deg/s)    reviewed 2026-10-19, inconclusive: "-.18?", reviewer leans 9 (DATA_GAPS.md)
 KPHRO1      -0.75      %/deg        high
 KPHRO2      -0.375     %/deg        high
 BPPHRO      7.9        deg          high  ("7.9" and "-7.9")
@@ -57,8 +57,8 @@ KIPHRO      -0.0868    %/(deg s)    high
 #   INAYYO = integral(NTRNSW = 0 ? VGPSYO*deadband(dpsi, DBPSYO) : KIAYYO*ay), held when FPSSW = 0
 #            as printed (reading VERIFIED by human review 2026-10-17): heading path at the "=0"
 #            contact (turn switch on), lateral acceleration at "=1". Taken literally the heading
-#            path is inert (dpsi is synced to 0 while the turn switch is on); interpretation open
-#            for M8c3 (DATA_GAPS).
+#            path is inert (dpsi is synced to 0 while the turn switch is on); Eyas wires it the
+#            other way round (M8c3, `integrator_wiring: physical`; DATA_GAPS).
 #   YOTMP1 = KSXCYO*sync(XCPC; FPSSW)   (collective stick position [%])
 #   V_rl = VXBIKT rate limited to +-KLVXYO;  LMIXYO = 1 below 40 kt, 0 above 100 kt, linear between
 #   p_roll = roll rate (LGPPR1+2 as labelled "LGPPR1+2"; read as the conditioned roll rate)

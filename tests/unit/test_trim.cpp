@@ -587,6 +587,10 @@ TEST(Trim, SteadyKindsAreHonoured) {
         EXPECT_NEAR(x[off], r.controls.collective, 1e-9);
         EXPECT_NEAR(x[off + 1], u, 1e-9);
         EXPECT_NEAR(x[off + 2], u + ThreeKinds::kOffset, 1e-9);
+        // The held state's drift is reported, not counted against
+        // convergence (D-045 M8c3): its rate, to RK4's exactness on a
+        // constant rate.
+        EXPECT_NEAR(r.held_drift_rate, ThreeKinds::kDrift, 1e-12);
     }
 }
 
@@ -611,7 +615,7 @@ TEST(Trim, SteadyKindsMismatchIsRejected) {
 
 // trim() resets the model to t = 0 at the trimmed state; advance() then keeps
 // the real-time rules: no allocation and bit-identical repeat runs. With the
-// SAS and PBA on (M8c2), so their paths run too.
+// SAS, PBA (M8c2) and FPS (M8c3) on, so their paths run too.
 TEST(Trim, ModelStartsFromTrimAndKeepsTheRealTimeRules) {
     Model m = Model::from_file(test::uh60a_config_path());
     Controls c;
@@ -619,7 +623,7 @@ TEST(Trim, ModelStartsFromTrimAndKeepsTheRealTimeRules) {
         (void)m.advance(c, Environment{}, 1'000'000);
     }
     TrimCondition tc = level(80);
-    tc.afcs = {true, true, true};
+    tc.afcs = {true, true, true, true, false, false};
     const TrimResult r = m.trim(tc);
     ASSERT_TRUE(r.converged);
     EXPECT_EQ(m.outputs().sim_time_ns, 0);

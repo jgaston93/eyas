@@ -221,6 +221,16 @@ TEST(Linearize, GravityAndKinematicEntriesAreExact) {
         const auto sas_roll_attitude = static_cast<Eigen::Index>(
             std::find(m.states.begin(), m.states.end(), att) - m.states.begin());
         ASSERT_LT(sas_roll_attitude, n);
+        const auto state = [&](std::size_t i) {
+            const std::string name = "fcs[" + std::to_string(i) + "]";
+            return static_cast<Eigen::Index>(std::find(m.states.begin(), m.states.end(), name) -
+                                             m.states.begin());
+        };
+        const Eigen::Index theta_ref = state(GenHelFcs::kFpsThetaRef);
+        const Eigen::Index phi_ref = state(GenHelFcs::kFpsPhiRef);
+        const Eigen::Index psi_ref = state(GenHelFcs::kFpsPsiRef);
+        ASSERT_LT(std::max({theta_ref, phi_ref, psi_ref}), n);
+        constexpr double kSyncRate = 1.0 / 0.01;  // 1/τ_sync [1/s] (D-045 M8c3)
         for (const MatX& A : m.A_periodic) {
             VecX col_th = VecX::Zero(n);
             VecX col_ph = VecX::Zero(n);
@@ -237,11 +247,18 @@ TEST(Linearize, GravityAndKinematicEntriesAreExact) {
             // through KPHF1/(T1 s + 1)(T2 s + 1) (GenHel Fig. 5.1.3(b); M8c2),
             // switched on or not: its first lag's rate has KPHF1/T1 per rad.
             col_ph(sas_roll_attitude) = 0.0885 / 0.0058;
+            // With the FPS off its references track the vertical gyro's θ, φ
+            // and the heading (GenHel p. 5.5-3; M8c3) as lags of τ_sync.
+            col_th(theta_ref) = kSyncRate;
+            col_ph(phi_ref) = kSyncRate;
+            VecX col_ps = A.col(RC::kPsi);
+            EXPECT_NEAR(col_ps(psi_ref), kSyncRate, 1e-7) << knots;
+            col_ps(psi_ref) = 0.0;
             // FD precision: measured ≤ 2.5e-9, from rounding in the stiff gear
             // rows (truncation at 1e-5 rad is ~1e-10 g).
             EXPECT_LT((A.col(RC::kTheta) - col_th).cwiseAbs().maxCoeff(), 1e-7) << knots;
             EXPECT_LT((A.col(RC::kPhi) - col_ph).cwiseAbs().maxCoeff(), 1e-7) << knots;
-            EXPECT_LT(A.col(RC::kPsi).cwiseAbs().maxCoeff(), 1e-9) << knots;
+            EXPECT_LT(col_ps.cwiseAbs().maxCoeff(), 1e-9) << knots;
             // Euler-rate rows at ω = 0.
             const double tt = std::tan(th);
             const double sc = 1.0 / std::cos(th);

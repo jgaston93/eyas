@@ -187,6 +187,60 @@ struct GenHelPitchBias {
     double authority = 0.0;       // [-] actuator travel, ±
 };
 
+// The FPS (Figs. 5.1.5(a)–(c), text p. 5.5-3; M8c3), in SI as the SAS:
+// outputs a fraction of authority. Names are GenHel's (fig_5_1_5_fps.txt).
+struct GenHelFpsPitch {
+    double rate_gain = 0.0;            // KRQQPO [1/(rad/s)], on the pitch SAS A/D output q₁
+    double attitude_gain = 0.0;        // KSTHPO [1/rad]
+    double speed_gain = 0.0;           // KSVXPO [s/m]
+    double speed_limit = 0.0;          // LMVX [-]
+    double speed_integral_gain = 0.0;  // KIVXPO [1/m]
+    double speed_hold_above = 0.0;     // VG30SW [m/s]: below it the airspeed reference tracks
+};
+
+struct GenHelFpsRoll {
+    double rate_gain = 0.0;             // KRPRO [1/(rad/s)], on the roll SAS A/D output p₁
+    double attitude_gain = 0.0;         // KPHRO1 [1/rad], within ±attitude_breakpoint
+    double attitude_breakpoint = 0.0;   // [rad]
+    double attitude_gain_beyond = 0.0;  // KPHRO2 [1/rad], the slope beyond it
+    double integral_gain = 0.0;         // KIPHRO [1/(rad s)]
+};
+
+// Which path feeds the yaw integrator INAYYO (DATA_GAPS.md, "UH-60A AFCS").
+// Physical (Eyas's reading, D-045 M8c3): the deadbanded heading error with
+// the turn switch off (heading hold), the lagged lateral acceleration with it
+// on (turn coordination). As printed: the other way round, which leaves the
+// heading path acting only while the heading reference tracks (inert).
+enum class YawIntegratorWiring : unsigned char { physical, as_printed };
+
+struct GenHelFpsYaw {
+    double heading_gain = 0.0;           // KSPSYO [1/rad]
+    double heading_integral_gain = 0.0;  // VGPSYO [1/(rad s)]
+    double heading_deadband = 0.0;       // [rad], ±
+    double accel_lag = 0.0;              // LGAYYO's lag [s], on Y.SENS
+    double accel_gain = 0.0;             // KLAYYO [s²/m], turn switch on
+    double accel_integral_gain = 0.0;    // KIAYYO [s/m]
+    double roll_rate_gain = 0.0;         // KRPPYO [1/(rad/s)], on p₁, turn switch on
+    double collective_gain = 0.0;        // KSXCYO [-], on the collective [0, 1]
+    double speed_rate_limit = 0.0;       // KLVXYO [m/s²], on the airspeed into LMIXYO
+    double collective_fade_from = 0.0;   // LMIXYO: 1 below this [m/s]
+    double collective_fade_to = 0.0;     // and 0 above this [m/s], linear between
+    YawIntegratorWiring wiring = YawIntegratorWiring::physical;
+};
+
+struct GenHelFps {
+    GenHelFpsPitch pitch;
+    GenHelFpsRoll roll;
+    GenHelFpsYaw yaw;
+    double hold = 0.0;  // zero-order hold [s] (a Padé of half of it, D-045)
+    // Trim actuators: ȧ = limit(gain (e − a), ±rate_limit), stopping at
+    // ±authority. Their position reaches the mixer as KPCDG*/KX* inches
+    // (GenHelSas::descale_*), XBOLS, XAOLS, XPOLS.
+    double actuator_gain = 0.0;  // [1/s]
+    double rate_limit = 0.0;     // [1/s]
+    double authority = 0.0;      // [-], ±
+};
+
 struct GenHelFcsConfig {
     std::string name;  // instance name (D-003); required
     GenHelRigging rigging;
@@ -195,10 +249,11 @@ struct GenHelFcsConfig {
     ServoConfig lateral_accelerometer;    // Fig. 5.1.2
     Vec3 accelerometer_b = Vec3::Zero();  // [m] transducer from the CG, body axes
     GenHelStabilatorLaw stabilator;
-    // Optional (M8c2): without them their states stay at zero and the
-    // switches (Controls::afcs) do nothing.
+    // Optional (M8c2, M8c3): without them their states stay at zero and the
+    // switches (Controls::afcs) do nothing. The PBA and FPS need the SAS.
     std::optional<GenHelSas> sas;
     std::optional<GenHelPitchBias> pitch_bias;
+    std::optional<GenHelFps> fps;
 };
 
 // Signals of one evaluation, for outputs and tests.
@@ -217,6 +272,12 @@ struct GenHelFcsOutputs {
     double pitch_d = 0.0, pitch_a = 0.0, roll_d = 0.0, roll_a = 0.0, yaw_d = 0.0, yaw_a = 0.0;
     double pba = 0.0;
     double xbils = 0.0, xails = 0.0, xpils = 0.0, xbbas = 0.0;
+    // FPS (M8c3): the channel sums POTEMP, ROTEMP, YOTEMP ahead of the holds
+    // and the trim actuator positions [-], and their inches XBOLS, XAOLS,
+    // XPOLS [m].
+    double potemp = 0.0, rotemp = 0.0, yotemp = 0.0;
+    double fps_pitch = 0.0, fps_roll = 0.0, fps_yaw = 0.0;
+    double xbols = 0.0, xaols = 0.0, xpols = 0.0;
 };
 
 namespace detail {
@@ -275,7 +336,30 @@ public:
     // Pitch bias actuator (M8c2).
     static constexpr std::size_t kPbaHold = 56;  // zero-order hold
     static constexpr std::size_t kPba = 57;      // actuator position [-]
-    static constexpr std::size_t kNumStates = 58;
+    // FPS (M8c3). A synchronizer's state is its reference, the input it
+    // holds (rad, m/s or the collective [0, 1]); an integrator's is its
+    // output [-]. Trim holds both (SteadyKind::held). Holds and the lag as
+    // the SAS's; the trim actuators' positions [-]; V_rl the rate-limited
+    // airspeed [m/s].
+    static constexpr std::size_t kFpsBegin = 58;
+    static constexpr std::size_t kFpsThetaRef = 58;   // pitch attitude reference
+    static constexpr std::size_t kFpsSpeedRef = 59;   // airspeed reference
+    static constexpr std::size_t kFpsSpeedInt = 60;   // KIVXPO's integrator
+    static constexpr std::size_t kFpsPitchHold = 61;  // zero-order hold
+    static constexpr std::size_t kFpsPitchAct = 62;   // trim actuator → XBOLS
+    static constexpr std::size_t kFpsPhiRef = 63;     // roll attitude reference
+    static constexpr std::size_t kFpsRollInt = 64;    // INPHRO
+    static constexpr std::size_t kFpsRollHold = 65;
+    static constexpr std::size_t kFpsRollAct = 66;   // → XAOLS
+    static constexpr std::size_t kFpsPsiRef = 67;    // heading reference
+    static constexpr std::size_t kFpsYawInt = 68;    // INAYYO
+    static constexpr std::size_t kFpsAccelLag = 69;  // LGAYYO, lateral acceleration [m/s²]
+    static constexpr std::size_t kFpsCollRef = 70;   // collective reference
+    static constexpr std::size_t kFpsSpeedRl = 71;   // V_rl
+    static constexpr std::size_t kFpsYawHold = 72;
+    static constexpr std::size_t kFpsYawAct = 73;  // → XPOLS
+    static constexpr std::size_t kNumStates = 74;
+    static constexpr std::size_t kNumFpsStates = kNumStates - kFpsBegin;
 
     explicit GenHelFcs(GenHelFcsConfig config);
 
@@ -292,8 +376,9 @@ public:
     // input with the body acceleration zero, the airspeed lag at the
     // equivalent airspeed (D-045).
     void steady_states(const SimContext& ctx, std::span<double> x) const override;
-    // Every state orbit: each has dynamics of its own, so trim starts it on
-    // its free-flight orbit (D-045).
+    // Orbit: each has dynamics of its own, so trim starts it on its
+    // free-flight orbit (D-045). Held: the FPS's references and integrators,
+    // and without the FPS every FPS state (at zero).
     void steady_kinds(std::span<SteadyKind> kinds) const override;
 
     std::string_view name() const noexcept override { return config_.name; }
@@ -312,7 +397,8 @@ private:
                               const detail::GenHelAfcsSignals& s) const noexcept;
 
     GenHelFcsConfig config_;
-    // Time constant of each first-order SAS and PBA state [s]; 0 for the rest.
+    // Time constant of each first-order SAS, PBA and FPS state [s]; 0 for the
+    // rest.
     std::array<double, kNumStates> tau_{};
     Table1D ay_ramp_;  // 0 → 1 over the lateral-acceleration ramp, corners rounded
     mutable TableCursor<1> ay_cursor_;  // search hint only (spec §6)

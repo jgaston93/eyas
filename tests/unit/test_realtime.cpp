@@ -138,6 +138,31 @@ TEST(RealTime, HeldOrbitRepeatsFor60s) {
     }
 }
 
+// (a) The free UH-60A with its whole AFCS on (SAS, PBA, FPS; M8c3), trimmed
+// at hover and 120 kt and flown hands-off for 60 s at 60 Hz: every state
+// finite, sim time exact, the quaternion norm error before renormalization
+// below 1e-12 (M1), and the FPS holding the trim: attitude within 0.05° and
+// airspeed within 0.1 kt over the last 30 s (the 30 min runs, VALIDATION.md
+// M8c3).
+TEST(RealTime, AfcsFreeFlightFor60s) {
+    for (const double kt : {0.0, 120.0}) {
+        SCOPED_TRACE(kt);
+        const std::vector<test::AfcsSample> p = test::afcs_free_flight(kt, 60);
+        ASSERT_EQ(p.size(), 60U);
+        EXPECT_EQ(p.back().t_ns, 60'000'000'000);
+        const test::AfcsSample& a = p[29];
+        for (const test::AfcsSample& s : p) {
+            EXPECT_TRUE(s.finite);
+            EXPECT_LT(s.quat_norm_error, 1e-12);
+        }
+        for (std::size_t i = 30; i < p.size(); ++i) {
+            EXPECT_LT(std::abs(p[i].roll - a.roll), 0.05 * units::kDegree) << i;
+            EXPECT_LT(std::abs(p[i].pitch - a.pitch), 0.05 * units::kDegree) << i;
+            EXPECT_LT(std::abs(p[i].speed - kt * units::kKnot), 0.1 * units::kKnot) << i;
+        }
+    }
+}
+
 // (d) The free UH-60A parked on its gear, brakes set: it lands, settles and
 // stays. From 40 s (settled; VALIDATION.md M8a) to 60 s the CG moves less
 // than 1 mm and the attitude less than 1e-4 rad; the residual motion is the

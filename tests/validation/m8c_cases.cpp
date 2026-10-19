@@ -16,10 +16,18 @@
 //   states kept dynamic (condense() with them retained), and with the SAS
 //   off and them quasi-static, as M8c1 had them;
 // - the yaw rate after a 0.05 rad/s kick, SAS off and on
-//   (Trim.SasDampsTheDutchRoll).
+//   (Trim.SasDampsTheDutchRoll);
+// and the M8c3 data (the FPS):
+// - the trims with the FPS on, and with the turn switch on (pedal, held
+//   drift rate; Uh60aFps.TrimsMoveOnlyTheStick);
+// - the modes with the FPS on against the SAS and PBA alone;
+// - the flights of test_uh60a_fps.cpp (tests/support/m8c3_fps.hpp);
+// - D-042 (a): 30 min hands-off with the whole AFCS on, hover and 120 kt.
 //
 // Usage: eyas_m8c_cases <output-dir>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -38,6 +46,8 @@
 #include "support/m6d_fixtures.hpp"
 #include "support/m7_fixtures.hpp"
 #include "support/m7c_ballin.hpp"
+#include "support/m8a_long_runs.hpp"
+#include "support/m8c3_fps.hpp"
 #include "util/units.hpp"
 
 namespace {
@@ -271,15 +281,20 @@ void sas_trims(const std::filesystem::path& dir) {
 // condense(), and their weights for modes(): one over a typical size, with
 // the sensors' and filters' tenfold below the body's (they echo the body's
 // rates and attitudes, so equal weights would give every body mode half to
-// them); channel signals per 0.1 %, actuators per 0.025 in.
+// them); channel signals per 0.1 %, actuators per 0.025 in. Without `fps`
+// the FPS's states are left to condense(), which drops those that feed
+// nothing with the FPS off (its integrators would be zero modes).
 void fcs_retained(const LinearModel& m, std::vector<std::size_t>& retained,
-                  std::vector<double>& weights) {
+                  std::vector<double>& weights, bool fps = false) {
     using F = GenHelFcs;
     for (std::size_t i = 0; i < m.states.size(); ++i) {
         if (m.states[i].rfind("fcs[", 0) != 0) {
             continue;
         }
         const auto j = static_cast<std::size_t>(std::stoi(m.states[i].substr(4)));
+        if (!fps && j >= F::kFpsBegin) {
+            continue;
+        }
         double w = 1.0;  // rad, rad/s: a tenth of the body's
         if (j == F::kAccelY || j == F::kAccelY + 1 || j == F::kAirspeedLag || j == F::kYawAccelD) {
             w = 0.1;  // m/s², m/s
@@ -293,6 +308,22 @@ void fcs_retained(const LinearModel& m, std::vector<std::size_t>& retained,
         for (const std::size_t k : {F::kPitchAct, F::kRollAct, F::kYawAct}) {
             if (j == k || j == k + 1) {
                 w = 40.0;  // m, m/s
+            }
+        }
+        // FPS (M8c3): integrators, holds, trim actuators and the collective
+        // reference are fractions; the airspeed reference, rate limiter and
+        // lateral-acceleration lag m/s and m/s²; the attitude and heading
+        // references rad.
+        for (const std::size_t k :
+             {F::kFpsSpeedInt, F::kFpsPitchHold, F::kFpsPitchAct, F::kFpsRollInt, F::kFpsRollHold,
+              F::kFpsRollAct, F::kFpsYawInt, F::kFpsCollRef, F::kFpsYawHold, F::kFpsYawAct}) {
+            if (j == k) {
+                w = 10.0;
+            }
+        }
+        for (const std::size_t k : {F::kFpsSpeedRef, F::kFpsSpeedRl, F::kFpsAccelLag}) {
+            if (j == k) {
+                w = 0.1;
             }
         }
         if (j == F::kYawFade) {
@@ -395,6 +426,166 @@ void sas_kick(const std::filesystem::path& dir) {
     }
 }
 
+// ---- M8c3 ----------------------------------------------------------------------
+
+// Level trims with the FPS on, against the SAS and PBA alone (equal, bit for
+// bit), and with the turn switch on: the pedal it moves and the held drift
+// rate of its lateral-acceleration integral.
+void fps_trims(const std::filesystem::path& dir) {
+    std::ofstream f(dir / "m8c3_trims.csv");
+    f.precision(12);
+    f << "# UH-60A level trims with the FPS on, ISA sea level (M8c3, D-045): largest control "
+         "or attitude difference from SAS and PBA alone; with the turn switch on, its pedal "
+         "change and held drift rate\nknots,fps_largest_difference,turn_pedal_change,"
+         "turn_held_drift_pct_s,turn_ay_mps2\n";
+    const Executive ex = test::m8c3::executive();
+    const std::size_t off = fcs_offset(ex) - body_layout::kSize;
+    TrimResult prev;
+    bool have = false;
+    for (int kt = 0; kt <= 150; kt += 10) {
+        std::vector<double> x;
+        const TrimResult sas =
+            solve_trim(ex, test::m8c3::level(kt, test::m8c3::kSas), have ? &prev : nullptr, x);
+        require(sas.converged, "trim did not converge at " + std::to_string(kt) + " kt");
+        prev = sas;
+        have = true;
+        const TrimResult fps = solve_trim(ex, test::m8c3::level(kt, test::m8c3::kFps), &sas, x);
+        TrimCondition c = test::m8c3::level(kt, test::m8c3::kFps);
+        c.afcs.fps_turn = true;
+        const TrimResult turn = solve_trim(ex, c, &sas, x);
+        require(fps.converged && turn.converged, "FPS trim failed at " + std::to_string(kt));
+        const double diff =
+            std::max({std::abs(fps.controls.collective - sas.controls.collective),
+                      std::abs(fps.controls.lat_cyclic - sas.controls.lat_cyclic),
+                      std::abs(fps.controls.lon_cyclic - sas.controls.lon_cyclic),
+                      std::abs(fps.controls.pedal - sas.controls.pedal),
+                      std::abs(fps.pitch - sas.pitch), std::abs(fps.roll - sas.roll)});
+        f << kt << ',' << diff << ',' << turn.controls.pedal - sas.controls.pedal << ','
+          << turn.held_drift_rate * 100.0 << ','
+          << turn.component_states[off + GenHelFcs::kFpsAccelLag] << '\n';
+    }
+    std::cout << "M8c3 trims done\n";
+}
+
+// The modes with the SAS and PBA, and with the FPS too, every flight control
+// state kept dynamic (as M8c2's).
+void fps_modes(const std::filesystem::path& dir) {
+    std::ofstream f(dir / "m8c3_modes.csv");
+    f.precision(12);
+    f << "# UH-60A modes, SAS and PBA on, and the FPS on too (M8c3); the flight control "
+         "system's states kept dynamic\nvariant,knots,label,re,im,wn,zeta,longitudinal,body\n";
+    const Executive ex = test::m8c3::executive();
+    TrimResult prev;
+    bool have = false;
+    for (const double kt : {0.0, 30.0, 90.0, 120.0, 150.0}) {
+        for (const bool fps : {false, true}) {
+            const TrimCondition c =
+                test::m8c3::level(kt, fps ? test::m8c3::kFps : test::m8c3::kSas);
+            std::vector<double> x;
+            const TrimResult r = solve_trim(ex, c, have ? &prev : nullptr, x);
+            require(r.converged, "trim did not converge at " + std::to_string(kt) + " kt");
+            if (!fps) {
+                prev = r;
+                have = true;
+            }
+            const LinearModel m = linearize(ex, c, r);
+            require(m.unconverged == 0, "linearize: unconverged evaluations");
+            std::vector<std::size_t> retained;
+            std::vector<double> weights;
+            fcs_retained(m, retained, weights, fps);
+            for (const Mode& md : modes(condense(m, retained), r.vel_b.x(), weights)) {
+                f << (fps ? "fps" : "sas") << ',' << kt << ',' << md.label << ','
+                  << md.eigenvalue.real() << ',' << md.eigenvalue.imag() << ',' << md.frequency
+                  << ',' << md.damping << ',' << md.longitudinal << ',' << md.body << '\n';
+            }
+        }
+        std::cout << "M8c3 modes at " << kt << " kt done\n";
+    }
+}
+
+// The flights of test_uh60a_fps.cpp, sampled every 0.25 s.
+void fps_flights(const std::filesystem::path& dir) {
+    namespace c3 = test::m8c3;
+    std::ofstream f(dir / "m8c3_flights.csv");
+    f.precision(10);
+    f << "# UH-60A flights with the FPS (M8c3; tests/support/m8c3_fps.hpp): changes from the "
+         "start\ncase,variant,time_s,roll_deg,pitch_deg,heading_deg,airspeed_kt,ay_mps2,"
+         "yaw_rate_deg_s\n";
+    const auto write = [&](const std::string& name, const std::string& variant,
+                           const std::vector<c3::Sample>& s) {
+        const c3::Sample& a = s.front();
+        for (const c3::Sample& q : s) {
+            f << name << ',' << variant << ',' << q.t << ',' << q.phi - a.phi << ','
+              << q.theta - a.theta << ',' << q.heading << ',' << q.airspeed - a.airspeed << ','
+              << q.ay << ',' << q.r << '\n';
+        }
+    };
+    const Executive ex = c3::executive();
+    for (const double kt : {60.0, 120.0}) {
+        const c3::Trims t = c3::trims(ex, kt);
+        for (const int axis : {1, 0}) {
+            const std::string name = std::to_string(static_cast<int>(kt)) +
+                                     (axis == 1 ? "kt_pitch_kick" : "kt_roll_kick");
+            for (const bool fps : {false, true}) {
+                write(name, fps ? "fps" : "sas", c3::rate_kick(ex, t, kt, axis, fps, 30.0));
+            }
+        }
+    }
+    for (const double kt : {60.0, 100.0}) {
+        const c3::Trims t = c3::trims(ex, kt);
+        for (const bool fps : {false, true}) {
+            write(std::to_string(static_cast<int>(kt)) + "kt_stick_push", fps ? "fps" : "sas",
+                  c3::stick_push(ex, t, kt, fps, 150.0));
+        }
+    }
+    {
+        const c3::Trims t = c3::trims(ex, 20.0);
+        write("20kt_gust", "fps", c3::gust(ex, t, 20.0, true, 40.0));
+        write("20kt_gust", "sas", c3::gust(ex, t, 20.0, false, 20.0));
+        for (const bool fps : {false, true}) {
+            write("20kt_collective_step", fps ? "fps" : "sas",
+                  c3::collective_step(ex, t, 20.0, fps, 0.05, 10.0));
+        }
+        const Executive no_coll = c3::executive("physical", false);
+        const c3::Trims tn = c3::trims(no_coll, 20.0);
+        write("20kt_collective_step", "fps_no_ksxcyo",
+              c3::collective_step(no_coll, tn, 20.0, true, 0.05, 10.0));
+    }
+    for (const char* wiring : {"physical", "as_printed"}) {
+        const Executive e = c3::executive(wiring);
+        const c3::Trims hover = c3::trims(e, 0.0);
+        write("hover_pedal_push", std::string("fps_") + wiring,
+              c3::pedal_push(e, hover, 0.0, true, 0.05, 90.0));
+        const c3::Trims t = c3::trims(e, 100.0);
+        write("100kt_turn", std::string("on_") + wiring, c3::turn(e, t, 100.0, true, 40.0));
+        if (std::string(wiring) == "physical") {
+            write("hover_pedal_push", "sas", c3::pedal_push(e, hover, 0.0, false, 0.05, 90.0));
+            write("100kt_turn", "off_physical", c3::turn(e, t, 100.0, false, 40.0));
+        }
+    }
+    std::cout << "M8c3 flights done\n";
+}
+
+// D-042 (a): 30 min hands-off with the whole AFCS on (test::afcs_free_flight).
+void afcs_long_run(const std::filesystem::path& dir) {
+    std::ofstream f(dir / "m8c3_afcs_30min.csv");
+    f.precision(17);
+    f << "# UH-60A hands-off for 30 min with the SAS, PBA and FPS on, from level trims at 60 Hz "
+         "(D-042 a, M8c3)\nspeed_kt,time_s,x_m,y_m,z_m,roll_rad,pitch_rad,heading_rad,"
+         "airspeed_mps,rate_radps,quat_norm_error,finite\n";
+    for (const double kt : {0.0, 120.0}) {
+        const std::vector<test::AfcsSample> p = test::afcs_free_flight(kt, 1800);
+        require(!p.empty(), "AFCS trim failed at " + std::to_string(kt) + " kt");
+        for (const test::AfcsSample& s : p) {
+            f << kt << ',' << s.t << ',' << s.pos_n.x() << ',' << s.pos_n.y() << ',' << s.pos_n.z()
+              << ',' << s.roll << ',' << s.pitch << ',' << s.heading << ',' << s.speed << ','
+              << s.rate << ',' << s.quat_norm_error << ',' << (s.finite ? 1 : 0) << '\n';
+        }
+        std::cout << "AFCS 30 min at " << kt << " kt done (finite " << p.back().finite << ", t "
+                  << p.back().t_ns << " ns)\n";
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -411,6 +602,10 @@ int main(int argc, char** argv) {
         sas_trims(dir);
         sas_modes(dir);
         sas_kick(dir);
+        fps_trims(dir);
+        fps_modes(dir);
+        fps_flights(dir);
+        afcs_long_run(dir);
     } catch (const std::exception& e) {
         std::cerr << "eyas_m8c_cases: " << e.what() << "\n";
         return 1;

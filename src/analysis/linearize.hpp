@@ -160,7 +160,9 @@ struct CondensedModel {
     Eigen::VectorXcd dropped_eigenvalues;
 };
 
-// Throws InitError if the quasi-static block is singular.
+// Throws InitError if the quasi-static block is singular, naming the state
+// when one has no dynamics of its own (a zero row, e.g. an engaged FPS
+// synchronizer's reference, a pure memory): keep such states in `retained`.
 CondensedModel condense(const LinearModel& m, const std::vector<std::size_t>& retained = {});
 
 // The monodromy matrix Φ(T) of the free system over one revolution, in

@@ -1072,7 +1072,7 @@ All are fixed with tests (D-044 verification). Two points weren't acted on as st
 
   Nothing points to a fault; re-check after M8c. The open 80 kt speed-stability gap (M_u < 0, D-041) tends to pitch the nose down rather than up, so it isn't this.
 
-## M8c — The flight control system (M8c1 and M8c2, 2026-10-18)
+## M8c — The flight control system (M8c1 and M8c2, 2026-10-18; M8c3 library, 2026-10-19)
 
 M8c is the third M8 stage (D-042), the UH-60A's flight control system from GenHel CR-166309 §5.5 (D-029, D-045), in three PRs. M8c1 (this entry): the Fig. 5.1.2 sensors, the mechanical controls and mixer (Figs. 5.1.6(a)–(d)) with the rotor head limits (p. 5.5-20), the primary servos, and the dynamic stabilator (Fig. 5.1.7: airspeed schedule, pitch-rate and lateral-acceleration feedback, servo with its rate limit). M8c2 adds the SAS and the pitch bias actuator, M8c3 the FPS. One component, `genhel_fcs` (`src/control/`), drives both rotors' blade pitch and the stabilator through the D-003 data path. The data come from `data/uh60a/genhel/` (DATA_GAPS.md "UH-60A AFCS (M8c)").
 
@@ -1198,6 +1198,78 @@ GenHel's SAS (Figs. 5.1.3(a)–(c): a digital and an analog channel per axis, th
 **Cost.** `eyas_bench` (Release, GCC 13.3, the development machine): 13.6–14.0 µs mean per physics step (M8a: 12.5 µs, before the whole flight control system); worst `advance()` 556 µs against the D-005 budget of 8333 µs. Computing the SAS signals once per derivative call (code review) saved about 0.2 µs per step.
 
 **Builds:** all 404 tests pass with GCC 13.3 (Release) and all 405 with GCC 13.3 and Clang 18.1 (Debug). In a Rocky Linux 9 container (GCC 11, Release) all 403 passed with and without GLFW before the code-review fixes; CI's Rocky job covers the final state. Under ASan+UBSan the 95 new and changed tests pass, and the 34 the review fixes touched again after them (SAS, flight control, units, trim, the linearization tests touched, aircraft data, the station's controls, mapping and recorder). `Trim.Uh60aTrimsFromHoverTo150Knots` now takes 14 min there (13.7 s in Release, with the longer trims), so it and the two new SAS trim tests join CI's `SLOW_TESTS`; the nightly job runs them. clang-format is clean; clang-tidy is clean on the changed files, and CI now runs it on `src/control/` too (M8c1 left it out).
+
+### M8c3 — FPS (2026-10-19)
+
+GenHel's flight path stabilization (Figs. 5.1.5(a)–(c), text p. 5.5-3) in `genhel_fcs`: pitch and roll attitude hold, airspeed hold above 30 kt, heading hold, and turn coordination with the turn switch on, each through a 0.1 s hold and a trim actuator of 100 % authority. Switched by `AfcsSwitches::fps`, `fps_turn` and `trim_release` (default off; D-045 M8c3 amendment). The yaw integrator is wired the physical way, the reverse of the figure as printed (DATA_GAPS.md, AFCS); the tests fly both. The pilot station's switches and turn-switch latch come in the next PR. Same generator and plot script (`m8c3_*` files). No FPS-on flight data is in the library, so the checks are against GenHel's diagrams and the FPS's stated jobs.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Every FPS state against GenHel's diagrams | ✅ | `GenHelFps.ChannelsAreGenHelsDiagrams`: the rates of all 16 states, POTEMP, ROTEMP, YOTEMP and the trim actuators' inches, at 600 random states, flight conditions and switch positions per wiring (both sides of 30 kt, inside the collective fade), against the figures written test-side in GenHel's units (`tests/support/genhel_fps_reference.hpp`). Breaking the heading wrap on purpose fails it 1139 times. `TrimActuatorInchesJoinTheMixer`, `TrimActuatorLimits` (gain, ±10 %/s, stop at ±100 %, back to centre when off). |
+| Synchronizers, trim release, turn switch | ✅ | `GenHelFps.EngagingGivesNoVisibleKick` (engaging in a 3°/s turn holds the heading 0.03° back, 0.07 % of yaw command), `TrimReleaseResynchronizes`, `TurnSwitch` (both wirings). |
+| IC mode, steady kinds, switched off | ✅ | `GenHelFps.SteadyStatesAreAHeldBodyEquilibrium`, `SteadyKinds` (references and integrators held), `SwitchedOffAddsNothing` (the M8c2 mixer commands exactly). |
+| The flying config is GenHel's | ✅ | `GenHelFps.Uh60aConfigIsGenHels`. KRPRO's last digit is unclear; a reviewer leaned to −0.189, which is used (DATA_GAPS.md). |
+| Trims with the FPS on | ✅ | `Uh60aFps.TrimsMoveOnlyTheStick`: bit for bit the SAS-only trims (the references hold the trim). With the turn switch on only the pedal moves, by KLAYYO's share of the steady lateral acceleration, and `TrimResult::held_drift_rate` reports the lateral-acceleration integral's rate (below). |
+| The FPS's jobs, flown | ✅ | `Uh60aFps.*`, below: attitude, airspeed above 30 kt (not below), heading in hover, turn coordination, a collective step. |
+| Modes with the FPS on | ⚠️ | Below: the hover lateral phugoid the SAS left unstable is stable; a 5 rad/s mode of the stabilator's lateral-acceleration loop loses its damping at high speed (open). The engaged references have no dynamics of their own, so condensing them is refused by name (`Uh60aFps.CondenseNamesTheEngagedReferences`); the modes keep them dynamic. |
+| D-042 (a): 30 min hands-off with the whole AFCS on | ✅ | Hover and 120 kt, through `Model::advance` at 60 Hz: finite, sim time exact, quaternion norm error ≤ 2.2e-16; the FPS holds the trim (below). `RealTime.AfcsFreeFlightFor60s` gates 60 s. |
+| Real-time rules | ✅ | `GenHelFps.DoesNotAllocate`; `Trim.ModelStartsFromTrimAndKeepsTheRealTimeRules` now trims and flies with the SAS, PBA and FPS on (no allocation, bit-identical repeats). |
+| Earlier results unchanged | ✅ | Full suite. The M8c1 and M8c2 data regenerate identical to the last printed digit; the M8c2 mode lists differ only in how two copies of a repeated filter pole (SAS off) are printed. |
+| Against flight data | — | None with the FPS on in the library. |
+
+**Trims** (level, ISA sea level):
+
+![Trims](validation/m8/m8c3_trims.png)
+
+- *FPS on, turn switch off:* every control and attitude equal to the SAS-only trim, from hover to 150 kt.
+- *Turn switch on:* the pedal moves 2.8–9 % of half travel right, KLAYYO times the trim's steady lateral acceleration (zero sideslip leaves 0.85 ft/s² at 100 kt). The integral of that acceleration (KIAYYO) would retrim it at 0.38–1.25 %/s; trim holds the integrators (GenHel's IC mode) and reports that rate as the held drift. In a real turn the integral is what centres the ball (below).
+- *Correction to M8c3 step 1:* trim now freezes held states through its held revolutions. Integrated, the drifting integral fed the yaw hold and trim actuator, and these turn-switch trims failed to converge (D-045 M8c3 amendment).
+
+**Attitude hold** (hands-off after a 0.05 rad/s pitch-rate or 0.1 rad/s roll-rate kick):
+
+![Attitude](validation/m8/m8c3_attitude.png)
+
+- With the FPS the attitude returns to within 0.008–0.080° by 20–30 s (gate 0.1°); with the SAS and PBA alone the 60 kt kicks leave 0.79° and 0.29° then (gate 0.2°: the test fails without the FPS). At 120 kt the SAS alone returns them nearly as well, slowly.
+- At 120 kt the FPS response rings at 5.4 rad/s for about 10 s. That is the lightly damped mode below, not the FPS's own loops.
+
+**Airspeed** (stick held 0.01 forward; a 5 kt gust at 20 kt):
+
+![Airspeed](validation/m8/m8c3_airspeed.png)
+
+- Above 30 kt the airspeed integral (KIVXPO) takes out a steady stick offset: within 0.015 kt (60 kt) and 0.025 kt (100 kt) over 120–150 s (gate 0.1 kt), where the SAS-only aircraft settles 1.0 and 3.1 kt fast.
+- Below 30 kt the airspeed reference tracks (VG30SW): the gust leaves the aircraft 5.4 kt fast after 40 s, its pitch within 2°. The SAS alone lets the low-speed phugoid diverge (38 kt fast by 20 s, the 30 kt speed mode +0.15/s in the SAS-only modes); the FPS's attitude hold removes it.
+
+**Yaw** (hover, pedal held 0.05 right; a 10° turn at 100 kt with the trim release held for 8 s; a collective step at 20 kt):
+
+![Yaw](validation/m8/m8c3_yaw.png)
+
+- *Heading hold, the two wirings (D-045 M8c3, owner).* Physical: the heading settles at the ±1° deadband's edge, 0.95° (gate 1.05° over 10–90 s), where only the proportional path acts. As printed: the heading integral is synchronized to zero and the lateral acceleration's integral runs instead, so the heading drifts 35° in 90 s. With the SAS alone the aircraft spins, 384° in 60 s.
+- *Turn coordination.* With the turn switch on and the physical wiring the ball centres, |Y.SENS| 0.015 m/s² over 30–40 s (gate 0.03); as printed it stays at 0.12 (gate 0.06). With the turn switch off the heading hold yaws against the turn: 0.82 m/s² by 20 s, 28° of sideslip by 45 s, and the run departs after that. The host's latch (GenHel p. 5.5-3, the station, next PR) turns the switch on in exactly that case.
+- *Collective to yaw (KSXCYO).* A 0.05 collective step at 20 kt turns the SAS-only aircraft 3.7° in 10 s; with the FPS 1.1° (gate: half the SAS's). The path on its own overcorrects in Eyas: with KSXCYO zeroed the FPS keeps the heading within 0.7°, and with it the first second's yaw rate reverses sign (up to +0.8 deg/s with the SAS alone, down to −0.6 with the FPS; the yaw path adds 0.93° of tail-rotor pitch to the mixer's 0.8°). It is GenHel's gain; the torque response it compensates depends on rotor-speed and engine dynamics Eyas doesn't have yet (M9). Open, revisited then.
+
+**Modes** (the M8c2 method: flight control states dynamic, rotor and inflow quasi-static; body share ≥ ½):
+
+![Modes](validation/m8/m8c3_modes.png)
+
+- *Hover:* the lateral phugoid the SAS left unstable (ζ −0.10) is stable with the FPS (ζ 0.81 and 0.89 for the two lateral oscillations). Every body mode is stable with the FPS from hover to 150 kt; the 30 kt speed divergence (+0.15/s with the SAS alone) is gone.
+- *Zero modes:* each held reference adds an eigenvalue at 0 (|Re λ| ≤ 2e-15), as a memory should.
+- *Open: a 5 rad/s mode of the stabilator's lateral-acceleration loop.* The condensed model misses it. The full averaged model (116 states, rotor dynamic) has a mode at 4.7–5.2 rad/s, mostly the lateral accelerometer and gyros with heave: with the SAS alone ζ 0.27 (60 kt), 0.21 (90), 0.15 (120), 0.09 (150); with the FPS 0.16, 0.10, 0.05 and 0.00 (neutral at 150 kt). Nonlinear free flight agrees (σ 0.25/s at 120 kt against ζ ω_n 0.26). With the stabilator's lateral-acceleration feedback (KVYDT, M8c1) zeroed, ζ is 0.32 (SAS) and 0.19 (FPS) at 120 kt and 0.29 and 0.19 at 150 kt. So the loop is M8c1's stabilator law, which the FPS's delayed attitude loops push to neutral. M8c1 found the same feedback costs the Dutch roll damping; the law stays unchecked against data (DATA_GAPS.md). M8c2's condensed modes (ζ 0.18 at 150 kt for its nearest "control system" mode) understated it.
+
+**30 min hands-off** with the SAS, PBA and FPS on (D-042 a):
+
+![Long run](validation/m8/m8c3_afcs_30min.png)
+
+- Hover: the aircraft stays at its start to 0.1 m, attitude constant to 1e-4°. 120 kt: airspeed, pitch and roll within 0.008 kt, 0.0009° and 0.0034° of the start (the 4/rev vibration, sampled once a second), heading and height held, the track 69 m to the side after 111 km. Every state finite, sim time exactly 1800 s, quaternion norm error ≤ 2.2e-16.
+
+**Open items:**
+- *KRPRO's last digit* (DATA_GAPS.md): reviewed, inconclusive, −0.189 used; the 0.5 % alternative changes no result.
+- *The stabilator's lateral-acceleration loop* (above): neutral at 150 kt with the FPS on. A decision for the spec owner; the data to judge KVYDT against are not in the library.
+- *KSXCYO overcorrects* at 20 kt; revisit with rotor speed and the engine (M9).
+- *Turn switch latch, trim release button, recordings:* the pilot station (next PR).
+
+**Cost.** `eyas_bench` (Release, GCC 13.3, the development machine; trims now with the whole AFCS on): 13.8–14.4 µs mean per physics step (M8c2: 13.6–14.0 µs); worst `advance()` 637 µs against the D-005 budget of 8333 µs.
+
+**Builds:** all 428 tests pass with GCC 13.3 (Release); all but the three slow Ballin trim tests pass with Clang 18.1 and GCC 13.3 (Debug), 427 each. Under ASan+UBSan the 44 new and changed unit tests of the flight control, units, trim kinds and condensation pass; the whole-aircraft FPS flights and the 60 s long run join CI's `SLOW_TESTS` (nightly job). clang-format and clang-tidy are clean. The code review's findings were each reproduced first; the fixes are listed in the D-045 M8c3 amendment.
 
 ## Ballin App. D and E — step responses (2026-10-19; readings reviewed)
 

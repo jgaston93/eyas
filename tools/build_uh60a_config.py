@@ -431,6 +431,34 @@ def afcs_block(rig):
       bias: "{fmt(b["BIAS_BA"])} %"
       hold: "{fmt(b["ZOH_BA"])} s"
       actuator: {{gain: "{fmt(b["GAIN_BA"])} 1/s", rate_limit: "{fmt(pm("RATE_BA"))} %/s", authority: "{fmt(pm("AUTH_BA"))} %"}}
+{fps_block()}"""
+
+
+def fps_block():
+    """The FPS (Figs. 5.1.5(a)-(c)) of the genhel_fcs component, M8c3 (D-045), in GenHel's
+    units. The yaw integrator takes the heading error with the turn switch off and the lateral
+    acceleration with it on, the reverse of the figure as printed (DATA_GAPS.md, "UH-60A
+    AFCS"; `as_printed` selects the figure's wiring)."""
+    f = constants("fig_5_1_5_fps.txt")
+    r = "%/(deg/s)"
+    return f"""\
+    fps:  # Figs. 5.1.5(a)-(c), pp. 5.5-3, 5.5-11 to 5.5-13; fig_5_1_5_fps.txt (M8c3)
+      hold: "{fmt(f["ZOH_FPS"])} s"  # zero-order hold, "airborne computer update delay"
+      trim_actuator: {{gain: "{fmt(f["TA_GAIN"])} 1/s", rate_limit: "{fmt(f["TA_RATE"])} %/s", authority: "{fmt(f["TA_AUTH"])} %"}}
+      pitch:
+        rate_gain: "{fmt(f["KRQQPO"])} {r}"  # on the pitch SAS's A/D output
+        attitude_gain: "{fmt(f["KSTHPO"])} %/deg"
+        airspeed: {{gain: "{fmt(f["KSVXPO"])} %/kt", limit: "{fmt(f["LMVX"])} %", integral_gain: "{fmt(f["KIVXPO"])} %/(kt*s)", hold_above: "{fmt(f["V_HOLD"])} kt"}}
+      roll:
+        rate_gain: "{fmt(f["KRPRO"])} {r}"  # on the roll SAS's A/D output
+        attitude: {{gain: "{fmt(f["KPHRO1"])} %/deg", breakpoint: "{fmt(f["BPPHRO"])} deg", gain_beyond: "{fmt(f["KPHRO2"])} %/deg"}}
+        integral_gain: "{fmt(f["KIPHRO"])} %/(deg*s)"
+      yaw:
+        heading: {{gain: "{fmt(f["KSPSYO"])} %/deg", integral_gain: "{fmt(f["VGPSYO"])} %/(deg*s)", deadband: "{fmt(f["DBPSYO"])} deg"}}
+        lateral_accel: {{lag: "{fmt(f["TLAYYO"])} s", gain: "{fmt(f["KLAYYO"])} %/(ft/s^2)", integral_gain: "{fmt(f["KIAYYO"])} %/(ft/s^2*s)"}}
+        roll_rate_gain: "{fmt(f["KRPPYO"])} {r}"  # turn switch on
+        collective: {{gain: {fmt(f["KSXCYO"])}, airspeed_rate_limit: "{fmt(f["KLVXYO"])} kt/s", fade_from: "{fmt(f["LMIXYO_V0"])} kt", fade_to: "{fmt(f["LMIXYO_V1"])} kt"}}  # %/%
+        integrator_wiring: physical  # DATA_GAPS.md, "UH-60A AFCS"
 """
 
 

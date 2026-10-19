@@ -176,7 +176,8 @@ GenHelFcsConfig config() {
 
 // The GenHel unit of each state, as its SI value per GenHel unit: lags of a
 // rate in deg/s, of an attitude in deg, of an acceleration in ft/s², of a
-// channel signal in %; actuators in inches and in/s.
+// channel signal in %; actuators in inches and in/s. The FPS states (M8c3)
+// have their own test (test_genhel_fps.cpp).
 std::array<double, Fcs::kNumStates> genhel_units() {
     std::array<double, Fcs::kNumStates> u{};
     u.fill(std::numeric_limits<double>::quiet_NaN());
@@ -374,7 +375,7 @@ std::array<double, Fcs::kNumStates> random_genhel_states(std::mt19937_64& rng) {
     std::uniform_real_distribution<double> u(-1.0, 1.0);
     const auto units = genhel_units();
     std::array<double, Fcs::kNumStates> s{};
-    for (std::size_t i = Fcs::kPitchAd; i < Fcs::kNumStates; ++i) {
+    for (std::size_t i = Fcs::kPitchAd; i < Fcs::kFpsBegin; ++i) {
         const double scale = units[i] == kPct ? 8.0 : units[i] == kInch ? 0.5 : 20.0;
         s[i] = scale * u(rng);
     }
@@ -402,7 +403,7 @@ TEST(GenHelSas, ChannelsAreGenHelsDiagrams) {
         x[Fcs::kGyroR] = 0.3 * u(rng);
         x[Fcs::kAccelY] = 3.0 * u(rng);
         x[Fcs::kAirspeedLag] = 40.0;
-        for (std::size_t i = Fcs::kPitchAd; i < Fcs::kNumStates; ++i) {
+        for (std::size_t i = Fcs::kPitchAd; i < Fcs::kFpsBegin; ++i) {
             x[i] = s[i] * units[i];
         }
         const EulerAngles e = euler_angles(ctx.body.q_nb);
@@ -421,7 +422,7 @@ TEST(GenHelSas, ChannelsAreGenHelsDiagrams) {
         slow += in.v_kt < g.V_SW ? 1 : 0;
         const Reference want = reference(g, in, s, ctx.controls.afcs);
         const Eval got = derivs(f, ctx, x);
-        for (std::size_t i = Fcs::kPitchAd; i < Fcs::kNumStates; ++i) {
+        for (std::size_t i = Fcs::kPitchAd; i < Fcs::kFpsBegin; ++i) {
             if (i == Fcs::kYawFade) {
                 continue;  // below
             }

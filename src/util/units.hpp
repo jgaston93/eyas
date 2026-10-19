@@ -57,6 +57,8 @@ enum class Dimension : std::uint8_t {
     per_speed,              // e.g. an airspeed gain [%/kt]
     per_acceleration,       // e.g. a lateral-acceleration gain [%/(ft/s²)]
     rate_per_acceleration,  // an acceleration scaled into a rate path [(deg/s)/(ft/s²)]
+    per_angle_time,         // an attitude integrator's gain [%/(deg s)]
+    per_length,             // an airspeed integrator's gain [%/(kt s)]
 };
 
 // Name used in error messages, e.g. "length".

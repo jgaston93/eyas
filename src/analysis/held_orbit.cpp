@@ -1,7 +1,9 @@
 #include "analysis/held_orbit.hpp"
 
 #include <algorithm>
+#include <array>
 #include <limits>
+#include <span>
 #include <utility>
 
 #include "analysis/trim.hpp"
@@ -20,7 +22,19 @@ HeldIntegrator::HeldIntegrator(const Executive& ex, Environment env, double peri
       k1_(n_, 0.0),
       k2_(n_, 0.0),
       k3_(n_, 0.0),
-      k4_(n_, 0.0) {}
+      k4_(n_, 0.0),
+      held_change_(n_, 0.0) {
+    const std::span<const SteadyKind> kinds = ex.steady_kinds();
+    for (std::size_t i = 0; i < kinds.size(); ++i) {
+        if (kinds[i] == SteadyKind::held) {
+            held_.push_back(i);
+        }
+    }
+}
+
+void HeldIntegrator::clear_held_change() {
+    std::fill(held_change_.begin(), held_change_.end(), 0.0);
+}
 
 void HeldIntegrator::step(int s, const Controls& u, std::vector<double>& x, Vec6& integral,
                           std::array<std::vector<double>, 4>* stages) {
@@ -36,6 +50,8 @@ void HeldIntegrator::step(int s, const Controls& u, std::vector<double>& x, Vec6
             tmp_[i] = x[i] + scale * k[i];
         }
     };
+    // Each stage's rates, the held states' set aside for held_change().
+    constexpr std::array<double, 4> weight = {1.0, 2.0, 2.0, 1.0};
     const auto eval = [&](std::size_t which, double t, const std::vector<double>& xs,
                           std::vector<double>& k, Vec6& net) {
         if (stages != nullptr) {
@@ -43,6 +59,10 @@ void HeldIntegrator::step(int s, const Controls& u, std::vector<double>& x, Vec6
         }
         if (!ex_.held_derivatives(t, xs, u, env_, k, net)) {
             ++unconverged_;
+        }
+        for (const std::size_t i : held_) {
+            held_change_[i] += h / 6.0 * weight[which] * k[i];
+            k[i] = 0.0;
         }
     };
     const double t = period_ * static_cast<double>(s) / steps_;

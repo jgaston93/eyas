@@ -14,6 +14,7 @@
 #include "core/rk4.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 
 namespace eyas {
 namespace {
@@ -22,12 +23,6 @@ using VecX = Eigen::VectorXd;
 using MatX = Eigen::MatrixXd;
 
 constexpr double kPi = std::numbers::pi;
-
-// Wraps an angle into (−π, π].
-double wrap_pi(double a) {
-    a = std::remainder(a, 2.0 * kPi);
-    return a == -kPi ? kPi : a;
-}
 
 // Name of multiblade coordinate i of an N-bladed rotor (Johnson 2013 Eq. 15.77).
 std::string multiblade_name(int blades, int i) {
@@ -668,6 +663,15 @@ CondensedModel condense(const LinearModel& m, const std::vector<std::size_t>& re
         out.A = Abb;
         out.B = Bb;
         return out;
+    }
+    // A state with no dynamics of its own (a zero row) has no quasi-static
+    // value; say which (code review, M8c3).
+    for (std::size_t a = 0; a < rest.size(); ++a) {
+        if (Arr.row(static_cast<Eigen::Index>(a)).isZero(0.0)) {
+            throw InitError("condense: " + m.states[rest[a]] +
+                            " has no dynamics of its own (e.g. an engaged FPS reference); keep it "
+                            "dynamic with condense(m, retained)");
+        }
     }
     const Eigen::FullPivLU<MatX> lu(Arr);
     if (!lu.isInvertible()) {

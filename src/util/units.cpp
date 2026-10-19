@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 69> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 73> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -35,6 +35,7 @@ constexpr std::array<std::pair<std::string_view, Unit>, 69> kRegistry{{
     {"deg/s",      {kDegree, D::angular_rate}},
     {"rpm",        {kRpm, D::angular_rate}},
     {"m/s^2",      {1.0, D::acceleration}},
+    {"kt/s",       {kKnot, D::acceleration}},
     {"ft/s^2",     {kFoot, D::acceleration}},
     {"kg/m^3",     {1.0, D::density}},
     {"slug/ft^3",  {kSlug / (kFoot * kFoot * kFoot), D::density}},
@@ -82,6 +83,9 @@ constexpr std::array<std::pair<std::string_view, Unit>, 69> kRegistry{{
     {"(rad/s)/(m/s^2)",  {1.0, D::rate_per_acceleration}},
     {"(deg/s)/(ft/s^2)", {kDegree / kFoot, D::rate_per_acceleration}},
     {"deg/%",            {kDegree / 0.01, D::angle}},
+    {"%/(deg*s)",        {0.01 / kDegree, D::per_angle_time}},
+    {"%/(kt*s)",         {0.01 / kKnot, D::per_length}},
+    {"%/(ft/s^2*s)",     {0.01 / kFoot, D::per_speed}},
 }};
 // clang-format on
 
@@ -168,6 +172,10 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "per acceleration";
         case Dimension::rate_per_acceleration:
             return "angular rate per acceleration";
+        case Dimension::per_angle_time:
+            return "per angle time";
+        case Dimension::per_length:
+            return "per length";
     }
     return "unknown";
 }
