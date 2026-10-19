@@ -1034,3 +1034,28 @@ Also: accel_b against a central difference of the flown velocity (< 5e-3 m/s²);
 - *File 210 (Fig. E2), flagged:* its CG waterline is printed 243.8 in, against 231.6–232.7 in for every other file (DATA_GAPS.md; the reading confirmed by the reviewer, the value doubtful). Amended 2026-10-19 (reviewer): E2 is run and reported, flagged, both as printed and with file 212's waterline (232.5 in, the same flight) as a stand-in for comparison; `tools/build_uh60a_config.py` writes the stand-in as `uh60a_file210_wl232.5.yaml`, and the runner flies every such variant. Its Sikorsky GenHel acceleration is left out (not accepted in review).
 
 **Generator:** `eyas_ballin_app_d_cases` (`tests/validation/ballin_app_d_cases.cpp`), plots `tools/plot_ballin_app_d.py`; nightly in `full-verification.yml`.
+
+## D-047 No comparison against the reference model; the host's required outputs (spec §12 Q1, Q6) — `Approved (2026-10-19)` — scope, interface requirements
+**Context:** spec §12 asked which fields the host reads from the reference model (Q1) and whether its outputs may be used to benchmark Eyas (Q6). D-035 already replaced every planned reference-model comparison with published data. Tracked as GitHub issues #30 and #33.
+
+**Decision** (spec owner, 2026-10-19):
+- *No reference-model comparison (Q6).* None is planned at all: the reference model isn't a UH-60 model, so it wouldn't be a meaningful benchmark. Validation stays against public data (NASA reports, flight test). The clean-room rule (§2.1) still stands, and the tests that would skip without its outputs remain harmless.
+- *The host's outputs (Q1),* read every frame:
+  - geodetic latitude and longitude [deg];
+  - height above MSL (EGM96) and above the WGS-84 ellipsoid [ft];
+  - roll, pitch and yaw [deg];
+  - weight on wheels;
+  - outside air temperature [°C];
+  - groundspeed [kt];
+  - radar altitude [ft];
+  - position [ft], velocity [ft/s] and acceleration [ft/s²], each in NED and in body axes;
+  - body rates [rad/s] and body angular accelerations [rad/s²].
+
+  `AircraftState` already gives all but two, and the host adapter converts units. The NED and body-axis accelerations come from `accel_b`, rotated by `q_nb` for NED.
+- *Gaps:*
+  - The body angular acceleration isn't output: add `omega_dot_b` (#50, additive, before M8e).
+  - The ellipsoidal height needs the geoid height N, which D-017 leaves to the host. The host supplies N or the adapter carries an EGM96 grid (#51).
+- *To confirm with the host's owners (#30):*
+  - whether its accelerations are kinematic (`accel_b`) or specific force (`specific_force_b`);
+  - whether radar altitude is measured straight down to its terrain.
+
