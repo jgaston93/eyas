@@ -97,6 +97,22 @@ def table_c1_variants():
 
 VARIANTS.update(table_c1_variants())
 
+# Kaplita, NASA CR-177360 (1985), Figs. 4 (flight 66, run 27) and 2 (run 12): the headers give
+# the weight and CG station but no CG waterline. STAND-IN, approved by the spec owner
+# (2026-10-20): the waterline of Kaplita's 140 kt steady-heading sideslip flight (flight 19,
+# Fig. 13 header, 231.8 in, itself read 231.8 or 231.9; DATA_GAPS.md), so the file names say
+# standin.
+VARIANTS["kaplita/uh60a_kaplita_fig4_standin.yaml"] = (
+    15410.0, 352.1, 0.0, 231.8,
+    "Kaplita, NASA CR-177360 (1985), Fig. 4 header (PDF p. 59): gross weight 15410 lb, CG "
+    "station 352.1 in. STAND-IN: CG waterline 231.8 in, Kaplita Fig. 13's (flight 19), in place "
+    "of Fig. 4's, which isn't given (DATA_GAPS.md); for comparison only, not a reading")
+VARIANTS["kaplita/uh60a_kaplita_fig2_standin.yaml"] = (
+    16170.0, 350.4, 0.0, 231.8,
+    "Kaplita, NASA CR-177360 (1985), Fig. 2 header (PDF p. 51): gross weight 16170 lb, CG "
+    "station 350.4 in. STAND-IN: CG waterline 231.8 in, Kaplita Fig. 13's (flight 19), in place "
+    "of Fig. 2's, which isn't given (DATA_GAPS.md); for comparison only, not a reading")
+
 SLUG_LBM = 32.17404855643044  # lbm per slug (g0 / ft)
 LBF_LBM = 1.0                 # a GenHel weight in lb is the same number in lbm
 

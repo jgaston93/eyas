@@ -126,6 +126,10 @@ jobs:
           ./build/release/tests/eyas_kaplita_cases validation-output/data/kaplita
           python tools/plot_kaplita.py validation-output/data/kaplita validation-output/plots/kaplita
           echo "::endgroup::"
+          echo "::group::kaplita_transients"
+          ./build/release/tests/eyas_kaplita_transient_cases validation-output/data/kaplita_transients
+          python tools/plot_kaplita_transients.py validation-output/data/kaplita_transients validation-output/plots/kaplita_transients
+          echo "::endgroup::"
       - uses: actions/upload-artifact@v4
         with:
           name: validation-output-${{ github.sha }}
