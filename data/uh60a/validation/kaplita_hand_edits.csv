@@ -1,0 +1,15 @@
+# source: Kaplita, NASA CR-177360 (1985), Figs. 10-13. Test-circle centres placed by hand by the human reviewer on the review page (the 300 dpi scan of each panel, the tool's crop), 2026-10-20, where the tool's ring fit was off; tools/digitize_kaplita.py applies them over its own readings.
+# status: human reading (reviewer), 2026-10-20. x_px, y_px: the centre in the upright 300 dpi page; none: the reviewer found no test circle (13a roll #6 sits under a label's arrow).
+figure,panel,point,x_px,y_px
+11a,lat,0,1167.5,1871.8
+11a,lat,1,1261.5,1879.8
+11a,lat,2,1389.5,1862.8
+11a,lat,4,1596.5,1848.8
+11b,coll,0,1165.5,2544.8
+11b,coll,2,1386.5,2543.8
+11b,coll,3,1479.5,2543.8
+12a,lat,4,1623.5,1814.8
+12a,lat,7,1949.5,1770.8
+12b,pitch,6,1735.5,951.8
+13a,roll,0,1276.5,1382.8
+13a,roll,6,none,none
