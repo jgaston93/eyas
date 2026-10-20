@@ -4,6 +4,8 @@ add_executable(eyas_unit_tests
     support/alloc_counter.cpp
     unit/test_alloc_counter.cpp
     unit/test_airframe_aero.cpp
+    unit/test_spinning_parts.cpp
+    unit/test_kaplita_sideslip.cpp
     unit/test_air_data.cpp
     unit/test_atmosphere.cpp
     unit/test_bailey_rotor.cpp
@@ -132,6 +134,11 @@ target_include_directories(eyas_ballin_app_d_cases PRIVATE ${CMAKE_CURRENT_SOURC
 target_link_libraries(eyas_ballin_app_d_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_ballin_app_d_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_ballin_app_d_cases)
+add_executable(eyas_kaplita_cases validation/kaplita_cases.cpp)
+target_include_directories(eyas_kaplita_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_kaplita_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_kaplita_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_kaplita_cases)
 
 add_executable(eyas_m7c_fletcher validation/m7c_fletcher.cpp)
 target_include_directories(eyas_m7c_fletcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

@@ -46,6 +46,11 @@ class Config;
 // then continuous across the line, and drag still opposes the flow. GenHel's
 // own low-speed filter (p. 5.2-10, not executed) is the model for the fade.
 //
+// Motion-module additions (pp. 5.10-4, 5.10-19; D-048), optional: GenHel's
+// "downwash correction terms", a side force and rolling and pitching moments
+// per unit free-stream dynamic pressure q_FRE = ½ρ|v_air|², tables in the
+// fuselage's β_WF, added at the CG in body axes.
+//
 // States (D-028): the delayed fuselage downwash at the stabilator and
 // sidewash at the fin, each a first-order lag standing in for GenHel's
 // transport delay l/u: dε_d/dt = (|u|/l)(ε − ε_d), l the panel's distance aft
@@ -145,6 +150,15 @@ struct PanelConfig {
     AngleTable wake_angle{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
 };
 
+// GenHel's (XYZLMN)_ADD (p. 5.10-19), per unit free-stream dynamic pressure,
+// against β_WF [rad]: body-axis side force Y [m²], rolling moment L and
+// pitching moment M [m³].
+struct AdditionalLoads {
+    AngleTable side{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable roll{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+    AngleTable pitch{Table1D(Axis({0.0, 1.0}), {0.0, 0.0})};
+};
+
 struct AirframeAeroConfig {
     std::string name;                      // instance name (D-003); may be empty
     Vec3 fuselage_point_b = Vec3::Zero();  // [m] tunnel mounting point from the CG
@@ -153,6 +167,7 @@ struct AirframeAeroConfig {
     std::optional<RotorWash> tail_wash;      // Tables 3.5.1–3.5.2, stabilator and fin
     PanelConfig stabilator;
     PanelConfig fin;
+    std::optional<AdditionalLoads> additions;  // D-048
     // c [rad] in [0, 90°): half-width of the fade about the sideward line
     // (D-031); 0 turns the fade off.
     double sideward_fade = 20.0 * units::kDegree;
@@ -161,6 +176,8 @@ struct AirframeAeroConfig {
 struct AirframeAeroLoads {
     Wrench body;  // total, body axes, about the airframe CG
     Wrench fuselage, stabilator, fin;
+    Wrench additions;                     // D-048; zero without them
+    double q_free = 0.0;                  // [Pa] free-stream dynamic pressure
     double alpha_wf = 0.0, psi_wf = 0.0;  // [rad] GenHel's tunnel angles
     double q_wf = 0.0;                    // [Pa]
     double alpha_h = 0.0, q_h = 0.0;      // stabilator angle incl. incidence [rad], [Pa]

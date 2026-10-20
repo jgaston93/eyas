@@ -29,6 +29,7 @@ add_library(eyas STATIC
     src/core/attitude.cpp
     src/core/coupling.cpp
     src/core/rigid_body.cpp
+    src/core/spinning_parts.cpp
     src/env/air_data.cpp
     src/env/atmosphere.cpp
     src/env/geodesy.cpp

@@ -122,6 +122,10 @@ jobs:
           ./build/release/tests/eyas_ballin_app_d_cases validation-output/data/ballin_app_d
           python tools/plot_ballin_app_d.py validation-output/data/ballin_app_d validation-output/plots/ballin_app_d
           echo "::endgroup::"
+          echo "::group::kaplita"
+          ./build/release/tests/eyas_kaplita_cases validation-output/data/kaplita
+          python tools/plot_kaplita.py validation-output/data/kaplita validation-output/plots/kaplita
+          echo "::endgroup::"
       - uses: actions/upload-artifact@v4
         with:
           name: validation-output-${{ github.sha }}

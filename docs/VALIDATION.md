@@ -725,9 +725,9 @@ Every M7c difference that isn't explained by the data's accuracy, with where it 
 
 | Gap | Size | Status | Goes to |
 |---|---|---|---|
-| Sideslip at zero roll | +3.5° against GenHel; Eyas rolls left where the test rolled right | Unexplained. The rotor force integration and lateral cyclic are verified. | Parked: USAAEFA report or M8 piloted evaluation |
-| Lateral cyclic above 110 kt | Up to +7.8 % at 155 kt | Unexplained; probably linked to the sideslip | Parked, with the sideslip |
-| Pedal | GenHel − Eyas +0.8 to +7.8 % | Explained by the sideslip and collective (residual ±0.65 %) | Follows the sideslip |
+| Sideslip at zero roll | +3.5° against GenHel; Eyas rolls left where the test rolled right | **Closed by D-048 (2026-10-20):** GenHel's downwash correction terms (p. 5.10-19) were missing; now +0.2 to −1.1° against GenHel, roll 0.29° rms against the test | Below, "Kaplita steady-heading sideslips" |
+| Lateral cyclic above 110 kt | Up to +7.8 % at 155 kt | Unexplained; not linked to the sideslip after all (unchanged by D-048) | Parked |
+| Pedal | GenHel − Eyas +0.8 to +7.8 % | Explained by the sideslip and collective (residual ±0.65 %); −1.3 to +3.3 % since D-048 | Follows the sideslip |
 | Hover main-rotor power | −71 hp (4.4 %) | About 37 hp is tip loss on the inflow; about 140 hp of GenHel's power is unexplained | Tip loss to M9 (D-041) |
 | Cruise power and collective | −49 hp mean; collective −6.4 % at 160 kt | Within the yawed-drag ruling (D-039) | Tracked by the gate |
 | B2–B4 descent collective | Eyas falls 6–9 % less at 100–137.5 kt | Unexplained | Parked |
@@ -781,6 +781,8 @@ Side-force budget at 100 kt, zero roll (β = 3.30°): main rotor −290 lbf, tai
 **Pedal gap explained.** GenHel − Eyas pedal at zero roll grows from +0.8 % (60 kt) to +7.8 % (150 kt). Eyas's own dPedal/dβ (−0.6 to −1.4 %/deg, from its zero-sideslip and zero-roll trims) times the sideslip difference, plus the collective-to-tail-rotor mixing (16° θ0 per unit collective), leaves a residual within ±0.65 % at every speed to 160 kt (with D-040 and the corrected readings). It follows from the sideslip and collective; it isn't a separate defect.
 
 **Status:** unexplained, recorded open. Since the force integration matches theory and the lateral cyclic matches GenHel, the difference is in the rotor state GenHel trims to or in a term of GenHel's not visible from its equations as read; the flight test (which flew rolled right) is the referee. Parked (D-041): revisit with the USAAEFA report or if M8's piloted evaluation shows it.
+
+**Closed (2026-10-20, D-048):** it was "a term of GenHel's not visible from its equations as read": the motion module's downwash correction terms (p. 5.10-19), a constant side force and sideslip-dependent rolling and pitching moments, never transcribed. With them Eyas's zero-roll sideslip is within +0.2 to −1.1° of GenHel's, and at the test's sideslip Eyas rolls right with the test (0.29° rms). Section "Kaplita steady-heading sideslips" below.
 
 ### Stabilator airspeed (D-040) and neutral longitudinal cyclic
 
@@ -1288,35 +1290,36 @@ Generator `eyas_ballin_app_d_cases` (`tests/validation/ballin_app_d_cases.cpp`),
 
 | Fig. | Input | On-axis | Eyas − Ames GenHel | Eyas (Ames servos) − Ames GenHel | Eyas − flight test | Ames GenHel − flight test |
 |---|---|---|---|---|---|---|
-| D1 | 1-in. right cyclic, hover | roll rate [deg/s] | 4.41 | 4.42 | 1.21 | 3.58 |
-| D2 | 1-in. left cyclic, hover | roll rate [deg/s] | 6.98 | 6.96 | 1.26 | 6.28 |
-| D3 | 0.5-in. forward cyclic, hover | pitch rate [deg/s] | 1.18 | 1.13 | 0.96 | 2.13 |
+| D1 | 1-in. right cyclic, hover | roll rate [deg/s] | 4.40 | 4.41 | 1.20 | 3.58 |
+| D2 | 1-in. left cyclic, hover | roll rate [deg/s] | 6.95 | 6.93 | 1.25 | 6.28 |
+| D3 | 0.5-in. forward cyclic, hover | pitch rate [deg/s] | 1.18 | 1.13 | 0.95 | 2.13 |
 | D4 | 1-in. up collective, hover | vertical accel. [ft/s²] | 0.78 | 0.55 | 0.79 | 0.71 |
-| D5 | 1-in. left pedal, hover | yaw rate [deg/s] | 2.39 | 2.06 | 5.12 | 2.77 |
-| D6 | 1-in. left cyclic, 60 kt | roll rate [deg/s] | 1.72 | 1.56 | 0.59 | 1.33 |
-| D7 | 1-in. aft cyclic, 60 kt | pitch rate [deg/s] | 1.17 | 0.93 | 1.85 | 1.50 |
-| D8 | 0.5-in. down collective, 60 kt | vertical accel. [ft/s²] | 0.45 | 0.42 | 1.34 | 1.14 |
-| D9 | 0.5-in. up collective, 60 kt | vertical accel. [ft/s²] | 0.77 | 0.71 | 0.87 | 1.51 |
-| D10 | 1-in. down collective, 60 kt | vertical accel. [ft/s²] | 1.29 | 1.14 | 1.40 | 2.54 |
-| D11 | 0.5-in. right pedal, 60 kt | yaw rate [deg/s] | 1.18 | 0.99 | 2.17 | 2.54 |
-| D12 | 1-in. left pedal, 60 kt | yaw rate [deg/s] | 0.90 | 0.86 | 2.70 | 3.19 |
-| D13 | 1-in. aft cyclic, 100 kt | pitch rate [deg/s] | 0.78 | 0.53 | 1.35 | 1.28 |
-| D14 | 1-in. forward cyclic, 100 kt | pitch rate [deg/s] | 1.71 | 1.64 | 2.09 | 1.91 |
-| D15 | 0.5-in. up collective, 100 kt | vertical accel. [ft/s²] | 1.37 | 1.34 | 5.30 | 4.12 |
-| D16 | 1-in. right pedal, 100 kt | yaw rate [deg/s] | 1.62 | 1.27 | 2.94 | 2.78 |
-| D17 | 1-in. left pedal, 100 kt | yaw rate [deg/s] | 3.74 | 3.96 | 2.98 | 5.60 |
-| E1 | 0.5-in. aft cyclic, hover | pitch rate [deg/s] | 1.40 | 1.33 | 2.07 | 3.39 |
+| D5 | 1-in. left pedal, hover | yaw rate [deg/s] | 2.41 | 2.09 | 5.15 | 2.77 |
+| D6 | 1-in. left cyclic, 60 kt | roll rate [deg/s] | 1.67 | 1.51 | 0.57 | 1.33 |
+| D7 | 1-in. aft cyclic, 60 kt | pitch rate [deg/s] | 1.31 | 1.14 | 2.21 | 1.50 |
+| D8 | 0.5-in. down collective, 60 kt | vertical accel. [ft/s²] | 0.45 | 0.42 | 1.29 | 1.14 |
+| D9 | 0.5-in. up collective, 60 kt | vertical accel. [ft/s²] | 0.40 | 0.30 | 1.32 | 1.51 |
+| D10 | 1-in. down collective, 60 kt | vertical accel. [ft/s²] | 1.00 | 0.80 | 1.82 | 2.54 |
+| D11 | 0.5-in. right pedal, 60 kt | yaw rate [deg/s] | 1.25 | 1.06 | 2.20 | 2.54 |
+| D12 | 1-in. left pedal, 60 kt | yaw rate [deg/s] | 1.04 | 0.76 | 3.72 | 3.19 |
+| D13 | 1-in. aft cyclic, 100 kt | pitch rate [deg/s] | 0.74 | 0.52 | 0.74 | 1.28 |
+| D14 | 1-in. forward cyclic, 100 kt | pitch rate [deg/s] | 1.56 | 1.43 | 1.61 | 1.91 |
+| D15 | 0.5-in. up collective, 100 kt | vertical accel. [ft/s²] | 1.30 | 1.28 | 5.24 | 4.12 |
+| D16 | 1-in. right pedal, 100 kt | yaw rate [deg/s] | 1.73 | 1.47 | 2.21 | 2.78 |
+| D17 | 1-in. left pedal, 100 kt | yaw rate [deg/s] | 1.67 | 1.47 | 5.34 | 5.60 |
+| E1 | 0.5-in. aft cyclic, hover | pitch rate [deg/s] | 1.37 | 1.31 | 2.10 | 3.39 |
 | E2 ⚑ | 0.5-in. down collective, hover (WL 243.8 as printed) | vertical accel. [ft/s²] | 0.49 | 0.37 | 1.25 | 1.03 |
 | E2 ⚑ | same, WL 232.5 (stand-in) | vertical accel. [ft/s²] | 0.49 | 0.36 | 1.24 | 1.03 |
-| E3 | 1-in. right lateral, 100 kt | roll rate [deg/s] | 1.55 | 1.21 | 1.12 | 1.57 |
+| E3 | 1-in. right lateral, 100 kt | roll rate [deg/s] | 1.84 | 1.59 | 1.74 | 1.57 |
 
 **Findings.**
+- *Regenerated 2026-10-20 with D-048* (GenHel's downwash correction terms and spinning parts; the table above has the new numbers). Eyas is now closer than the Ames GenHel to the test on-axis in 12 of the 20 cases and within 0.1 in one more; more than 0.5 further in D5, D7, D12 and D15. Against the Ames GenHel it is within 2.4 units except D1, D2 and D5 (D17 3.74 → 1.67). The pedal steps at speed move most: D16 2.94 → 2.21 and D13 1.35 → 0.74 deg/s from the test, D12 2.70 → 3.72, D17 2.98 → 5.34 (it now follows the Ames GenHel, 5.60, more closely). The bullets below are as written on 2026-10-19, before D-048, except where marked.
 - *Against the flight test,* Eyas is closer than Ballin's GenHel on-axis in 11 of the 20 cases, and within 0.1 of it in two more (D4, D13). The largest gains are the hover lateral steps: from its trim, the Ames GenHel's roll rate peaks at 14.1 deg/s in D1 and −20.4 deg/s in D2, the test at 9.4 and −13.3, Eyas at 10.1 and −14.1. In App. E the Sikorsky GenHel is 2.81 (E1) and 0.98 (E3) from the test, so Eyas is closer than both GenHels in E1 and just behind the Sikorsky one in E3.
 - *Against the Ames GenHel,* Eyas is within 2.4 units RMS on-axis except those two hover lateral steps and D17 (3.7); see below. Ames's faster servos bring Eyas closer to the Ames curves in 18 of the 20 cases, by up to 0.35, and the two Eyas runs are otherwise hard to tell apart over 2 s.
 - *Hover left pedal (D5)* is the one case where Eyas is clearly further from the test than GenHel (yaw rate 5.12 against 2.77 deg/s RMS): Ballin attributes the hover yaw response to the rotor-speed and engine dynamics (p. 12), which Eyas gets at M9. D15 (up collective, 100 kt) is the other case more than 0.5 further, where both simulations are far from the test (5.3 and 4.1 ft/s²).
 - *E2 (⚑, down collective in hover)* is insensitive to its doubtful waterline. Lowering the CG from 243.8 to 232.5 in changes Eyas's trim pitch from 4.78° to 4.52° and roll from −2.55° to −2.40°, and every on-axis and off-axis RMS difference by 0.17 or less (pitch rate, the most affected, 0.67 → 0.83 deg/s from the test). That is well below Eyas's distance from either GenHel, so neither the test nor Ballin's curves can tell which waterline Ballin's simulations used. On-axis, Eyas is 0.22 ft/s² further from the test than the Ames GenHel. Off-axis, both GenHels pitch nose-up by about 9° over the 6 s and Eyas by about 5°, while the test holds within 1°; Ballin puts the hover collective response down to the rotor-speed and engine dynamics (p. 12), M9.
 - *Why Eyas differs from GenHel in the hover lateral steps (D1, D2): the inflow model.* GenHel's main-rotor inflow is uniform momentum downwash through a first-order lag, skewed with forward speed only; a harmonic inflow driven by the rotor moments "has not been established for Black Hawk" (CR-166309 §5.1.1, p. 5.1-2). Eyas uses Pitt–Peters (D-027), whose first-harmonic inflow responds to the rotor's roll moment. Flown with Eyas's uniform inflow instead (a one-off probe: the case configs with `inflow: uniform`, not kept), Eyas reproduces the Ames GenHel: the roll rate peaks at 14.8 and −21.2 deg/s (GenHel 14.1 and −20.4), and the RMS difference from GenHel falls from 4.41 to 1.23 deg/s in D1 and from 6.98 to 2.37 in D2. With Pitt–Peters, Eyas is at 10.1 and −14.1, against the test's 9.4 and −13.3. Two independent sets of flight data put Eyas's hover roll response right and GenHel's too large: these steps, and Fletcher's flight-identified hover p/δlat (M7c V2: 0.7 dB mean, 1.6 dB RMS in magnitude). Ballin, too, finds the simulation's rates "somewhat less damp[ed]" than the test's (p. 11). Eyas's gain here is the inflow model's, not chance.
-- *Pitch response to pedal at speed is too weak, known limitation.* After a pedal step at 60 and 100 kt the test pitches nose-down for right pedal and nose-up for left, the peak pitch rate within 2 s of the step being 11.8 (D11), 8.4 (D12), 16.9 (D16) and 17.2 deg/s (D17; with the pilot's aft stick). The Ames GenHel gets 7.9–14.4 deg/s, the same way. Eyas gets the right sign but only 3.3–4.8 deg/s in all four, a third to half of the test's; in hover (D5) it is in line with GenHel. The direct pedal path is GenHel's. Three probes held the body at D16's trim (103 kt) and stepped the pedal; scratch probes, not kept. Each per-inch change was checked by hand against GenHel's data and equations:
+- *Pitch response to pedal at speed* (largely closed by D-048, 2026-10-20: the peak pitch rate within 2 s of the step is now −7.0 (D11), +5.6 (D12), −8.7 (D16) and +12.1 deg/s (D17), from −4.3, +3.9, −4.2 and +4.5 measured the same way; the sideslip-dependent term the paragraph below suspects was GenHel's M_ADD). *As written before D-048: too weak, known limitation.* After a pedal step at 60 and 100 kt the test pitches nose-down for right pedal and nose-up for left, the peak pitch rate within 2 s of the step being 11.8 (D11), 8.4 (D12), 16.9 (D16) and 17.2 deg/s (D17; with the pilot's aft stick). The Ames GenHel gets 7.9–14.4 deg/s, the same way. Eyas gets the right sign but only 3.3–4.8 deg/s in all four, a third to half of the test's; in hover (D5) it is in line with GenHel. The direct pedal path is GenHel's. Three probes held the body at D16's trim (103 kt) and stepped the pedal; scratch probes, not kept. Each per-inch change was checked by hand against GenHel's data and equations:
   - *Tail rotor:* 147 lbf/deg of blade pitch, against 150 from CR-166309 p. 5.4-7 at the same operating point. The pitch change of −4.82°/in, the rigging's −5.54°/in less the δ₃ coning feedback, matches. The cant moment is 7 740 ft·lbf/in, against 709 lbf × sin 20° × 31.8 ft.
   - *Main rotor, through the mixer's MIX_BP:* −9 480 ft·lbf/in, against −9 300 from the hinge-offset spring (N/2)eM_βΩ², the thrust tilt T·h and the thrust change at the hub's offset, for Eyas's 1.90°/in of β₁c. The flapping per degree of cyclic behind it matched Fletcher's flight data at M7c (on-axis pitch, 0.8 dB at 80 kt).
   - *Stabilator wash:* +1.95 ft/s/in, against +1.94 from the tail-wash table (Table 3.5.2, p. 5.3-20). It comes from the main rotor's downwash dropping with its thrust; the flapping input a₁ barely moves the factor, so the AA1FMR ruling (DATA_GAPS.md) doesn't enter.
@@ -1328,3 +1331,45 @@ Generator `eyas_ballin_app_d_cases` (`tests/validation/ballin_app_d_cases.cpp`),
 ![D4](validation/m8/ballin_app_d_d4.png)
 ![D5](validation/m8/ballin_app_d_d5.png)
 ![E2, both waterlines](validation/m8/ballin_app_d_e2.png)
+![D16, right pedal at 100 kt (with D-048)](validation/m8/ballin_app_d_d16.png)
+
+## Kaplita steady-heading sideslips and GenHel's motion-module additions (D-048, 2026-10-20; issue #24)
+
+Kaplita, NASA CR-177360 (1985), Figs. 11–13: Sikorsky's GenHel ("existing model", identical to CR-166309) and the USAAEFA Project 79-24 flight test in steady-heading sideslips at 60, 100 and 140 kt, digitized and human-reviewed (DATA_GAPS.md). Eyas flies Kaplita's simulation setup (SAS on, PBA disabled and centred, FPS off, stabilator held at its zero-sideslip trim incidence) on Ballin's aircraft at 5250 ft as a stand-in for the three test flights, so gradients are compared, not levels.
+
+Generator `eyas_kaplita_cases` (`tests/validation/kaplita_cases.cpp`), plot and gradients `tools/plot_kaplita.py`; nightly in `full-verification.yml`. The generator also flies the aircraft without the correction terms, to show what D-048 changed.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Correction terms match GenHel's printed formulas | ✅ | `AirframeAero.MotionAdditionsMatchGenHel` (D-036 parabola within ±5°) |
+| Spinning parts match GenHel's gyroscopic equations | ✅ | `SpinningParts.MatchesGenHel`, `SpinningParts.ReadFromConfigAndAddedToTheBody` |
+| Every sideslip gradient within a quarter of GenHel's (plus read-off) | ✅ | `KaplitaSideslip.GradientsAgainstSikorskyGenHel`; fails without the terms (longitudinal stick, pitch, lateral stick) |
+
+![Kaplita sideslips](validation/kaplita/kaplita_sideslip.png)
+
+**Gradients** per degree of sideslip, least squares over ±12° (`kaplita_gradients.csv`): flight test / Sikorsky GenHel / Eyas / Eyas without the terms.
+
+| | 60 kt | 100 kt | 140 kt |
+|---|---|---|---|
+| Longitudinal stick [%] | −0.56 / −0.51 / −0.42 / −0.22 | −1.09 / −0.88 / −0.78 / −0.27 | −1.37 / −1.37 / −1.14 / −0.28 |
+| Pitch [deg] | +0.035 / +0.064 / +0.054 / −0.003 | +0.158 / +0.132 / +0.130 / −0.019 | +0.237 / +0.233 / +0.207 / −0.039 |
+| Lateral stick [%] | +0.30 / +0.47 / +0.38 / +0.31 | +0.36 / +0.81 / +0.78 / +0.56 | +0.43 / +1.38 / +1.38 / +0.90 |
+| Roll [deg] | +0.06 / +0.17 / +0.15 / +0.16 | +0.34 / +0.39 / +0.36 / +0.39 | +0.67 / +0.73 / +0.71 / +0.77 |
+| Pedal [%] | −0.96 / −0.85 / −0.63 / −0.64 | −1.80 / −1.75 / −1.56 / −1.63 | −2.70 / −2.54 / −2.38 / −2.44 |
+
+- *Longitudinal stick and pitch:* without the terms Eyas had a quarter to a half of the stick gradient and the pitch gradient's wrong sign at every speed. With them both follow GenHel and the test, including the bends in the pitch curves near ±8–10° of sideslip, where M_AD reaches its limits.
+- *Lateral stick:* GenHel's gradient is two to three times the flight test's at 100 and 140 kt; Eyas now follows GenHel there. Kaplita reports the same at 140 kt ("lateral stick compares less favorably than at lower speeds", p. 9, PDF p. 23). Open with GenHel's own.
+- *Roll and pedal:* unchanged, and with both references.
+
+**Effect on M7c** (level trims under GenHel's lateral constraint; Eyas − Sikorsky GenHel, before → after; the gap register above is the M7c record):
+- *Sideslip at zero roll:* +2.8 to +3.9° → +0.2 to −1.1° from 50 to 160 kt. The open gap "Eyas trims with right sideslip at zero roll" was the missing correction terms.
+- *Pedal:* −1.0 to −8.9 % → +1.3 to −3.3 %. *Main-rotor power:* 5–30 hp closer to GenHel's from 50 to 140 kt.
+- *Pitch attitude:* within ±0.4° from 60 to 160 kt (was up to +0.54°); at 50 kt +0.34 → +0.60°.
+- *Longitudinal cyclic:* within about ±1.3 % → 2.1–3.5 % aft of GenHel from 100 to 150 kt.
+- *Lateral cyclic above 120 kt:* unchanged (+1.2 to +6.3 %), so it isn't linked to the sideslip, as the register had guessed.
+
+**Against the flight test at its own sideslip, roll free** (the six B1 test points, 49–164 kt; Eyas − test, rms before → after): roll 2.57 → 0.29° (the register's "Eyas rolls left where the test rolled right" closes), pitch 2.12 → 0.91°, longitudinal stick 5.7 → 4.0 % (mean +0.3 → +2.9 %), lateral stick 3.1 → 4.5 %; pedal (+8.5 %, the open pedal-scale question) and collective unchanged.
+
+**Dutch roll** (the M8c2 method, flight control states dynamic; ζ before → after): SAS off 0.15 → 0.37 (90 kt), 0.02 → 0.31 (120 kt), 0.00 → 0.06 (150 kt); SAS and PBA on 0.44 → 0.49, 0.37 → 0.42, 0.33 → 0.35. The correction terms add lateral-directional stiffness and damping in sideslip. Not yet checked against flight data; Kaplita Fig. 4 (pedal step, 144 kt, SAS off, stabilator fixed) is the referee to digitize next.
+
+**Open, for the spec owner** (D-048, "Tests the change trips"): the M7c longitudinal-cyclic shape gate and the 50 kt pitch gate now fail by 0.3–0.5 % and 0.23° beyond their tolerances; four recorded open differences changed; and two checks that showed the SAS and FPS matter rested on the bare aircraft being lightly damped.

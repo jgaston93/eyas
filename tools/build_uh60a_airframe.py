@@ -1,7 +1,8 @@
 """Build the UH-60A airframe tables in data/uh60a/airframe/ from the GenHel transcriptions.
 
 Reads the as-printed transcriptions in data/uh60a/genhel/ (GenHel, NASA CR-166309,
-Tables 2.5.1 to 2.5.11 for the fuselage and 3.5.1 to 3.5.10 for the empennage),
+Tables 2.5.1 to 2.5.11 for the fuselage, 3.5.1 to 3.5.10 for the empennage and the motion
+module's downwash correction terms, p. 5.10-19),
 checks their internal structure and writes one CSV per lookup grid:
 
     python3 tools/build_uh60a_airframe.py            # write the CSVs
@@ -206,6 +207,49 @@ def stabilator_csv():
     return "".join(lines)
 
 
+def motion_constants():
+    """Name -> value of the §5.10.5 motion-module transcription (first two columns)."""
+    out = {}
+    for line in (SRC / "motion_input_5_10_5.txt").read_text(encoding="utf-8").splitlines():
+        parts = line.split("#", 1)[0].split()
+        if parts:
+            out[parts[0]] = float(parts[1])
+    return out
+
+
+def motion_additions_csv():
+    """GenHel's downwash correction terms (p. 5.10-19) per unit free-stream dynamic pressure,
+    against beta_WF. Each is piecewise linear in beta_WF, so the grid takes every node where a
+    slope changes (0, the pitch limits' corners, the +-30 deg hold) and linear interpolation
+    reproduces the printed formulas exactly. The nodes at +-5 deg give the model's flow-angle
+    tables their symmetric neighbours of zero (D-036, D-048)."""
+    k = motion_constants()
+    hold = k["BETA_HOLD"]
+    b_neg = k["M_AD_MIN"] / k["M_AD_SLOPE_NEG"]
+    b_pos = k["M_AD_MAX"] / k["M_AD_SLOPE_POS"]
+    if not (-hold < b_neg < -5.0 and 5.0 < b_pos < hold):
+        sys.exit(f"motion additions: pitch limit corners {b_neg}, {b_pos} outside (5, 30) deg")
+
+    def roll(b):
+        return k["L_ADD_0"] + (k["L_ADD_SLOPE_NEG"] if b <= 0.0 else k["L_ADD_SLOPE_POS"]) * b
+
+    def pitch(b):
+        m = (k["M_AD_SLOPE_POS"] if b > 0.0 else k["M_AD_SLOPE_NEG"]) * b
+        return min(max(m, k["M_AD_MIN"]), k["M_AD_MAX"])
+
+    lines = [
+        "# source: GenHel, NASA CR-166309 (1981), p. 5.10-19 (motion module input data, item 2): "
+        "downwash correction terms Y_ADD, L_ADD and M_ADD per unit free-stream dynamic pressure "
+        "Q_FRE, against the fuselage sideslip BETAWF; added at the CG in body axes (p. 5.10-4); "
+        "held at the +-30 deg values beyond. " + GENERATED + "\n",
+        *([STATUS] if STATUS else []),
+        "beta_wf[deg],side[ft^2],roll[ft^3],pitch[ft^3]\n",
+    ]
+    for b in (-hold, b_neg, -5.0, 0.0, 5.0, b_pos, hold):
+        lines.append(f"{b!r},{k['Y_ADD']!r},{roll(b)!r},{pitch(b)!r}\n")
+    return "".join(lines)
+
+
 def outputs():
     g = "GenHel, NASA CR-166309 (1981),"
     return {
@@ -269,6 +313,7 @@ def outputs():
             [("cl[1]", half("table_3_5_5_clh1.txt", "odd")),
              ("cd[1]", half("table_3_5_6_cdh1.txt", "even"))]),
         "stabilator_schedule.csv": stabilator_csv(),
+        "motion_additions.csv": motion_additions_csv(),
         "fin_coefficients.csv": table_csv(
             f"{g} Tables 3.5.9 and 3.5.10, p. 5.3-23: vertical tail lift and drag coefficients "
             "against BETVV1; S = 32.3 ft^2, AR 1.92, NACA 0021 mod.",

@@ -10,6 +10,7 @@
 #include "airframe/airframe_aero.hpp"
 #include "airframe/landing_gear.hpp"
 #include "control/genhel_fcs.hpp"
+#include "core/spinning_parts.hpp"
 #include "rotor/bailey_rotor.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/ideal_thrust.hpp"
@@ -51,6 +52,30 @@ std::vector<std::unique_ptr<ForceModel>> read_force_models(const Config& config)
             const double max_thrust = f.quantity("max_thrust", Dimension::force);
             forces.push_back(f.in_context(
                 "max_thrust", [&] { return std::make_unique<IdealThrust>(max_thrust); }));
+        } else if (type == "spinning_parts") {
+            f.allow_keys({"type", "parts"});
+            const Config parts = f.child("parts");
+            Vec3 h = Vec3::Zero();
+            for (std::size_t k = 0; k < parts.size(); ++k) {
+                const Config p = parts[k];
+                p.allow_keys({"axis", "inertia", "speed"});
+                const std::string axis = p.string("axis");
+                int a = -1;
+                if (axis == "x") {
+                    a = 0;
+                } else if (axis == "y") {
+                    a = 1;
+                } else if (axis == "z") {
+                    a = 2;
+                }
+                if (a < 0) {
+                    p.fail("axis", "must be x, y or z (body axes), got '" + axis + "'");
+                }
+                h[a] += p.quantity("inertia", Dimension::inertia) *
+                        p.quantity("speed", Dimension::angular_rate);
+            }
+            forces.push_back(
+                f.in_context("parts", [&] { return std::make_unique<SpinningParts>(h); }));
         } else {
             f.fail("type", "unknown force model '" + type + "'");
         }

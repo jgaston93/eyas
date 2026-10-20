@@ -10,11 +10,15 @@
 // - the coupling outputs through the executive, purity and no allocation.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <fstream>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <random>
 #include <span>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -971,6 +975,154 @@ TEST(AngleTable, MinimumIncludesTheVertex) {
     EXPECT_NEAR(s.min_value(), -1.0 / 15.0, 1e-15);
     const AngleTable flat(angle_table({-5, 0, 5}, {0.64, 0.62, 0.64}));
     EXPECT_DOUBLE_EQ(flat.min_value(), 0.62);
+}
+
+}  // namespace
+}  // namespace eyas
+
+namespace eyas {
+namespace {
+
+// GenHel's downwash correction terms (p. 5.10-19, D-048), written from the
+// transcription as printed: Y/q, L/q and M/q [ft², ft³] against β_WF [deg].
+struct GenHelAdditions {
+    double y = 0.0, l0 = 0.0, l_neg = 0.0, l_pos = 0.0;
+    double m_pos = 0.0, m_max = 0.0, m_neg = 0.0, m_min = 0.0, hold = 0.0;
+
+    // The printed formulas, with the ±30° hold.
+    std::array<double, 3> printed(double beta_deg) const {
+        const double b = std::clamp(beta_deg, -hold, hold);
+        const double l = l0 + (b <= 0.0 ? l_neg : l_pos) * b;  // −(70 + k β)
+        const double m = b > 0.0 ? std::min(m_pos * b, m_max) : std::max(m_neg * b, m_min);
+        return {y, l, m};
+    }
+    // As the model reads its flow-angle tables (D-036): the parabola through
+    // the nodes at 0 and ±5° there, the printed formulas elsewhere.
+    std::array<double, 3> expected(double beta_deg) const {
+        constexpr double a = 5.0;
+        if (std::abs(beta_deg) >= a) {
+            return printed(beta_deg);
+        }
+        const auto f0 = printed(0.0);
+        const auto fp = printed(a);
+        const auto fm = printed(-a);
+        const double u = beta_deg / a;
+        std::array<double, 3> out{};
+        for (std::size_t i = 0; i < 3; ++i) {
+            const double e = 0.5 * (fp[i] + fm[i]);
+            const double o = 0.5 * (fp[i] - fm[i]);
+            out[i] = f0[i] + o * u + (e - f0[i]) * u * u;
+        }
+        return out;
+    }
+};
+
+GenHelAdditions read_genhel_additions() {
+    std::ifstream in(test::uh60a_genhel_dir() + "/motion_input_5_10_5.txt");
+    std::map<std::string, double> v;
+    std::string line;
+    while (std::getline(in, line)) {
+        line = line.substr(0, line.find('#'));
+        std::istringstream s(line);
+        std::string name;
+        double value = 0.0;
+        if (s >> name >> value) {
+            v[name] = value;
+        }
+    }
+    GenHelAdditions g;
+    g.y = v.at("Y_ADD");
+    g.l0 = v.at("L_ADD_0");
+    g.l_neg = v.at("L_ADD_SLOPE_NEG");
+    g.l_pos = v.at("L_ADD_SLOPE_POS");
+    g.m_pos = v.at("M_AD_SLOPE_POS");
+    g.m_max = v.at("M_AD_MAX");
+    g.m_neg = v.at("M_AD_SLOPE_NEG");
+    g.m_min = v.at("M_AD_MIN");
+    g.hold = v.at("BETA_HOLD");
+    return g;
+}
+
+std::unique_ptr<AirframeAero> uh60a_with_additions() {
+    const std::string dir = test::uh60a_airframe_dir();
+    return AirframeAero::from_config(Config::from_string(R"(
+type: airframe_aero
+fuselage:
+  mounting_point: {x: "10.4 in", y: "0 in", z: "14.2 in"}
+  alpha_table: )" + dir + R"(/fuselage_alpha.csv
+  psi_table: )" + dir + R"(/fuselage_psi.csv
+  psi_low_table: )" + dir + R"(/fuselage_psi_low.csv
+stabilator:
+  position: {x: "-344.2 in", y: "0 in", z: "4.2 in"}
+  area: "45 ft^2"
+  incidence: "5 deg"
+  coefficients: )" + dir + R"(/stabilator_coefficients.csv
+  q_ratio: )" + dir + R"(/stabilator_q_ratio.csv
+  downwash: )" + dir + R"(/stabilator_downwash.csv
+fin:
+  position: {x: "-339.1 in", y: "0 in", z: "-24.8 in"}
+  area: "32.3 ft^2"
+  coefficients: )" + dir + R"(/fin_coefficients.csv
+  q_ratio: )" + dir + R"(/fin_q_ratio.csv
+  sidewash: )" + dir + R"(/fin_sidewash.csv
+additional_loads: )" + dir + R"(/motion_additions.csv
+)"));
+}
+
+// Layer 1 (D-048): the additions are GenHel's printed formulas times the
+// free-stream dynamic pressure, in body axes at the CG, against the
+// fuselage's β_WF (with the main-rotor wash in V_X and V_Z), held beyond ±30°,
+// and read through the D-036 parabola within ±5°.
+TEST(AirframeAero, MotionAdditionsMatchGenHel) {
+    const GenHelAdditions g = read_genhel_additions();
+    const std::unique_ptr<AirframeAero> a = uh60a_with_additions();
+    const std::vector<double> x = {0.0, 0.0};
+    const Vec3 wash = Vec3(3.0, 0.0, 12.0) * kFoot;  // in V_X and V_Z only, as GenHel
+    for (const double beta :
+         {-90.0, -45.0, -30.0, -20.0, -7.51, -7.5, -6.0, -5.0, -3.0, -1.0, -0.2,
+          0.0,   0.2,   1.0,   2.5,   5.0,   6.0,  7.5,  7.52, 12.0, 30.0, 60.0}) {
+        // Body velocity with β_WF = beta once the wash is added.
+        const double vxz = 180.0;  // [ft/s] √(V_X² + V_Z²) with the wash
+        const double vx = vxz * std::cos(10.0 * kDegree);
+        const double vz = vxz * std::sin(10.0 * kDegree);
+        const double vy = vxz * std::tan(beta * kDegree);
+        SimContext ctx = context(vx - 3.0, vy, vz - 12.0, 0.1, -0.05, 0.2, 0.0021);
+        const AirframeAeroLoads l = a->evaluate(ctx, x, wash, Vec3::Zero());
+        ASSERT_NEAR(-l.psi_wf / kDegree, beta, 1e-9);
+        const double q_lbft2 =
+            0.5 * 0.0021 * ((vx - 3.0) * (vx - 3.0) + vy * vy + (vz - 12.0) * (vz - 12.0));
+        EXPECT_NEAR(l.q_free, q_lbft2 * kPoundForce / (kFoot * kFoot), 1e-9 * l.q_free);
+        const auto e = g.expected(beta);
+        const double f = kPoundForce;
+        const double m = kPoundForce * kFoot;
+        EXPECT_NEAR(l.additions.F.x(), 0.0, 1e-12) << beta;
+        EXPECT_NEAR(l.additions.F.y(), e[0] * q_lbft2 * f, 1e-9 * q_lbft2 * f) << beta;
+        EXPECT_NEAR(l.additions.F.z(), 0.0, 1e-12) << beta;
+        EXPECT_NEAR(l.additions.M.x(), e[1] * q_lbft2 * m, 1e-9 * 300.0 * q_lbft2 * m) << beta;
+        EXPECT_NEAR(l.additions.M.y(), e[2] * q_lbft2 * m, 1e-9 * 400.0 * q_lbft2 * m) << beta;
+        EXPECT_NEAR(l.additions.M.z(), 0.0, 1e-12) << beta;
+        EXPECT_NEAR((l.body.F - l.fuselage.F - l.stabilator.F - l.fin.F - l.additions.F).norm(),
+                    0.0, 1e-9 * l.body.F.norm());
+        EXPECT_NEAR((l.body.M - l.fuselage.M - l.stabilator.M - l.fin.M - l.additions.M).norm(),
+                    0.0, 1e-9 * l.body.M.norm());
+    }
+    // The table nodes reproduce the printed formulas: at the pitch limits'
+    // corners the moment reaches 390 and −292 ft³ exactly.
+    EXPECT_DOUBLE_EQ(g.printed(g.m_max / g.m_pos)[2], g.m_max);
+    EXPECT_DOUBLE_EQ(g.printed(g.m_min / g.m_neg)[2], g.m_min);
+    // A model without the key has none.
+    test::GenHelAirframeGeometry geo{};
+    geo.FSCGB = 355.9;
+    geo.FSWF = 345.5;
+    geo.FSH1 = 700.1;
+    geo.SAH1 = 45.0;
+    geo.FSV1 = 695.0;
+    geo.SAV1 = 32.3;
+    const AirframeAero none(test::uh60a_airframe(geo));
+    const AirframeAeroLoads n =
+        none.evaluate(context(150.0, 30.0, 5.0, 0.0, 0.0, 0.0, 0.0021), x, wash, Vec3::Zero());
+    EXPECT_EQ(n.additions.F, Vec3::Zero());
+    EXPECT_EQ(n.additions.M, Vec3::Zero());
 }
 
 }  // namespace
