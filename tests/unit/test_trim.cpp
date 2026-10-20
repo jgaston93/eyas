@@ -447,8 +447,12 @@ TEST(Trim, SasAndPbaMoveOnlyTheStick) {
 // M8c2), so over the 6 s between the windows the swing falls by
 // e^(−ζ ω_n 6 s), 9× or more; the gate takes 4× (measured 30 to 68×, the
 // faster modes adding to the first window). With them off (ζ 0.15 at 90 kt,
-// 0.02 at 120 kt, 0 at 150 kt) it fell 4.2×, 1.8× and 1.9×: the gate catches
-// a missing SAS at 120 and 150 kt.
+// 0.02 at 120 kt, 0 at 150 kt) it fell 4.2×, 1.8× and 1.9×: the gate caught
+// a missing SAS at 120 and 150 kt. Since D-048 (GenHel's downwash correction
+// terms) the bare aircraft's Dutch roll is better damped at 90 and 120 kt
+// (ζ 0.37 and 0.31; it falls 6.5× and 11.8×), so the check that the gate
+// would catch a missing SAS is made at 150 kt only (ζ 0.06, 1.9×), with the
+// same 4× threshold.
 TEST(Trim, SasDampsTheDutchRoll) {
     const Executive ex = uh60a_executive();
     TrimResult prev;
@@ -495,7 +499,7 @@ TEST(Trim, SasDampsTheDutchRoll) {
         std::printf("%d kt: yaw-rate swing falls %.2fx (SAS off), %.2fx (SAS on) over 6 s\n", kt,
                     ratio[0], ratio[1]);
         EXPECT_GT(ratio[1], 4.0);
-        if (kt >= 120) {
+        if (kt == 150) {
             EXPECT_LT(ratio[0], 4.0);  // the gate would catch the SAS missing
         }
     }

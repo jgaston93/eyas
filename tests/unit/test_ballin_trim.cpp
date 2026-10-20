@@ -246,10 +246,11 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
     // VALIDATION.md M7c, recorded 2026-10-16. At 60 kt the descent collective
     // (within its tolerance, the curve being steep) and the power slopes at 60
     // and 100 kt (within the read-off) match; they are recorded here too, so
-    // the record is one table.
+    // the record is one table. The 100 kt lateral climb record moved from
+    // 5.27 to 8.74 % with GenHel's downwash correction terms (D-048).
     const std::array<Record, 3> records = {{
         {"b2", 60.0, 3.44, 3.16, 17.5},
-        {"b3", 100.0, 5.97, 5.27, 12.4},
+        {"b3", 100.0, 5.97, 8.74, 12.4},
         {"b4", 137.5, 9.15, 9.50, 73.1},
     }};
     // Power slope read-off: 1.75 % of the 3000 hp axis per reading, a

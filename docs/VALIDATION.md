@@ -1190,7 +1190,7 @@ GenHel's SAS (Figs. 5.1.3(a)–(c): a digital and an analog channel per axis, th
 
 ![Kick](validation/m8/m8c2_kick.png)
 
-- With the SAS on the swing falls 52×, 30× and 68× over 6 s at 90, 120 and 150 kt; with it off 4.2×, 1.8× and 1.9×. `Trim.SasDampsTheDutchRoll` gates 4× with it on (the linear ζ ω_n predicts 9× or more) and fails if it is off at 120 and 150 kt.
+- With the SAS on the swing falls 52×, 30× and 68× over 6 s at 90, 120 and 150 kt; with it off 4.2×, 1.8× and 1.9×. `Trim.SasDampsTheDutchRoll` gates 4× with it on (the linear ζ ω_n predicts 9× or more) and fails if it is off at 120 and 150 kt. *Since D-048 (2026-10-20)* the bare aircraft falls 6.5× and 11.8× at 90 and 120 kt, so the missing-SAS check is made at 150 kt only.
 
 **Open items:**
 - *Flight data with the SAS on.* None in the library. The USAAEFA Project 79-24 report (DATA_GAPS.md) may have SAS-on responses.
