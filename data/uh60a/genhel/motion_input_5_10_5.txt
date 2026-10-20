@@ -1,0 +1,45 @@
+# Transcribed by eye from rendered page images (120 and 300 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981): §5.10.5 motion module input data, p. 5.10-19 (PDF p. 342), handwritten,
+# items 1 (gyroscopic components) and 2 (downwash correction terms). Items 3 (inertia data) and
+# the lateral acceleration transducer are in mass_properties_5_10.txt and fig_5_1_2_sensors.txt.
+# Units from the nomenclature, p. 5.10-14 (J slug*ft^2, W rad/s) and p. 5.10-17 (Q_FRE lb/ft^2);
+# the correction terms' coefficients then come out in ft^2 (force) and ft^3 (moments).
+# status: read with high confidence at 300 dpi, not reviewed by a person (the reviewer asks to see
+# only doubtful readings). Cross-check: both pitch limits fall at the same sideslip,
+# 390/51.9 = 7.514 deg and 292/38.9 = 7.506 deg. See docs/DATA_GAPS.md, "UH-60A motion-module
+# additions".
+#
+# 1. Gyroscopic components (p. 5.10-4: H = sum(J * W) about each body axis;
+#    L_GY = H_Y r - H_Z q, M_GY = -H_X r + H_Z p, N_GY = H_X q - H_Y p).
+# name     value      unit
+JXGY1      0.116      slug*ft^2
+JXGY2      0.124      slug*ft^2
+JXGY3      0.082      slug*ft^2
+WXGY1      4188.0     rad/s
+WXGY2      2094.0     rad/s
+WXGY3      609.0      rad/s
+JYGY1      0.715      slug*ft^2
+WYGY1      127.1      rad/s
+JZGZ1      18.0       slug*ft^2     printed JZGZ1 (not JZGY1)
+WZGY1      -27.0      rad/s
+#
+# 2. Downwash correction terms, added at the CG in body axes (p. 5.10-4, (XYZLMN)_ADD), with
+#    beta_WF in degrees from the fuselage module (input transfer, p. 5.10-13) and Q_FRE the
+#    free-stream dynamic pressure (p. 5.10-12). As printed:
+#      Y_ADD = -19.45 Q_FRE
+#      if -30 <= beta_WF <= 0:  L_ADD = -(70 + 1.17 beta_WF) Q_FRE
+#      if 30 >= beta_WF >= 0:   L_ADD = -(70 + 5.54 beta_WF) Q_FRE
+#      if beta_WF > 0:  M_AD = 51.9 beta_WF, limit M_AD < 390.
+#      if beta_WF < 0:  M_AD = 38.9 beta_WF, limit M_AD > -292.
+#      M_ADD = M_AD Q_FRE
+#      for beta_WF <= -30, >= 30 hold values for beta = -30, 30 respectively
+# name           value      unit
+Y_ADD            -19.45     ft^2
+L_ADD_0          -70.0      ft^3
+L_ADD_SLOPE_NEG  -1.17      ft^3/deg     beta_WF <= 0 (the printed -(70 + 1.17 beta))
+L_ADD_SLOPE_POS  -5.54      ft^3/deg     beta_WF >= 0
+M_AD_SLOPE_POS   51.9       ft^3/deg     beta_WF > 0
+M_AD_MAX         390.0      ft^3
+M_AD_SLOPE_NEG   38.9       ft^3/deg     beta_WF < 0
+M_AD_MIN         -292.0     ft^3
+BETA_HOLD        30.0       deg

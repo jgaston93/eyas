@@ -275,8 +275,18 @@ AirframeAeroLoads AirframeAero::evaluate(const SimContext& ctx, std::span<const 
         out.sidewash_rate = std::abs(u) / -v_.position_b.x() * (out.sidewash - x[1]);
     }
 
-    out.body.F = out.fuselage.F + out.stabilator.F + out.fin.F;
-    out.body.M = out.fuselage.M + out.stabilator.M + out.fin.M;
+    // ---- Motion-module additions (pp. 5.10-4, 5.10-19; D-048) ----
+    // q_FRE without the rotor wash (p. 5.10-12); β_WF the fuselage's (p. 5.10-13).
+    out.q_free = 0.5 * rho * v_air_b.squaredNorm();
+    if (c.additions) {
+        const double beta_wf = -out.psi_wf;
+        out.additions.F = Vec3(0.0, c.additions->side(beta_wf), 0.0) * out.q_free;
+        out.additions.M =
+            Vec3(c.additions->roll(beta_wf), c.additions->pitch(beta_wf), 0.0) * out.q_free;
+    }
+
+    out.body.F = out.fuselage.F + out.stabilator.F + out.fin.F + out.additions.F;
+    out.body.M = out.fuselage.M + out.stabilator.M + out.fin.M + out.additions.M;
     return out;
 }
 
@@ -387,8 +397,8 @@ IncidenceSchedule incidence_schedule_from_config(const Config& node) {
 }
 
 std::unique_ptr<AirframeAero> AirframeAero::from_config(const Config& node) {
-    node.allow_keys(
-        {"type", "name", "fuselage", "tail_wash", "stabilator", "fin", "sideward_fade"});
+    node.allow_keys({"type", "name", "fuselage", "tail_wash", "stabilator", "fin",
+                     "additional_loads", "sideward_fade"});
     AirframeAeroConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -433,6 +443,14 @@ std::unique_ptr<AirframeAero> AirframeAero::from_config(const Config& node) {
     });
     c.fin = node.in_context(
         "fin", [&] { return panel(node.child("fin"), "beta", "psi_wf", "sidewash", false); });
+    if (node.contains("additional_loads")) {
+        const Columns tb = read_columns(node, "additional_loads", "beta_wf");
+        c.additions = node.in_context("additional_loads", [&] {
+            return AdditionalLoads{tb.column("side", Dimension::area),
+                                   tb.column("roll", Dimension::volume),
+                                   tb.column("pitch", Dimension::volume)};
+        });
+    }
     if (node.contains("sideward_fade")) {
         c.sideward_fade = node.quantity("sideward_fade", Dimension::angle);
     }
