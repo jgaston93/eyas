@@ -40,12 +40,14 @@ import digitize_ballin_d as dbd  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "uh60a" / "validation" / "kaplita_transients"
 HAND = OUT / "kaplita_transient_hand_edits.csv"
-# The human review of these readings (this tool's output as of the date, with the hand edits
-# applied): Fig. 4 in three rounds on the review page. Clear it (back to UNVERIFIED) when a change
+# The human review of each figure's readings (this tool's output as of the date, with the hand
+# edits applied): Fig. 4 in three rounds on the review page. Clear it (back to UNVERIFIED) when a change
 # to the reading code changes the readings.
-REVIEWED = ("human-reviewed 2026-10-20 (Fig. 4): the reviewer checked every trace and redrew the "
-            "ones the tool misread (hand edits); the test heading is unreadable; roll tick labels "
-            "read by the reviewer and checked by the attitude kinematics (DATA_GAPS.md)")
+REVIEWED = {
+    "4": ("human-reviewed 2026-10-20: the reviewer checked every trace and redrew the ones the "
+          "tool misread (hand edits); the test heading is unreadable; roll tick labels read by "
+          "the reviewer and checked by the attitude kinematics (DATA_GAPS.md)"),
+}
 
 SOURCE = ("Kaplita, T. T., UH-60 Black Hawk Engineering Simulation Model Validation and "
           "Proposed Modifications, NASA CR-177360 (USAAVSCOM TR 85-A-2, 1985)")
@@ -53,6 +55,25 @@ SOURCE = ("Kaplita, T. T., UH-60 Black Hawk Engineering Simulation Model Validat
 # Figures: caption, header (as printed above the panels), and pages: PDF page -> (base
 # rotation [deg], [(panel, quantity, unit, (top, middle, bottom) tick labels) or None]).
 FIGURES = {
+    "2": {
+        "caption": "response to a one-inch lateral stick doublet at 140 knots (144 kt in the "
+                   "header), forward CG 350.4 in (run 12; flight number blurred, 5K or 56)",
+        "pages": {
+            # Roll attitude, roll rate and pitch rate: the labels' first digit is blurred and
+            # read as 4 (low confidence; DATA_GAPS.md), to be checked by the kinematics.
+            51: (90.0, [(0, "roll_attitude", "deg", (40.0, 0.0, -40.0)),
+                        (1, "roll_rate", "deg/s", (40.0, 0.0, -40.0)),
+                        (3, "lateral_cyclic", "in", (10.0, 5.0, 0.0))]),
+            52: (90.0, [(0, "pitch_attitude", "deg", (50.0, 0.0, -50.0)),
+                        (1, "pitch_rate", "deg/s", (40.0, 0.0, -40.0)),
+                        (3, "longitudinal_cyclic", "in", (10.0, 5.0, 0.0))]),
+            53: (90.0, [(0, "heading", "deg", (20.0, 0.0, -20.0)),
+                        (1, "yaw_rate", "deg/s", (20.0, 0.0, -20.0)),
+                        (3, "pedals", "in", (10.0, 5.0, 0.0))]),
+            54: (90.0, [(0, "angle_of_attack", "deg", (20.0, 0.0, -20.0)),
+                        (1, "sideslip", "deg", (20.0, 0.0, -20.0))]),
+        },
+    },
     "4": {
         "caption": "response to a half-inch right pedal step input at 144 knots, forward CG "
                    "352.1 in (flight 66, run 27)",
@@ -150,8 +171,8 @@ def y_scale(img, xb, top, bot, yt, yb):
     instead of the tick stubs, which are too faint on these scans. A panel has 8 or 10
     divisions (the sticks and the larger attitude scales have 10). For n = 8, then 10, each
     interior line k/n is the centre of the rows within 1.5 % of the frame height of where the
-    edges put it that are inked across at least 70 % of the frame (a curve crosses a row only
-    briefly; one running flat along a grid line moves the centre by under its width); the
+    edges put it that are inked across at least GRID_LINE_FRAC of the frame, or GRID_LINE_FAINT
+    where none is (a line printed faint) (a curve crosses a row only briefly; one running flat along a grid line moves the centre by under its width); the
     first n with every line found is used, and the scale is fitted through the edges and all
     of them, at the labels (top, middle, bottom) interpolated linearly."""
     dark = img < dbd.DARK
@@ -167,7 +188,9 @@ def y_scale(img, xb, top, bot, yt, yb):
             y = top + (bot - top) * k / n
             lo, hi = int(y - tol), int(y + tol) + 1
             frac = dark[lo:hi, xa + 20:xr - 20].mean(axis=1)
-            hits = np.flatnonzero(frac >= 0.7)
+            hits = np.flatnonzero(frac >= GRID_LINE_FRAC)
+            if not len(hits):  # a line printed faint
+                hits = np.flatnonzero(frac >= GRID_LINE_FAINT)
             if not len(hits):
                 break
             pts.append((lo + float(np.mean(hits)), yt + (yb - yt) * k / n))
@@ -186,6 +209,8 @@ def y_scale(img, xb, top, bot, yt, yb):
     return coef, res_px
 
 
+GRID_LINE_FRAC = 0.7
+GRID_LINE_FAINT = 0.5  # where no row reaches GRID_LINE_FRAC (Fig. 2's lateral stick: 55 %)
 _GRID = {}  # the grid rows y_scale found for the panel being read [px in the page image]
 GRID_BAND = 6  # [px] half-width searched around a grid line's centre for its ink
 GRID_FRAC = 0.3  # a row or column inked over this fraction of the frame is grid
@@ -334,7 +359,7 @@ def main():
             f.write(f"# source: {SOURCE}, Fig. {fig} (PDF pp. {pages[0]}-{pages[-1]}): "
                     f"{spec['caption']}. Digitized from the NASA scan at {dbd.DPI} dpi by "
                     "tools/digitize_kaplita_transients.py.\n")
-            f.write(f"# status: {REVIEWED or 'UNVERIFIED - needs human review of the overlays'}\n")
+            f.write(f"# status: {REVIEWED.get(fig) or 'UNVERIFIED - needs human review of the overlays'}\n")
             f.write("# Series: sikorsky_genhel (solid, 'Calculated'), aefa_test (dashed, "
                     "'Test'). Flags: merged, gap, hand (digitize_ballin_d docstring).\n")
             w = csv.writer(f, lineterminator="\n")

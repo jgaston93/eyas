@@ -1,5 +1,5 @@
 # source: Kaplita, T. T., UH-60 Black Hawk Engineering Simulation Model Validation and Proposed Modifications, NASA CR-177360 (USAAVSCOM TR 85-A-2, 1985), Fig. 4 (PDF pp. 59-62): response to a half-inch right pedal step input at 144 knots, forward CG 352.1 in (flight 66, run 27). Digitized from the NASA scan at 300 dpi by tools/digitize_kaplita_transients.py.
-# status: human-reviewed 2026-10-20 (Fig. 4): the reviewer checked every trace and redrew the ones the tool misread (hand edits); the test heading is unreadable; roll tick labels read by the reviewer and checked by the attitude kinematics (DATA_GAPS.md)
+# status: human-reviewed 2026-10-20: the reviewer checked every trace and redrew the ones the tool misread (hand edits); the test heading is unreadable; roll tick labels read by the reviewer and checked by the attitude kinematics (DATA_GAPS.md)
 # Series: sikorsky_genhel (solid, 'Calculated'), aefa_test (dashed, 'Test'). Flags: merged, gap, hand (digitize_ballin_d docstring).
 quantity,unit,series,t_s,value,flag
 heading,deg,sikorsky_genhel,0.050,-0.4710,hand
