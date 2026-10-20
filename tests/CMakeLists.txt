@@ -139,6 +139,11 @@ target_include_directories(eyas_kaplita_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR
 target_link_libraries(eyas_kaplita_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_kaplita_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_kaplita_cases)
+add_executable(eyas_kaplita_transient_cases validation/kaplita_transient_cases.cpp)
+target_include_directories(eyas_kaplita_transient_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_kaplita_transient_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_kaplita_transient_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_kaplita_transient_cases)
 
 add_executable(eyas_m7c_fletcher validation/m7c_fletcher.cpp)
 target_include_directories(eyas_m7c_fletcher PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

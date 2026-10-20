@@ -1381,3 +1381,28 @@ Generator `eyas_kaplita_cases` (`tests/validation/kaplita_cases.cpp`), plot and 
 - *Open, about 1.9 % from 100 kt up* (about 1 300 ft·lbf of nose-down at 140 kt, 0.3° of cyclic): of the size of the open rotor differences above it, collective 2–5 % low and lateral cyclic 2–6 % high from 120 kt. Against the flight test the stick improved (5.7 → 4.0 % rms). Recorded open in `BallinTrim.LevelFlightAgainstSikorskyGenHel` (D-048, test dispositions); to revisit with the USAAEFA report (DATA_GAPS.md) and M9's rotor items (tip loss, the profile-drag correction, lag, wake distortion).
 
 **Test dispositions** (D-048): the Ballin records re-recorded, pitch at 90–150 kt and pedal at 50–130 kt gated again, the longitudinal cyclic at 100–150 kt and pitch at 50 kt recorded open; the climb record at 100 kt updated; the missing-SAS check at 150 kt only and the SAS-drift check at 100 kt only, thresholds unchanged.
+
+## Kaplita transient responses: Fig. 4, pedal step at 144 kt (2026-10-20; readings reviewed)
+
+Kaplita, NASA CR-177360 (1985), Fig. 4: a half-inch right pedal step at 144 kt, Sikorsky's GenHel against the USAAEFA flight test, digitized and human-reviewed (DATA_GAPS.md). Eyas flies Kaplita's setup (p. 2): SAS, FPS and PBA off, the stabilator fixed at the flight-test value (6.54°), the test's pedal and stick histories as inputs, collective held. **STAND-INS** (DATA_GAPS.md; approved by the spec owner): the CG waterline (231.8 in) and the density altitude (5750 ft) aren't given for Fig. 4's flight and are Kaplita Fig. 13's. The thin lines fly 4000 and 7500 ft.
+
+Generator `eyas_kaplita_transient_cases` (`tests/validation/kaplita_transient_cases.cpp`), plot and differences `tools/plot_kaplita_transients.py`; nightly in `full-verification.yml`. Report only, like D-046.
+
+![Kaplita Fig. 4](validation/kaplita/kaplita_fig4.png)
+
+**RMS differences, 1.5–6.5 s** (attitudes as changes from 1.5 s; `kaplita_fig4_differences.csv`):
+
+| | Eyas − GenHel (with / without the D-048 terms) | Eyas − flight test (with / without) | GenHel − flight test |
+|---|---|---|---|
+| Yaw rate [deg/s] | 1.3 / 4.4 | 4.6 / 4.4 | 4.4 |
+| Sideslip [deg] | 0.8 / 4.4 | 6.8 / 4.8 | 7.5 |
+| Pitch rate [deg/s] | 1.9 / 6.7 | 2.9 / 6.9 | 2.8 |
+| Pitch [deg] | 1.0 / 12.2 | 4.1 / 15.4 | 4.5 |
+| Roll rate [deg/s] | 5.8 / 4.8 | 17.6 / 20.3 | 22.2 |
+| Roll [deg] | 17.8 / 13.7 | 24.2 / 28.3 | 40.6 |
+
+**Findings.**
+- *D-048 in a transient.* With the downwash correction terms Eyas follows GenHel through the manoeuvre (yaw rate 1.3 deg/s, sideslip 0.8°, pitch 1.0° rms); without them its pitch response is wrong (12° rms from GenHel). The pitch rate and attitude, where the terms act most, are as close to the flight test as GenHel's own.
+- *Adverse roll with pedal, a GenHel limitation Eyas shares.* After the right pedal step both models roll right hard (40–60° of bank by 6 s); the test aircraft barely rolls. Kaplita's Table II (pp. 27–28) rates GenHel's roll response to pedal at 120–150 kt "strong adverse roll", unsatisfactory, and its §2.2.3 (p. 15) proposes a tail-rotor downwash lag for it. Not taken up (it would be a departure from CR-166309, for the spec owner). From about 7 s, at that bank, Eyas spirals away (roll rate climbing past 40 deg/s); GenHel levels out.
+- *The Dutch roll is not measured here.* The test shows a lateral-directional oscillation near 1.9 rad/s that dies in two or three cycles; in both models the adverse roll swamps it. Fig. 2 (a lateral doublet at 140 kt) is the next case to measure it.
+- *The stand-ins* barely matter: 4000 to 7500 ft moves the responses by a line width to 6 s.
