@@ -46,6 +46,17 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "uh60a" / "validation" / "kaplita_sideslip.csv"
 HAND = ROOT / "data" / "uh60a" / "validation" / "kaplita_hand_edits.csv"
+CURVES = ROOT / "data" / "uh60a" / "validation" / "kaplita_sideslip_genhel.csv"
+HAND_LINES = ROOT / "data" / "uh60a" / "validation" / "kaplita_genhel_hand_lines.csv"
+# Panels whose GenHel curve is traced: all but the stabilator (Fig. 10's curves hold the
+# incidence fixed) and the collective (a flat line, lost with the axis lines).
+TRACED = ("roll", "lat", "pedal", "pitch", "lon")
+# Sideslip range traced where it is narrower than the test points': a label's leader line
+# meets the curve near the end (the tracer would follow the leader) [deg].
+TRACE_LIMITS = {("13b", "pitch"): (-20, 10), ("11a", "lat"): (-20, 15),
+                ("12a", "pedal"): (-15, 20), ("13a", "pedal"): (-13, 20)}
+TRACE_STEP = 3  # [px] the most the curve may move between neighbouring columns
+TRACE_BEND = 0.01  # penalty per px² of that move, against the line's darkness (about 0.5-1)
 WEAK = 0.12  # ring contrast below which a circle is flagged `weak`
 # The 60 kt run near zero sideslip, whose sideslip is in question (`beta_open`).
 BETA_OPEN = {("10", "stab", 4), ("11a", "roll", 5), ("11a", "lat", 4), ("11a", "pedal", 4),
@@ -255,7 +266,7 @@ def fit(g, x0, y0, search=15):
     return best
 
 
-def overlay(ink, xs_px, ys_px, pts, title, path):
+def overlay(ink, xs_px, ys_px, pts, title, path, curve=None):
     """The panel at 300 dpi with the calibration lines and readings drawn (`path`), the
     same crop unmarked (`<path>_scan.png`) for comparison, and the crop's box and the
     readings in its pixels (`<path>.json`), for a review page."""
@@ -279,6 +290,9 @@ def overlay(ink, xs_px, ys_px, pts, title, path):
         dr.line([(X - 4, Y), (X + 4, Y)], fill=(230, 0, 0), width=1)
         dr.line([(X, Y - 4), (X, Y + 4)], fill=(230, 0, 0), width=1)
         dr.text((X + r + 6, Y - r - 14), str(k), fill=(230, 0, 0))
+    if curve is not None:
+        cx0, cy = curve
+        dr.line([(cx0 + i - x0, y - y0) for i, y in enumerate(cy)], fill=(0, 150, 60), width=1)
     dr.text((6, 4), title, fill=(230, 0, 0))
     im.save(path)
     path.with_suffix(".json").write_text(json.dumps(default=int, obj={
@@ -287,7 +301,67 @@ def overlay(ink, xs_px, ys_px, pts, title, path):
         "calibration_y": [int(v) - y0 for v in ys_px],
         "points": [{"x": int(cx) - x0, "y": int(cy) - y0, "r": int(r)}
                    for cx, cy, r, _, _ in pts],
+        "curve": None if curve is None else
+                 [[curve[0] + i - x0, round(float(y) - y0, 1)] for i, y in enumerate(curve[1])],
     }))
+
+
+def trace(g, x0, x1, y0, y1, circles):
+    """The darkest continuous path from column x0 to x1 within rows [y0, y1) of the
+    degridded page g: dynamic programming over columns, moving at most TRACE_STEP px per
+    column with a penalty TRACE_BEND per px² of move. The band's median (the filter's
+    constant background) is taken out first; then the test circles (cx, cy, r) and the long
+    horizontal lines (the axis and zero lines: rows whose median across the range stands
+    above the background, as no curve's does) are blanked to background. Returns the
+    path's row at each column x0..x1. Where the solid and dashed lines run close it can
+    jump between them; the reviewer's hand-drawn line (HAND_LINES) then replaces it."""
+    band = g[y0:y1, :].copy()
+    band -= np.median(band[:, int(x0):int(x1) + 1])  # the filter leaves a constant background
+    rows_median = np.median(band[:, int(x0):int(x1) + 1], axis=1)
+    band[rows_median > 0.1, :] = 0.0
+    yy, xx = np.mgrid[y0:y1, 0:g.shape[1]]
+    for cx, cy, r in circles:
+        d = np.hypot(xx - cx, yy - cy)
+        band[d < r + 5] = 0.0
+    cols = range(int(x0), int(x1) + 1)
+    n = y1 - y0
+    cost = -band[:, int(x0)].copy()
+    back = []
+    steps = np.arange(-TRACE_STEP, TRACE_STEP + 1)
+    for x in list(cols)[1:]:
+        best = np.full(n, np.inf)
+        arg = np.zeros(n, dtype=int)
+        for d in steps:
+            shifted = np.full(n, np.inf)
+            if d >= 0:
+                shifted[d:] = cost[:n - d]
+            else:
+                shifted[:n + d] = cost[-d:]
+            c = shifted + TRACE_BEND * d * d
+            better = c < best
+            best[better] = c[better]
+            arg[better] = d
+        cost = best - band[:, x]
+        back.append(arg)
+    path = [int(np.argmin(cost))]
+    for arg in reversed(back):
+        path.append(path[-1] - arg[path[-1]])
+    path.reverse()
+    return np.array(path, dtype=float) + y0
+
+
+def hand_lines():
+    """The reviewer's hand-drawn GenHel curves (HAND_LINES): (figure, panel) -> (xs, ys)
+    [page px at 300 dpi], left to right."""
+    out = {}
+    if not HAND_LINES.exists():
+        return out
+    with HAND_LINES.open(encoding="utf-8") as f:
+        for r in csv.DictReader(line for line in f if not line.startswith("#")):
+            out.setdefault((r["figure"], r["panel"]), []).append(
+                (float(r["x_px"]), float(r["y_px"])))
+    return {k: (np.array([p[0] for p in sorted(v)]), np.array([p[1] for p in sorted(v)]))
+            for k, v in out.items()}
 
 
 def hand_edits():
@@ -310,8 +384,9 @@ def main():
     args = ap.parse_args()
     args.overlays.mkdir(parents=True, exist_ok=True)
     doc = fitz.open(args.pdf)
-    rows, review = [], []
+    rows, review, curves = [], [], []
     hand = hand_edits()
+    drawn = hand_lines()
     pages = {}
     for page, pid, qty, unit, ylabels, rough, on_curve in P:
         fig, kt, blabels = PAGES[page]
@@ -345,8 +420,42 @@ def main():
                              x_px=round(cx, 1), y_px=round(cy, 1), flag=flag))
             if flag and flag not in ("hand", "beta_open", "hand beta_open"):
                 review.append(f"Fig. {fig} {pid} #{k}: {flag} (beta {beta:.2f}, {val:.2f})")
+        curve = None
+        if pid in TRACED:
+            x0 = int(min(p_[0] for p_ in pts))
+            x1 = int(max(p_[0] for p_ in pts))
+            if (fig, pid) in TRACE_LIMITS:
+                lo, hi = TRACE_LIMITS[(fig, pid)]
+                x0 = max(x0, int(np.ceil((lo - bb) / ba)))
+                x1 = min(x1, int(np.floor((hi - bb) / ba)))
+            y0 = int(min(ypx)) - 5
+            y1 = int(max(ypx)) + 5
+            cy = trace(g, x0, x1, y0, y1, [(p_[0], p_[1], p_[2]) for p_ in pts])
+            source = np.full(len(cy), "trace", dtype=object)
+            if (fig, pid) in drawn:
+                # the reviewer's line replaces the trace over its range, which may be wider
+                hx, hy = drawn[(fig, pid)]
+                lo, hi = min(x0, int(np.ceil(hx[0]))), max(x1, int(np.floor(hx[-1])))
+                xs = np.arange(lo, hi + 1)
+                old = np.interp(xs, np.arange(x0, x1 + 1), cy, left=np.nan, right=np.nan)
+                inside = (xs >= hx[0]) & (xs <= hx[-1])
+                cy = np.where(inside, np.interp(xs, hx, hy), old)
+                source = np.where(inside, "hand", "trace")
+                keep = ~np.isnan(cy)
+                xs, cy, source = xs[keep], cy[keep], source[keep]
+                x0, x1 = int(xs[0]), int(xs[-1])
+            curve = (x0, cy)
+            for b in range(int(np.ceil(ba * x0 + bb)), int(np.floor(ba * x1 + bb)) + 1):
+                xb = (b - bb) / ba
+                yb_ = float(np.interp(xb, np.arange(x0, x1 + 1), cy))
+                curves.append(dict(figure=fig, panel=pid, quantity=qty, unit=unit,
+                                   airspeed_kt=kt, series="genhel_existing", sideslip_deg=b,
+                                   value=round(ya * yb_ + yb, 3), x_px=round(xb, 1),
+                                   y_px=round(yb_, 1),
+                                   source=source[min(len(source) - 1, max(0, int(round(xb)) - x0))]))
         overlay(ink, list(bpx.astype(int)), list(ypx.astype(int)), pts,
-                f"Fig. {fig} {qty} [{unit}], {kt} kt", args.overlays / f"kaplita_{fig}_{pid}.png")
+                f"Fig. {fig} {qty} [{unit}], {kt} kt", args.overlays / f"kaplita_{fig}_{pid}.png",
+                curve)
         print(f"Fig. {fig} {pid}: " + ", ".join(f"({p[3]:.1f}, {p[4]:.2f})" for p in pts))
     # cross-panel check: the same runs at the same sideslips in every panel of a flight
     for kt in FLIGHTS:
@@ -371,6 +480,19 @@ def main():
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
+    with CURVES.open("w", newline="", encoding="utf-8") as f:
+        f.write(f"# source: {SOURCE}. Sikorsky's GenHel ('existing model', the solid curve; "
+                "Kaplita p. 2: stabilator fixed at its calculated value at zero sideslip, SAS on, "
+                "PBA disabled, FPS and trim off), traced from the NASA scan by "
+                "tools/digitize_kaplita.py over the test points' sideslip range, sampled every "
+                "degree.\n")
+        f.write("# status: VERIFIED by human review (2026-10-20; DATA_GAPS.md): the reviewer "
+                "redrew every curve by hand (source hand); trace samples, if any, are the tool's\n")
+        f.write("# x_px, y_px: the line in the upright 300 dpi page. source: hand (the "
+                "reviewer's line, kaplita_genhel_hand_lines.csv) or trace (the tool's).\n")
+        w = csv.DictWriter(f, fieldnames=list(curves[0].keys()))
+        w.writeheader()
+        w.writerows(curves)
     (args.overlays / "review.txt").write_text("\n".join(review) + "\n", encoding="utf-8")
     print(f"{len(rows)} readings; {len(review)} listed in {args.overlays / 'review.txt'}")
 
