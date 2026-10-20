@@ -44,6 +44,10 @@ HAND = OUT / "kaplita_transient_hand_edits.csv"
 # edits applied): Fig. 4 in three rounds on the review page. Clear it (back to UNVERIFIED) when a change
 # to the reading code changes the readings.
 REVIEWED = {
+    "2": ("human-reviewed 2026-10-20: the reviewer checked every trace and redrew the ones the "
+          "tool misread (hand edits); the roll attitude, roll rate and pitch rate tick labels are "
+          "a best guess (+-40), as the reviewer directed, checked by the attitude kinematics; the "
+          "test roll carries an offset of about 21 deg (DATA_GAPS.md)"),
     "4": ("human-reviewed 2026-10-20: the reviewer checked every trace and redrew the ones the "
           "tool misread (hand edits); the test heading is unreadable; roll tick labels read by "
           "the reviewer and checked by the attitude kinematics (DATA_GAPS.md)"),
@@ -59,8 +63,9 @@ FIGURES = {
         "caption": "response to a one-inch lateral stick doublet at 140 knots (144 kt in the "
                    "header), forward CG 350.4 in (run 12; flight number blurred, 5K or 56)",
         "pages": {
-            # Roll attitude, roll rate and pitch rate: the labels' first digit is blurred and
-            # read as 4 (low confidence; DATA_GAPS.md), to be checked by the kinematics.
+            # Roll attitude, roll rate and pitch rate: the labels' first digit is blurred; read
+            # as 4, a best guess as the reviewer directed, checked by the kinematics
+            # (DATA_GAPS.md).
             51: (90.0, [(0, "roll_attitude", "deg", (40.0, 0.0, -40.0)),
                         (1, "roll_rate", "deg/s", (40.0, 0.0, -40.0)),
                         (3, "lateral_cyclic", "in", (10.0, 5.0, 0.0))]),

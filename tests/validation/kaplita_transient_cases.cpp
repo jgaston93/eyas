@@ -1,24 +1,26 @@
-// Writes Eyas flown through Kaplita, NASA CR-177360 (1985), Fig. 4 for comparison
-// with Sikorsky's GenHel and the USAAEFA flight test (VALIDATION.md, "Kaplita
+// Writes Eyas flown through Kaplita, NASA CR-177360 (1985), Figs. 4 and 2 for
+// comparison with Sikorsky's GenHel and the USAAEFA flight test (VALIDATION.md, "Kaplita
 // transient responses"; plotted by tools/plot_kaplita_transients.py over the
 // digitized, human-reviewed traces in data/uh60a/validation/kaplita_transients/).
 //
-// Fig. 4: a half-inch right pedal step at 144 kt (flight 66, run 27). As
-// Kaplita's simulated transients (p. 2): SAS, flight-path stabilization and
-// pitch bias actuator off, the stabilator fixed at the flight-test value, 6.54
-// deg (the header's IHT). Eyas trims at zero roll (sideslip solved, GenHel's
-// constraint above 50 kt) and is flown with the flight test's pedal and stick
+// Fig. 4: a half-inch right pedal step at 144 kt (flight 66, run 27); Fig. 2:
+// a one-inch lateral stick doublet at 144 kt (run 12; captioned 140 knots, the
+// header's VKT 144.0). As Kaplita's simulated transients (p. 2): SAS,
+// flight-path stabilization and pitch bias actuator off, the stabilator fixed
+// at the flight-test value (the header's IHT: 6.54 and 6.49 deg). Eyas trims at zero roll (sideslip
+// solved, GenHel's constraint above 50 kt) and is flown with the flight test's pedal and stick
 // histories as changes from their values at 0.5 s (inside every reviewed
 // trace; DATA_GAPS.md). Collective isn't plotted and is held.
 //
-// STAND-INS (approved by the spec owner, 2026-10-20; DATA_GAPS.md): Fig. 4
-// gives no CG waterline and no atmosphere.
-// - CG waterline: 231.8 in, Kaplita Fig. 13's (the config
-//   kaplita/uh60a_kaplita_fig4_standin.yaml).
+// STAND-INS (approved by the spec owner, 2026-10-20; DATA_GAPS.md): neither
+// figure gives the CG waterline or the atmosphere.
+// - CG waterline: 231.8 in, Kaplita Fig. 13's (the configs
+//   kaplita/uh60a_kaplita_fig<N>_standin.yaml, at each header's weight and CG
+//   station).
 // - Density altitude: 5750 ft, Kaplita Fig. 13's (flight 19), in the ISA. Also
 //   flown at 4000 and 7500 ft to show the sensitivity.
-// Not applied: the header's rotor speed ratio 1.0111 (Eyas turns at 27.0 rad/s
-// until M9). Variants: the UH-60A as configured ("eyas") and without GenHel's
+// Not applied: the headers' rotor speed ratios (1.0111, 1.0037; Eyas turns at
+// 27.0 rad/s until M9). Variants: the UH-60A as configured ("eyas") and without GenHel's
 // downwash correction terms ("no_additions", D-048).
 //
 // Usage: eyas_kaplita_transient_cases <output-dir>
@@ -48,8 +50,13 @@ namespace {
 using namespace eyas;
 namespace b = eyas::test::ballin;
 
-constexpr double kAirspeedKt = 144.0;                 // Fig. 4 header, VKT
-constexpr double kStabilatorDeg = 6.54;               // Fig. 4 header, IHT
+// One figure: its number and the header's airspeed (VKT) and stabilator (IHT).
+struct Case {
+    const char* figure;
+    double airspeed_kt;
+    double stabilator_deg;
+};
+constexpr std::array<Case, 2> kCases = {{{"4", 144.0, 6.54}, {"2", 144.0, 6.49}}};
 constexpr double kStandInDensityAltitudeFt = 5750.0;  // STAND-IN: Kaplita Fig. 13's
 constexpr std::array<double, 2> kSensitivityAltitudesFt = {4000.0, 7500.0};
 constexpr double kBaselineS = 0.5;       // [s] input baselines, inside every reviewed trace
@@ -57,16 +64,17 @@ constexpr double kDuration = 9.0;        // [s] as plotted
 constexpr double kPedalTravelIn = 5.38;  // config: pedal stroke with overtravel
 constexpr double kStickTravelIn = 10.0;
 
-std::string config_path() {
-    return std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/kaplita/uh60a_kaplita_fig4_standin.yaml";
+std::string config_path(const Case& k) {
+    return std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/kaplita/uh60a_kaplita_fig" + k.figure +
+           "_standin.yaml";
 }
 
 // A reviewed flight-test history [in] (data/uh60a/validation/kaplita_transients/).
 class History {
 public:
-    explicit History(const std::string& quantity) {
+    History(const std::string& figure, const std::string& quantity) {
         std::ifstream f(std::string(EYAS_VEHICLE_DATA_DIR) +
-                        "/uh60a/validation/kaplita_transients/kaplita_fig4.csv");
+                        "/uh60a/validation/kaplita_transients/kaplita_fig" + figure + ".csv");
         std::string line;
         bool header = false;
         while (std::getline(f, line)) {
@@ -109,24 +117,25 @@ private:
     std::vector<double> y_;
 };
 
-void fly(std::ofstream& out, const char* variant, const std::string& text, double altitude_ft) {
+void fly(std::ofstream& out, const Case& k, const char* variant, const std::string& text,
+         double altitude_ft) {
     const Config cfg = Config::from_string(text, variant);
     const Executive ex = build_executive(cfg, 0.0);
     TrimCondition c;
-    c.airspeed = kAirspeedKt * units::kKnot;
+    c.airspeed = k.airspeed_kt * units::kKnot;
     c.altitude = altitude_ft * units::kFoot;  // ISA: density altitude = altitude
     std::vector<double> x;
     const RollTrimResult rt = solve_trim_at_roll(ex, c, 0.0, nullptr, x);
-    std::cout << variant << ", " << altitude_ft << " ft: trim "
+    std::cout << "Fig. " << k.figure << ", " << variant << ", " << altitude_ft << " ft: trim "
               << (rt.converged ? "converged" : "NOT CONVERGED") << ", sideslip "
               << rt.sideslip / b::kDeg << " deg, pitch " << rt.trim.pitch / b::kDeg << " deg\n";
     if (!rt.converged) {
         throw std::runtime_error("trim did not converge");
     }
     c.sideslip = rt.sideslip;
-    const History ped("pedals");
-    const History lat("lateral_cyclic");
-    const History lon("longitudinal_cyclic");
+    const History ped(k.figure, "pedals");
+    const History lat(k.figure, "lateral_cyclic");
+    const History lon(k.figure, "longitudinal_cyclic");
     const Controls u0 = rt.trim.controls;
     // Kaplita's signs: pedal + right, lateral + right, longitudinal + aft
     auto controls = [&](double t) {
@@ -174,26 +183,29 @@ int main(int argc, char** argv) {
     }
     const std::filesystem::path dir(argv[1]);
     std::filesystem::create_directories(dir);
-    std::string text = b::config_text(config_path());
-    const std::regex input(R"(incidence_input: [A-Za-z0-9_]+[^\n]*)");
-    std::ostringstream inc;
-    inc << "incidence: \"" << kStabilatorDeg << " deg\"";
-    text = std::regex_replace(text, input, inc.str());
-    const std::string bare =
-        std::regex_replace(text, std::regex(R"(\n\s*additional_loads: [^\n]*)"), "");
-    std::ofstream out(dir / "kaplita_fig4.csv");
-    out << "# Eyas flown through Kaplita (NASA CR-177360) Fig. 4: half-inch right pedal step, "
-           "144 kt, SAS/FPS/PBA off, stabilator held at 6.54 deg, the flight test's pedal and "
-           "stick histories. STAND-INS (DATA_GAPS.md): CG waterline 231.8 in and density altitude "
-           "5750 ft, Kaplita Fig. 13's; the altitude column also has 4000 and 7500 ft for the "
-           "sensitivity. Rates [deg/s], angles [deg], controls normalized (D-024).\n"
-        << "variant,density_altitude_ft,t_s,p_dps,q_dps,r_dps,roll_deg,pitch_deg,heading_deg,"
-           "sideslip_deg,pedal,lat_cyclic,lon_cyclic\n";
     try {
-        fly(out, "eyas", text, kStandInDensityAltitudeFt);
-        fly(out, "no_additions", bare, kStandInDensityAltitudeFt);
-        for (const double h : kSensitivityAltitudesFt) {
-            fly(out, "eyas", text, h);
+        for (const Case& k : kCases) {
+            std::string text = b::config_text(config_path(k));
+            const std::regex input(R"(incidence_input: [A-Za-z0-9_]+[^\n]*)");
+            std::ostringstream inc;
+            inc << "incidence: \"" << k.stabilator_deg << " deg\"";
+            text = std::regex_replace(text, input, inc.str());
+            const std::string bare =
+                std::regex_replace(text, std::regex(R"(\n\s*additional_loads: [^\n]*)"), "");
+            std::ofstream out(dir / ("kaplita_fig" + std::string(k.figure) + ".csv"));
+            out << "# Eyas flown through Kaplita (NASA CR-177360) Fig. " << k.figure << ": "
+                << k.airspeed_kt << " kt, SAS/FPS/PBA off, stabilator held at " << k.stabilator_deg
+                << " deg, the flight test's pedal and stick histories. STAND-INS (DATA_GAPS.md): "
+                   "CG waterline 231.8 in and density altitude 5750 ft, Kaplita Fig. 13's; the "
+                   "altitude column also has 4000 and 7500 ft for the sensitivity. Rates [deg/s], "
+                   "angles [deg], controls normalized (D-024).\n"
+                << "variant,density_altitude_ft,t_s,p_dps,q_dps,r_dps,roll_deg,pitch_deg,"
+                   "heading_deg,sideslip_deg,pedal,lat_cyclic,lon_cyclic\n";
+            fly(out, k, "eyas", text, kStandInDensityAltitudeFt);
+            fly(out, k, "no_additions", bare, kStandInDensityAltitudeFt);
+            for (const double h : kSensitivityAltitudesFt) {
+                fly(out, k, "eyas", text, h);
+            }
         }
     } catch (const std::exception& e) {
         std::cerr << e.what() << "\n";

@@ -1,17 +1,19 @@
-"""Plot Eyas flown through Kaplita, NASA CR-177360 (1985), Fig. 4 against Sikorsky's GenHel and the
-USAAEFA flight test, and tabulate the differences.
+"""Plot Eyas flown through Kaplita, NASA CR-177360 (1985), Figs. 4 and 2 against Sikorsky's GenHel
+and the USAAEFA flight test, and tabulate the differences.
 
-Reads kaplita_fig4.csv written by eyas_kaplita_transient_cases and the digitized, human-reviewed
-traces (data/uh60a/validation/kaplita_transients/kaplita_fig4.csv), and writes
-kaplita_fig4.png (six panels: yaw, roll and pitch rates and attitudes, sideslip) and
-kaplita_fig4_differences.csv: per quantity, the RMS difference over WINDOW of Eyas (with and
-without GenHel's downwash correction terms, D-048) from each, and of GenHel from the test.
+Reads kaplita_fig<N>.csv written by eyas_kaplita_transient_cases and the digitized,
+human-reviewed traces (data/uh60a/validation/kaplita_transients/kaplita_fig<N>.csv), and writes,
+per figure, kaplita_fig<N>.png (six panels: yaw, roll and pitch rates and attitudes, sideslip)
+and kaplita_fig<N>_differences.csv: per quantity, the RMS difference over the figure's window
+of Eyas (with and without GenHel's downwash correction terms, D-048) from each, and of GenHel
+from the test.
 
     cmake --build --preset release
     ./build/release/tests/eyas_kaplita_transient_cases build/kaplita_transients
     .venv/bin/python tools/plot_kaplita_transients.py build/kaplita_transients docs/validation/kaplita
 
-Attitudes are compared as changes from their values at the window's start. The CG waterline and
+Attitudes are compared as changes from their values at the window's start (Fig. 2's test roll
+carries a constant offset of about 21 deg; DATA_GAPS.md). The CG waterline and
 the density altitude are STAND-INS (DATA_GAPS.md); the thin lines are Eyas at the sensitivity
 altitudes.
 """
@@ -27,10 +29,15 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-DIGITIZED = ROOT / "data" / "uh60a" / "validation" / "kaplita_transients" / "kaplita_fig4.csv"
+DIGITIZED = ROOT / "data" / "uh60a" / "validation" / "kaplita_transients"
 STAND_IN_ALTITUDE = 5750.0  # [ft] as eyas_kaplita_transient_cases
 T_END = 8.9  # [s] the traced lines end about 9 s; a few readings after that are stray ink
-WINDOW = (1.5, 6.5)  # [s] the pedal step to where both models' large bank takes over
+# Per figure: (title, compared window [s]). Fig. 4: the pedal step to where both models' large
+# bank takes over; Fig. 2: the doublet and the response after it, to the pilot's aft stick at 7.8 s.
+FIGURES = {
+    "4": ("half-inch right pedal step, 144 kt", (1.5, 6.5)),
+    "2": ("one-inch lateral stick doublet, 144 kt", (0.5, 7.8)),
+}
 # (Kaplita quantity, Eyas column, label, attitude?)
 PANELS = [
     ("yaw_rate", "r_dps", "yaw rate [deg/s]", False),
@@ -52,8 +59,14 @@ def main():
         sys.exit(__doc__)
     data, out = Path(sys.argv[1]), Path(sys.argv[2])
     out.mkdir(parents=True, exist_ok=True)
-    eyas = rows(data / "kaplita_fig4.csv")
-    kap = rows(DIGITIZED)
+    for fig, (title, window) in FIGURES.items():
+        if (data / f"kaplita_fig{fig}.csv").exists():
+            plot(fig, title, window, data, out)
+
+
+def plot(fig_no, title, WINDOW, data, out):
+    eyas = rows(data / f"kaplita_fig{fig_no}.csv")
+    kap = rows(DIGITIZED / f"kaplita_fig{fig_no}.csv")
 
     def kaplita(q, series):
         d = sorted((float(r["t_s"]), float(r["value"])) for r in kap
@@ -99,24 +112,25 @@ def main():
             diffs.append((q, "sikorsky_genhel", "aefa_test",
                           float(np.sqrt(np.mean((ref["sikorsky_genhel"] - ref["aefa_test"]) ** 2)))))
         ax.axvspan(*WINDOW, color="0.9", zorder=0)
-        ax.set_title(label + (" (change from 1.5 s)" if attitude else ""))
+        ax.set_title(label + (f" (change from {WINDOW[0]:g} s)" if attitude else ""))
         ax.grid(alpha=0.3)
         ax.set_xlim(0, 9)
         ax.set_xlabel("time [s]")
     axes[0][0].legend(fontsize=8)
-    fig.suptitle("Kaplita Fig. 4: half-inch right pedal step, 144 kt, SAS off, stabilator held. "
+    fig.suptitle(f"Kaplita Fig. {fig_no}: {title}, SAS off, stabilator held. "
                  "STAND-INS: CG waterline 231.8 in, density altitude 5750 ft "
                  f"(thin red: {', '.join(f'{a:g}' for a in others)} ft). Shaded: the compared window.",
                  fontsize=10)
     fig.tight_layout()
-    fig.savefig(out / "kaplita_fig4.png", dpi=90)
-    with open(out / "kaplita_fig4_differences.csv", "w", encoding="utf-8") as f:
+    fig.savefig(out / f"kaplita_fig{fig_no}.png", dpi=90)
+    plt.close(fig)
+    with open(out / f"kaplita_fig{fig_no}_differences.csv", "w", encoding="utf-8") as f:
         f.write(f"# RMS difference over {WINDOW[0]:g}-{WINDOW[1]:g} s; attitudes as changes from "
                 f"{WINDOW[0]:g} s. Eyas at the STAND-IN density altitude {STAND_IN_ALTITUDE:g} ft.\n")
         f.write("quantity,model,against,rms\n")
         for q, m, a, v in diffs:
             f.write(f"{q},{m},{a},{v:.2f}\n")
-    print(f"wrote {out / 'kaplita_fig4.png'} and kaplita_fig4_differences.csv")
+    print(f"wrote {out / f'kaplita_fig{fig_no}.png'} and kaplita_fig{fig_no}_differences.csv")
 
 
 if __name__ == "__main__":
