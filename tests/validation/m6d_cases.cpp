@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "control/genhel_fcs.hpp"
 #include "eyas/model.hpp"
 #include "support/frame_status.hpp"
 #include "support/m6d_fixtures.hpp"
@@ -50,9 +51,13 @@ void hover(const Uh60aHarness& ac, std::ostream& out) {
     // Aerodynamic quantities averaged over one blade passage.
     const auto& mr = ac.get<BladeElementRotor>("main_rotor");
     const auto& tr = ac.get<BaileyRotor>("tail_rotor");
+    // The rotors take their pitch from the flight control system's mixer,
+    // servos and head limits (pitch_input: fcs, D-045), not a control map.
+    const auto& fcs = ac.get<GenHelFcs>("fcs");
     const int samples = 48;
     const double h = ac.passage_period() / samples;
     double q = 0.0, thrust = 0.0, power = 0.0, t_tr = 0.0, th_tr = 0.0;
+    double th0_mr = 0.0, th_tr_cmd = 0.0;
     for (int k = 0; k < samples; ++k) {
         (void)ac.evaluate(t, x, c, env);  // fills the coupling store at (t, x)
         const SimContext ctx = ac.context(t, x, c, env);
@@ -63,19 +68,20 @@ void hover(const Uh60aHarness& ac, std::ostream& out) {
         power += l.power / samples;
         t_tr += lt.thrust / samples;
         th_tr += lt.pitch / samples;
+        const GenHelFcsOutputs f = fcs.evaluate(ctx, ac.states(x, ac.index("fcs")));
+        th0_mr += f.theta0 / samples;
+        th_tr_cmd += f.theta_tr / samples;
         ac.hold(t, x, c, env, h, 1);
     }
-    const SwashplatePitch p_mr = mr.config().controls->pitch(c);
-    const double th_cmd = tr.config().controls->pitch(c).theta0;
     const double ftlbf = units::kPoundForce * units::kFoot;
     out << "# Hover OGE, ISA sea level, body held level, cyclic centred (M6d)\n";
     out << "weight_lbf," << ac.total_weight() / units::kPoundForce << "\n";
     out << "collective," << c.collective << "\n";
     out << "collective_in," << test::Travels::xc(c.collective) << "\n";
-    out << "theta0_deg," << p_mr.theta0 / kDeg << "\n";
+    out << "theta0_deg," << th0_mr / kDeg << "\n";
     out << "pedal," << c.pedal << "\n";
     out << "pedal_in," << test::Travels::xp(c.pedal) << "\n";
-    out << "theta_tr_cmd_deg," << th_cmd / kDeg << "\n";
+    out << "theta_tr_cmd_deg," << th_tr_cmd / kDeg << "\n";
     out << "theta_tr_deg," << th_tr / kDeg << "\n";
     out << "mr_thrust_lbf," << thrust / units::kPoundForce << "\n";
     out << "mr_torque_ftlbf," << q / ftlbf << "\n";
