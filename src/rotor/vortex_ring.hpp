@@ -45,7 +45,7 @@ struct JohnsonVrsParameters {
 // theory is faded to zero with smoothstep over this width below its edge:
 // the baseline's over 0.70–0.75, the increment's over 0.90–0.95, where
 // momentum theory has a single root. The stability boundary is Johnson's
-// for vx ≤ 0.90; its nose moves from 0.95 to about 0.915.
+// for vx ≤ 0.90; its nose moves from about 0.933 to about 0.917.
 inline constexpr double kVortexRingFadeWidth = 0.05;
 
 // A root of Glauert's momentum equation v √(vx² + (vz + v)²) = 1 (Johnson
