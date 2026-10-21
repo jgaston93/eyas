@@ -26,7 +26,8 @@ Mat3 pitt_peters_gain(double X) noexcept {
 }
 
 Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double mu_z, double cos_w,
-                       double sin_w, double omega) noexcept {
+                       double sin_w, double omega,
+                       const std::optional<VortexRingRow>& vrs) noexcept {
     const WakeSkew w = wake_skew(mu, lambda.x() - mu_z);
     // To wind axes: (c, s)_w = (c cos ψ_w + s sin ψ_w, −c sin ψ_w + s cos ψ_w).
     const auto to_wind = [&](const Vec3& v) {
@@ -42,11 +43,13 @@ Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double 
     const double c = L(2, 0);
     const double d = L(2, 2);
     const double det = a * d - b * c;
-    const double r0 = w.V * (d * lw.x() - b * lw.z()) / det;
+    const double v_thrust = vrs ? vrs->mass_flow : w.V;
+    const double r0 = v_thrust * (d * lw.x() - b * lw.z()) / det;
     const double rc = w.V * (-c * lw.x() + a * lw.z()) / det;
     const double rs = w.V * lw.y() / L(1, 1);
     // M̃ dλ_w/dτ = C_w − V L̂⁻¹ λ_w, τ = Ω t.
-    const double d0 = omega * (cw.x() - r0) / PittPetersMass::m0;
+    const double ct = vrs ? cw.x() - vrs->deficit : cw.x();
+    const double d0 = omega * (ct - r0) / PittPetersMass::m0;
     const double ds = omega * (cw.y() - rs) / PittPetersMass::m1;
     const double dc = omega * (cw.z() - rc) / PittPetersMass::m1;
     // Back to hub axes.

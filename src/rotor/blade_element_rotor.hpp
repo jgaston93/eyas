@@ -48,6 +48,11 @@ enum class InflowModel : std::uint8_t {
     pitt_peters,  // dynamic, states (λ0, λ1s, λ1c) (D-027)
 };
 
+enum class VortexRingModel : std::uint8_t {
+    none,          // momentum theory throughout (SPEC_REVIEW #21)
+    johnson_2005,  // Johnson NASA/TP-2005-213477 (D-049)
+};
+
 // Linear induced inflow λ(r, ψ) = l0 + (r/R)(l1s sin ψ + l1c cos ψ) [-],
 // positive down along the shaft, ψ the blade azimuth, r the radius in the
 // hub plane (Pitt & Peters 1980 eq. 1; D-027).
@@ -119,6 +124,11 @@ struct BladeElementRotorConfig {
     std::string pitch_input;
     std::optional<FlapHinge> flap;  // none: M3 rotor, flapping held at zero
     InflowModel inflow = InflowModel::uniform;
+    // Vortex-ring correction of the mean inflow (D-049). With uniform inflow
+    // the solve uses Johnson's curve directly; with Pitt–Peters the thrust
+    // row uses the baseline curve and a lagged VRS thrust deficit, one more
+    // state.
+    VortexRingModel vortex_ring = VortexRingModel::none;
     std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
     // Yawed-flow drag (Johnson 2013 §6.22–6.23; D-039): the section drag acts
     // along the full local flow, spanwise component u_R included, with
@@ -183,8 +193,10 @@ public:
     // States: with a flap hinge, x[2k] = β_k [rad], x[2k+1] = β̇_k [rad/s]
     // for blade k = 0…N_b−1, numbered as in blade_azimuth() (D-026); then,
     // with Pitt–Peters inflow, (λ0, λ1s, λ1c) [-] from inflow_offset()
-    // (D-027); then, with elastic twist, the tip twist θ_e [rad] from
-    // twist_offset() (D-038). All start at zero.
+    // (D-027); then, with Pitt–Peters inflow and the vortex-ring correction,
+    // the VRS thrust deficit D [-] at vortex_ring_offset() (D-049); then,
+    // with elastic twist, the tip twist θ_e [rad] from twist_offset()
+    // (D-038). All start at zero.
     std::size_t num_states() const override;
     void initial_states(std::span<double> x) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
@@ -208,9 +220,10 @@ public:
     // num_states() long), with the configured inflow: uniform inflow solved
     // for this evaluation (D-024), or the Pitt–Peters states in x (D-027).
     RotorLoads evaluate(const SimContext& ctx, std::span<const double> x = {}) const noexcept;
-    // Loads with the uniform momentum inflow solved (D-024), whatever the
-    // configured model: the steady Pitt–Peters inflow in hover, and a start
-    // for its states. Flap states are read from x as in evaluate().
+    // Loads with the uniform inflow solved (D-024), whatever the configured
+    // inflow model, with the configured vortex-ring correction applied
+    // quasi-statically (D-049): the steady Pitt–Peters inflow in hover, and
+    // a start for its states. Flap states are read from x as in evaluate().
     RotorLoads evaluate_uniform(const SimContext& ctx,
                                 std::span<const double> x = {}) const noexcept;
     // Loads at a given induced inflow (one blade-element pass, no inflow
@@ -222,7 +235,11 @@ public:
 
     // Index of λ0 in the states (Pitt–Peters only): 2 N_b with a flap hinge, else 0.
     std::size_t inflow_offset() const noexcept;
-    // Index of θ_e in the states (elastic twist only, D-038): after the inflow states.
+    // Index of the VRS thrust deficit D (Pitt–Peters with the vortex-ring
+    // correction only, D-049): after the inflow states.
+    std::size_t vortex_ring_offset() const noexcept;
+    // Index of θ_e in the states (elastic twist only, D-038): after the inflow
+    // and vortex-ring states.
     std::size_t twist_offset() const noexcept;
 
     // Rotor azimuth ψ [rad] in [0, 2π) at time t [s]: ψ = Ω t (D-024).
@@ -243,6 +260,11 @@ public:
 private:
     // Hinge offset e [m]; 0 without a flap hinge.
     double hinge_offset() const noexcept { return config_.flap ? config_.flap->offset : 0.0; }
+    // True when the rotor carries the VRS deficit state (D-049).
+    bool has_vortex_ring_state() const noexcept {
+        return config_.inflow == InflowModel::pitt_peters &&
+               config_.vortex_ring == VortexRingModel::johnson_2005;
+    }
 
     // Per-evaluation inputs to a blade-element pass, in hub axes.
     struct Kinematics {

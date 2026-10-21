@@ -163,11 +163,12 @@ The hard constraints (the reference-model clean-room rule, proprietary data hand
 - The control-input sign conventions (`Controls` says only [−1, 1]).
 **Suggested resolution:** see D-024.
 
-## 21. Uniform momentum inflow has no physical solution in the vortex-ring state — `open`
+## 21. Uniform momentum inflow has no physical solution in the vortex-ring state — `resolved → DECISIONS.md D-049 (2026-10-20)`
 **Spec:** §6.5 (uniform inflow, M3; Pitt–Peters, M5).
 **Problem:** in axial descent between roughly 0 and 2× the hover induced velocity, momentum theory doesn't apply (Padfield 3rd ed. §3.2.1, pp. 102–103: the vertical-descent solutions in Fig. 3.15 are "nonphysical", and "recourse to empiricism is required"). Eq. 3.139 then has up to three roots. The M3 solve (D-024) returns one deterministically: in the test rotor it stays on the normal-working-state branch up to a descent of about 3 v_h, then jumps to the windmill-brake branch (`docs/validation/m3/m3_inflow.png`). The thrust jumps with it. Pitt–Peters (M5) uses the same mass-flow parameter and inherits the problem. It also treats upflow through the disc with |λ| in the wake skew (D-027, "Upflow"), a choice no source validates there.
 **Why it matters:** a piloted steep approach or a vertical descent can enter this region. The model gives a thrust discontinuity there instead of the loss of control power and roughness pilots expect.
 **Suggested resolution:** before M8 piloted evaluation, add an empirical vortex-ring correction to the induced-velocity solution, e.g. a fitted curve of induced velocity against descent rate between the normal and windmill branches, with the source chosen from the D-001 references (Johnson 2013 and Leishman 2nd ed. both discuss empirical curves; verify which before use). Until then, the region is a known limitation.
+**Resolution (D-049):** Johnson's vortex-ring model (NASA/TP-2005-213477, Tables 3–4, the model Johnson 2013 §4.2 refers to), with two misprints corrected and fades at its two edges. Uniform inflow uses it quasi-statically; Pitt–Peters uses its baseline curve in the thrust row and the VRS increment as a lagged thrust deficit. The inflow is single-valued, and the heave damping changes sign on Johnson's flight-test boundary. The Pitt–Peters |λ| skew choice in upflow is unchanged.
 
 ## 22. M4 flap dynamics are underspecified, and the cited analytic results are for a different rotor model — `resolved → DECISIONS.md D-026 (2026-10-11)`
 **Spec:** §6.3 (δ₃), §6.4 ("Blade flap dynamics"), M4.
