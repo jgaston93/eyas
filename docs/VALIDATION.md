@@ -127,7 +127,7 @@ The rotor is `src/rotor/blade_element_rotor.*` (with `airfoil.*` and `controls.*
 - **Inflow solve** (D-024):
   - `InflowSolveConvergesAcrossConditions`: hover, climb, windmill-brake descent, negative thrust and forward flight, each converging in ≤ 10 passes to a root of Padfield Eq. 3.139 within 1e-12.
   - `InflowSolveIsBoundedInVortexRing`: in the vortex-ring region the result stays finite and within the pass limit, and converged results satisfy Eq. 3.139.
-  - The descent sweep below converges everywhere in ≤ 14 passes. It also shows momentum theory's vortex-ring gap: the result jumps between root branches at about 3 v_h. Logged as SPEC_REVIEW #21 (open).
+  - The descent sweep below converges everywhere in ≤ 14 passes. It also shows momentum theory's vortex-ring gap: the result jumps between root branches at about 3 v_h. Logged as SPEC_REVIEW #21, resolved in M8d (D-049; this sweep is the uncorrected rotor, `vortex_ring: none`).
 - **Inputs:**
   - Airfoil tables must cover α = ±180°, and their columns are checked for dimension (D-021).
   - The linear control map handles offsets, gains and cross-mixing, from config.
@@ -1433,3 +1433,55 @@ Kaplita Fig. 2 (run 12): the same setup, the stabilator fixed at 6.49°, at the 
 - *Pitch coupling:* Eyas follows GenHel (1.1 deg/s, 1.7° rms); both pitch up slightly after the doublet where the test pitches down by up to 6° before the pilot's pull. Without the D-048 terms Eyas is further from GenHel in pitch and sideslip.
 - *The Dutch roll with the stabilator fixed:* every model's is damped (ζ about 0.4), more than the test's (about 0.2), with a frequency within about 15 %. Eyas's bare-airframe Dutch roll was nearly neutral at 150 kt (M8c2, SAS off: ζ 0.000 before D-048, 0.06 after) because those modes had the stabilator live: its lateral-acceleration feedback (KVYDT) takes the damping away (M8c1: ζ 0.28 fixed against 0.07 live at 120 kt). So with the stabilator fixed, as Kaplita flew, the airframe isn't the cause: the low-damping problem is the stabilator loop, issue #24's subject.
 
+
+---
+
+## M8d — Vortex-ring-state correction (2026-10-20)
+
+Johnson's vortex-ring model (NASA/TP-2005-213477, Tables 3 and 4; the model Johnson 2013 §4.2 refers to) in the main rotor's mean inflow (D-049; SPEC_REVIEW #21 resolved). Two Table 3 misprints are corrected and marked (DATA_GAPS.md), and the model's two edge jumps are faded over 0.05 v_h. Uniform inflow uses the curve quasi-statically. Pitt–Peters uses the baseline curve's mass flow in its thrust row and the VRS increment as a thrust deficit lagged by Johnson's 0.7/λ_h revolutions. Generator `tests/validation/m8d_cases.cpp`, plots `tools/plot_m8d.py`. No UH-60A vortex-ring flight data is in the library. The realism checks are Johnson's flight-test stability boundary (helicopter and tiltrotor, his Fig. 2) and the shape of his D6075 comparison.
+
+| Check | Status | Evidence |
+|---|---|---|
+| The curves against an independent transcription | ✅ | `VortexRing.CurvesMatchJohnsonTable3Transcription`: both curves on a 131 × 401 grid (vx 0–1.3, vz −3.5–0.5) to 1e-11. The reference (`tests/support/vrs_reference.hpp`) finds momentum roots as companion-matrix eigenvalues and builds the cubics by Hermite divided differences. `MomentumRootsMatchClosedFormsAndTheReference`. |
+| Johnson's specification | ✅ | `InflowHasZeroSlopeOnTheStabilityBoundary`: (vz + v)/v_h = 0.85 at −0.45 and 1.25 at −1.5, zero slope on the boundary N(vx), X(vx) up to vx = 0.90, an unstable band between, none on the baseline. `CurvesJoinMomentumTheoryWhereJohnsonJoinsThem` (value and slope at A and D, value at B and E; momentum theory outside, to the bit). The curves on Johnson's axes are below. |
+| The fades | ✅ | `FadesMakeTheCurvesContinuousInEdgewiseSpeed`: continuous across vx = 0.75 and 0.95, where the published model jumps by about 0.003 and up to 0.14 v_h (recorded in the test). |
+| The inversion is unique and bounded | ✅ | `InducedVelocityRisesWithThrust`: dλ0/dλ_h = f − x f_x − z f_z ≥ 0.4 over the region (finer in the fade bands). `ThrustInversionRecoversTheCurveThrust`: 2000 random round trips, both thrust signs, 1e-12. `InversionIsBoundedAndFinite` (limit 100 curve evaluations per curve; a sweep of the region needed at most 27 per call). |
+| The rotor | ✅ | `UniformSolveFollowsJohnsonsCurveWithoutJumps`: refining a 0–75 m/s descent sweep 4× shrinks the largest thrust step (continuous), while uncorrected the root switch stays. Windmill brake past 2 v_h. `PittPetersSteadyStateIsJohnsonsCurve`: steady state equal to the uniform solve, with D at its quasi-static value; rates bit-identical to the uncorrected rotor outside the region. `DeficitLagsWithJohnsonsTimeConstant`. |
+| Heave damping on an axial rotor | ✅ | `HeaveDampingChangesSignOnTheBoundary`. With thrust a function of collective and total inflow only, sign(dT/dw) = sign(d(vz + v)/dvz at fixed T), so it changes sign exactly on the curve's stationary points. Found at −0.45 and −1.5 v_h to 1e-4. |
+| Heave damping, the whole UH-60A | ✅ | `Uh60aVortexRing.HeaveDampingChangesSignOnTheBoundary` (slow test): the bare aircraft's condensed Z_w in vertical descent changes sign at vz/v_h = −0.4495 (boundary −0.450 at the rotor's vx/v_h = 0.020) and −1.453 (boundary −1.494 at vx/v_h = 0.083). Gate 0.05. Below. |
+| Real-time rules | ✅ | `VortexRing.AllocatesNothing`. `eyas_bench` gained a 10 m/s vertical-descent case (mid-region, whole AFCS on): step 29.4 µs mean (hover 14.3), worst `advance()` 920 µs against the 8333 µs budget. One inversion costs about 5.3 µs. |
+| Earlier results unchanged | ✅ | All 436 earlier tests pass with the correction on in every UH-60A config; none of their conditions is in the region. |
+| Against flight data | — | No UH-60A vortex-ring data in the library. The D6075 comparison below is of shape only. |
+
+**The curves** (Eyas's, on the axes of Johnson's Figs. 38 and 39):
+
+![Curves](validation/m8/m8d_curves.png)
+
+They match Johnson's figures, including the kinks at his transition points. At vx/v_h = 0 the hump peaks at 1.25 at −1.5 and the dip bottoms at 0.85 at −0.45. At vx/v_h = 0.8 the peak is v/v_h ≈ 1.9 near −1.2.
+
+**The fades** (D-049): just below each edge, the published model against momentum theory at the edge, and Eyas's faded curve:
+
+![Fades](validation/m8/m8d_fades.png)
+
+At vx/v_h = 0.95 the published curve still carries an S-shaped increment (zero slope at the merged N and X), and then it vanishes. Eyas's has faded to momentum theory. At 0.75 the baseline's offset (about 0.003 v_h) is too small to see here; the test records it.
+
+**The UH-60A in vertical descent** (bare, collective fixed, ISA sea level; the main rotor's descent over its own v_h):
+
+![Heave](validation/m8/m8d_heave.png)
+
+- *Heave damping:* Z_w = −0.25 /s near hover, as before. With the correction it turns unstable between −0.45 and −1.45 v_h, peaking at +0.35 /s near −1.0 v_h. Johnson's D6075 peaks at +0.8 /s (Fig. 52), a lighter aircraft.
+  - *With the lag* (the heave root with D dynamic), the peak is +0.18 /s, about half. Johnson finds the lag reduces the damping magnitude without moving the sign changes (Fig. 52: 0.23 against 0.8), and so does Eyas.
+  - *Without the correction,* Z_w stays negative throughout (−0.10 to −0.25 /s), as Johnson finds with his baseline.
+- *Where the crossings sit:* N lies on the boundary (0.0005 v_h). X is 0.04 v_h inside it.
+  - The airframe's own heave damping, measured at the trim by finite differences, is −0.031 /s near N and −0.057 /s near X. At X's Z_w slope that moves the crossing about 0.02 v_h inward. At N it would move it about 0.03 v_h *outward*, which isn't seen.
+  - So a further +0.02–0.03 v_h comes from the rest of the aircraft (flapping, the edgewise flow from the shaft tilt, vx/v_h up to 0.09). It is not separated further.
+- *Trimmed collective:* falls from hover to a minimum of 0.499 at 5.5 m/s (−0.46 v_h), then *rises* to 0.618 at 18 m/s (−1.5 v_h): in the vortex ring a faster steady descent needs more collective. Uncorrected, the collective falls steadily.
+
+**A vortex-ring entry** (the shape of Johnson's D6075 vertical case, Figs. 56–57). From a trimmed 1 m/s vertical descent with the whole AFCS on, the collective is lowered by 0.24° of θ0 at 5, 15 and 25 s (0.72° in all; the D6075's reductions total about 0.7°), each ramped over 1 s. Then 100 s free:
+
+![Encounter](validation/m8/m8d_encounter.png)
+
+- *With the correction:* the first two steps each add about 1 m/s of descent. After the third, the descent creeps past 0.5 v_h (37.9 s), then runs away: 1.0 v_h at 56.6 s, 1.5 v_h at 63.3 s. It overshoots to 1.79 v_h and settles at 1.68 v_h (19.3 m/s) by 100 s, just past the boundary's lower point X, where the heave damping is positive again. That is Johnson's "helicopter stabilization".
+  - *Against the D6075:* Johnson's measured drop runs from about 0.5 to 1.7 v_h in roughly 10–15 s and stabilizes near 1.7–1.75 v_h (his Figs. 57, 59). Eyas's takes about 25 s (different aircraft, inputs and AFCS), and settles at the same depth.
+  - *Flow state:* the total flow is still down through the disc at the end (vortex-ring state past X, not windmill brake).
+- *Without the correction:* the same inputs level off near 4–5 m/s (0.4 v_h; 4.0 m/s at 100 s).

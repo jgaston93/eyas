@@ -155,6 +155,7 @@ components:
     rotor_speed: "27 rad/s"
     direction: counter_clockwise
     inflow: uniform
+    vortex_ring: none
     hub:
       position: {x: "0 m", y: "0 m", z: "-2 m"}
       pitch: "-3 deg"

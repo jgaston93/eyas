@@ -603,6 +603,7 @@ components:
     rotor_speed: "{fmt(mr["OMEGA"])} rad/s"
     direction: counter_clockwise
     inflow: pitt_peters
+    vortex_ring: johnson_2005  # Johnson NASA/TP-2005-213477 (D-049)
     hub:
       position: {pos(mr["FS_MR"], mr["BL_MR"], mr["WL_MR"])}
       pitch: "{fmt(mr["I_THETA"])} deg"

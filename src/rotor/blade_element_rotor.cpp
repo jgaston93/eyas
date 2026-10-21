@@ -1,10 +1,11 @@
 #include "rotor/blade_element_rotor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
-#include <limits>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -13,9 +14,11 @@
 #include "rotor/hub_frame.hpp"
 #include "rotor/multiblade.hpp"
 #include "rotor/pitt_peters.hpp"
+#include "rotor/vortex_ring.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 
 namespace eyas {
 namespace {
@@ -394,11 +397,20 @@ RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
     // it has no singularity at λ_i = 0:
     //   g(λ) = 2λ √(μ² + (λ − μ_z)²) − C_T(λ) = 0,
     // with C_T from the blade-element pass at λ. A root always exists: g → ±∞
-    // as λ → ±∞ while C_T stays bounded.
+    // as λ → ±∞ while C_T stays bounded. With the vortex-ring correction
+    // (D-049) the momentum term is the thrust on Johnson's VRS curve at λ,
+    // which rises strictly with λ, so with C_T falling the root is unique.
     int passes = 0;
+    bool vrs_converged = true;
+    const bool vrs = config_.vortex_ring == VortexRingModel::johnson_2005;
     const auto eval = [&](double lambda, RotorLoads& l) {
         l = pass(k, LinearInflow{lambda, 0.0, 0.0}, x);
         ++passes;
+        if (vrs) {
+            const VortexRingThrust t = vortex_ring_thrust(lambda, mu, mu_z, false);
+            vrs_converged = vrs_converged && t.converged;
+            return t.ct_vrs - l.ct;
+        }
         const double d = lambda - mu_z;
         return 2.0 * lambda * std::sqrt(mu * mu + d * d) - l.ct;
     };
@@ -428,80 +440,19 @@ RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
         }
         converged = fb == 0.0;
         if (!converged && (fa > 0.0) != (fb > 0.0)) {
-            // Brent's method (Brent, "Algorithms for Minimization without
-            // Derivatives", 1973, Ch. 4): inverse quadratic interpolation or
-            // secant steps, falling back to bisection, always inside the
-            // bracket [b, c]. Superlinear, and never slower than bisection.
-            RotorLoads lc = la;
-            double c = a;
-            double fc = fa;
-            double d = b - a;
-            double e = d;
-            while (passes < kMaxPasses) {
-                if ((fb > 0.0) == (fc > 0.0)) {
-                    c = a;
-                    fc = fa;
-                    lc = la;
-                    d = b - a;
-                    e = d;
-                }
-                if (std::abs(fc) < std::abs(fb)) {
-                    a = b;
-                    b = c;
-                    c = a;
-                    fa = fb;
-                    fb = fc;
-                    fc = fa;
-                    la = lb;
-                    lb = lc;
-                    lc = la;
-                }
-                const double tol = 2.0 * std::numeric_limits<double>::epsilon() * std::abs(b) +
-                                   0.5 * kInflowTolerance;
-                const double xm = 0.5 * (c - b);
-                if (std::abs(xm) <= tol || fb == 0.0) {
-                    converged = true;
-                    break;
-                }
-                if (std::abs(e) >= tol && std::abs(fa) > std::abs(fb)) {
-                    const double sr = fb / fa;
-                    double p = 0.0;
-                    double q = 0.0;
-                    if (a == c) {
-                        p = 2.0 * xm * sr;
-                        q = 1.0 - sr;
-                    } else {
-                        const double qa = fa / fc;
-                        const double r = fb / fc;
-                        p = sr * (2.0 * xm * qa * (qa - r) - (b - a) * (r - 1.0));
-                        q = (qa - 1.0) * (r - 1.0) * (sr - 1.0);
-                    }
-                    if (p > 0.0) {
-                        q = -q;
-                    }
-                    p = std::abs(p);
-                    if (2.0 * p < std::min(3.0 * xm * q - std::abs(tol * q), std::abs(e * q))) {
-                        e = d;
-                        d = p / q;
-                    } else {
-                        d = xm;
-                        e = d;
-                    }
-                } else {
-                    d = xm;
-                    e = d;
-                }
-                a = b;
-                fa = fb;
-                la = lb;
-                b += std::abs(d) > tol ? d : std::copysign(tol, xm);
-                fb = eval(b, lb);
-            }
+            // Brent's method (util/math.hpp), each point's loads kept with it.
+            RotorLoads lc;
+            const std::array<RotorLoads*, 3> at{&la, &lb, &lc};
+            (void)brent([&](double lambda) { return eval(lambda, lb); }, a, fa, b, fb,
+                        kInflowTolerance, kMaxPasses, passes, converged,
+                        [&](BrentPoint to, BrentPoint from) {
+                            *at[static_cast<std::size_t>(to)] = *at[static_cast<std::size_t>(from)];
+                        });
         }
     }
     RotorLoads out = *result;
     out.passes = passes;
-    out.converged = converged;
+    out.converged = converged && vrs_converged;
     return out;
 }
 
@@ -509,8 +460,12 @@ std::size_t BladeElementRotor::inflow_offset() const noexcept {
     return config_.flap ? 2 * static_cast<std::size_t>(config_.num_blades) : 0;
 }
 
-std::size_t BladeElementRotor::twist_offset() const noexcept {
+std::size_t BladeElementRotor::vortex_ring_offset() const noexcept {
     return inflow_offset() + (config_.inflow == InflowModel::pitt_peters ? 3 : 0);
+}
+
+std::size_t BladeElementRotor::twist_offset() const noexcept {
+    return vortex_ring_offset() + (has_vortex_ring_state() ? 1 : 0);
 }
 
 std::size_t BladeElementRotor::num_states() const {
@@ -576,9 +531,35 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
         // Pitt–Peters inflow (D-027), forced by the loads of the same pass.
         // Independent of the body acceleration: the G rows stay zero.
         const std::size_t i = inflow_offset();
+        std::optional<VortexRingRow> row;
+        if (has_vortex_ring_state()) {
+            // Vortex-ring correction (D-049): the thrust row's mass flow from
+            // Johnson's baseline curve, quasi-static, and the VRS increment as
+            // a thrust deficit D lagging its quasi-static value with
+            // τ = 0.7/λ_h revolutions (Johnson TP-2005 p. 16):
+            //   dD/dt = (D_qs − D) λ_h Ω / (0.7 · 2π),  D_qs = C_T,vrs − C_T,base.
+            // Outside the region D_qs = 0, and with D = 0 the inflow equations
+            // are those without the correction, to the bit.
+            const double lambda0 = x[i];
+            const std::size_t iv = vortex_ring_offset();
+            const double deficit = x[iv];
+            const VortexRingThrust t = vortex_ring_thrust(lambda0, kin.mu, kin.mu_z);
+            out.converged = out.converged && t.converged;
+            if (t.active) {
+                row = VortexRingRow{t.ct_base / (2.0 * lambda0), deficit};
+            } else if (deficit != 0.0) {
+                row = VortexRingRow{std::nullopt, deficit};
+            }
+            // The rate goes to zero with λ_h (τ → ∞ as the thrust goes to
+            // zero, Johnson's scaling); only at λ0 = 0 exactly, a point the
+            // inflow passes through, does D hold still.
+            const double target = t.active ? t.ct_vrs - t.ct_base : 0.0;
+            out.xdot0[iv] = (target - deficit) * t.lambda_h * config_.rotor_speed /
+                            (kVortexRingLagCoefficient * 2.0 * std::numbers::pi);
+        }
         const Vec3 rates =
             pitt_peters_rates(Vec3(x[i], x[i + 1], x[i + 2]), Vec3(loads.ct, loads.c1s, loads.c1c),
-                              kin.mu, kin.mu_z, kin.cos_w, kin.sin_w, config_.rotor_speed);
+                              kin.mu, kin.mu_z, kin.cos_w, kin.sin_w, config_.rotor_speed, row);
         out.xdot0[i] = rates.x();
         out.xdot0[i + 1] = rates.y();
         out.xdot0[i + 2] = rates.z();
@@ -725,7 +706,7 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
 
 std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& node) {
     node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "direction", "inflow",
-                     "hub", "blade", "controls", "pitch_input"});
+                     "vortex_ring", "hub", "blade", "controls", "pitch_input"});
     BladeElementRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -756,6 +737,15 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         c.inflow = InflowModel::pitt_peters;
     } else {
         node.fail("inflow", "must be uniform or pitt_peters");
+    }
+    // Required, no default (D-021, D-049).
+    const std::string vortex_ring = node.string("vortex_ring");
+    if (vortex_ring == "none") {
+        c.vortex_ring = VortexRingModel::none;
+    } else if (vortex_ring == "johnson_2005") {
+        c.vortex_ring = VortexRingModel::johnson_2005;
+    } else {
+        node.fail("vortex_ring", "must be none or johnson_2005");
     }
 
     const Config hub = node.child("hub");

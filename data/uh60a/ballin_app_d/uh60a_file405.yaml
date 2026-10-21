@@ -111,6 +111,7 @@ components:
     rotor_speed: "27.0 rad/s"
     direction: counter_clockwise
     inflow: pitt_peters
+    vortex_ring: johnson_2005  # Johnson NASA/TP-2005-213477 (D-049)
     hub:
       position: {x: "19.630354 in", y: "0 in", z: "-87.625121 in"}
       pitch: "-3.0 deg"

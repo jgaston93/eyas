@@ -33,6 +33,7 @@ add_executable(eyas_unit_tests
     unit/test_model.cpp
     unit/test_outputs.cpp
     unit/test_pitt_peters.cpp
+    unit/test_vortex_ring.cpp
     unit/test_realtime.cpp
     unit/test_recorder.cpp
     unit/test_rotor_inputs.cpp
@@ -134,6 +135,12 @@ target_include_directories(eyas_ballin_app_d_cases PRIVATE ${CMAKE_CURRENT_SOURC
 target_link_libraries(eyas_ballin_app_d_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_ballin_app_d_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_ballin_app_d_cases)
+# Writes the M8d vortex-ring data (VALIDATION.md; tools/plot_m8d.py; D-049).
+add_executable(eyas_m8d_cases validation/m8d_cases.cpp)
+target_include_directories(eyas_m8d_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m8d_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m8d_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m8d_cases)
 add_executable(eyas_kaplita_cases validation/kaplita_cases.cpp)
 target_include_directories(eyas_kaplita_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_kaplita_cases PRIVATE eyas_internal)

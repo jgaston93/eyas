@@ -1,6 +1,7 @@
 #pragma once
 
 #include <numbers>
+#include <optional>
 
 #include "core/types.hpp"
 
@@ -43,12 +44,24 @@ WakeSkew wake_skew(double mu, double lambda) noexcept;
 // 1+sin α, sin α written through X (Johnson 2013 Eqs. 11.133–11.134).
 Mat3 pitt_peters_gain(double X) noexcept;
 
+// Vortex-ring correction of the thrust row (D-049): the row's mass flow
+// V_T (the baseline curve's C_T,base/(2λ0) in place of V; V itself when
+// empty, outside the region) and a thrust deficit D [-] subtracted from C_T
+// (the lagged VRS increment).
+struct VortexRingRow {
+    std::optional<double> mass_flow;  // V_T [-]
+    double deficit = 0.0;             // D [-]
+};
+
 // dλ/dt [1/s] in hub axes (D-027):
 //   M̃ dλ_w/dτ + V L̂(X)⁻¹ λ_w = C_w,  τ = Ω t,
 // solved in wind axes w and rotated back. mu, mu_z as RotorLoads; (cos_w,
 // sin_w) is the downwind azimuth ψ_w (cos ψ_w = v_x/|v_xy|, sin ψ_w =
-// −s v_y/|v_xy|; (1, 0) when |v_xy| = 0); omega = Ω [rad/s].
+// −s v_y/|v_xy|; (1, 0) when |v_xy| = 0); omega = Ω [rad/s]. With vrs, the
+// thrust row is M̃₀ dλ0/dτ + V_T (L̂⁻¹ λ_w)₀ = C_T − D (D-049); the moment
+// rows and the wake skew X keep V. Without it the result is unchanged.
 Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double mu_z, double cos_w,
-                       double sin_w, double omega) noexcept;
+                       double sin_w, double omega,
+                       const std::optional<VortexRingRow>& vrs = std::nullopt) noexcept;
 
 }  // namespace eyas

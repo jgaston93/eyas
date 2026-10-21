@@ -1,6 +1,7 @@
 // Real-time timing benchmark (spec §7 rule 5, as replaced by D-005): the
 // UH-60A's step() and advance() time, mean, p99 and max, in a hover trim, a
-// 120 kt trim (both with the whole AFCS on, M8c3) and on the ground. D-005's rule: the worst
+// 120 kt trim, a 10 m/s vertical descent in the vortex-ring state (D-049; all
+// three with the whole AFCS on, M8c3) and on the ground. D-005's rule: the worst
 // advance() of a nominal host frame stays below 50 % of the frame; equivalently, the worst step() ×
 // ceil(dt_host / dt_physics) does. Run the release build on the target (D-005, D-037), idle and
 // with --load.
@@ -22,6 +23,7 @@
 #include <exception>
 #include <fstream>
 #include <iostream>
+#include <numbers>
 #include <stdexcept>
 #include <stop_token>
 #include <string>
@@ -88,17 +90,26 @@ struct Case {
 
 std::vector<Case> make_cases(Model& m) {
     std::vector<Case> cases;
-    for (const double kt : {0.0, 120.0}) {
+    struct Trim {
+        const char* name;
+        double airspeed;           // [m/s]
+        double flight_path_angle;  // [rad]
+    };
+    // The vortex-ring case descends at about 0.87 v_h, mid-region, where the
+    // inflow inverts Johnson's curve every evaluation (D-049).
+    for (const Trim& t : {Trim{"hover", 0.0, 0.0}, Trim{"120kt", 120.0 * units::kKnot, 0.0},
+                          Trim{"vrs", 10.0, -0.5 * std::numbers::pi}}) {
         TrimCondition c;
-        c.airspeed = kt * units::kKnot;
+        c.airspeed = t.airspeed;
+        c.flight_path_angle = t.flight_path_angle;
         // The whole AFCS on, as a pilot flies (SAS, PBA, FPS; M8c3). A
         // config without one ignores the switches.
         c.afcs = {true, true, true, true, false, false};
         const TrimResult r = m.trim(c);
         if (!r.converged) {
-            throw std::runtime_error("trim did not converge at " + std::to_string(kt) + " kt");
+            throw std::runtime_error(std::string("trim did not converge: ") + t.name);
         }
-        cases.push_back({kt == 0.0 ? "hover" : "120kt", r.controls, Environment{},
+        cases.push_back({t.name, r.controls, Environment{},
                          std::vector<double>(m.state().begin(), m.state().end()),
                          m.make_snapshot()});
     }
