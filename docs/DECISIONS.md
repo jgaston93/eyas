@@ -1158,7 +1158,12 @@ Also: accel_b against a central difference of the flown velocity (< 5e-3 m/s²);
   - Scaling Pitt–Peters' L matrix instead would give λ₀ = √κ_g λ_h in hover.
 - *What follows from it:* GenHel's wash maps read the rotor's λ₀ (`rotor_wash`), so the wash on the fuselage and empennage, and with it the download, falls near the ground as it does in GenHel. The tail rotor has no ground effect, as in GenHel.
 - *Config:* `ground_effect: none | genhel | cheeseman_bennett` on every blade-element rotor, **required** (D-021). The UH-60A configs set `genhel` (`tools/build_uh60a_config.py`). There are no new states, and the §6 interfaces don't change: the rotor reads `SimContext::ground_z_n` and its hub position. With no ground (NaN), or `none`, the rates are bit-identical to before.
-- *Interface addition (public, approved by the spec owner 2026-10-21):* `TrimCondition::ground_height` [m MSL], NaN by default (no ground, as before). It lets a hover in ground effect be trimmed, for the validation and as a pilot-station start point. `Model::trim` keeps the ground in the environment it installs. A trim that leaves a wheel loaded reports no convergence and leaves the model unchanged.
+- *Interface addition (public, approved by the spec owner 2026-10-21):* `TrimCondition::ground_height` [m MSL], NaN by default (no ground, as before). It lets a hover in ground effect be trimmed, for the validation and as a pilot-station start point. `Model::trim` keeps the ground in the environment it installs.
+  - The ground height must be finite or NaN.
+  - With a ground, the flight must be at constant height (no climb, descent or vertical wind), since the held body can't make ground effect steady otherwise.
+  - `solve_trim` reports no convergence if any wheel carries load at any step of the held revolution. Every trim path gets this, and `Model::trim` then leaves the model unchanged.
+  - `linearize` refuses a ground without the height coordinate. Near the ground the inflow responds to h about as strongly as to w (∂λ̇₀/∂h = 0.050 against ∂λ̇₀/∂w = 0.053 at a 2.5 ft wheel height). The condensed 6-DOF model drops h, so near the ground heave belongs in the retained model.
+  - The pilot station's airborne starts and `eyas_drive` trim with the ground they fly over. Before, a 3 m hover start trimmed with no ground floated to 63 ft in 20 s hands-off; it now holds its height.
 
 **Verification** (`tests/unit/test_ground_effect.cpp`; VALIDATION.md M9):
 - *Layer 1:* `FactorsMatchTheSourceTranscription`: both factors against an independent transcription (`tests/support/ground_effect_reference.hpp`) on a grid of height, μ and λ₀, to 1e-14.
@@ -1169,7 +1174,7 @@ Also: accel_b against a central difference of the flown velocity (< 5e-3 m/s²);
   - `HoverThrustRisesNearTheGround`;
   - `NoGroundChangesNothing`: bit-identical with no ground or `none`;
   - `AllocatesNothing`.
-- *The UH-60A:* `Uh60aGroundEffect.TrimsInGroundEffectAndFliesOn` and `TrimOnTheWheelsIsRejected` (slow tests). All 450 earlier tests pass unchanged, the M7 regression among them: none has a ground plane under a flying rotor, and with none the rates are bit-identical.
+- *The UH-60A:* `Uh60aGroundEffect.TrimsInGroundEffectAndFliesOn`, `TrimOnTheWheelsIsRejected` (the model and its outputs unchanged), `GrazingWheelIsRejectedOverTheRevolution` (a tail wheel touching only during the revolution, 4.8 N, rejected; it fails with the check removed) and `RejectsGroundConditionsItCannotHold` (slow tests). All 450 earlier tests pass unchanged, the M7 regression among them: none has a ground plane under a flying rotor, and with none the rates are bit-identical.
 - *Real-time:* `eyas_bench` gained a hover in ground effect: 14.0 µs per step, as out of ground effect; worst `advance()` 642 µs against 8333 µs.
 - *Against flight test* (gate chosen by the spec owner, 2026-10-21: `Uh60aGroundEffect.HoverPowerRatioAgainstUsaaefa`, `genhel` within 0.05 of USAAEFA at 0, 6000 and 12 000 ft, which holds the known shortfall from growing; fixing the shortfall is issue #61): the UH-60A's hover power ratio P(2 ft)/P(100 ft) wheel height against USAAEFA's fits (ADA180181 App. E Figs. 2 and 3), C_W 0.0059–0.0085.
   - USAAEFA: 0.77–0.79.

@@ -164,21 +164,14 @@ TrimResult Model::trim_from(const TrimCondition& condition, const TrimResult* st
     }
     // solve_trim checks the state is finite, so restore() accepts it; if it
     // ever doesn't, the model is unchanged and the trim must not claim success.
-    const Snapshot before = make_snapshot();
     if (!impl_->executive.restore(x, 0, 0)) {
         r.converged = false;
         return r;
     }
     impl_->controls = r.controls;
-    impl_->env = trim_environment(condition);  // as trimmed
+    impl_->env = trim_environment(condition);  // as trimmed, ground included (D-050)
     outputs_.last_advance = AdvanceStatus{};
     update_outputs();
-    // A trim near the ground is a hover or flight in ground effect, not one
-    // resting on the gear (D-050): with a wheel loaded, undo it.
-    if (outputs_.weight_on_wheels) {
-        (void)restore(before);
-        r.converged = false;
-    }
     return r;
 }
 

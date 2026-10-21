@@ -17,6 +17,8 @@
 
 #include "airframe/landing_gear.hpp"
 #include "analysis/held_orbit.hpp"
+#include "analysis/linearize.hpp"
+#include "analysis/trim.hpp"
 #include "eyas/model.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/ground_effect.hpp"
@@ -25,6 +27,7 @@
 #include "support/m3_fixtures.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "support/m9_ground_effect.hpp"
+#include "util/error.hpp"
 #include "util/units.hpp"
 
 namespace eyas {
@@ -303,15 +306,71 @@ TEST(Uh60aGroundEffect, TrimsInGroundEffectAndFliesOn) {
 }
 
 // A ground plane above the wheels: the trim would rest on the gear, so it
-// reports no convergence and leaves the model as it was (D-050).
+// reports no convergence and leaves the model as it was, its outputs
+// included (D-050).
 TEST(Uh60aGroundEffect, TrimOnTheWheelsIsRejected) {
     Model m = Model::from_file(test::uh60a_config_path());
+    Environment env;
+    env.ground_height = 0.0;
+    BodyState s;
+    s.pos_n = Vec3(0.0, 0.0, -2.2);
+    ASSERT_TRUE(m.reset(s));
+    for (int k = 0; k < 10; ++k) {
+        (void)m.advance(Controls{}, env, 16'666'667);
+    }
     const std::vector<double> x0(m.state().begin(), m.state().end());
+    const AircraftState out0 = m.outputs();
     TrimCondition c;
     c.ground_height = left_wheel_bottom() + 0.1;
     const TrimResult r = m.trim(c);
     EXPECT_FALSE(r.converged);
     EXPECT_EQ(std::vector<double>(m.state().begin(), m.state().end()), x0);
+    EXPECT_EQ(m.outputs().sim_time_ns, out0.sim_time_ns);
+    EXPECT_EQ(m.outputs().last_advance.substeps, out0.last_advance.substeps);
+}
+
+// A wheel that only grazes the ground: hovering at USAAEFA's 2 ft wheel
+// height at sea level, the tail wheel (lowest at the 4.4° nose-up hover)
+// clears it by 0.04 in at the start and touches during the revolution
+// (4.8 N). The trim's residual converges there; solve_trim's check over the
+// whole revolution must still reject it, for every caller (D-050).
+TEST(Uh60aGroundEffect, GrazingWheelIsRejectedOverTheRevolution) {
+    const test::Uh60aHarness ac = test::m9::aircraft("genhel");
+    const test::m9::Point p = test::m9::trim_near_ground(ac, 0.0, 0.0, 2.0 * units::kFoot, nullptr);
+    EXPECT_FALSE(p.converged);
+    const test::m9::Point clear =
+        test::m9::trim_near_ground(ac, 0.0, 0.0, 2.5 * units::kFoot, nullptr);
+    EXPECT_TRUE(clear.converged);
+    EXPECT_EQ(clear.gear_load, 0.0);
+}
+
+// Inputs the trim refuses (D-050): an infinite ground height, and flight
+// that changes height near a ground (climb, descent or vertical wind),
+// which the held body can't make steady. Linearizing near a ground without
+// the height coordinate is refused too.
+TEST(Uh60aGroundEffect, RejectsGroundConditionsItCannotHold) {
+    const test::Uh60aHarness ac;
+    const Executive& ex = ac.executive();
+    std::vector<double> x;
+    TrimCondition c;
+    c.ground_height = std::numeric_limits<double>::infinity();
+    EXPECT_THROW((void)solve_trim(ex, c, nullptr, x), InitError);
+    c.ground_height = -std::numeric_limits<double>::infinity();
+    EXPECT_THROW((void)solve_trim(ex, c, nullptr, x), InitError);
+    c.ground_height = left_wheel_bottom() - 3.0;
+    c.airspeed = 10.0;
+    c.flight_path_angle = -0.1;
+    EXPECT_THROW((void)solve_trim(ex, c, nullptr, x), InitError);
+    c.flight_path_angle = 0.0;
+    c.wind_n = Vec3(0.0, 0.0, 0.5);
+    EXPECT_THROW((void)solve_trim(ex, c, nullptr, x), InitError);
+    // Level flight over the ground, and a descent with no ground, are fine.
+    c.wind_n = Vec3::Zero();
+    const TrimResult r = solve_trim(ex, c, nullptr, x);
+    ASSERT_TRUE(r.converged);
+    LinearizeOptions o;
+    o.height = false;
+    EXPECT_THROW((void)linearize(ex, c, r, o), InitError);
 }
 
 // The gate against flight test (D-050; spec owner's choice, 2026-10-21): the

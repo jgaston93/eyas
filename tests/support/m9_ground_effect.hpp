@@ -100,16 +100,19 @@ inline Point trim_near_ground(const Uh60aHarness& ac, double airspeed, double al
     double pitch = start != nullptr ? start->pitch : 0.0;
     double roll = start != nullptr ? start->roll : 0.0;
     std::vector<double> x;
+    // Settled: the trimmed attitude puts the wheel within 1 mm of `wheel`
+    // above the ground the trim was solved with. Unsettled after six trims,
+    // the point isn't converged.
+    bool settled = false;
     for (int it = 0; it < 6; ++it) {
         const Quat q = quaternion(EulerAngles{roll, pitch, 0.0});
         const double wheel_bottom = altitude - (q * left.axle_b).z() - left.tire.radius;
         const double ground = std::isnan(wheel) ? kNaN : wheel_bottom - wheel;
-        const bool settled =
-            it > 0 && (std::isnan(wheel) || std::abs(ground - c.ground_height) < 1e-3);
-        c.ground_height = ground;
-        if (settled) {
+        if (it > 0 && (std::isnan(wheel) || std::abs(ground - c.ground_height) < 1e-3)) {
+            settled = true;
             break;
         }
+        c.ground_height = ground;
         p.trim = solve_trim(ex, c, it > 0 ? &p.trim : start, x);
         if (!p.trim.converged) {
             return p;
@@ -117,7 +120,7 @@ inline Point trim_near_ground(const Uh60aHarness& ac, double airspeed, double al
         pitch = p.trim.pitch;
         roll = p.trim.roll;
     }
-    p.converged = p.trim.converged;
+    p.converged = settled && p.trim.converged;
     revolution(ac, x, p.trim.controls, trim_environment(c), p);
     const Quat q = quaternion(EulerAngles{roll, pitch, 0.0});
     const double hub = altitude - (q * mr.config().hub_position_b).z();

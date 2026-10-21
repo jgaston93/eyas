@@ -142,13 +142,14 @@ int run(const Options& opt) {
     eyas::TrimCondition condition;
     condition.airspeed = opt.trim_speed_kt * kKnot;
     condition.altitude = opt.altitude;
-    condition.afcs = afcs;  // the trimmed controls carry them through the run
+    condition.ground_height = opt.ground;  // trimmed in ground effect, as flown (D-050)
+    condition.afcs = afcs;                 // the trimmed controls carry them through the run
     const eyas::TrimResult trim = model.trim(condition);
     if (!trim.converged) {
         std::cerr << "error: trim did not converge\n";
         return 3;
     }
-    // Fly on in the trim's environment (ISA, no wind), with --ground.
+    // Fly on in the trim's environment (ISA, no wind, --ground).
     const eyas::Environment env{condition.isa_delta_T, condition.wind_n, opt.ground};
 
     std::ofstream out(opt.out);

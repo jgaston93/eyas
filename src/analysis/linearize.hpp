@@ -93,7 +93,7 @@ private:
 struct LinearizeOptions {
     int azimuths = 64;           // J samples over the revolution
     int steps_per_period = 256;  // RK4 steps of the held orbit (J must divide it)
-    bool height = true;          // h in the retained model
+    bool height = true;          // h in the retained model; required with a ground (D-050)
     // Central-difference half-steps, by coordinate kind (the step-size study,
     // VALIDATION.md M7b).
     double step_velocity = 1e-4;   // [m/s]
@@ -128,7 +128,10 @@ struct LinearModel {
 std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const LinearizeOptions& o);
 
 // Linearizes `ex` about trim `r` for `c` along the held orbit (D-035).
-// Throws InitError if the trim doesn't fit `ex`.
+// Throws InitError if the trim doesn't fit `ex`, or if `c` has a ground and
+// options.height is false: near the ground the rotor's ground effect makes
+// the height a coordinate (its inflow responds to h about as strongly as to
+// w at 0.5R; D-050).
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& options = {});
 
@@ -148,6 +151,8 @@ std::vector<Eigen::VectorXd> linear_response(const LinearModel& m, const Eigen::
 // states are u, v, w, p, q, r, φ, θ, ψ_h; the moment rows are Padfield's
 // primed derivatives (Eqs. 4.47–4.48), and gravity and the kinematic terms
 // are included, as in Padfield's App. 4B charts (p. 187).
+// Removing h drops the ground-effect "spring" near the ground (D-050): for
+// heave there, use the retained model.
 // `retained` (indices into m.states, none of them body states) are kept as
 // dynamic states after the body states, in that order, and never removed:
 // for slow non-body states that quasi-static elimination would misstate, e.g.

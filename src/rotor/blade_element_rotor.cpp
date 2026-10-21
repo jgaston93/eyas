@@ -4,6 +4,7 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -191,14 +192,18 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     k.sin_w = v_xy > 0.0 ? -s_ * k.v_hub_h.y() / v_xy : 0.0;
     k.airspeed = v_air_b.norm();
     // Hub height above the ground plane through z = ground_z_n (NED), along
-    // the vertical, as GenHel's Z (CR-166309 p. 5.8-3; D-050).
-    const double hub_z_n = b.pos_n.z() + (b.q_nb * config_.hub_position_b).z();
-    k.height = (ctx.ground_z_n - hub_z_n) / config_.radius;
+    // the vertical, as GenHel's Z (CR-166309 p. 5.8-3; D-050); NaN with no
+    // ground or no ground-effect model.
+    k.height = std::numeric_limits<double>::quiet_NaN();
+    if (config_.ground_effect != GroundEffectModel::none && !std::isnan(ctx.ground_z_n)) {
+        const double hub_z_n = b.pos_n.z() + (b.q_nb * config_.hub_position_b).z();
+        k.height = (ctx.ground_z_n - hub_z_n) / config_.radius;
+    }
     return k;
 }
 
 double BladeElementRotor::ground_factor(const Kinematics& k, double lambda0) const noexcept {
-    if (config_.ground_effect == GroundEffectModel::none) {
+    if (std::isnan(k.height)) {  // no ground, or no model
         return 1.0;
     }
     return ground_effect_factor(config_.ground_effect, k.height,

@@ -43,17 +43,20 @@ Station::Station(const StationOptions& options)
         eyas::TrimCondition c;
         c.airspeed = kt * kKnot;
         c.altitude = origin_.altitude + options.hover_height;
+        c.ground_height = env_.ground_height;  // trimmed in ground effect (D-050)
         c.afcs = options.afcs;
         const eyas::TrimResult r = model_.trim(c);
         if (!r.converged) {
             throw std::runtime_error("trim at " + std::to_string(static_cast<int>(kt)) +
-                                     " kt did not converge");
+                                     " kt did not converge (at --hover-height " +
+                                     std::to_string(options.hover_height) +
+                                     " m a wheel may touch the ground)");
         }
         StartPoint p;
         p.name = kt == 0.0 ? "hover" : std::to_string(static_cast<int>(kt));
         p.snap = model_.make_snapshot();
-        // The trim knows no ground (its outputs have none): one frame over
-        // the real ground shows whether the gear clears it at this height.
+        // The trim fails if a wheel touches; one frame over the ground also
+        // checks the CG isn't below it.
         (void)model_.advance(r.controls, env_, frame_ns_);
         if (model_.outputs().weight_on_wheels || model_.outputs().altitude < env_.ground_height) {
             throw std::runtime_error("--hover-height " + std::to_string(options.hover_height) +

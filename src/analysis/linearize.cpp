@@ -300,6 +300,11 @@ std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const Linea
 
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& o) {
+    if (!o.height && !std::isnan(c.ground_height)) {
+        throw InitError(
+            "linearize: with a ground the height is a coordinate (ground effect, D-050); set "
+            "options.height");
+    }
     const ReducedCoordinates rc(ex, o.height);
     const HeldOrbit held = held_orbit(ex, c, r, o.azimuths, o.steps_per_period);
     const std::vector<std::vector<double>>& orbit = held.states;

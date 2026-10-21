@@ -25,8 +25,10 @@ struct TrimCondition {
     // TrimResult::controls (D-045).
     AfcsSwitches afcs;
     // [m] MSL height of the ground plane, as Environment::ground_height; NaN:
-    // no ground. Near it the main rotor is in ground effect (D-050). A trim
-    // that leaves a wheel on the ground doesn't converge.
+    // no ground. Near it the main rotor is in ground effect (D-050). Finite
+    // or NaN; with a ground the flight must be at constant height (no climb,
+    // descent or vertical wind), and a trim that leaves a wheel loaded at any
+    // point of the revolution doesn't converge.
     double ground_height = std::numeric_limits<double>::quiet_NaN();
 };
 

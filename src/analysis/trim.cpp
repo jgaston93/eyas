@@ -9,6 +9,7 @@
 
 #include <Eigen/Dense>
 
+#include "airframe/landing_gear.hpp"
 #include "analysis/held_orbit.hpp"
 #include "core/attitude.hpp"
 #include "core/rigid_body.hpp"
@@ -76,6 +77,18 @@ void check(const TrimCondition& c) {
     }
     if (!std::isfinite(c.heading) || !std::isfinite(c.altitude) || !c.wind_n.allFinite()) {
         throw InitError("trim: heading, altitude and wind must be finite");
+    }
+    // D-050: NaN is no ground. With a ground the rotor's ground effect
+    // depends on the height, which the held body keeps constant, so only
+    // flight at constant height is a steady state near it.
+    if (std::isinf(c.ground_height)) {
+        throw InitError("trim: ground height must be finite, or NaN for no ground");
+    }
+    if (!std::isnan(c.ground_height) &&
+        std::abs(c.airspeed * std::sin(c.flight_path_angle) - c.wind_n.z()) > 1e-9) {
+        throw InitError(
+            "trim: with a ground the flight must be at constant height (no climb, descent or "
+            "vertical wind): ground effect changes with height");
     }
     if (!isa_delta_T_valid(c.isa_delta_T)) {
         throw InitError("trim: ISA temperature offset is invalid (D-019)");
@@ -381,6 +394,40 @@ bool converged(const Norms& m, const TrimOptions& o) {
     return m.force < o.force_tol && m.moment < o.moment_tol && m.periodic < o.periodic_tol;
 }
 
+// True if any landing-gear wheel carries a normal load at any of the held
+// revolution's integration steps (the trim's own orbit and step).
+bool gear_loaded(const Executive& ex, const TrimCondition& c, const TrimResult& r,
+                 const TrimOptions& o) {
+    std::vector<std::size_t> gears;
+    for (std::size_t i = 0; i < ex.num_components(); ++i) {
+        if (dynamic_cast<const LandingGear*>(&ex.component(i)) != nullptr) {
+            gears.push_back(i);
+        }
+    }
+    if (gears.empty()) {
+        return false;
+    }
+    const HeldOrbit orbit = held_orbit(ex, c, r, o.steps_per_period, o.steps_per_period);
+    const Environment env = trim_environment(c);
+    const double T = trim_period(ex);
+    for (std::size_t j = 0; j < orbit.states.size(); ++j) {
+        const std::vector<double>& x = orbit.states[j];
+        const double t = T * static_cast<double>(j) / static_cast<double>(orbit.states.size());
+        const SimContext ctx = ex.context(t, x, r.controls, env);
+        for (const std::size_t i : gears) {
+            const auto& gear = static_cast<const LandingGear&>(ex.component(i));
+            const std::span<const double> xs =
+                std::span<const double>(x).subspan(ex.component_offset(i), ex.component_size(i));
+            for (std::size_t k = 0; k < gear.config().gears.size(); ++k) {
+                if (gear.gear_state(ctx, xs, k).normal_load > 0.0) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 double trim_period(const Executive& ex) {
@@ -576,6 +623,12 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
     result.moment_residual = m.moment * p.weight() * p.length();
     result.periodic_residual = m.periodic;
     result.held_drift_rate = ok ? p.held_drift_rate() : nan;
+    // A trim near the ground is flight in ground effect, not rest on the
+    // gear (D-050): with a wheel loaded anywhere on the held revolution it
+    // doesn't converge.
+    if (result.converged && std::isfinite(c.ground_height) && gear_loaded(ex, c, result, o)) {
+        result.converged = false;
+    }
     return result;
 }
 

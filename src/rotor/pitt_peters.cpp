@@ -43,15 +43,12 @@ Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double 
     const double c = L(2, 0);
     const double d = L(2, 2);
     const double det = a * d - b * c;
-    // The thrust row at the out-of-ground-effect inflow λ0/κ_g (D-050).
+    // The thrust row at the out-of-ground-effect inflow λ0/κ_g (D-050). Its
+    // mass flow is V at λ0/κ_g: at κ_g = 1 the same operations as w.V, so the
+    // same bits.
     const double l0 = lw.x() / ground;
-    double v_thrust = w.V;
-    if (vrs && vrs->mass_flow) {
-        v_thrust = *vrs->mass_flow;
-    } else if (ground != 1.0) {
-        const double lt = l0 - mu_z;
-        v_thrust = std::sqrt(mu * mu + lt * lt);
-    }
+    const double lt = l0 - mu_z;
+    const double v_thrust = vrs && vrs->mass_flow ? *vrs->mass_flow : std::sqrt(mu * mu + lt * lt);
     const double r0 = v_thrust * (d * l0 - b * lw.z()) / det;
     const double rc = w.V * (-c * lw.x() + a * lw.z()) / det;
     const double rs = w.V * lw.y() / L(1, 1);

@@ -285,7 +285,7 @@ private:
         double sin_w;     //   sin ψ_w = −s v_y/|v_xy|; (1, 0) at |v_xy| = 0
         double airspeed;  // [m/s] CG true airspeed, for the elastic-twist gain (D-038)
         // Hub height above the ground plane / R [-], vertically (D-050); NaN
-        // with no ground.
+        // with no ground or no ground-effect model.
         double height;
     };
 
