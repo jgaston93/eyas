@@ -55,6 +55,7 @@ inline constexpr double kVortexRingFadeWidth = 0.05;
 struct MomentumRoot {
     double v = 0.0;
     double dv_dvz = 0.0;
+    bool converged = true;  // every momentum root it uses met its tolerance
 };
 // The largest root: the normal working branch, continued into descent.
 MomentumRoot momentum_normal(double vx, double vz) noexcept;
@@ -76,16 +77,20 @@ MomentumRoot johnson_inflow(double vx, double vz, VrsCurve curve) noexcept;
 // active = false and both thrusts are the momentum value 2λ0√(μ² + (λ0 −
 // μ_z)²), computed exactly as the inflow solves compute it. Negative λ0
 // (negative thrust) mirrors the rotor: λ0 → −λ0, μ_z → −μ_z, C_T → −C_T.
+//
+// With baseline = false only the VRS curve is solved (the uniform inflow
+// solve needs no more); ct_base is then NaN wherever active.
 struct VortexRingThrust {
     double ct_vrs = 0.0;    // C_T on the VRS curve [-]
     double ct_base = 0.0;   // C_T on the baseline curve [-]
     double lambda_h = 0.0;  // √(|ct_vrs|/2) [-]
     bool active = false;    // false: momentum theory, nothing solved
-    bool converged = true;  // both solves met their tolerance
-    int iterations = 0;     // curve evaluations used, both solves
+    bool converged = true;  // every solve met its tolerance
+    int iterations = 0;     // curve evaluations used, all solves
 };
 // lambda0 = λ0, mu = μ ≥ 0, mu_z = μ_z (positive down), all / ΩR.
-VortexRingThrust vortex_ring_thrust(double lambda0, double mu, double mu_z) noexcept;
+VortexRingThrust vortex_ring_thrust(double lambda0, double mu, double mu_z,
+                                    bool baseline = true) noexcept;
 
 // The VRS lag (D-049): the increment builds up and decays with time constant
 // τ = τ_rev 2π/Ω, τ_rev = 0.7/λ_h (Johnson TP-2005 p. 16, from the D6075

@@ -23,14 +23,23 @@ double momentum_df(double v, double vx, double vz) noexcept {
     return 2.0 * v * (2.0 * v * v + 3.0 * vz * v + vz * vz + vx * vx);
 }
 
+MomentumRoot with_slope(double v, double vx, double vz) noexcept {
+    // dv/dvz = −F_vz / F_v = −v(vz + v) / (vx² + (vz + v)² + v(vz + v)).
+    const double u = vz + v;
+    return {v, -v * u / (vx * vx + u * u + v * u)};
+}
+
 // The root of F on [lo, hi], where F rises from ≤ 0 to ≥ 0: Newton steps,
-// falling back to bisection whenever a step leaves the bracket.
-double momentum_root_in(double lo, double hi, double vx, double vz) noexcept {
+// falling back to bisection whenever a step leaves the bracket. The bracket
+// shrinks every step, so the limit is never reached in practice; converged
+// reports it if it is.
+constexpr int kMomentumMaxIterations = 200;
+MomentumRoot momentum_root_in(double lo, double hi, double vx, double vz) noexcept {
     double x = 0.5 * (lo + hi);
-    for (int i = 0; i < 200; ++i) {
+    for (int i = 0; i < kMomentumMaxIterations; ++i) {
         const double f = momentum_f(x, vx, vz);
         if (f == 0.0) {
-            return x;
+            return with_slope(x, vx, vz);
         }
         if (f < 0.0) {
             lo = x;
@@ -43,17 +52,13 @@ double momentum_root_in(double lo, double hi, double vx, double vz) noexcept {
             next = 0.5 * (lo + hi);
         }
         if (std::abs(next - x) <= 4.0 * std::numeric_limits<double>::epsilon() * next) {
-            return next;
+            return with_slope(next, vx, vz);
         }
         x = next;
     }
-    return x;
-}
-
-MomentumRoot with_slope(double v, double vx, double vz) noexcept {
-    // dv/dvz = −F_vz / F_v = −v(vz + v) / (vx² + (vz + v)² + v(vz + v)).
-    const double u = vz + v;
-    return {v, -v * u / (vx * vx + u * u + v * u)};
+    MomentumRoot r = with_slope(x, vx, vz);
+    r.converged = false;
+    return r;
 }
 
 // The roots of F: F(0) = −1, and F turns at v = 0 and at the roots c1 ≤ c2
@@ -64,7 +69,7 @@ MomentumRoot momentum_root(double vx, double vz, bool largest) noexcept {
     const double top = std::max(1.0, 1.0 - vz);
     const double disc = vz * vz - 8.0 * vx * vx;
     if (vz >= 0.0 || disc <= 0.0) {
-        return with_slope(momentum_root_in(0.0, top, vx, vz), vx, vz);
+        return momentum_root_in(0.0, top, vx, vz);
     }
     const double s = std::sqrt(disc);
     const double c1 = (-3.0 * vz - s) / 4.0;
@@ -72,8 +77,7 @@ MomentumRoot momentum_root(double vx, double vz, bool largest) noexcept {
     const bool low_root = momentum_f(c1, vx, vz) >= 0.0;   // a root in (0, c1]
     const bool high_root = momentum_f(c2, vx, vz) <= 0.0;  // a root in [c2, top)
     const bool high = largest ? high_root : !low_root;
-    const double v = high ? momentum_root_in(c2, top, vx, vz) : momentum_root_in(0.0, c1, vx, vz);
-    return with_slope(v, vx, vz);
+    return high ? momentum_root_in(c2, top, vx, vz) : momentum_root_in(0.0, c1, vx, vz);
 }
 
 // Cubic p(z) = p0 + p1 z + p2 z² + p3 z³ and its slope.
@@ -117,14 +121,15 @@ MomentumRoot baseline(double vx, double vz) noexcept {
         const Cubic c = solve_cubic(A, Eigen::Vector4d(ra.v, ra.dv_dvz, rb.v, 0.0));
         // Slope b + 2c vz + 3d vz². MISPRINT CORRECTED (DATA_GAPS.md): Table 3
         // step 3.2.4 prints b + 2c vz + 2c vz².
-        const MomentumRoot cubic{c.value(vz), c.slope(vz)};
+        const MomentumRoot cubic{c.value(vz), c.slope(vz), ra.converged && rb.converged};
         // Eyas's fade into momentum theory below v_xC (D-049); one root there.
         const double w = smoothstep((P::vx_c - vx) / kVortexRingFadeWidth);
         if (w == 1.0) {
             return cubic;
         }
         const MomentumRoot m = momentum_normal(vx, vz);
-        return {m.v + w * (cubic.v - m.v), m.dv_dvz + w * (cubic.dv_dvz - m.dv_dvz)};
+        return {m.v + w * (cubic.v - m.v), m.dv_dvz + w * (cubic.dv_dvz - m.dv_dvz),
+                m.converged && cubic.converged};
     }
     // Step 2.3: momentum theory, on the branch each end point joins.
     return vz >= a ? momentum_normal(vx, vz) : momentum_windmill(vx, vz);
@@ -161,8 +166,10 @@ MomentumRoot vrs_increment(double vx, double vz) noexcept {
     const double amp = std::sqrt(1.0 - q3 * q3);
     const double dn = (P::total_n - (P::vz_n + hover_normal(P::vz_n))) * amp;
     const double dx = (P::total_x - (P::vz_x + hover_normal(P::vz_x))) * amp;
-    const double sn = -(1.0 + baseline(vx, n).dv_dvz);
-    const double sx = -(1.0 + baseline(vx, x).dv_dvz);
+    const MomentumRoot bn = baseline(vx, n);
+    const MomentumRoot bx = baseline(vx, x);
+    const double sn = -(1.0 + bn.dv_dvz);
+    const double sx = -(1.0 + bx.dv_dvz);
     Eigen::Matrix4d A;
     Eigen::Vector4d rhs;
     if (vz >= n) {
@@ -183,90 +190,26 @@ MomentumRoot vrs_increment(double vx, double vz) noexcept {
     const Cubic c = solve_cubic(A, rhs);
     // Eyas's fade to zero below v_xM (D-049).
     const double w = smoothstep((P::vx_m - vx) / kVortexRingFadeWidth);
-    return {w * c.value(vz), w * c.slope(vz)};
-}
-
-// Brent's method (Brent, "Algorithms for Minimization without Derivatives",
-// 1973, Ch. 4) on f over a sign-changing bracket [a, b]; as in the uniform
-// inflow solve (D-024). Counts evaluations in `count`.
-template <typename F>
-double brent(F&& f, double a, double fa, double b, double fb, double tol, int& count,
-             bool& converged) noexcept {
-    double c = a;
-    double fc = fa;
-    double d = b - a;
-    double e = d;
-    converged = false;
-    while (count < kVortexRingMaxIterations) {
-        if ((fb > 0.0) == (fc > 0.0)) {
-            c = a;
-            fc = fa;
-            d = b - a;
-            e = d;
-        }
-        if (std::abs(fc) < std::abs(fb)) {
-            a = b;
-            b = c;
-            c = a;
-            fa = fb;
-            fb = fc;
-            fc = fa;
-        }
-        const double t = 2.0 * std::numeric_limits<double>::epsilon() * std::abs(b) + 0.5 * tol;
-        const double xm = 0.5 * (c - b);
-        if (std::abs(xm) <= t || fb == 0.0) {
-            converged = true;
-            return b;
-        }
-        if (std::abs(e) >= t && std::abs(fa) > std::abs(fb)) {
-            const double sr = fb / fa;
-            double p = 0.0;
-            double qq = 0.0;
-            if (a == c) {
-                p = 2.0 * xm * sr;
-                qq = 1.0 - sr;
-            } else {
-                const double qa = fa / fc;
-                const double r = fb / fc;
-                p = sr * (2.0 * xm * qa * (qa - r) - (b - a) * (r - 1.0));
-                qq = (qa - 1.0) * (r - 1.0) * (sr - 1.0);
-            }
-            if (p > 0.0) {
-                qq = -qq;
-            }
-            p = std::abs(p);
-            if (2.0 * p < std::min(3.0 * xm * qq - std::abs(t * qq), std::abs(e * qq))) {
-                e = d;
-                d = p / qq;
-            } else {
-                d = xm;
-                e = d;
-            }
-        } else {
-            d = xm;
-            e = d;
-        }
-        a = b;
-        fa = fb;
-        b += std::abs(d) > t ? d : std::copysign(t, xm);
-        fb = f(b);
-        ++count;
-    }
-    return b;
+    return {w * c.value(vz), w * c.slope(vz), bn.converged && bx.converged};
 }
 
 // λ_h with λ0 = λ_h f(μ/λ_h, vz/λ_h) on one curve, λ0 > 0, from the start
-// λ_h = start > 0: bracket by doubling or halving, then Brent.
+// λ_h = start > 0: bracket by doubling or halving, then Brent's method
+// (util/math.hpp). converged is false if the iteration limit is hit or a
+// momentum root in a curve evaluation did not converge.
 double solve_lambda_h(double lambda0, double mu, double vz, double start, VrsCurve curve,
                       int& count, bool& converged) noexcept {
+    bool roots_converged = true;
     const auto h = [&](double lh) {
-        return lh * johnson_inflow(mu / lh, vz / lh, curve).v - lambda0;
+        const MomentumRoot r = johnson_inflow(mu / lh, vz / lh, curve);
+        roots_converged = roots_converged && r.converged;
+        ++count;
+        return lh * r.v - lambda0;
     };
     double a = start;
     double fa = h(a);
-    ++count;
     if (fa == 0.0) {
-        converged = true;
+        converged = roots_converged;
         return a;
     }
     // λ_h f → 0 as λ_h → 0 and → λ_h as λ_h → ∞ (hover), and rises
@@ -274,23 +217,23 @@ double solve_lambda_h(double lambda0, double mu, double vz, double start, VrsCur
     const double factor = fa < 0.0 ? 2.0 : 0.5;
     double b = a * factor;
     double fb = h(b);
-    ++count;
     while ((fb < 0.0) == (fa < 0.0) && fb != 0.0 && count < kVortexRingMaxIterations) {
         a = b;
         fa = fb;
         b *= factor;
         fb = h(b);
-        ++count;
     }
     if (fb == 0.0) {
-        converged = true;
+        converged = roots_converged;
         return b;
     }
     if ((fb < 0.0) == (fa < 0.0)) {
         converged = false;
         return b;
     }
-    return brent(h, a, fa, b, fb, 1e-16, count, converged);
+    const double lh = brent(h, a, fa, b, fb, 1e-16, kVortexRingMaxIterations, count, converged);
+    converged = converged && roots_converged;
+    return lh;
 }
 
 }  // namespace
@@ -310,10 +253,11 @@ MomentumRoot johnson_inflow(double vx, double vz, VrsCurve curve) noexcept {
     }
     const MomentumRoot inc = vrs_increment(vx, vz);
     // Δ is an increment of (vz + v), so of v at fixed vz.
-    return {base.v + inc.v, base.dv_dvz + inc.dv_dvz};
+    return {base.v + inc.v, base.dv_dvz + inc.dv_dvz, base.converged && inc.converged};
 }
 
-VortexRingThrust vortex_ring_thrust(double lambda0, double mu, double mu_z) noexcept {
+VortexRingThrust vortex_ring_thrust(double lambda0, double mu, double mu_z,
+                                    bool baseline) noexcept {
     VortexRingThrust out;
     // Momentum theory, as the inflow solves write it (D-024, D-027).
     const double d = lambda0 - mu_z;
@@ -340,17 +284,22 @@ VortexRingThrust vortex_ring_thrust(double lambda0, double mu, double mu_z) noex
     const double start = lh_mom > 0.0 ? lh_mom : l0;
     out.active = true;
     bool conv_vrs = false;
-    bool conv_base = false;
     const double lh_vrs =
         solve_lambda_h(l0, mu, vz, start, VrsCurve::vortex_ring, out.iterations, conv_vrs);
+    out.converged = conv_vrs;
+    out.ct_vrs = sign * 2.0 * lh_vrs * lh_vrs;
+    out.lambda_h = lh_vrs;
+    if (!baseline) {
+        out.ct_base = std::numeric_limits<double>::quiet_NaN();
+        return out;
+    }
+    bool conv_base = false;
     int base_count = 0;
     const double lh_base =
         solve_lambda_h(l0, mu, vz, start, VrsCurve::baseline, base_count, conv_base);
     out.iterations += base_count;
     out.converged = conv_vrs && conv_base;
-    out.ct_vrs = sign * 2.0 * lh_vrs * lh_vrs;
     out.ct_base = sign * 2.0 * lh_base * lh_base;
-    out.lambda_h = lh_vrs;
     return out;
 }
 

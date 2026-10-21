@@ -1,9 +1,9 @@
 #include "rotor/blade_element_rotor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
-#include <limits>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -18,6 +18,7 @@
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 
 namespace eyas {
 namespace {
@@ -406,7 +407,7 @@ RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
         l = pass(k, LinearInflow{lambda, 0.0, 0.0}, x);
         ++passes;
         if (vrs) {
-            const VortexRingThrust t = vortex_ring_thrust(lambda, mu, mu_z);
+            const VortexRingThrust t = vortex_ring_thrust(lambda, mu, mu_z, false);
             vrs_converged = vrs_converged && t.converged;
             return t.ct_vrs - l.ct;
         }
@@ -439,75 +440,14 @@ RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
         }
         converged = fb == 0.0;
         if (!converged && (fa > 0.0) != (fb > 0.0)) {
-            // Brent's method (Brent, "Algorithms for Minimization without
-            // Derivatives", 1973, Ch. 4): inverse quadratic interpolation or
-            // secant steps, falling back to bisection, always inside the
-            // bracket [b, c]. Superlinear, and never slower than bisection.
-            RotorLoads lc = la;
-            double c = a;
-            double fc = fa;
-            double d = b - a;
-            double e = d;
-            while (passes < kMaxPasses) {
-                if ((fb > 0.0) == (fc > 0.0)) {
-                    c = a;
-                    fc = fa;
-                    lc = la;
-                    d = b - a;
-                    e = d;
-                }
-                if (std::abs(fc) < std::abs(fb)) {
-                    a = b;
-                    b = c;
-                    c = a;
-                    fa = fb;
-                    fb = fc;
-                    fc = fa;
-                    la = lb;
-                    lb = lc;
-                    lc = la;
-                }
-                const double tol = 2.0 * std::numeric_limits<double>::epsilon() * std::abs(b) +
-                                   0.5 * kInflowTolerance;
-                const double xm = 0.5 * (c - b);
-                if (std::abs(xm) <= tol || fb == 0.0) {
-                    converged = true;
-                    break;
-                }
-                if (std::abs(e) >= tol && std::abs(fa) > std::abs(fb)) {
-                    const double sr = fb / fa;
-                    double p = 0.0;
-                    double q = 0.0;
-                    if (a == c) {
-                        p = 2.0 * xm * sr;
-                        q = 1.0 - sr;
-                    } else {
-                        const double qa = fa / fc;
-                        const double r = fb / fc;
-                        p = sr * (2.0 * xm * qa * (qa - r) - (b - a) * (r - 1.0));
-                        q = (qa - 1.0) * (r - 1.0) * (sr - 1.0);
-                    }
-                    if (p > 0.0) {
-                        q = -q;
-                    }
-                    p = std::abs(p);
-                    if (2.0 * p < std::min(3.0 * xm * q - std::abs(tol * q), std::abs(e * q))) {
-                        e = d;
-                        d = p / q;
-                    } else {
-                        d = xm;
-                        e = d;
-                    }
-                } else {
-                    d = xm;
-                    e = d;
-                }
-                a = b;
-                fa = fb;
-                la = lb;
-                b += std::abs(d) > tol ? d : std::copysign(tol, xm);
-                fb = eval(b, lb);
-            }
+            // Brent's method (util/math.hpp), each point's loads kept with it.
+            RotorLoads lc;
+            const std::array<RotorLoads*, 3> at{&la, &lb, &lc};
+            (void)brent([&](double lambda) { return eval(lambda, lb); }, a, fa, b, fb,
+                        kInflowTolerance, kMaxPasses, passes, converged,
+                        [&](BrentPoint to, BrentPoint from) {
+                            *at[static_cast<std::size_t>(to)] = *at[static_cast<std::size_t>(from)];
+                        });
         }
     }
     RotorLoads out = *result;
@@ -608,9 +548,11 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
             if (t.active) {
                 row = VortexRingRow{t.ct_base / (2.0 * lambda0), deficit};
             } else if (deficit != 0.0) {
-                const double d = lambda0 - kin.mu_z;
-                row = VortexRingRow{std::sqrt(kin.mu * kin.mu + d * d), deficit};
+                row = VortexRingRow{std::nullopt, deficit};
             }
+            // The rate goes to zero with λ_h (τ → ∞ as the thrust goes to
+            // zero, Johnson's scaling); only at λ0 = 0 exactly, a point the
+            // inflow passes through, does D hold still.
             const double target = t.active ? t.ct_vrs - t.ct_base : 0.0;
             out.xdot0[iv] = (target - deficit) * t.lambda_h * config_.rotor_speed /
                             (kVortexRingLagCoefficient * 2.0 * std::numbers::pi);

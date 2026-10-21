@@ -45,11 +45,12 @@ WakeSkew wake_skew(double mu, double lambda) noexcept;
 Mat3 pitt_peters_gain(double X) noexcept;
 
 // Vortex-ring correction of the thrust row (D-049): the row's mass flow
-// V_T (the baseline curve's C_T,base/(2λ0) in place of V) and a thrust
-// deficit D [-] subtracted from C_T (the lagged VRS increment).
+// V_T (the baseline curve's C_T,base/(2λ0) in place of V; V itself when
+// empty, outside the region) and a thrust deficit D [-] subtracted from C_T
+// (the lagged VRS increment).
 struct VortexRingRow {
-    double mass_flow = 0.0;  // V_T [-]
-    double deficit = 0.0;    // D [-]
+    std::optional<double> mass_flow;  // V_T [-]
+    double deficit = 0.0;             // D [-]
 };
 
 // dλ/dt [1/s] in hub axes (D-027):

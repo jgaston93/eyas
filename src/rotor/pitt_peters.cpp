@@ -43,7 +43,7 @@ Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double 
     const double c = L(2, 0);
     const double d = L(2, 2);
     const double det = a * d - b * c;
-    const double v_thrust = vrs ? vrs->mass_flow : w.V;
+    const double v_thrust = vrs ? vrs->mass_flow.value_or(w.V) : w.V;
     const double r0 = v_thrust * (d * lw.x() - b * lw.z()) / det;
     const double rc = w.V * (-c * lw.x() + a * lw.z()) / det;
     const double rs = w.V * lw.y() / L(1, 1);
