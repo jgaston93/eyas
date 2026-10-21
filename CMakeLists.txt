@@ -14,6 +14,9 @@ option(EYAS_BUILD_TESTS "Build the Eyas unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(EYAS_BUILD_BENCH "Build the timing benchmark" ${PROJECT_IS_TOP_LEVEL})
 option(EYAS_BUILD_EXAMPLES "Build the examples (driver, adapter)" ${PROJECT_IS_TOP_LEVEL})
 option(EYAS_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
+# Optimization of Eyas's own targets in Debug builds (D-010). -O1 keeps the
+# assertions (no NDEBUG) and lets the ASan build run the suite in CI time.
+set(EYAS_DEBUG_OPTIMIZATION "-Og" CACHE STRING "Optimization flag for Eyas targets in Debug builds")
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(EyasCompilerFlags)
