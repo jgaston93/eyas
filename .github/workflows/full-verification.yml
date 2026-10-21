@@ -108,7 +108,7 @@ jobs:
       - name: Run every generator and plot
         run: |
           set -e
-          for m in m1 m2 m3 m4 m5 m6 m6c m6d m7 m7b m7c m8a m8c m8d; do
+          for m in m1 m2 m3 m4 m5 m6 m6c m6d m7 m7b m7c m8a m8c m8d m9_ground_effect; do
             echo "::group::$m"
             ./build/release/tests/eyas_${m}_cases validation-output/data/$m
             python tools/plot_${m}.py validation-output/data/$m validation-output/plots/$m
