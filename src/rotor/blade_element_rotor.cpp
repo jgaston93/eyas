@@ -190,7 +190,19 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     k.cos_w = v_xy > 0.0 ? k.v_hub_h.x() / v_xy : 1.0;
     k.sin_w = v_xy > 0.0 ? -s_ * k.v_hub_h.y() / v_xy : 0.0;
     k.airspeed = v_air_b.norm();
+    // Hub height above the ground plane through z = ground_z_n (NED), along
+    // the vertical, as GenHel's Z (CR-166309 p. 5.8-3; D-050).
+    const double hub_z_n = b.pos_n.z() + (b.q_nb * config_.hub_position_b).z();
+    k.height = (ctx.ground_z_n - hub_z_n) / config_.radius;
     return k;
+}
+
+double BladeElementRotor::ground_factor(const Kinematics& k, double lambda0) const noexcept {
+    if (config_.ground_effect == GroundEffectModel::none) {
+        return 1.0;
+    }
+    return ground_effect_factor(config_.ground_effect, k.height,
+                                ground_effect_cos_chi(lambda0, k.mu));
 }
 
 double BladeElementRotor::twist_gain(const Kinematics& k) const noexcept {
@@ -400,19 +412,23 @@ RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
     // as λ → ±∞ while C_T stays bounded. With the vortex-ring correction
     // (D-049) the momentum term is the thrust on Johnson's VRS curve at λ,
     // which rises strictly with λ, so with C_T falling the root is unique.
+    // Near the ground (D-050) the momentum term is taken at λ/κ_g, which
+    // also rises strictly with λ (κ_g falls as λ rises at fixed μ), so the
+    // root stays unique; with κ_g = 1 the term is unchanged, to the bit.
     int passes = 0;
     bool vrs_converged = true;
     const bool vrs = config_.vortex_ring == VortexRingModel::johnson_2005;
     const auto eval = [&](double lambda, RotorLoads& l) {
         l = pass(k, LinearInflow{lambda, 0.0, 0.0}, x);
         ++passes;
+        const double lt = lambda / ground_factor(k, lambda);  // out of ground effect
         if (vrs) {
-            const VortexRingThrust t = vortex_ring_thrust(lambda, mu, mu_z, false);
+            const VortexRingThrust t = vortex_ring_thrust(lt, mu, mu_z, false);
             vrs_converged = vrs_converged && t.converged;
             return t.ct_vrs - l.ct;
         }
-        const double d = lambda - mu_z;
-        return 2.0 * lambda * std::sqrt(mu * mu + d * d) - l.ct;
+        const double d = lt - mu_z;
+        return 2.0 * lt * std::sqrt(mu * mu + d * d) - l.ct;
     };
 
     // Bracket from a fixed start, with no warm start from earlier calls
@@ -531,6 +547,8 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
         // Pitt–Peters inflow (D-027), forced by the loads of the same pass.
         // Independent of the body acceleration: the G rows stay zero.
         const std::size_t i = inflow_offset();
+        // Ground effect (D-050): the thrust row and the VRS curves at λ0/κ_g.
+        const double kappa = ground_factor(kin, x[i]);
         std::optional<VortexRingRow> row;
         if (has_vortex_ring_state()) {
             // Vortex-ring correction (D-049): the thrust row's mass flow from
@@ -540,7 +558,7 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
             //   dD/dt = (D_qs − D) λ_h Ω / (0.7 · 2π),  D_qs = C_T,vrs − C_T,base.
             // Outside the region D_qs = 0, and with D = 0 the inflow equations
             // are those without the correction, to the bit.
-            const double lambda0 = x[i];
+            const double lambda0 = x[i] / kappa;
             const std::size_t iv = vortex_ring_offset();
             const double deficit = x[iv];
             const VortexRingThrust t = vortex_ring_thrust(lambda0, kin.mu, kin.mu_z);
@@ -557,9 +575,9 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
             out.xdot0[iv] = (target - deficit) * t.lambda_h * config_.rotor_speed /
                             (kVortexRingLagCoefficient * 2.0 * std::numbers::pi);
         }
-        const Vec3 rates =
-            pitt_peters_rates(Vec3(x[i], x[i + 1], x[i + 2]), Vec3(loads.ct, loads.c1s, loads.c1c),
-                              kin.mu, kin.mu_z, kin.cos_w, kin.sin_w, config_.rotor_speed, row);
+        const Vec3 rates = pitt_peters_rates(Vec3(x[i], x[i + 1], x[i + 2]),
+                                             Vec3(loads.ct, loads.c1s, loads.c1c), kin.mu, kin.mu_z,
+                                             kin.cos_w, kin.sin_w, config_.rotor_speed, row, kappa);
         out.xdot0[i] = rates.x();
         out.xdot0[i + 1] = rates.y();
         out.xdot0[i + 2] = rates.z();
@@ -706,7 +724,7 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
 
 std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& node) {
     node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "direction", "inflow",
-                     "vortex_ring", "hub", "blade", "controls", "pitch_input"});
+                     "vortex_ring", "ground_effect", "hub", "blade", "controls", "pitch_input"});
     BladeElementRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -746,6 +764,17 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         c.vortex_ring = VortexRingModel::johnson_2005;
     } else {
         node.fail("vortex_ring", "must be none or johnson_2005");
+    }
+    // Required, no default (D-021, D-050).
+    const std::string ground_effect = node.string("ground_effect");
+    if (ground_effect == "none") {
+        c.ground_effect = GroundEffectModel::none;
+    } else if (ground_effect == "genhel") {
+        c.ground_effect = GroundEffectModel::genhel;
+    } else if (ground_effect == "cheeseman_bennett") {
+        c.ground_effect = GroundEffectModel::cheeseman_bennett;
+    } else {
+        node.fail("ground_effect", "must be none, genhel or cheeseman_bennett");
     }
 
     const Config hub = node.child("hub");

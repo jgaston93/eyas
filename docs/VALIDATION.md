@@ -1485,3 +1485,69 @@ At vx/v_h = 0.95 the published curve still carries an S-shaped increment (zero s
   - *Against the D6075:* Johnson's measured drop runs from about 0.5 to 1.7 v_h in roughly 10–15 s and stabilizes near 1.7–1.75 v_h (his Figs. 57, 59). Eyas's takes about 25 s (different aircraft, inputs and AFCS), and settles at the same depth.
   - *Flow state:* the total flow is still down through the disc at the end (vortex-ring state past X, not windmill brake).
 - *Without the correction:* the same inputs level off near 4–5 m/s (0.4 v_h; 4.0 m/s at 100 s).
+
+## M9 — Ground effect (2026-10-21)
+
+Ground effect on the main rotor's mean inflow (D-050), with two models chosen in config:
+- `genhel`, the UH-60A's: GenHel CR-166309 Eq. 5.8.2-1;
+- `cheeseman_bennett`: Johnson 2013 Eqs. 4.71 and 5.76, κ_g = f_g^(−3/2).
+
+Both inflow models are solved for the out-of-ground-effect inflow λ₀/κ_g, so in hover λ₀ = κ_g λ_h. The wake angle comes from the induced inflow. Generator `tests/validation/m9_ground_effect_cases.cpp`, plots `tools/plot_m9_ground_effect.py`:
+
+    ./build/release/tests/eyas_m9_ground_effect_cases build/m9_ground_effect_cases
+    .venv/bin/python tools/plot_m9_ground_effect.py build/m9_ground_effect_cases docs/validation/m9
+
+The flight data are USAAEFA's UH-60A tethered hover at 2 ft and 100 ft wheel height (ADA180181 App. E Figs. 2 and 3; the printed fits, DATA_GAPS.md).
+
+| Check | Status | Evidence |
+|---|---|---|
+| The factors against an independent transcription | ✅ | `GroundEffect.FactorsMatchTheSourceTranscription`: both models on a 60 × 31 × 45 grid (z/R 0.1–6, μ 0–0.3, λ₀ −0.1–0.12) to 1e-14. The reference (`tests/support/ground_effect_reference.hpp`) follows each source's variables: GenHel's λ/μ_TOT, and Johnson's f_g with z√(1 + (μ/λ)²). |
+| Hover values and limits | ✅ | `HoverValuesAndLimits`: GenHel 1.115^(−2/3) and Cheeseman–Bennett (15/16)^(3/2) at z = R; 0.7906 at USAAEFA's hub height; held below 0.3R; 1 with no ground, no model, or no wake under the disc. `FactorRisesToOneWithHeight`: in (0, 1], rising with height, falling with cos χ, above 0.996 at 5R (GenHel's switch would be a 0.3 % step there). |
+| The inflow solve stays unique | ✅ | `OutOfGroundInflowRisesWithInflow`: d(λ₀/κ_g)/dλ₀ ≥ 1 over heights 0.3–1R, μ 0–0.1, λ₀ −0.2–0.2. With the total flow in cos χ (GenHel's and Johnson's own form) the slope reaches −50 and −90 near ideal autorotation (D-050). |
+| The rotor in hover | ✅ | `HoverInflowIsKappaTimesMomentum`: both models, with and without the vortex-ring correction, hub heights 0.45–2R, the body pitched, rolled and yawed. The uniform solve gives λ₀ = κ_g √(C_T/2) to 1e-13, and Pitt–Peters is at rest there (1e-9, the solve's tolerance). `HoverThrustRisesNearTheGround`: at fixed collective, the thrust rises as the hub descends and tends to its no-ground value. |
+| No ground, no change | ✅ | `NoGroundChangesNothing`: with no ground plane, or with `none`, rates and loads are bit-identical to the uncorrected rotor's in hover, climb, forward flight and the vortex ring. All 450 earlier tests pass unchanged (no earlier test has a ground plane under a flying rotor). |
+| The UH-60A trims in ground effect | ✅ | `Uh60aGroundEffect.TrimsInGroundEffectAndFliesOn` (slow): hovering with the wheels about 2.7 ft up, the trim converges off the gear, main-rotor power is between 70 and 90 % of the no-ground power, and the aircraft flies on (4 revolutions) with v̇ < 5e-5 m/s² and ω̇ < 2e-5 rad/s². `TrimOnTheWheelsIsRejected`: a ground plane above the wheels gives no convergence and an unchanged model. |
+| Real-time rules | ✅ | `GroundEffect.AllocatesNothing`. `eyas_bench` gained a hover in ground effect (wheels about 3 ft up, whole AFCS on): step 14.0 µs mean, the same as out of ground effect; worst `advance()` 642 µs against the 8333 µs budget. |
+| UH-60A hover power ratio against flight test | ✅ (gate on a known gap) | `Uh60aGroundEffect.HoverPowerRatioAgainstUsaaefa` (slow): with `genhel`, within 0.05 of USAAEFA's ratio at 0, 6000 and 12 000 ft (measured 0.038, 0.035, 0.046 above). The gate holds the known shortfall from growing (spec owner, 2026-10-21); the shortfall itself is open (below). Cheeseman–Bennett is 0.055–0.066 below, reported. |
+
+**The factor** in hover, both models with Johnson's empirical fits (Eqs. 4.73–4.76, converted with κ_g = f_g^(−3/2) at C_T/σ = 0.08):
+
+![Factor](validation/m9/m9_ge_factor.png)
+
+- GenHel's curve lies on Schmaus et al.'s from 0.4R up.
+- Cheeseman–Bennett with Johnson's conversion lies with Law's and Hayden's, about 0.1 lower at USAAEFA's height.
+
+**Hover power against USAAEFA** (ISA, 16 638 lbm, density altitude 0–12 000 ft for C_W 0.0059–0.0085; the bare aircraft; main-rotor power):
+
+![Hover](validation/m9/m9_ge_hover.png)
+
+- *Geometry:* USAAEFA measures wheel height from the bottom of the left main wheel, with the hub 12 ft above the main wheels (Eyas's config: 11.90 ft at full extension).
+- *Why Eyas isn't trimmed at 2 ft:* at Eyas's hover attitude (4.4° nose up, 2.0° left wing down) the tail wheel hangs 23.9 in below the left main wheel. At 2 ft it clears the ground by 0.04 in at sea level and touches during the revolution (4.8 N), and the trims near that edge don't all converge. So Eyas is trimmed at 2.5 and 3 ft, with every gear load zero at those heights, and its ratio is extrapolated linearly in wheel height to 2 ft. The extrapolation moves the ratio by 0.009 (GenHel) and 0.016 (Cheeseman–Bennett).
+- *Like for like:* USAAEFA's C_P is engine power: main and tail rotors, transmission and accessories. Eyas's is the main rotor's, which out of ground effect is about 25 % below the engine fit. That gap is the tail rotor, the losses, and the open hover-power gap (M7c; issue #42). So the comparison is the ratio at the same weight, P(2 ft)/P(100 ft). That is like for like if the other shares scale with the main rotor's power.
+
+| C_W × 10⁴ | USAAEFA (1985) | USAAEFA 77-17 (dashed) | Eyas, GenHel | Eyas, Cheeseman–Bennett |
+|---|---|---|---|---|
+| 59.0 | 0.789 | 0.775 | 0.828 | 0.732 |
+| 70.6 | 0.787 | 0.771 | 0.822 | 0.723 |
+| 85.1 | 0.769 | 0.755 | 0.815 | 0.714 |
+
+- *GenHel's model reduces the power too little:* about 17 % against the 21 % measured, 0.035–0.046 in the ratio.
+  - In Eyas the induced power is 79 % of the hover total (1210 of 1537 hp, M7c). So a factor κ on it gives a total ratio near 0.21 + 0.79 κ: 0.83 at GenHel's κ = 0.79, as trimmed (the lighter download near the ground adds little).
+  - The measured 0.79 needs κ ≈ 0.73.
+  - GenHel's κ at this height equals the measured *total*-power ratio almost exactly. That suggests GenHel's factor was fitted as a total-power ratio and is applied to the induced downwash only. This is a hypothesis: §5.8.1 says only that it "was derived from Black Hawk hover-power flight test results".
+  - Tip loss on the inflow (issue #42) would make the induced share a little larger and the ratio about 0.005 lower.
+- *Cheeseman–Bennett reduces it too much:* about 28 %, 0.055–0.066 below.
+- *USAAEFA's two data sets* (1985 solid, the reanalysed 77-17 dashed) differ by 0.015. The measured ratio lies between Eyas's two models.
+- *Open (issue #61):* GenHel's shortfall, and whether to apply its factor to the total power instead (a departure needing a ruling).
+
+**Power against hub height** (sea level, both models over no ground):
+
+![Height](validation/m9/m9_ge_height.png)
+
+**Forward flight near the ground** (level flight at hub heights 0.55, 0.65 and 1.0R, ISA sea level; cf. Johnson 2013 Fig. 5.12):
+
+![Speed](validation/m9/m9_ge_speed.png)
+
+- *Ground effect fades out by about 40–50 kt with both models,* the 1.5–2 v_h Johnson gives (§5.5.1; v_h ≈ 23 kt here).
+- *With Cheeseman–Bennett's faster fade (cos² χ in the height),* power at 0.55R *rises* from hover to a peak near 16 kt before translational lift takes over. Johnson notes that "very close to the ground, the power can even increase with speed" (§5.5.1). Padfield §3.2.1 (Fig. 3.29) also gives the power increase as a helicopter flies off the ground cushion.
+- *GenHel's fade (cos χ)* is slower: power is flat to about 8 kt and then falls.

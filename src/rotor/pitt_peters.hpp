@@ -60,8 +60,14 @@ struct VortexRingRow {
 // −s v_y/|v_xy|; (1, 0) when |v_xy| = 0); omega = Ω [rad/s]. With vrs, the
 // thrust row is M̃₀ dλ0/dτ + V_T (L̂⁻¹ λ_w)₀ = C_T − D (D-049); the moment
 // rows and the wake skew X keep V. Without it the result is unchanged.
+// With a ground factor κ_g = ground < 1 (D-050) the thrust row reads λ0/κ_g
+// in place of λ0, in its induced term and its mass flow (V_T = √(μ² +
+// (λ0/κ_g − μ_z)²) without vrs; the caller's V_T, taken at λ0/κ_g, with
+// it), so that in hover the steady λ0 is κ_g λ_h. The moment rows and X are
+// unchanged; at ground = 1 so is the result, to the bit.
 Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double mu_z, double cos_w,
                        double sin_w, double omega,
-                       const std::optional<VortexRingRow>& vrs = std::nullopt) noexcept;
+                       const std::optional<VortexRingRow>& vrs = std::nullopt,
+                       double ground = 1.0) noexcept;
 
 }  // namespace eyas

@@ -1133,3 +1133,47 @@ Also: accel_b against a central difference of the flown velocity (< 5e-3 m/s²);
 - *Real-time:* `eyas_bench` gained a 10 m/s vertical-descent case (mid-region): 29 µs per step against 14 µs in hover, worst `advance()` 920 µs against the 8333 µs budget (D-005).
 
 **Effect:** none outside the region: all 436 existing tests pass unchanged, including every UH-60A trim, mode and validation comparison. In vertical descent the UH-60A is now unstable in heave between about 0.45 and 1.45 v_h (Z_w up to +0.35 /s; VALIDATION.md M8d). Three collective reductions of 0.24° from a 1 m/s descent (0.72° in all, about the D6075's 0.7°) drop it from 0.5 to 1.7 v_h in about 30 s, where it settles at 19 m/s, just past the boundary's lower point X (Johnson's "helicopter stabilization", Fig. 2). Uncorrected, the same inputs level off near 4–5 m/s (4.0 m/s at 100 s).
+
+## D-050 M9: ground effect on the main-rotor inflow (spec §6.5, §9 M9) — `Approved (2026-10-21)` — scheduling, design, departures from the sources, interface addition (internal: a rotor config key; public: `TrimCondition::ground_height`)
+**Context:** spec §6.5 asks for "a Cheeseman–Bennett-type correction or an inflow reduction, set in config" in M9. Near the ground the wake is constrained and the induced velocity falls, so hover power at a given thrust drops (Johnson 2013 §4.8; Padfield 3rd ed. §3.2.1). It matters for takeoff, hover and landing.
+
+**Scheduling:** M8e (target timing, host adapter, piloted evaluation) is blocked: the host system isn't available. M8e is parked, not skipped, and M9 starts with ground effect (spec owner, 2026-10-21). The M7 regression and every M8 test still gate it.
+
+**Decision:**
+- *Two models, selected in config* (spec owner, 2026-10-21). In both, a factor κ_g ≤ 1 scales the rotor's induced inflow, and κ_g = 1 with no ground.
+  - **`genhel`** (the UH-60A's): K_GE = [1 + 0.115 (R/z)² cos χ]^(−2/3), from GenHel CR-166309 Eq. 5.8.2-1 (p. 5.8-3, PDF p. 295). GenHel fitted it to Black Hawk hover-power flight tests (§5.8.1; its ref. 5.8.6-1). GenHel's λ/μ_TOT is read as cos χ, with χ the wake angle from the shaft, taken as a magnitude (ruled by the spec owner, 2026-10-21). GenHel's λ = μ_z − DW₀ is negative in hover, and with it the formula would raise the inflow near the ground and become infinite at z ≈ 0.34R.
+  - **`cheeseman_bennett`**: κ_g = f_g^(−3/2) = [1 − (R/(4 z_w))²]^(3/2), with z_w = z / cos χ the distance to the ground along the wake axis. Sources: Johnson 2013 Eq. 4.71 for f_g = T/T∞ at constant power, its momentum conversion to the inflow at constant thrust (§4.8, as used for his Fig. 5.12), and Eq. 5.76 for z_w.
+    - Ruled by the spec owner (2026-10-21) over the image source's direct reduction, Padfield 3rd ed. Eq. 3.217, κ_g = 1 − (R/4z)².
+    - Why: Eq. 3.217 tracks GenHel's curve within 0.01 above z/R ≈ 0.75 and within 0.05 at touchdown, so as a second model it would add little. Johnson's reading is the self-consistent conversion of the thrust ratio the data are fitted to. It is stronger near the ground (0.67 at z/R = 0.52, against GenHel's 0.79) and close to Hayden's flight-test fit.
+  - z is the vertical height of the hub above the ground plane (GenHel: hub waterline over the ground, vertically). A sloping ground plane (`ground_normal_n`, D-032) isn't followed.
+- *Departure (the wake angle from the induced inflow):* cos χ = |λ₀| / √(μ² + λ₀²), with λ₀ the induced inflow. GenHel's λ and Johnson's Eq. 5.76 use the total flow through the disc, λ₀ − μ_z; this form is Padfield 3rd ed. Eq. 3.218's (V/v_i)².
+  - With the total flow, λ₀/κ_g falls steeply with λ₀ near ideal autorotation at low μ. Its slope is as low as −50 (GenHel) and −90 (Cheeseman–Bennett) at z/R = 0.3, μ = 0.0025, μ_z = 0.15. The uniform solve's root (D-049) would then no longer be unique, and ground effect would vanish and return in a slow vertical descent near the ground.
+  - With the induced inflow, κ_g falls as |λ₀| rises, so d(λ₀/κ_g)/dλ₀ ≥ 1/κ_g ≥ 1 everywhere: the root stays unique (`OutOfGroundInflowRisesWithInflow`).
+  - The two agree in hover and level flight to the extent the climb or descent speed is small against the inflow.
+- *Departure (GenHel's switch):* GenHel sets K_GE = 1 above z = 5R, a 0.3 % step in the inflow. Eyas applies the formula at every height, where it tends to 1 continuously; the step would put a jump into the thrust in a climb.
+- *Departure (the lowest height):* both models hold z at 0.3R or more. Johnson 2013 (§4.8) gives the empirical forms for z/R ≥ 0.3, and Cheeseman–Bennett's κ_g is zero at z_w = R/4. The UH-60A's hub sits about 0.45R above the ground on its wheels (11.9 ft from hub to wheel bottom at full extension in Eyas's config, against USAAEFA's 12 ft), so the floor is reached only in a crash.
+- *How κ_g enters the inflow equations:* the inflow is solved for its out-of-ground-effect value λ₀/κ_g, so that in hover λ₀ = κ_g λ_h exactly. This is Johnson's κ in v = κ(v_base + f Δv_vrs) (TP-2005 p. 14; D-049), so one substitution covers both momentum theory and the vortex-ring curves:
+  - **Uniform inflow (M3):** the momentum term is the thrust on the curve at λ₀/κ_g.
+  - **Pitt–Peters (M5):** the thrust row's induced term and mass flow are taken at λ₀/κ_g, and so are the VRS curves and deficit (D-049). The moment rows and the wake skew X are unchanged. Ground effect on the inflow gradients and the ground vortex (Johnson §5.5.2) are left out.
+  - Scaling Pitt–Peters' L matrix instead would give λ₀ = √κ_g λ_h in hover.
+- *What follows from it:* GenHel's wash maps read the rotor's λ₀ (`rotor_wash`), so the wash on the fuselage and empennage, and with it the download, falls near the ground as it does in GenHel. The tail rotor has no ground effect, as in GenHel.
+- *Config:* `ground_effect: none | genhel | cheeseman_bennett` on every blade-element rotor, **required** (D-021). The UH-60A configs set `genhel` (`tools/build_uh60a_config.py`). There are no new states, and the §6 interfaces don't change: the rotor reads `SimContext::ground_z_n` and its hub position. With no ground (NaN), or `none`, the rates are bit-identical to before.
+- *Interface addition (public, approved by the spec owner 2026-10-21):* `TrimCondition::ground_height` [m MSL], NaN by default (no ground, as before). It lets a hover in ground effect be trimmed, for the validation and as a pilot-station start point. `Model::trim` keeps the ground in the environment it installs. A trim that leaves a wheel loaded reports no convergence and leaves the model unchanged.
+
+**Verification** (`tests/unit/test_ground_effect.cpp`; VALIDATION.md M9):
+- *Layer 1:* `FactorsMatchTheSourceTranscription`: both factors against an independent transcription (`tests/support/ground_effect_reference.hpp`) on a grid of height, μ and λ₀, to 1e-14.
+- *Layer 2:*
+  - `HoverValuesAndLimits` and `FactorRisesToOneWithHeight`;
+  - `OutOfGroundInflowRisesWithInflow`: d(λ₀/κ_g)/dλ₀ ≥ 1, so the uniform root stays unique;
+  - `HoverInflowIsKappaTimesMomentum`: λ₀ = κ_g √(C_T/2) to 1e-13 for both models, with and without the VRS correction, the body at an attitude; Pitt–Peters at rest there;
+  - `HoverThrustRisesNearTheGround`;
+  - `NoGroundChangesNothing`: bit-identical with no ground or `none`;
+  - `AllocatesNothing`.
+- *The UH-60A:* `Uh60aGroundEffect.TrimsInGroundEffectAndFliesOn` and `TrimOnTheWheelsIsRejected` (slow tests). All 450 earlier tests pass unchanged, the M7 regression among them: none has a ground plane under a flying rotor, and with none the rates are bit-identical.
+- *Real-time:* `eyas_bench` gained a hover in ground effect: 14.0 µs per step, as out of ground effect; worst `advance()` 642 µs against 8333 µs.
+- *Against flight test* (gate chosen by the spec owner, 2026-10-21: `Uh60aGroundEffect.HoverPowerRatioAgainstUsaaefa`, `genhel` within 0.05 of USAAEFA at 0, 6000 and 12 000 ft, which holds the known shortfall from growing; fixing the shortfall is issue #61): the UH-60A's hover power ratio P(2 ft)/P(100 ft) wheel height against USAAEFA's fits (ADA180181 App. E Figs. 2 and 3), C_W 0.0059–0.0085.
+  - USAAEFA: 0.77–0.79.
+  - Eyas with `genhel`: 0.815–0.828, 0.035–0.046 above.
+  - Eyas with `cheeseman_bennett`: 0.714–0.732, 0.055–0.066 below.
+  - At 2 ft, Eyas's tail wheel (the lowest point at its 4.4° nose-up hover) grazes the ground, so Eyas's ratio is extrapolated from 2.5 and 3 ft, where no wheel touches.
+  - Likely cause of GenHel's shortfall (a hypothesis, VALIDATION.md M9): its factor equals the measured total-power ratio at this height, but it scales only the induced inflow.

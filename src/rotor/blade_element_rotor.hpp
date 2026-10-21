@@ -13,6 +13,7 @@
 #include "core/component.hpp"
 #include "rotor/airfoil.hpp"
 #include "rotor/controls.hpp"
+#include "rotor/ground_effect.hpp"
 #include "util/table.hpp"
 
 namespace eyas {
@@ -129,6 +130,10 @@ struct BladeElementRotorConfig {
     // row uses the baseline curve and a lagged VRS thrust deficit, one more
     // state.
     VortexRingModel vortex_ring = VortexRingModel::none;
+    // Ground effect on the mean inflow (D-050): both inflow models are solved
+    // for λ0/κ_g, κ_g from the hub's height above the ground plane
+    // (SimContext::ground_z_n, vertically; 1 with no ground).
+    GroundEffectModel ground_effect = GroundEffectModel::none;
     std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
     // Yawed-flow drag (Johnson 2013 §6.22–6.23; D-039): the section drag acts
     // along the full local flow, spanwise component u_R included, with
@@ -279,6 +284,9 @@ private:
         double cos_w;     // downwind azimuth ψ_w (D-027): cos ψ_w = v_x/|v_xy|,
         double sin_w;     //   sin ψ_w = −s v_y/|v_xy|; (1, 0) at |v_xy| = 0
         double airspeed;  // [m/s] CG true airspeed, for the elastic-twist gain (D-038)
+        // Hub height above the ground plane / R [-], vertically (D-050); NaN
+        // with no ground.
+        double height;
     };
 
     Kinematics kinematics(const SimContext& ctx) const noexcept;
@@ -288,6 +296,8 @@ private:
                     std::span<const double> x) const noexcept;
     RotorLoads solve_uniform(const Kinematics& k, std::span<const double> x) const noexcept;
     void finish(RotorLoads& loads, const Kinematics& k) const noexcept;
+    // Ground factor κ_g [-] (D-050) at induced inflow λ0; 1 without ground effect.
+    double ground_factor(const Kinematics& k, double lambda0) const noexcept;
     // Elastic-twist gain K(V) [rad/N] at the kinematics' airspeed (D-038); 0 without it.
     double twist_gain(const Kinematics& k) const noexcept;
 

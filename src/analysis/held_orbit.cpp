@@ -83,7 +83,7 @@ Environment trim_environment(const TrimCondition& c) {
     Environment env;
     env.isa_delta_T = c.isa_delta_T;
     env.wind_n = c.wind_n;
-    env.ground_height = std::numeric_limits<double>::quiet_NaN();
+    env.ground_height = c.ground_height;  // NaN by default: no ground (D-050)
     return env;
 }
 

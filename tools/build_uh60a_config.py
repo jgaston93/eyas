@@ -604,6 +604,7 @@ components:
     direction: counter_clockwise
     inflow: pitt_peters
     vortex_ring: johnson_2005  # Johnson NASA/TP-2005-213477 (D-049)
+    ground_effect: genhel  # GenHel CR-166309 Eq. 5.8.2-1 (D-050)
     hub:
       position: {pos(mr["FS_MR"], mr["BL_MR"], mr["WL_MR"])}
       pitch: "{fmt(mr["I_THETA"])} deg"

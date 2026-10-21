@@ -156,6 +156,7 @@ components:
     direction: counter_clockwise
     inflow: uniform
     vortex_ring: none
+    ground_effect: none
     hub:
       position: {x: "0 m", y: "0 m", z: "-2 m"}
       pitch: "-3 deg"
