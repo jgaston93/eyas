@@ -12,6 +12,7 @@
 
 #include "airframe/airframe_aero.hpp"
 #include "airframe/landing_gear.hpp"
+#include "analysis/held_orbit.hpp"
 #include "analysis/trim.hpp"
 #include "control/genhel_fcs.hpp"
 #include "core/attitude.hpp"
@@ -168,7 +169,7 @@ TrimResult Model::trim_from(const TrimCondition& condition, const TrimResult* st
         return r;
     }
     impl_->controls = r.controls;
-    impl_->env = Environment{condition.isa_delta_T, condition.wind_n};  // no ground, as trimmed
+    impl_->env = trim_environment(condition);  // as trimmed, ground included (D-050)
     outputs_.last_advance = AdvanceStatus{};
     update_outputs();
     return r;

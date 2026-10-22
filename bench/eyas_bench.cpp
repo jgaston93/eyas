@@ -1,7 +1,8 @@
 // Real-time timing benchmark (spec §7 rule 5, as replaced by D-005): the
 // UH-60A's step() and advance() time, mean, p99 and max, in a hover trim, a
-// 120 kt trim, a 10 m/s vertical descent in the vortex-ring state (D-049; all
-// three with the whole AFCS on, M8c3) and on the ground. D-005's rule: the worst
+// 120 kt trim, a 10 m/s vertical descent in the vortex-ring state (D-049), a
+// hover in ground effect (D-050; all four with the whole AFCS on, M8c3) and on
+// the ground. D-005's rule: the worst
 // advance() of a nominal host frame stays below 50 % of the frame; equivalently, the worst step() ×
 // ceil(dt_host / dt_physics) does. Run the release build on the target (D-005, D-037), idle and
 // with --load.
@@ -23,6 +24,7 @@
 #include <exception>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
 #include <stop_token>
@@ -94,14 +96,20 @@ std::vector<Case> make_cases(Model& m) {
         const char* name;
         double airspeed;           // [m/s]
         double flight_path_angle;  // [rad]
+        double ground_height;      // [m] MSL; NaN: no ground
     };
+    constexpr double kNoGround = std::numeric_limits<double>::quiet_NaN();
     // The vortex-ring case descends at about 0.87 v_h, mid-region, where the
-    // inflow inverts Johnson's curve every evaluation (D-049).
-    for (const Trim& t : {Trim{"hover", 0.0, 0.0}, Trim{"120kt", 120.0 * units::kKnot, 0.0},
-                          Trim{"vrs", 10.0, -0.5 * std::numbers::pi}}) {
+    // inflow inverts Johnson's curve every evaluation (D-049). The ground-
+    // effect case hovers with the CG at MSL 0 and the ground 2.75 m below it,
+    // the wheels about 3 ft up (hub z/R ≈ 0.55; D-050).
+    for (const Trim& t :
+         {Trim{"hover", 0.0, 0.0, kNoGround}, Trim{"120kt", 120.0 * units::kKnot, 0.0, kNoGround},
+          Trim{"vrs", 10.0, -0.5 * std::numbers::pi, kNoGround}, Trim{"ige", 0.0, 0.0, -2.75}}) {
         TrimCondition c;
         c.airspeed = t.airspeed;
         c.flight_path_angle = t.flight_path_angle;
+        c.ground_height = t.ground_height;
         // The whole AFCS on, as a pilot flies (SAS, PBA, FPS; M8c3). A
         // config without one ignores the switches.
         c.afcs = {true, true, true, true, false, false};
@@ -109,7 +117,9 @@ std::vector<Case> make_cases(Model& m) {
         if (!r.converged) {
             throw std::runtime_error(std::string("trim did not converge: ") + t.name);
         }
-        cases.push_back({t.name, r.controls, Environment{},
+        Environment env;
+        env.ground_height = t.ground_height;
+        cases.push_back({t.name, r.controls, env,
                          std::vector<double>(m.state().begin(), m.state().end()),
                          m.make_snapshot()});
     }

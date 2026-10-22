@@ -130,7 +130,7 @@ jobs:
               failed="$failed $1"
             fi
           }
-          for m in m1 m2 m3 m4 m5 m6 m6c m6d m7 m7b m7c m8a m8c m8d; do
+          for m in m1 m2 m3 m4 m5 m6 m6c m6d m7 m7b m7c m8a m8c m8d m9_ground_effect; do
             run "$m" "./build/release/tests/eyas_${m}_cases" "tools/plot_${m}.py"
           done
           run m7c_fletcher ./build/release/tests/eyas_m7c_fletcher tools/plot_m7c_fletcher.py

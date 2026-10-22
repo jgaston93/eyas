@@ -42,6 +42,7 @@ add_library(eyas STATIC
     src/rotor/controls.cpp
     src/rotor/ideal_thrust.cpp
     src/rotor/pitt_peters.cpp
+    src/rotor/ground_effect.cpp
     src/rotor/vortex_ring.cpp
     src/rotor/rotor_wash.cpp
     src/util/axis.cpp

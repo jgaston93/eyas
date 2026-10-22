@@ -248,11 +248,11 @@ Every module's "input data" pages in CR-166309, item by item, against what Eyas 
 | 5.5 Flight controls | pp. 5.5-6 to 5.5-20 (PDF pp. 182–196) | Complete (AFCS section below). Transcribed, not applied: THRUL/THRLL tail-rotor head limits (open, D-045); the rotor-head limits A1S, B1S, θ0 are applied. |
 | 5.6 Engine and fuel control | pp. 5.6-24 to 5.6-41 (PDF pp. 220–237) | Not modelled: constant rotor speed until M9 (drivetrain and engine). |
 | 5.7 Landing gear | pp. 5.7-40 to 5.7-47 (PDF pp. 278–285) | Complete; T_FGR and STLDSW not given anywhere in §5.7 (section above). |
-| 5.8 Ground effect | p. 5.8-6 (PDF p. 298): "no separate input data"; the constants .115 and 2/3 are in Eq. 5.8.2-1 | Not modelled (M9). Matters near the ground: hover power and handling in takeoff and landing. |
+| 5.8 Ground effect | p. 5.8-6 (PDF p. 298): "no separate input data"; the constants .115 and 2/3 are in Eq. 5.8.2-1 | Modelled since D-050 (`ground_effect: genhel`): Eq. 5.8.2-1 as printed (p. 5.8-3, PDF p. 295, handwritten, legible), with λ/μ_TOT read as a magnitude and from the induced inflow, no switch at 5R, and the hub held at 0.3R or more (D-050). |
 | 5.9 Gust | p. 5.9-23 (PDF p. 322): continuous-gust spectrum scales | Not modelled: the host supplies wind (`Environment::wind_n`). |
 | 5.10 Motion | pp. 5.10-19 and 5.10-20 (PDF pp. 342–343) | Complete since D-048. p. 5.10-20 ("general input": sea-level density, speed of sound, π, g) is replaced by the 1976 standard atmosphere and WGS-84 gravity (D-015, D-017). |
 
-No other input item is unaccounted for. The modules Eyas doesn't model (engine, ground effect, gust) are known and scheduled or left to the host.
+No other input item is unaccounted for. The modules Eyas doesn't model (engine, gust) are known and scheduled or left to the host.
 
 ## UH-60A landing gear (M6c) — constants and tables transcribed; doubtful cells verified; T_FGR `missing`
 **Source:** GenHel §5.7.5, pp. 5.7-40 to 5.7-47 (PDF pp. 278–285), handwritten, with plots on pp. 5.7-48 to 5.7-53 (PDF pp. 286–291). Read by eye from 110–400 dpi renders. Files: `data/uh60a/genhel/gear_constants_5_7_5.txt` and `table_7_5_2` to `table_7_5_6`. Everything else was read with high confidence; the doubtful cells are below.
@@ -426,3 +426,13 @@ No public UH-60 vortex-ring flight-test or wind-tunnel data was found (web searc
 - The NASA Ames full-scale UH-60A rotor tests (80- by 120-ft and 40- by 80-ft tunnels): no descent or vortex-ring conditions in the published summaries.
 
 The M8e piloted evaluation (a pilot with UH-60 experience) is the remaining check.
+
+## USAAEFA UH-60A hover fits, ADA180181 App. E Figs. 2 and 3 (M9, D-050) — read with high confidence, not reviewed by a person
+Tethered hover of S/N 82-23748, normal utility configuration (ESSS fairings), winds under 3 kt. The fits' coefficients are printed on each figure in plotter type (PDF pp. 50–51, book pp. 40–41), read from 200 and 300 dpi renders. Used only in `tools/plot_m9_ground_effect.py` and the M9 gate; nothing in `data/`.
+- Fig. 2, 2 ft wheel height: C_P = A0 + A1 C_T^1.5 + A2 C_T³, A0 = 8.06470E-05, A1 = 7.55353E-01, A2 = 3.96385E+01 (solid line).
+- Fig. 3, 100 ft wheel height:
+  - C_T < 70 × 10⁻⁴: A0 = 8.06470E-05, A1 = 1.02707;
+  - above it: A0 = 2.57292E-04, A1 = 4.23840E-01, A2 = 5.15000E+02 (solid lines).
+- Check: Fig. 3's two segments meet at C_T = 0.0070 to four digits (C_P = 6.822 × 10⁻⁴ both). Each fit runs through its own plotted points.
+- The notes on both figures give wheel height as measured from the bottom of the left main wheel, with the hub 12 ft above the bottom of the main wheels. Eyas's config gives 11.90 ft at full extension (D-050).
+- C_P is from the engines' shaft power (main and tail rotors, transmission, accessories). Eyas's comparison uses the main rotor's power, as a ratio IGE/OGE at the same weight (VALIDATION.md M9).

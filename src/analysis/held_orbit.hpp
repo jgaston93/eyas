@@ -60,7 +60,7 @@ private:
     std::size_t unconverged_ = 0;
 };
 
-// The environment a trim holds: the condition's ΔT and wind, no ground.
+// The environment a trim holds: the condition's ΔT, wind and ground height.
 Environment trim_environment(const TrimCondition& c);
 
 // The full state at t = 0 on the held orbit of trim `r` for `c`: the body

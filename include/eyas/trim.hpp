@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <vector>
 
 #include "eyas/types.hpp"
@@ -23,10 +24,16 @@ struct TrimCondition {
     // The flight control system's switches during the trim; copied into
     // TrimResult::controls (D-045).
     AfcsSwitches afcs;
+    // [m] MSL height of the ground plane, as Environment::ground_height; NaN:
+    // no ground. Near it the main rotor is in ground effect (D-050). Finite
+    // or NaN; with a ground the flight must be at constant height (no climb,
+    // descent or vertical wind), and a trim that leaves a wheel loaded at any
+    // point of the revolution doesn't converge.
+    double ground_height = std::numeric_limits<double>::quiet_NaN();
 };
 
-// The trimmed state. Hold the same environment (no ground, the condition's
-// ΔT and wind) in advance() to fly on from it.
+// The trimmed state. Hold the same environment (the condition's ground
+// height, ΔT and wind) in advance() to fly on from it.
 struct TrimResult {
     bool converged = false;  // residuals within tolerance, start state finite
     int iterations = 0;      // Newton iterations used
