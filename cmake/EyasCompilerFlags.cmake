@@ -46,7 +46,8 @@ function(eyas_target_defaults target)
         -ffp-contract=off
         # Eigen is ~150x slower at -O0; -Og keeps debugging and assertions
         # usable while long-running tests stay fast (D-010).
-        $<$<CONFIG:Debug>:-Og>)
+        # EYAS_DEBUG_OPTIMIZATION (default -Og) sets it.
+        $<$<CONFIG:Debug>:${EYAS_DEBUG_OPTIMIZATION}>)
     if(EYAS_WARNINGS_AS_ERRORS)
         target_compile_options(${target} PRIVATE -Werror)
     endif()

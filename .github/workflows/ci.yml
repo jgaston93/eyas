@@ -15,8 +15,8 @@ env:
   # jobs only (GCC and Rocky); the Debug, Clang and ASan jobs skip them, as
   # those builds are 3-60x slower and look for memory, UB and assertion
   # faults that the fast tests reach through the same code. The nightly
-  # full-verification.yml runs every test under ASan (a Debug build) and
-  # Clang. Add a test here if it takes more than about 1 s in Release.
+  # full-verification.yml runs every test under the strict ASan build (Debug,
+  # -Og) and Clang. Add a test here if it takes more than about 1 s in Release.
   SLOW_TESTS: ^(BallinTrim\..*|KaplitaSideslip\..*|Uh60aFps\..*|Uh60aVortexRing\..*|Uh60aGroundEffect\..*|Station(Starts|RealTime|Recorder)\..*|ExampleStation\..*|Linearize\.(PeriodicModelMatchesTheNonlinearResponse|HoverRateDerivativesMatchPadfield|GravityAndKinematicEntriesAreExact|SymmetricHoverIsConstantCoefficient|FeedNothingStatesSplitTheEigenvalues|HoverHeaveDampingMatchesPadfield)|Trim\.(Uh60aTrimsFromHoverTo150Knots|SasAndPbaMoveOnlyTheStick|SasDampsTheDutchRoll|Uh60aFliesOnFromTrim|FcsKickDiesOut|IndependentOfTheIntegrationStep|IndependentOfHeadingAndSteadyWind|FcsStartTransientIsSmall)|TrimAtRoll\.(InvertsTheSideslipTrim|ZeroRollIsReached)|RealTime\.(HeldOrbitRepeatsFor60s|ParkedAircraftSettlesFor60s|AfcsFreeFlightFor60s|HostRateDecoupling|JitteredHostRate)|FlapAnchors\.(HoverConingMatchesJohnson|CyclicStepPhaseLag|CentreSpringFlappingMatchesPadfield|OffsetHingeFlappingMatchesJohnson)|Executive\.OneHourAtSixtyHzGivesExactStepCount|Bench\.Smoke|DynamicTwist\.Uh60aTrimIsGenHelsFixedPointAndIndependentOfTheLag)$
 
 jobs:
@@ -29,7 +29,9 @@ jobs:
         include:
           - { compiler: gcc, cc: gcc, cxx: g++, preset: debug }
           - { compiler: gcc, cc: gcc, cxx: g++, preset: release }
-          - { compiler: gcc, cc: gcc, cxx: g++, preset: asan }
+          # ASan+UBSan at -O1, assertions on: about 2.5x faster than the
+          # strict -Og build the nightly runs (D-037 amendment 2026-10-21).
+          - { compiler: gcc, cc: gcc, cxx: g++, preset: asan-fast }
           - { compiler: clang, cc: clang, cxx: clang++, preset: debug }
     env:
       CC: ${{ matrix.cc }}
@@ -103,6 +105,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # the PR's base, for the changed files
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build clang-format-18 clang-tidy-18 libglfw3-dev libgl-dev
       - name: clang-format
@@ -116,7 +120,22 @@ jobs:
           python3 tools/build_fg_station_files.py --check
       - name: Configure (for compile_commands.json)
         run: cmake --preset debug
+      # On a PR: the .cpp files it changes, and the .cpp beside each header
+      # it changes (foo.hpp -> foo.cpp). A header change seen only through
+      # other files waits for the nightly full run (full-verification.yml).
+      # On a push to main: every file.
       - name: clang-tidy
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          out=$(clang-tidy-18 -p build/debug --quiet src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp src/airframe/*.cpp src/analysis/*.cpp src/control/*.cpp bench/*.cpp examples/*/*.cpp 2>&1 | grep -E "warning:|error:" || true)
+          all=$(ls src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp src/airframe/*.cpp src/analysis/*.cpp src/control/*.cpp bench/*.cpp examples/*/*.cpp)
+          if [ -n "$BASE_REF" ]; then
+            changed=$(git diff --name-only "origin/$BASE_REF...HEAD" | sed -e 's/\.hpp$/.cpp/' | sort -u)
+            files=$(comm -12 <(echo "$all" | sort) <(echo "$changed"))
+          else
+            files=$all
+          fi
+          if [ -z "$files" ]; then echo "no C++ files to check"; exit 0; fi
+          echo "$files"
+          out=$(clang-tidy-18 -p build/debug --quiet $files 2>&1 | grep -E "warning:|error:" || true)
           if [ -n "$out" ]; then echo "$out"; exit 1; fi

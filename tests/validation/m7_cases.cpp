@@ -23,6 +23,7 @@
 
 #include "airframe/airframe_aero.hpp"
 #include "analysis/trim.hpp"
+#include "control/genhel_fcs.hpp"
 #include "core/rk4.hpp"
 #include "eyas/model.hpp"
 #include "rotor/bailey_rotor.hpp"
@@ -44,6 +45,10 @@ struct Averages {
     double power = 0.0;       // [W] main rotor
     double tr_thrust = 0.0;   // [N]
     double stabilator = 0.0;  // [rad]
+    // The blade pitch the flight control system sends the rotors (pitch_input:
+    // fcs; its mixer, servos and head limits, D-045) [rad].
+    SwashplatePitch mr_pitch;
+    double tr_pitch = 0.0;
 };
 
 // Loads averaged over the trimmed revolution, the body held (the trim's own
@@ -53,6 +58,7 @@ Averages revolution_average(const test::Uh60aHarness& ac, std::vector<double> x,
     const auto& mr = ac.get<BladeElementRotor>("main_rotor");
     const auto& tr = ac.get<BaileyRotor>("tail_rotor");
     const auto& af = ac.get<AirframeAero>("airframe");
+    const auto& fcs = ac.get<GenHelFcs>("fcs");
     const double T = trim_period(ac.executive());
     const int N = 256;
     Averages a;
@@ -64,6 +70,11 @@ Averages revolution_average(const test::Uh60aHarness& ac, std::vector<double> x,
         a.tr_thrust += tr.evaluate(ctx, ac.states(x, ac.index("tail_rotor"))).thrust / N;
         a.stabilator +=
             af.evaluate(ctx, ac.states(x, ac.index("airframe"))).stabilator_incidence / N;
+        const GenHelFcsOutputs f = fcs.evaluate(ctx, ac.states(x, ac.index("fcs")));
+        a.mr_pitch.theta0 += f.theta0 / N;
+        a.mr_pitch.theta1s += f.theta1s / N;
+        a.mr_pitch.theta1c += f.theta1c / N;
+        a.tr_pitch += f.theta_tr / N;
         ac.hold(t, x, c, Environment{}, T / N, 1);
     }
     return a;
@@ -72,8 +83,6 @@ Averages revolution_average(const test::Uh60aHarness& ac, std::vector<double> x,
 void write(const std::filesystem::path& dir) {
     const test::Uh60aHarness ac;
     const Executive& ex = ac.executive();
-    const auto& mr = ac.get<BladeElementRotor>("main_rotor");
-    const auto& tr = ac.get<BaileyRotor>("tail_rotor");
     const double T = trim_period(ex);
 
     std::ofstream trim(dir / "m7_trim.csv");
@@ -94,9 +103,9 @@ void write(const std::filesystem::path& dir) {
         std::vector<double> x;
         const TrimResult r = solve_trim(ex, c, sweep.empty() ? nullptr : &sweep.back(), x);
         sweep.push_back(r);
-        const SwashplatePitch p = mr.config().controls->pitch(r.controls);
-        const double tr_cmd = tr.config().controls->pitch(r.controls).theta0;
         const Averages a = revolution_average(ac, x, r.controls);
+        const SwashplatePitch& p = a.mr_pitch;
+        const double tr_cmd = a.tr_pitch;
         using tv = test::Travels;
         trim << kt << "," << r.converged << "," << r.iterations << "," << r.controls.collective
              << "," << r.controls.lat_cyclic << "," << r.controls.lon_cyclic << ","

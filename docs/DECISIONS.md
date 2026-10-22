@@ -749,6 +749,24 @@ Johnson (2013) has nothing specific. No source gives the fade width; c = 20° is
 
 
 **Amendment (2026-10-19): slow tests run on a PR in Release only (asked for by the spec owner).** With the whole-aircraft tests M8c added, the ASan job's tests took 22 min (1309 s) on a PR even with the old skip list, and GCC Debug's 11 min. Every test over about 1 s in Release now joins `SLOW_TESTS` (49 tests, 317 of the suite's 332 s): whole-aircraft trims, linearizations and flights, the long runs, the station's start points. On a PR they run in the GCC and Rocky Release jobs only; the GCC Debug, Clang Debug and ASan jobs run the other 379 (14.5 s in Release). `full-verification.yml` runs every test nightly under ASan (a Debug build, so with assertions) and now with Clang (Debug) too. *The trade widens:* a memory, UB or assertion fault that only a slow test reaches could merge and be caught by the next nightly run; every slow test still has to pass on every PR, in Release.
+
+**Amendment (2026-10-21): two tiers, a PR pipeline of about 10 min and a nightly run that finishes (asked for by the spec owner).**
+- *Why:*
+  - A PR waited 14–22 min, set by two jobs: clang-tidy on every file (about 14 min every time) and ASan (10–17 min). ASan's time went on about 15 tests that each trim the whole aircraft: under 1 s in Release, 100–220 s under the Debug ASan build.
+  - The nightly strict ASan job hit its 120 min limit on 2026-10-20 and 21 with 195 of 437 tests done. One test alone takes 7100 s there (`BallinTrim.LevelFlightAgainstSikorskyGenHel`).
+  - The nightly validation job stopped at its first crashing generator, so a crash in `eyas_m6d_cases` hid every generator after it for three nights (PR #63). Nobody was told.
+- *On a PR (`ci.yml`):*
+  - **ASan at `-O1`, assertions kept.** A new preset, `asan-fast`: a Debug build (no `NDEBUG`), so the assertions stay, with Eyas's targets at `-O1` through the new cache variable `EYAS_DEBUG_OPTIMIZATION` (default `-Og`, D-010 unchanged). `-O1` is the optimization the ASan authors recommend. Measured locally on three whole-aircraft tests: 2.4–2.6× faster than the `-Og` build (35.1 → 14.5 s, 16.4 → 6.4 s, 18.7 → 7.2 s).
+    - *Cost:* at `-O1` a few stack-use bugs can be optimized away before ASan sees them. The nightly strict build still runs every test.
+    - *`-Wno-maybe-uninitialized` in that preset only:* with ASan and optimization, GCC 13 reports a false "may be used uninitialized" inside libstdc++'s `std::regex` (a known GCC false positive with sanitizers). ASan itself still catches uninitialized reads at run time.
+  - **clang-tidy on what the PR changes:** its `.cpp` files and the `.cpp` beside each changed header. A header change seen only through other files is caught by the nightly full run. A push to `main` still checks every file.
+  - Unchanged: both Release jobs (GCC and Rocky 9) run every test, both Debug compilers the fast ones, and `SLOW_TESTS` as before.
+- *Nightly (`full-verification.yml`), the thorough run:*
+  - **Every test under the strict ASan build** (Debug, `-Og`), split four ways (`ctest -I k,,4`: every fourth test), each part with GitHub's 6 h job limit instead of 120 min.
+  - **clang-tidy on every file**, moved here from the PR.
+  - **Every validation generator runs even if one fails;** the step fails at the end and names each failure. The output is uploaded either way.
+  - **A failed scheduled run opens a GitHub issue,** "Nightly full verification is failing", or comments on the open one.
+- *Weekly:* not needed for the strict build, which now fits in a night. Candidate extra checks (soak runs, ASan at `-O2`, determinism, benchmark trend, config fuzzing) are issue #64.
 ## D-038 GenHel's elastic blade twist, with a lagged blade load; the profile-drag correction parked (D-034 item 5) — `Approved (2026-10-15)` — departure from GenHel (lag), addition (twist)
 **Context:** D-034 item 5 deferred three GenHel main-rotor features to rulings on evidence from the M7 trim comparison. The M7c preview against Ballin's Fig. B1 (D-035 M7c amendment; readings still `UNVERIFIED`) showed Eyas's trimmed collective below GenHel's by 5.6 % of travel at 20 kt, 8.5 % at 100 kt and 24 % at 160 kt: an error growing with speed, the symptom item 5 names for the elastic twist.
 
