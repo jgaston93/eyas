@@ -9,10 +9,12 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <vector>
 
 #include "airframe/landing_gear.hpp"
@@ -329,19 +331,66 @@ TEST(Uh60aGroundEffect, TrimOnTheWheelsIsRejected) {
     EXPECT_EQ(m.outputs().last_advance.substeps, out0.last_advance.substeps);
 }
 
-// A wheel that only grazes the ground: hovering at USAAEFA's 2 ft wheel
-// height at sea level, the tail wheel (lowest at the 4.4° nose-up hover)
-// clears it by 0.04 in at the start and touches during the revolution
-// (4.8 N). The trim's residual converges there; solve_trim's check over the
-// whole revolution must still reject it, for every caller (D-050).
-TEST(Uh60aGroundEffect, GrazingWheelIsRejectedOverTheRevolution) {
+// A wheel that only touches the ground lightly: a hover with the tail wheel
+// (the lowest point at the hover's nose-up attitude) carrying under 1 N
+// somewhere on the held revolution. The trim's residuals converge there;
+// solve_trim's gear check must still reject it, for every caller (D-050).
+// The edge moves with any change to the hover attitude (until D-051 it was at
+// USAAEFA's 2 ft wheel height, the wheel clear at the start of the
+// revolution and touching during it), so it is found by bisecting the ground
+// height between a ground the wheels clear and one the tail wheel rests on.
+// The 4/rev vibration moves the wheel load by only about 0.01 N there, so a
+// wheel clear at the start and loaded later isn't a robust case to test.
+TEST(Uh60aGroundEffect, LightlyTouchingWheelIsRejected) {
     const test::Uh60aHarness ac = test::m9::aircraft("genhel");
-    const test::m9::Point p = test::m9::trim_near_ground(ac, 0.0, 0.0, 2.0 * units::kFoot, nullptr);
-    EXPECT_FALSE(p.converged);
-    const test::m9::Point clear =
-        test::m9::trim_near_ground(ac, 0.0, 0.0, 2.5 * units::kFoot, nullptr);
-    EXPECT_TRUE(clear.converged);
-    EXPECT_EQ(clear.gear_load, 0.0);
+    const Executive& ex = ac.executive();
+    const auto& gear = ac.get<LandingGear>("gear");
+    const std::size_t ig = ac.index("gear");
+    struct Probe {
+        TrimResult trim;
+        double largest = 0.0;  // [N] largest wheel load over the held revolution
+    };
+    TrimResult warm;
+    const auto probe = [&](double ground) {
+        TrimCondition c;
+        c.ground_height = ground;
+        std::vector<double> x;
+        Probe p;
+        p.trim = solve_trim(ex, c, warm.converged ? &warm : nullptr, x);
+        const Environment env = trim_environment(c);
+        const double T = trim_period(ex);
+        double t = 0.0;
+        for (int k = 0; k < 256; ++k) {
+            const SimContext ctx = ac.context(t, x, p.trim.controls, env);
+            for (std::size_t g = 0; g < gear.config().gears.size(); ++g) {
+                p.largest =
+                    std::max(p.largest, gear.gear_state(ctx, ac.states(x, ig), g).normal_load);
+            }
+            ac.hold(t, x, p.trim.controls, env, T / 256, 1);
+        }
+        return p;
+    };
+    double clear = left_wheel_bottom() - 2.5 * units::kFoot;
+    double resting = left_wheel_bottom() - 1.5 * units::kFoot;
+    const Probe c0 = probe(clear);
+    ASSERT_TRUE(c0.trim.converged);
+    ASSERT_EQ(c0.largest, 0.0);
+    warm = c0.trim;
+    ASSERT_GT(probe(resting).largest, 1.0);
+    std::optional<Probe> light;
+    for (int i = 0; i < 30 && !light; ++i) {
+        const double mid = 0.5 * (clear + resting);
+        const Probe p = probe(mid);
+        if (p.largest > 0.0 && p.largest < 1.0 && p.trim.force_residual < 1e-3) {
+            light = p;
+        } else if (p.largest > 0.0) {
+            resting = mid;
+        } else {
+            clear = mid;
+        }
+    }
+    ASSERT_TRUE(light.has_value()) << "no lightly touching hover found";
+    EXPECT_FALSE(light->trim.converged);
 }
 
 // Inputs the trim refuses (D-050): an infinite ground height, and flight
