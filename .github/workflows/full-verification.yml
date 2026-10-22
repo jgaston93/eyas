@@ -1,11 +1,13 @@
 name: Full verification
 
-# The slow end of verification, off the per-push path (D-037): every test
-# under ASan+UBSan and with Clang (Debug), including the slow ones ci.yml
-# runs on a PR in Release only, and every
-# validation generator with its plots, uploaded as an artifact for
-# comparison with docs/VALIDATION.md. Nightly on main, and on demand from
-# the Actions tab.
+# The slow end of verification, off the per-push path (D-037 and its
+# amendment of 2026-10-21): every test under the strict ASan+UBSan build
+# (Debug, -Og, assertions on), split into four jobs, and with Clang (Debug),
+# including the slow ones ci.yml runs on a PR in Release only; clang-tidy on
+# every file; and every validation generator with its plots, uploaded as an
+# artifact for comparison with docs/VALIDATION.md. Nightly on main, and on
+# demand from the Actions tab. A failed scheduled run opens (or comments on)
+# a GitHub issue.
 
 on:
   schedule:
@@ -16,10 +18,18 @@ permissions:
   contents: read
 
 jobs:
+  # Under the strict build the whole-aircraft trims take up to 2 h each
+  # (BallinTrim.LevelFlightAgainstSikorskyGenHel: 7100 s), so the suite is
+  # split four ways (ctest -I: every fourth test) and each part may use
+  # GitHub's 6 h job limit.
   asan:
-    name: Ubuntu GCC ASan+UBSan, all tests
+    name: Ubuntu GCC ASan+UBSan (strict), tests part ${{ matrix.part }} of 4
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3, 4]
     env:
       CC: gcc
       CXX: g++
@@ -41,8 +51,8 @@ jobs:
           -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build
         run: cmake --build --preset asan
-      - name: Test (all, slow ones included)
-        run: ctest --preset asan --parallel "$(nproc)"
+      - name: Test (every fourth test, slow ones included)
+        run: ctest --preset asan --parallel "$(nproc)" -I ${{ matrix.part }},,4
 
   clang:
     name: Ubuntu Clang Debug, all tests
@@ -105,33 +115,72 @@ jobs:
       # Each generator stops with an error if a case fails (an unconverged
       # trim, a bad config); the numbers themselves are compared with
       # VALIDATION.md by hand from the artifact.
+      # Every generator runs even if one fails (a crash used to hide all the
+      # ones after it); the step fails at the end, naming each failure.
       - name: Run every generator and plot
         run: |
-          set -e
+          failed=""
+          run() {  # name, generator, plot script
+            echo "::group::$1"
+            if "$2" "validation-output/data/$1" && python "$3" "validation-output/data/$1" "validation-output/plots/$1"; then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error::validation generator $1 failed"
+              failed="$failed $1"
+            fi
+          }
           for m in m1 m2 m3 m4 m5 m6 m6c m6d m7 m7b m7c m8a m8c m8d; do
-            echo "::group::$m"
-            ./build/release/tests/eyas_${m}_cases validation-output/data/$m
-            python tools/plot_${m}.py validation-output/data/$m validation-output/plots/$m
-            echo "::endgroup::"
+            run "$m" "./build/release/tests/eyas_${m}_cases" "tools/plot_${m}.py"
           done
-          echo "::group::m7c_fletcher"
-          ./build/release/tests/eyas_m7c_fletcher validation-output/data/m7c_fletcher
-          python tools/plot_m7c_fletcher.py validation-output/data/m7c_fletcher validation-output/plots/m7c_fletcher
-          echo "::endgroup::"
-          echo "::group::ballin_app_d"
-          ./build/release/tests/eyas_ballin_app_d_cases validation-output/data/ballin_app_d
-          python tools/plot_ballin_app_d.py validation-output/data/ballin_app_d validation-output/plots/ballin_app_d
-          echo "::endgroup::"
-          echo "::group::kaplita"
-          ./build/release/tests/eyas_kaplita_cases validation-output/data/kaplita
-          python tools/plot_kaplita.py validation-output/data/kaplita validation-output/plots/kaplita
-          echo "::endgroup::"
-          echo "::group::kaplita_transients"
-          ./build/release/tests/eyas_kaplita_transient_cases validation-output/data/kaplita_transients
-          python tools/plot_kaplita_transients.py validation-output/data/kaplita_transients validation-output/plots/kaplita_transients
-          echo "::endgroup::"
+          run m7c_fletcher ./build/release/tests/eyas_m7c_fletcher tools/plot_m7c_fletcher.py
+          run ballin_app_d ./build/release/tests/eyas_ballin_app_d_cases tools/plot_ballin_app_d.py
+          run kaplita ./build/release/tests/eyas_kaplita_cases tools/plot_kaplita.py
+          run kaplita_transients ./build/release/tests/eyas_kaplita_transient_cases tools/plot_kaplita_transients.py
+          if [ -n "$failed" ]; then echo "failed:$failed"; exit 1; fi
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: validation-output-${{ github.sha }}
           path: validation-output
           retention-days: 30
+
+  tidy:
+    name: clang-tidy, every file
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build clang-tidy-18 libglfw3-dev libgl-dev
+      - name: Configure (for compile_commands.json)
+        run: cmake --preset debug
+      - name: clang-tidy
+        run: |
+          out=$(clang-tidy-18 -p build/debug --quiet src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp src/airframe/*.cpp src/analysis/*.cpp src/control/*.cpp bench/*.cpp examples/*/*.cpp 2>&1 | grep -E "warning:|error:" || true)
+          if [ -n "$out" ]; then echo "$out"; exit 1; fi
+
+  # A failed scheduled run opens an issue, or comments on the open one, so
+  # it can't go unnoticed (it once failed three nights running unseen).
+  report:
+    name: Report a failed nightly run
+    needs: [asan, clang, validation, tidy]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Nightly full verification is failing"
+          body="Run: $RUN_URL ($(date -u +%Y-%m-%d))"
+          n=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Failed again. $body"
+          else
+            gh issue create --title "$title" --label ci --body "$body"
+          fi
