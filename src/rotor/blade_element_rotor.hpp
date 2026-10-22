@@ -54,6 +54,12 @@ enum class VortexRingModel : std::uint8_t {
     johnson_2005,  // Johnson NASA/TP-2005-213477 (D-049)
 };
 
+// Tip loss on the mean inflow (D-051).
+enum class InflowTipLoss : std::uint8_t {
+    none,            // momentum over the full disc πR² (GenHel)
+    effective_disc,  // momentum over the disc π(BR)² (Johnson 2013 §3.6.2)
+};
+
 // Linear induced inflow λ(r, ψ) = l0 + (r/R)(l1s sin ψ + l1c cos ψ) [-],
 // positive down along the shaft, ψ the blade azimuth, r the radius in the
 // hub plane (Pitt & Peters 1980 eq. 1; D-027).
@@ -134,6 +140,13 @@ struct BladeElementRotorConfig {
     // for λ0/κ_g, κ_g from the hub's height above the ground plane
     // (SimContext::ground_z_n, vertically; 1 with no ground).
     GroundEffectModel ground_effect = GroundEffectModel::none;
+    // Tip loss on the mean inflow (D-051). effective_disc: the momentum
+    // relation of both inflow models is taken over the disc of radius B·R
+    // (B = tip_loss), C_T = 2B²λ0 V in hover, so the induced velocity is 1/B
+    // of the full disc's (Johnson 2013 Eqs. 3.114–3.115); the Pitt–Peters
+    // thrust row's apparent mass is that disc's too. The cyclic inflow rows
+    // are unchanged. none: the full disc, as GenHel.
+    InflowTipLoss inflow_tip_loss = InflowTipLoss::none;
     std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
     // Yawed-flow drag (Johnson 2013 §6.22–6.23; D-039): the section drag acts
     // along the full local flow, spanwise component u_R included, with
@@ -306,7 +319,10 @@ private:
     double s_;          // +1 counter-clockwise, −1 clockwise
     double area_;       // [m²]
     double tip_speed_;  // [m/s]
-    Mat3 C_hb_;         // body → hub
+    // Radius of the inflow's momentum disc / R [-] (D-051): B with
+    // effective_disc, 1 without.
+    double inflow_tip_;
+    Mat3 C_hb_;  // body → hub
     Mat3 C_bh_;
     struct Slots {
         CouplingSlot lambda0;

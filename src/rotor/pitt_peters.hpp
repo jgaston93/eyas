@@ -65,9 +65,19 @@ struct VortexRingRow {
 // (λ0/κ_g − μ_z)²) without vrs; the caller's V_T, taken at λ0/κ_g, with
 // it), so that in hover the steady λ0 is κ_g λ_h. The moment rows and X are
 // unchanged; at ground = 1 so is the result, to the bit.
+// With tip loss on the inflow (D-051), tip = B < 1, the thrust row is that of
+// the disc of radius R_e = B·R, area A_e = B²A: the row above in that disc's
+// own coefficients (velocities over ΩR_e, loads over ρA_e(ΩR_e)²), mapped
+// back: λ0, μ, μ_z and V scale by 1/B, λ1c not (its weighting r/R_e is
+// (r/R)/B), C_T by 1/B⁴, so
+//   B M̃₀ dλ0/dτ + V_T (L̂⁻¹ λ_w)₀|λ1c→Bλ1c = C_T/B² − D.
+// In hover that is T = ρA_e(M̃₀ R_e v̇ + 2v V) dimensionally (v, V in m/s):
+// the forcing C_T/B², the apparent mass B M̃₀. D stays in the effective
+// disc's coefficients (Johnson's VRS curves scale with it). The moment rows
+// are unchanged; at tip = 1 so is the result, to the bit.
 Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double mu_z, double cos_w,
                        double sin_w, double omega,
-                       const std::optional<VortexRingRow>& vrs = std::nullopt,
-                       double ground = 1.0) noexcept;
+                       const std::optional<VortexRingRow>& vrs = std::nullopt, double ground = 1.0,
+                       double tip = 1.0) noexcept;
 
 }  // namespace eyas

@@ -113,6 +113,7 @@ components:
     inflow: pitt_peters
     vortex_ring: johnson_2005  # Johnson NASA/TP-2005-213477 (D-049)
     ground_effect: genhel  # GenHel CR-166309 Eq. 5.8.2-1 (D-050)
+    inflow_tip_loss: none
     hub:
       position: {x: "19.563384 in", y: "0 in", z: "-87.56157 in"}
       pitch: "-3.0 deg"

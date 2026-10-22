@@ -145,6 +145,7 @@ inline RefRotor reference_rotor(const BladeElementRotor& rotor) {
     r.s = c.direction == RotationDirection::counter_clockwise ? 1.0 : -1.0;
     r.root_cutout = c.root_cutout;
     r.tip_loss = c.tip_loss;
+    r.momentum_radius = c.inflow_tip_loss == InflowTipLoss::effective_disc ? c.tip_loss : 1.0;
     const Table1D chord = c.chord;
     const Table1D twist = c.twist;
     r.chord = [chord](double x) { return chord(x); };

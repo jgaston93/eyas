@@ -157,6 +157,7 @@ components:
     inflow: uniform
     vortex_ring: none
     ground_effect: none
+    inflow_tip_loss: none
     hub:
       position: {x: "0 m", y: "0 m", z: "-2 m"}
       pitch: "-3 deg"
@@ -185,6 +186,24 @@ TEST(Model, BladeElementRotorFromConfig) {
     }
     EXPECT_EQ(count.count(), 0U);
     EXPECT_LT(m.body_state().vel_b.z(), 0.0);  // climbing: thrust exceeds 7000 kg weight
+}
+
+// D-051: inflow_tip_loss is required, none or effective_disc.
+TEST(Model, InflowTipLossFromConfig) {
+    const std::string base = rotor_yaml(kData + "/linear_airfoil.csv");
+    const auto with = [&](const std::string& line) {
+        std::string y = base;
+        y.replace(y.find("    inflow_tip_loss: none\n"), 26, line);
+        return Config::from_string(y, "rotor.yaml");
+    };
+    const auto read = [&](const std::string& line) {
+        return BladeElementRotor::from_config(with(line).child("components")[0]);
+    };
+    EXPECT_EQ(read("    inflow_tip_loss: none\n")->config().inflow_tip_loss, InflowTipLoss::none);
+    EXPECT_EQ(read("    inflow_tip_loss: effective_disc\n")->config().inflow_tip_loss,
+              InflowTipLoss::effective_disc);
+    EXPECT_THROW(read("    inflow_tip_loss: prandtl\n"), InitError);
+    EXPECT_THROW(read(""), InitError);
 }
 
 // D-025: placeholder YAML values and placeholder CSV tables are all reported
