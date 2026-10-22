@@ -199,6 +199,18 @@ struct BladeElement {
     double twist_mode = 0.0;  // m(r/R) of the elastic twist [-] (D-038); 0 without it
 };
 
+// The ratio r = λ_full/λ_e of the full disc's momentum inflow to the
+// inflow λ_e of the disc of radius B·R (D-051) carrying the same thrust, at
+// in-plane speed mu, all / ΩR, in level flight (μ_z = 0). The effective
+// disc's momentum thrust is c = C_T/2 = B²|λ_e|√(μ² + λ_e²); the full disc's
+// inflow for it has the closed form λ_full² = 2c²/(μ² + √(μ⁴ + 4c²)) (from
+// λ²(μ² + λ²) = c², Johnson 2013 Eq. 5.9 at λ_c = 0), so
+//   r = √2 B² √(μ² + λ_e²) / √(μ² + √(μ⁴ + 4c²)),
+// B in hover, tending to B² in edgewise flight; exactly 1 at B = 1, and B at
+// μ = λ_e = 0. From the inflow, not the blade loads, so it carries none of
+// their vibration. Climb and descent use the level-flight ratio.
+double full_disc_inflow_ratio(double tip, double lambda0, double mu) noexcept;
+
 class BladeElementRotor : public DynamicComponent {
 public:
     // Throws InitError on an invalid configuration.
@@ -223,7 +235,10 @@ public:
     // Coupling outputs (D-003, D-028), "<name>.<field>", all independent of
     // the body acceleration:
     //   lambda0    λ0 [-]: uniform induced inflow / ΩR, positive down (the
-    //              Pitt–Peters state, or the uniform solve);
+    //              Pitt–Peters state, or the uniform solve); with tip loss
+    //              on the inflow (D-051), the full disc's equivalent at the
+    //              same thrust, full_disc_inflow_ratio() times it, since GenHel's wash
+    //              maps, its consumer, are built on the full disc's λ0;
     //   mu_x, mu_z [-]: hub velocity relative to the air along x_h and z_h
     //              (z_h down the shaft) / ΩR;
     //   beta_1c    β_1c [rad]: longitudinal flapping (Padfield 3rd ed.

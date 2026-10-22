@@ -79,9 +79,19 @@ def main(out):
     a1.grid(alpha=0.3)
 
     # Pair power with thrust at the same σ and θ0.
-    ct_at = {(round(s, 3), int(t)): c for s, t, c in thrust}
-    pairs = np.array([(s, ct_at[(round(s, 3), int(t))], cp) for s, t, cp in power
-                      if (round(s, 3), int(t)) in ct_at and t >= 4])
+    def key(s, t):
+        assert abs(t - round(t)) < 1e-9, f"θ0 = {t} isn't a whole degree"
+        return (round(s, 3), round(t))
+    ct_at = {}
+    for s, t, c in thrust:
+        assert key(s, t) not in ct_at, f"duplicate thrust reading at σ {s}, θ0 {t}"
+        ct_at[key(s, t)] = c
+    # Readings at θ0 ≥ 4°, and below that only where a thrust reading exists
+    # to pair with (Fig. 3.2 reads none at 0° and few under 4°).
+    pairs = np.array([(s, ct_at[key(s, t)], cp) for s, t, cp in power
+                      if t >= 4 and key(s, t) in ct_at])
+    missing = [(s, t) for s, t, _ in power if t >= 4 and key(s, t) not in ct_at]
+    print("power readings at θ0 ≥ 4° with no thrust reading to pair:", missing or "none")
     s_p, ct_p, cp_p = pairs.T
     ideal = ct_p ** 1.5 / np.sqrt(2.0)
     print(f"\nPower against thrust, {len(pairs)} paired points, C_P = κ C_T^1.5/√2 + σC_d0/8:")

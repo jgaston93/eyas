@@ -15,15 +15,18 @@
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "airframe/landing_gear.hpp"
 #include "analysis/held_orbit.hpp"
 #include "analysis/linearize.hpp"
 #include "analysis/trim.hpp"
+#include "core/coupling.hpp"
 #include "eyas/model.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/ground_effect.hpp"
+#include "rotor/vortex_ring.hpp"
 #include "support/alloc_counter.hpp"
 #include "support/ground_effect_reference.hpp"
 #include "support/m3_fixtures.hpp"
@@ -223,6 +226,130 @@ TEST(GroundEffect, HoverThrustRisesNearTheGround) {
 
 // With no ground, or no model, the rates are the uncorrected rotor's to
 // the bit, in hover, climb, forward flight and the vortex ring.
+// Tip loss on the inflow (D-051) with ground effect and the vortex-ring
+// correction, as the UH-60A flies them: where the two inflow models must
+// agree exactly, they do. In hover over the ground (outside the VRS region)
+// the uniform solve gives λ0 = κ_g √(C_T/2)/B, and Pitt–Peters is at rest
+// there; in axial descent through the VRS region (no ground) Pitt–Peters is
+// at rest at the uniform solve's λ0 with the deficit at its target D_qs,
+// which doesn't move either. In skewed flow the two models differ anyway
+// (the skew coupling), with or without tip loss.
+TEST(GroundEffect, ComposesWithTipLossAndTheVortexRing) {
+    const double B = 0.97;
+    const auto make = [&](InflowModel inflow) {
+        BladeElementRotorConfig c =
+            with_hub(ge_rotor(inflow, VortexRingModel::johnson_2005, GroundEffectModel::genhel));
+        c.tip_loss = B;
+        c.inflow_tip_loss = InflowTipLoss::effective_disc;
+        return BladeElementRotor(c);
+    };
+    const BladeElementRotor uni = make(InflowModel::uniform);
+    const BladeElementRotor pp = make(InflowModel::pitt_peters);
+    const std::size_t iv = pp.vortex_ring_offset();
+    const auto at_rest = [&](const SimContext& ctx, const RotorLoads& l, double deficit) {
+        std::vector<double> x(pp.num_states(), 0.0);
+        x[0] = l.lambda_i;
+        x[iv] = deficit;
+        std::vector<double> xd(x.size(), 0.0);
+        std::vector<double> G(6 * x.size(), 0.0);
+        ComponentDerivs d{xd, G, Wrench{}, Mat66::Zero()};
+        pp.derivatives(ctx, x, d);
+        EXPECT_TRUE(d.converged);
+        EXPECT_NEAR(xd[0], 0.0, 1e-9);  // the uniform solve's tolerance
+        EXPECT_NEAR(xd[1], 0.0, 1e-12);
+        EXPECT_NEAR(xd[2], 0.0, 1e-12);
+        EXPECT_NEAR(xd[iv], 0.0, 1e-12);
+    };
+    for (const double h : {0.45, 0.6, 1.0, 2.0}) {
+        const SimContext ctx = hover_context(uni, h);
+        const RotorLoads l = uni.evaluate(ctx);
+        ASSERT_TRUE(l.converged);
+        const double kappa = ground_effect_factor(GroundEffectModel::genhel, h, 1.0);
+        EXPECT_NEAR(l.lambda_i, kappa * std::sqrt(0.5 * l.ct) / B, 1e-13) << h;
+        at_rest(ctx, l, 0.0);
+    }
+    int in_region = 0;
+    for (const double descent : {6.0, 8.0, 10.0, 12.0}) {
+        SimContext ctx = sea_level_context(0.0);
+        ctx.body.vel_b = Vec3(0.0, 0.0, descent);
+        const RotorLoads l = uni.evaluate(ctx);
+        ASSERT_TRUE(l.converged);
+        const VortexRingThrust t = vortex_ring_thrust(l.lambda_i, l.mu, l.mu_z);
+        in_region += t.active ? 1 : 0;
+        // The uniform solve's momentum term is B² times Johnson's curve.
+        EXPECT_NEAR(B * B * t.ct_vrs, l.ct, 1e-12) << descent;
+        at_rest(ctx, l, t.active ? t.ct_vrs - t.ct_base : 0.0);
+    }
+    EXPECT_GE(in_region, 3);  // the descents reach the VRS region
+}
+
+// The wash maps' inflow with tip loss (D-051): the full disc's momentum
+// inflow at the thrust the effective disc's inflow λ_e carries, against an
+// independent bisection of λ√(μ² + λ²) = B²λ_e√(μ² + λ_e²) in level flight;
+// B in hover, B² in edgewise flight, 1 at B = 1.
+TEST(GroundEffect, FullDiscInflowRatioMatchesMomentum) {
+    const auto full_disc = [](double c, double mu) {
+        double lo = 0.0;
+        double hi = 1.0;
+        for (int i = 0; i < 200; ++i) {
+            const double m = 0.5 * (lo + hi);
+            (m * std::sqrt(mu * mu + m * m) < c ? lo : hi) = m;
+        }
+        return 0.5 * (lo + hi);
+    };
+    for (const double B : {0.9, 0.97}) {
+        for (const double le : {0.005, 0.03, 0.06, 0.1}) {
+            for (const double mu : {0.0, 0.02, 0.05, 0.1, 0.2, 0.4}) {
+                const double c = B * B * le * std::sqrt(mu * mu + le * le);
+                EXPECT_NEAR(full_disc_inflow_ratio(B, le, mu), full_disc(c, mu) / le, 1e-12)
+                    << B << " " << le << " " << mu;
+            }
+        }
+        EXPECT_NEAR(full_disc_inflow_ratio(B, 0.06, 0.0), B, 1e-15);
+        EXPECT_NEAR(full_disc_inflow_ratio(B, 0.001, 2.0), B * B, 1e-6);
+        EXPECT_NEAR(full_disc_inflow_ratio(B, 0.0, 0.3), B * B, 1e-15);
+        EXPECT_EQ(full_disc_inflow_ratio(B, 0.0, 0.0), B);
+        EXPECT_EQ(full_disc_inflow_ratio(B, -0.06, 0.1), full_disc_inflow_ratio(B, 0.06, 0.1));
+    }
+    EXPECT_EQ(full_disc_inflow_ratio(1.0, 0.0065, 0.1), 1.0);
+
+    // Through the rotor's coupling output: in hover the wash gets the full
+    // disc's momentum inflow √(C_T/2), in forward flight the ratio times λ0;
+    // with no tip loss on the inflow, λ0 itself.
+    for (const InflowTipLoss tip : {InflowTipLoss::effective_disc, InflowTipLoss::none}) {
+        BladeElementRotorConfig c =
+            ge_rotor(InflowModel::uniform, VortexRingModel::none, GroundEffectModel::none);
+        c.name = "mr";
+        c.tip_loss = 0.97;
+        c.inflow_tip_loss = tip;
+        BladeElementRotor rotor(c);
+        CouplingRegistry registry;
+        for (const std::string& n : rotor.produces()) {
+            (void)registry.add(n, "mr");
+        }
+        rotor.bind(registry);
+        for (const double speed : {0.0, 40.0}) {
+            SimContext ctx = sea_level_context(0.0);
+            ctx.body.vel_b = Vec3(speed, 0.0, 0.0);
+            const RotorLoads l = rotor.evaluate(ctx);
+            CouplingOutputs out(registry.size());
+            ComponentDerivs d{{}, {}, Wrench{}, Mat66::Zero()};
+            d.coupling = &out;
+            rotor.derivatives(ctx, {}, d);
+            const double wash = out.get(registry.find("mr.lambda0", "test"));
+            if (tip == InflowTipLoss::none) {
+                EXPECT_EQ(wash, l.lambda_i);
+            } else if (speed == 0.0) {
+                EXPECT_NEAR(wash, std::sqrt(0.5 * l.ct), 1e-12);
+            } else {
+                EXPECT_NEAR(wash, full_disc_inflow_ratio(0.97, l.lambda_i, l.mu) * l.lambda_i,
+                            1e-15);
+                EXPECT_LT(wash, 0.97 * l.lambda_i);  // edgewise: nearer B² than B
+            }
+        }
+    }
+}
+
 TEST(GroundEffect, NoGroundChangesNothing) {
     for (const InflowModel inflow : {InflowModel::uniform, InflowModel::pitt_peters}) {
         const BladeElementRotor plain(
@@ -387,6 +514,9 @@ TEST(Uh60aGroundEffect, LightlyTouchingWheelIsRejected) {
             resting = mid;
         } else {
             clear = mid;
+        }
+        if (p.trim.converged) {
+            warm = p.trim;  // start the next trim from the nearest converged one
         }
     }
     ASSERT_TRUE(light.has_value()) << "no lightly touching hover found";

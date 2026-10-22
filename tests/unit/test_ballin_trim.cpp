@@ -85,73 +85,72 @@ const std::map<std::string, std::map<int, double>>& b1_open() {
         // longitudinal cyclic at cruise, 2.1-3.5 % aft (D-048: about 1.1 % from
         // the inflow model's sideslip and the D-036 parabola, about 1.9 % open,
         // with the collective and lateral cyclic below); not in the shape gate
-        {"a", {{100, 2.25}, {110, 3.06}, {120, 2.35}, {130, 1.70}, {140, 2.76}, {150, 1.99}}},
+        {"a", {{100, 2.73}, {110, 3.51}, {120, 2.78}, {130, 2.11}, {140, 3.15}, {150, 2.40}}},
         // lateral cyclic at high speed (not linked to the sideslip, D-048)
-        {"b", {{120, 0.94}, {130, 2.28}, {140, 3.91}, {150, 6.26}}},
+        {"b", {{120, 0.84}, {130, 2.18}, {140, 3.80}, {150, 6.13}}},
         // collective: shape against speed
         {"c",
-         {{10, 2.53},
-          {20, 2.77},
-          {30, 2.77},
-          {40, 3.22},
-          {50, 3.41},
-          {60, 3.00},
-          {70, 3.31},
-          {80, 2.58},
-          {90, 2.01},
-          {100, 0.75},
-          {110, -0.07},
-          {120, -1.72},
-          {130, -2.05},
-          {140, -3.01},
-          {150, -3.50},
-          {160, -4.23}}},
-        // pitch attitude at 50 kt, where the lateral constraint switches (D-048),
-        // and at 90 kt, 0.1 deg beyond the read-off since tip loss on the inflow (D-051)
-        {"d", {{50, 0.73}, {90, 0.51}}},
+         {{10, 2.42},
+          {20, 2.66},
+          {30, 2.62},
+          {40, 3.12},
+          {50, 3.29},
+          {60, 2.88},
+          {70, 3.19},
+          {80, 2.47},
+          {90, 1.92},
+          {100, 0.66},
+          {110, -0.16},
+          {120, -1.81},
+          {130, -2.13},
+          {140, -3.10},
+          {150, -3.58},
+          {160, -4.33}}},
+        // pitch attitude at 50 kt, where the lateral constraint switches (D-048)
+        {"d", {{50, 0.58}}},
         // sideslip at zero roll (VALIDATION.md M7c; most of it closed by D-048,
         // the rest the inflow model, D-027)
         {"f",
-         {{50, 0.47},
-          {60, -0.62},
-          {70, -0.99},
-          {80, -0.99},
-          {90, -0.90},
-          {100, -0.75},
-          {110, -0.83},
-          {120, -0.59},
-          {130, -0.60},
-          {140, -0.55},
-          {150, -0.46},
-          {160, -0.52}}},
+         {{50, 0.53},
+          {60, -0.61},
+          {70, -1.00},
+          {80, -1.00},
+          {90, -0.92},
+          {100, -0.77},
+          {110, -0.85},
+          {120, -0.61},
+          {130, -0.62},
+          {140, -0.56},
+          {150, -0.48},
+          {160, -0.53}}},
         // pedal: hover and low speed, and above 130 kt with the sideslip
         {"g",
          {{0, 1.65},
-          {10, 0.23},
-          {20, 0.73},
-          {30, 1.22},
-          {40, 0.92},
-          {140, -2.22},
-          {150, -2.52},
-          {160, -3.48}}},
+          {10, 0.28},
+          {20, 0.87},
+          {30, 1.40},
+          {40, 1.11},
+          {140, -2.20},
+          {150, -2.50},
+          {160, -3.44}}},
         // main-rotor power (hover and cruise power)
         {"i",
-         {{0, -34.91},
-          {10, 20.16},
-          {20, 32.14},
-          {30, 25.02},
-          {40, 30.21},
-          {50, 11.40},
-          {60, 2.01},
-          {70, 7.42},
-          {80, -7.67},
-          {90, -17.14},
-          {100, -28.32},
-          {110, -40.68},
-          {120, -64.76},
-          {130, -50.76},
-          {140, -28.04},
-          {150, 33.67}}},
+         {{0, -37.48},
+          {10, 15.46},
+          {20, 27.41},
+          {30, 19.57},
+          {40, 26.86},
+          {50, 7.65},
+          {60, -1.24},
+          {70, 3.97},
+          {80, -10.81},
+          {90, -19.70},
+          {100, -30.85},
+          {110, -43.27},
+          {120, -67.53},
+          {130, -53.78},
+          {140, -31.45},
+          {150, 29.43}}},
     };
     return open;
 }
@@ -210,7 +209,7 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
     // Longitudinal stick: the shape gated, the calibrated mean tracked (header).
     // [%] Eyas − GenHel over the gated speeds (to 90 kt), recorded 2026-10-22
     // with D-051 (0.28 % with D-048; 0.07 % over every speed before it)
-    constexpr double kLonMeanRecord = -0.04;
+    constexpr double kLonMeanRecord = 0.33;
     ASSERT_EQ(lon.size(), 9U);  // 10 to 90 kt (D-048)
     double mean = 0.0;
     for (const Reading& r : lon) {
@@ -226,7 +225,7 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
         ++gated;
     }
     EXPECT_GT(gated, 40);  // the gate covers what it should
-    EXPECT_EQ(tracked, 64);
+    EXPECT_EQ(tracked, 63);
 }
 
 // Climb and descent (Figs. B2-B4), the stabilator held at Eyas's level-flight
@@ -244,16 +243,16 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
     };
     // VALIDATION.md M7c, recorded 2026-10-16, re-recorded 2026-10-22 with
     // D-051 (tip loss on the inflow; every record moved within its tolerance
-    // but the 137.5 kt power slope, 73.1 to 92.3). At 60 kt the descent
+    // but the 137.5 kt power slope, 73.1 to 91.3). At 60 kt the descent
     // collective (within its tolerance, the curve being steep) and the power
     // slopes at 60 and 100 kt (within the read-off) match; they are recorded
     // here too, so the record is one table. The 100 kt lateral climb record
     // moved from 5.27 to 8.74 % with GenHel's downwash correction terms
     // (D-048).
     const std::array<Record, 3> records = {{
-        {"b2", 60.0, 3.14, 5.43, 20.8},
-        {"b3", 100.0, 5.37, 8.88, 18.7},
-        {"b4", 137.5, 8.65, 11.96, 92.3},
+        {"b2", 60.0, 3.21, 5.43, 19.8},
+        {"b3", 100.0, 5.29, 8.91, 18.0},
+        {"b4", 137.5, 8.63, 11.88, 91.3},
     }};
     // Power slope read-off: 1.75 % of the 3000 hp axis per reading, a
     // five-point fit over 4000 ft/min: σ_slope = 52.5 / √10 ≈ 16.6 hp per

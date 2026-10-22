@@ -242,8 +242,7 @@ inline RefLoads reference_loads(const RefRotor& rotor, const RefCondition& cond)
     const double vr = rotor.omega * rotor.radius;
     const double mu = std::hypot(cond.v_hub_h.x(), cond.v_hub_h.y()) / vr;
     const double mu_z = cond.v_hub_h.z() / vr;
-    const double disc = std::numbers::pi * std::pow(rotor.momentum_radius * rotor.radius, 2) /
-                        (std::numbers::pi * rotor.radius * rotor.radius);
+    const double disc = rotor.momentum_radius * rotor.momentum_radius;  // π(B_m R)²/(πR²)
     const auto g = [&](double lam) {
         const double d = lam - mu_z;
         return disc * 2.0 * lam * std::sqrt(mu * mu + d * d) -

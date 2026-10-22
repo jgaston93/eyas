@@ -93,8 +93,9 @@ VortexRingThrust vortex_ring_thrust(double lambda0, double mu, double mu_z,
                                     bool baseline = true) noexcept;
 
 // The VRS lag (D-049): the increment builds up and decays with time constant
-// τ = τ_rev 2π/Ω, τ_rev = 0.7/λ_h (Johnson TP-2005 p. 16, from the D6075
-// flight test: 14 revolutions at λ_h = 0.05, scaled with R/v_h).
+// τ = τ_rev 2π/Ω, τ_rev = 0.7/λ_h: Johnson TP-2005 p. 16 gives 14 revolutions
+// for the D6075 flight test at λ_h = 0.05; the scaling with R/v_h is Eyas's
+// (D-049). With tip loss on the inflow the radius is B·R (D-051).
 inline constexpr double kVortexRingLagCoefficient = 0.7;
 
 // Iteration limit of each solve in vortex_ring_thrust().

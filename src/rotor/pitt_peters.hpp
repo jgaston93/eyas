@@ -72,9 +72,14 @@ struct VortexRingRow {
 // (r/R)/B), C_T by 1/B⁴, so
 //   B M̃₀ dλ0/dτ + V_T (L̂⁻¹ λ_w)₀|λ1c→Bλ1c = C_T/B² − D.
 // In hover that is T = ρA_e(M̃₀ R_e v̇ + 2v V) dimensionally (v, V in m/s):
-// the forcing C_T/B², the apparent mass B M̃₀. D stays in the effective
-// disc's coefficients (Johnson's VRS curves scale with it). The moment rows
-// are unchanged; at tip = 1 so is the result, to the bit.
+// the forcing C_T/B², the apparent mass B M̃₀. The row is in units of
+// T/(ρA_e(ΩR)²): the effective disc's area with the full tip speed, not
+// that disc's own coefficients (which would divide by B⁴). D and V_T are in
+// those units too: Johnson's VRS curves evaluated at the actual velocities
+// over ΩR give them directly, since the curves scale with the disc area. The
+// moment rows, including the cosine row's skew coupling, take the actual
+// states (the mean inflow the skewed wake carries), as the full disc's rows;
+// at tip = 1 the result is unchanged, to the bit.
 Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double mu_z, double cos_w,
                        double sin_w, double omega,
                        const std::optional<VortexRingRow>& vrs = std::nullopt, double ground = 1.0,
