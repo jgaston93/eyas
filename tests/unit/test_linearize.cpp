@@ -770,7 +770,7 @@ TEST(Linearize, FrequencyResponseMatchesClosedForms) {
 // Gate L3 (D-035 amendment, option A of 2026-10-15): small initial
 // perturbations of each body coordinate and small control doublets, flown
 // for 3 s, against the periodic linear model (both stepped at T/256 up to
-// 60 kt, T/512 above), in hover, at 60 kt and at 150 kt; eyas_m7b_cases
+// 60 kt, T/1024 above), in hover, at 60 kt and at 150 kt; eyas_m7b_cases
 // covers every 10 kt (VALIDATION.md M7b). The relative error must be the sum
 // of a part proportional to the amplitude (the fit c0 + c1 a describes the
 // four amplitudes to within 15 %, deviations under a tenth of the floor
@@ -802,10 +802,12 @@ TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {
         const TrimResult r = solve_trim(ex, c, knots == 0.0 && !afcs ? nullptr : &previous, start);
         ASSERT_TRUE(r.converged) << knots;
         previous = r;
-        // Both models step at 2T/J: T/256 up to 60 kt, T/512 above, where the
-        // rotor and inflow responses to collective need the finer step.
+        // Both models step at 2T/J: T/256 up to 60 kt, T/1024 above, where the
+        // rotor and inflow responses to collective need the finer step (T/512
+        // until D-051: the 150 kt collective doublet's leftover was 0.0012 at
+        // T/512 and 0.0002 at T/1024, so step error, not the linearization).
         LinearizeOptions o;
-        o.azimuths = knots <= 60.0 ? 512 : 1024;
+        o.azimuths = knots <= 60.0 ? 512 : 2048;
         o.steps_per_period = o.azimuths;
         const LinearModel m = linearize(ex, c, r, o);
         EXPECT_EQ(m.unconverged, 0U);

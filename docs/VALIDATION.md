@@ -727,13 +727,13 @@ Every M7c difference that isn't explained by the data's accuracy, with where it 
 |---|---|---|---|
 | Sideslip at zero roll | +3.5° against GenHel; Eyas rolls left where the test rolled right | **Closed by D-048 (2026-10-20):** GenHel's downwash correction terms (p. 5.10-19) were missing; now +0.2 to −1.1° against GenHel, roll 0.29° rms against the test | Below, "Kaplita steady-heading sideslips" |
 | Lateral cyclic above 110 kt | Up to +7.8 % at 155 kt | Unexplained; not linked to the sideslip after all (unchanged by D-048) | Parked |
-| Longitudinal cyclic at cruise (since D-048) | 2.1–3.5 % aft at 100–150 kt | About 1.1 % explained (inflow-model sideslip, D-036); about 1.9 % open, of the size of the collective and lateral-cyclic gaps | USAAEFA report and M9 rotor items (issue #54) |
+| Longitudinal cyclic at cruise (since D-048) | 2.1–3.5 % aft at 100–150 kt (unchanged by D-051: its wash input is the full disc's) | About 1.1 % explained (inflow-model sideslip, D-036); about 1.9 % open, of the size of the collective and lateral-cyclic gaps | USAAEFA report and M9 rotor items (issue #54) |
 | Pedal | GenHel − Eyas +0.8 to +7.8 % | Explained by the sideslip and collective (residual ±0.65 %); −1.3 to +3.3 % since D-048 | Follows the sideslip |
-| Hover main-rotor power | −71 hp (4.4 %) | About 37 hp is tip loss on the inflow; about 140 hp of GenHel's power is unexplained | Tip loss to M9 (D-041) |
-| Cruise power and collective | −49 hp mean; collective −6.4 % at 160 kt | Within the yawed-drag ruling (D-039) | Tracked by the gate |
+| Hover main-rotor power | −71 hp (4.4 %); **−38 hp (2.3 %) with D-051** | **Tip loss on the inflow done (D-051, 2026-10-22): +38 hp.** About 140 hp of GenHel's power is unexplained like for like (below) | Nonuniform-inflow losses, issue #66 |
+| Cruise power and collective | −49 hp mean; collective −6.4 % at 160 kt; **with D-051, −5 hp mean (36 rms) over 0–160 kt and collective −4.2 % at 160 kt** | Within the yawed-drag ruling (D-039) | Tracked by the gate |
 | B2–B4 descent collective | Eyas falls 6–9 % less at 100–137.5 kt | Unexplained | Parked |
 | B2–B4 climb lateral cyclic | +5.3 and +9.5 % at +3000 ft/min | Unexplained; the 137.5 kt end trims beyond full collective | Parked |
-| B2–B4 power slope at 137.5 kt | 14 % above GenHel | Unexplained | Parked |
+| B2–B4 power slope at 137.5 kt | 14 % above GenHel; Eyas − GenHel +88 hp per 1000 ft/min, **+91 with D-051** | Unexplained | Parked |
 | Slow on-axis response below 1.5 rad/s | Hover pitch +3.7 dB; 80 kt phase lead 27° (roll), 43° (pitch) | At 80 kt, M_u < 0 from the held stabilator in the rotor downwash, as simple wake theory gives | Parked |
 | 80 kt phugoid-type divergence | +0.289 1/s | Same cause as the line above | Parked |
 | Off-axis angular rates | Phase off by 140–160° (hover) | Known limitation of Pitt–Peters without wake distortion | M9 wake distortion (D-041) |
@@ -851,13 +851,13 @@ Answered with a scratch probe on Ballin's B1 trims (GenHel's lateral constraint,
 
 ### The V1 gate
 
-`BallinTrim.LevelFlightAgainstSikorskyGenHel` and `BallinTrim.ClimbAndDescentTrendsAgainstSikorskyGenHel` (`tests/unit/test_ballin_trim.cpp`; slow, about 30 s and 60 s in Debug) trim the Ballin aircraft and compare against the Sikorsky GenHel curves with a tolerance from the measured read-off: 1.75 % of the axis span plus the local slope times 1.5 kt (0.1 thousand ft/min for B2–B4); DECISIONS.md D-035. They gate the longitudinal cyclic (10–150 kt; its shape, with the mean removed, since the mean set neutral cyclic, and the mean tracked at its record), lateral cyclic (10–110 kt), stabilator (10–150 kt) and pitch attitude (0–80 kt), all within tolerance, and track every open difference above (lateral cyclic above 110 kt, pitch about +0.5° from 90 kt, collective, sideslip, pedal, main-rotor power; the descent collective, climb lateral cyclic and power slope of B2–B4) at its recorded value, so a change either way fails the test. A deliberate change to one record was caught.
+`BallinTrim.LevelFlightAgainstSikorskyGenHel` and `BallinTrim.ClimbAndDescentTrendsAgainstSikorskyGenHel` (`tests/unit/test_ballin_trim.cpp`; slow, about 30 s and 60 s in Debug) trim the Ballin aircraft and compare against the Sikorsky GenHel curves with a tolerance from the measured read-off: 1.75 % of the axis span plus the local slope times 1.5 kt (0.1 thousand ft/min for B2–B4); DECISIONS.md D-035. They gate the longitudinal cyclic (10–150 kt; its shape, with the mean removed, since the mean set neutral cyclic, and the mean tracked at its record), lateral cyclic (10–110 kt), stabilator (10–150 kt) and pitch attitude (0–80 kt), all within tolerance, and track every open difference above (lateral cyclic above 110 kt, longitudinal cyclic at 100–150 kt, pitch at 50 kt, collective, sideslip, pedal, main-rotor power; the descent collective, climb lateral cyclic and power slope of B2–B4) at its recorded value, so a change either way fails the test. A deliberate change to one record was caught.
 
 ### Open: hover power
 
 Eyas 1537 hp main-rotor power at 0 kt against GenHel 1608 (B1(i)): induced 1210 hp equals ideal momentum (κ = 1.00), profile 325 hp, figure of merit 0.787.
 - *ΔC_DMR = 0.002:* GenHel subtracts it (CR-166309 p. 5.1-27, re-read at 400 dpi; nomenclature p. 5.1-45 "Profile drag correction", no units). GenHel's profile power is therefore about 65 hp below Eyas's, leaving ≈ 140 hp of GenHel's power unexplained like for like.
-- *Tip loss:* both models zero the lift outboard of B·R but take momentum inflow over the full disc. Leishman 2nd ed. §3.2.4 (Eqs. 3.36, 3.41) raises the induced velocity by 1/B: about +37 hp. Deferred to M9 with the inflow upgrades (D-041); a departure from GenHel needing an M5 recheck.
+- *Tip loss:* both models zero the lift outboard of B·R but take momentum inflow over the full disc. Leishman 2nd ed. §3.2.4 (Eqs. 3.36, 3.41) raises the induced velocity by 1/B: about +37 hp. Deferred to M9 with the inflow upgrades (D-041); a departure from GenHel needing an M5 recheck. **Done (D-051, 2026-10-22):** Johnson's effective disc on both inflow models; at Ballin's B1 conditions the hover power rose from 1535 to 1572 hp, −38 hp against GenHel. M9 below.
 - *Ruled out:* fuselage download (334 lbf), stabilator download (−16 lbf), element count (within 5 hp).
 - The real aircraft needs more power than both models at low speed (Ballin p. 10); the USAAEFA flight-test report (Project 79-24) would be the referee (DATA_GAPS.md).
 
@@ -1506,9 +1506,9 @@ The flight data are USAAEFA's UH-60A tethered hover at 2 ft and 100 ft wheel hei
 | The inflow solve stays unique | ✅ | `OutOfGroundInflowRisesWithInflow`: d(λ₀/κ_g)/dλ₀ ≥ 1 over heights 0.3–1R, μ 0–0.1, λ₀ −0.2–0.2. With the total flow in cos χ (GenHel's and Johnson's own form) the slope reaches −50 and −90 near ideal autorotation (D-050). |
 | The rotor in hover | ✅ | `HoverInflowIsKappaTimesMomentum`: both models, with and without the vortex-ring correction, hub heights 0.45–2R, the body pitched, rolled and yawed. The uniform solve gives λ₀ = κ_g √(C_T/2) to 1e-13, and Pitt–Peters is at rest there (1e-9, the solve's tolerance). `HoverThrustRisesNearTheGround`: at fixed collective, the thrust rises as the hub descends and tends to its no-ground value. |
 | No ground, no change | ✅ | `NoGroundChangesNothing`: with no ground plane, or with `none`, rates and loads are bit-identical to the uncorrected rotor's in hover, climb, forward flight and the vortex ring. All 450 earlier tests pass unchanged (no earlier test has a ground plane under a flying rotor). |
-| The UH-60A trims in ground effect | ✅ | `Uh60aGroundEffect.TrimsInGroundEffectAndFliesOn` (slow): hovering with the wheels about 2.7 ft up, the trim converges off the gear, main-rotor power is between 70 and 90 % of the no-ground power, and the aircraft flies on (4 revolutions) with v̇ < 5e-5 m/s² and ω̇ < 2e-5 rad/s². `TrimOnTheWheelsIsRejected`: a ground plane above the wheels gives no convergence and an unchanged model and outputs. `GrazingWheelIsRejectedOverTheRevolution`: at USAAEFA's 2 ft the tail wheel touches only during the revolution (4.8 N); the check over the whole revolution rejects it (and the test fails with the check removed). `RejectsGroundConditionsItCannotHold`: an infinite ground height, flight that changes height near a ground, and linearizing near a ground without h. |
+| The UH-60A trims in ground effect | ✅ | `Uh60aGroundEffect.TrimsInGroundEffectAndFliesOn` (slow): hovering with the wheels about 2.7 ft up, the trim converges off the gear, main-rotor power is between 70 and 90 % of the no-ground power, and the aircraft flies on (4 revolutions) with v̇ < 5e-5 m/s² and ω̇ < 2e-5 rad/s². `TrimOnTheWheelsIsRejected`: a ground plane above the wheels gives no convergence and an unchanged model and outputs. `LightlyTouchingWheelIsRejected` (was `GrazingWheelIsRejectedOverTheRevolution` until D-051): a hover with the tail wheel carrying under 1 N, found by bisecting the ground height, whose residuals converge, is rejected (and the test fails with the check removed). At first, at USAAEFA's 2 ft, the tail wheel cleared the ground at the start of the revolution and touched during it (4.8 N); that edge was 0.04 in wide and moved with D-051's small change in attitude, and the wheel load varies by only about 0.01 N over the revolution, so a clear-then-touching case isn't robust to test. `RejectsGroundConditionsItCannotHold`: an infinite ground height, flight that changes height near a ground, and linearizing near a ground without h. |
 | Real-time rules | ✅ | `GroundEffect.AllocatesNothing`. `eyas_bench` gained a hover in ground effect (wheels about 3 ft up, whole AFCS on): step 14.0 µs mean, the same as out of ground effect; worst `advance()` 642 µs against the 8333 µs budget. |
-| UH-60A hover power ratio against flight test | ✅ (gate on a known gap) | `Uh60aGroundEffect.HoverPowerRatioAgainstUsaaefa` (slow): with `genhel`, within 0.05 of USAAEFA's ratio at 0, 6000 and 12 000 ft (measured 0.038, 0.035, 0.046 above). The gate holds the known shortfall from growing (spec owner, 2026-10-21); the shortfall itself is open (below). Cheeseman–Bennett is 0.055–0.066 below, reported. |
+| UH-60A hover power ratio against flight test | ✅ (gate on a known gap) | `Uh60aGroundEffect.HoverPowerRatioAgainstUsaaefa` (slow): with `genhel`, within 0.05 of USAAEFA's ratio at 0, 6000 and 12 000 ft (measured 0.038, 0.035, 0.046 above; 0.038, 0.035, 0.045 with D-051's tip loss). The gate holds the known shortfall from growing (spec owner, 2026-10-21); the shortfall itself is open (below). Cheeseman–Bennett is 0.055–0.066 below, reported. |
 
 **The factor** in hover, both models with Johnson's empirical fits (Eqs. 4.73–4.76, converted with κ_g = f_g^(−3/2) at C_T/σ = 0.08):
 
@@ -1522,7 +1522,7 @@ The flight data are USAAEFA's UH-60A tethered hover at 2 ft and 100 ft wheel hei
 ![Hover](validation/m9/m9_ge_hover.png)
 
 - *Geometry:* USAAEFA measures wheel height from the bottom of the left main wheel, with the hub 12 ft above the main wheels (Eyas's config: 11.90 ft at full extension).
-- *Why Eyas isn't trimmed at 2 ft:* at Eyas's hover attitude (4.4° nose up, 2.0° left wing down) the tail wheel hangs 23.9 in below the left main wheel. At 2 ft it clears the ground by 0.04 in at sea level and touches during the revolution (4.8 N), and the trims near that edge don't all converge. So Eyas is trimmed at 2.5 and 3 ft, with every gear load zero at those heights, and its ratio is extrapolated linearly in wheel height to 2 ft. The extrapolation moves the ratio by 0.009 (GenHel) and 0.016 (Cheeseman–Bennett).
+- *Why Eyas isn't trimmed at 2 ft:* at Eyas's hover attitude (4.4° nose up, 2.0° left wing down) the tail wheel hangs 23.9 in below the left main wheel. At 2 ft it clears the ground by 0.04 in at sea level and touches during the revolution (4.8 N), and the trims near that edge don't all converge. (With D-051 the edge moved to 1.97–1.98 ft at sea level; the method is kept.) So Eyas is trimmed at 2.5 and 3 ft, with every gear load zero at those heights, and its ratio is extrapolated linearly in wheel height to 2 ft. The extrapolation moves the ratio by 0.009 (GenHel) and 0.016 (Cheeseman–Bennett).
 - *Like for like:* USAAEFA's C_P is engine power: main and tail rotors, transmission and accessories. Eyas's is the main rotor's, which out of ground effect is about 25 % below the engine fit. That gap is the tail rotor, the losses, and the open hover-power gap (M7c; issue #42). So the comparison is the ratio at the same weight, P(2 ft)/P(100 ft). That is like for like if the other shares scale with the main rotor's power.
 
 | C_W × 10⁴ | USAAEFA (1985) | USAAEFA 77-17 (dashed) | Eyas, GenHel | Eyas, Cheeseman–Bennett |
@@ -1531,11 +1531,13 @@ The flight data are USAAEFA's UH-60A tethered hover at 2 ft and 100 ft wheel hei
 | 70.6 | 0.787 | 0.771 | 0.822 | 0.723 |
 | 85.1 | 0.769 | 0.755 | 0.815 | 0.714 |
 
+With D-051's tip loss on the inflow (2026-10-22; the plot shows it): Eyas with GenHel's model 0.827, 0.821, 0.815; with Cheeseman–Bennett 0.730, 0.722, 0.713.
+
 - *GenHel's model reduces the power too little:* about 17 % against the 21 % measured, 0.035–0.046 in the ratio.
   - In Eyas the induced power is 79 % of the hover total (1210 of 1537 hp, M7c). So a factor κ on it gives a total ratio near 0.21 + 0.79 κ: 0.83 at GenHel's κ = 0.79, as trimmed (the lighter download near the ground adds little).
   - The measured 0.79 needs κ ≈ 0.73.
   - GenHel's κ at this height equals the measured *total*-power ratio almost exactly. That suggests GenHel's factor was fitted as a total-power ratio and is applied to the induced downwash only. This is a hypothesis: §5.8.1 says only that it "was derived from Black Hawk hover-power flight test results".
-  - Tip loss on the inflow (issue #42) would make the induced share a little larger and the ratio about 0.005 lower.
+  - Tip loss on the inflow (issue #42) would make the induced share a little larger and the ratio about 0.005 lower. *Done (D-051):* it lowered it by up to 0.001, less than estimated; the shortfall stays.
 - *Cheeseman–Bennett reduces it too much:* about 28 %, 0.055–0.066 below.
 - *USAAEFA's two data sets* (1985 solid, the reanalysed 77-17 dashed) differ by 0.015. The measured ratio lies between Eyas's two models.
 - *Open (issue #61):* GenHel's shortfall, and whether to apply its factor to the total power instead (a departure needing a ruling).
@@ -1551,3 +1553,50 @@ The flight data are USAAEFA's UH-60A tethered hover at 2 ft and 100 ft wheel hei
 - *Ground effect fades out by about 40–50 kt with both models,* the 1.5–2 v_h Johnson gives (§5.5.1; v_h ≈ 23 kt here).
 - *With Cheeseman–Bennett's faster fade (cos² χ in the height),* power at 0.55R *rises* from hover to a peak near 16 kt before translational lift takes over. Johnson notes that "very close to the ground, the power can even increase with speed" (§5.5.1). Padfield §3.2.1 (Fig. 3.29) also gives the power increase as a helicopter flies off the ground cushion.
 - *GenHel's fade (cos χ)* is slower: power is flat to about 8 kt and then falls.
+
+## M9 — Tip loss on the inflow (2026-10-22; issue #42)
+
+Tip loss on the main rotor's mean inflow (D-051): the momentum relation of both inflow models is taken over the disc of radius B·R (Johnson 2013 §3.6.2, Eqs. 3.114–3.115), as well as the blade carrying no lift outboard of B·R (D-024, unchanged). In hover the induced velocity is 1/B of the full disc's, about 3 % more for B = 0.97; in edgewise flight 1/B², about 6 %. Rotor key `inflow_tip_loss: none | effective_disc`; the UH-60A's main rotor sets `effective_disc` (a departure from GenHel, which takes the full disc).
+
+| Check | Status | Evidence |
+|---|---|---|
+| The rotor against an exact reference | ✅ | `BladeElementRotor.InflowTipLossMatchesExactReference`: hover and μ ≈ 0.2 against `bet_reference.hpp`, whose own bisection solves the momentum relation for the disc of radius B·R: second-order convergence and Richardson extrapolation to 1e-9. |
+| Hover closed form | ✅ | `HoverWithInflowTipLossMatchesJohnsonClosedForm`: Johnson Eqs. 3.112 and 3.115 solved together, θ_.75 4–12°, twist 0 and −10°, to the M3 closed-form tolerances (the same small-angle residual); Johnson Eq. 3.114's induced power C_T^{3/2}/(√2 B) to 1e-9. |
+| Pitt–Peters thrust row | ✅ | `PittPetersAnchors.InflowTipLossIsTheEffectiveDiscsThrustRow`: the independent Pitt & Peters 1980 transcription run on the effective disc in its own coefficients, 50 random states and loads incl. skew and upflow, to 1e-12; moment rows unchanged to the bit; hover steady state λ₀ = √(C_T/2)/B and time constant B·(128/75π)/(4λ₀Ω). `SteadyHoverEqualsUniformMomentum` (also with tip loss): the Pitt–Peters steady state equals the uniform solve to 1e-9, in hover and climb. |
+| Nothing changes without it | ✅ | `InflowTipLossAtUnitRadiusChangesNothing`: B = 1 with `effective_disc` is bit-identical to `none`, both inflow models. All 463 earlier tests passed unchanged with the UH-60A on `none`. |
+| Config | ✅ | `Model.InflowTipLossFromConfig`: required; `none` and `effective_disc` read; anything else, or the key missing, is an error. |
+| With ground effect and the vortex ring | ✅ | `GroundEffect.ComposesWithTipLossAndTheVortexRing` (code review): all three on, as the UH-60A flies. Hover over the ground at 0.45–2R: λ₀ = κ_g √(C_T/2)/B to 1e-13 and Pitt–Peters at rest there; axial descents through the VRS region: the uniform solve's momentum term is B² times Johnson's curve (1e-12) and Pitt–Peters and the deficit are at rest at it. Caught with the deficit wrongly scaled by 1/B². |
+| The wash maps' inflow | ✅ | `GroundEffect.FullDiscInflowRatioMatchesMomentum`: the closed-form ratio against independent bisections of the momentum relation, B 0.9 and 0.97, λ₀ 0.005–0.1, μ 0–0.4, to 1e-12; B in hover, B² edgewise. Through the rotor's coupling output: √(C_T/2) in hover, the ratio times λ₀ in forward flight, λ₀ itself without tip loss. |
+| Mutation checks | ✅ | The full disc restored in the uniform solve, the B dropped from the λ₁c coupling, and the B dropped from the apparent mass are each caught. |
+| M5 recheck (D-041) | ✅ reported | The M5 anchors are extended as above. The NACA TN 3044 comparison (`eyas_m5_cases`, B = 0.97 on lift, uniform-blade rotor B) stays on `none`, its recorded form; run with `effective_disc` as a probe: steady C_T 1.4 % lower (5.17 → 5.10 × 10⁻³, toward the test, which Eyas overpredicts by 13–22 %), overshoot peak/final 1.226 → 1.220 in the fastest ramp, t₉₀ 0.381 → 0.367 s. The inflow build-up is essentially unchanged. |
+
+**Evidence for the formulation** (`tools/plot_m9_tip_loss.py`, from the reviewed Knight & Hefner readings, DATA_GAPS.md):
+
+    .venv/bin/python tools/plot_m9_tip_loss.py docs/validation/m9
+
+![Knight & Hefner](validation/m9/m9_tip_loss_knight_hefner.png)
+
+- *Thrust against collective* (left; lift slope fitted per reading, θ₀ ≥ 4°): rms 4.7 % with no tip loss, 4.1 % with the lift cut only (GenHel, Eyas before), 4.1 % with Leishman's reading (full-span lift, inflow / B), 3.5 % with Johnson's (D-051); the drift across solidity shrinks the same way (−1.2 to +2.0 % against −2.6 to +3.3 %). The lift slope and the readings can't separate Johnson's reading from Leishman's.
+- *Power against thrust* (right; profile drag fitted): rms 14.8 % with ideal momentum, 13.8 % with κ = 1/B; a fitted κ = 1.45 gives 3.4 % (1.32 with a drag rising with the mean lift coefficient; bootstrap 1.20–1.45). Tip loss is in the right direction but a small part of these untwisted rotors' induced losses; the rest, mainly nonuniform inflow, is issue #66.
+- *B itself:* Prandtl's B = 1 − √(2C_T)/N (Johnson Eq. 3.108) is 0.968–0.974 for the UH-60A, so GenHel's 0.97 agrees with the wake theory it comes from.
+
+**The UH-60A against Ballin's B1** (16 000 lbf, 5250 ft; Eyas − Sikorsky GenHel and Eyas − flight test, mean over each speed band; `m7c_level.csv` from `eyas_m7c_cases`). "Flat 1/B" is a scratch probe, not kept: the same κ = 1/B on the inflow at every speed, the fallback D-051 named for forward flight (run before the review's wash change, which moves the power by under 5 hp).
+
+| main-rotor power [hp] | hover | GenHel 0–45 kt | GenHel 45–95 kt | GenHel 95–160 kt | test 45–95 kt | test 95–160 kt |
+|---|---|---|---|---|---|---|
+| before | 1535 | −33 | −34 | −42 | −23 | −36 |
+| **effective disc (D-051)** | **1572** | **+10** | **0** | **−19** | **+13** | **−12** |
+| flat 1/B (probe) | 1575 | −1 | −27 | −39 | −14 | −33 |
+
+- The effective disc removes most of the cruise power shortfall against the flight test (−36 → −12 hp); the flat factor leaves it (−33). At 45–95 kt the two are about equally far from the test, on either side. The flight test's power at 0–45 kt is 380–440 hp above both (Ballin p. 10: the aircraft needs more power at low speed than either GenHel model).
+- *Collective* rises about 1 % of travel at low speed and 0.6 % at cruise: Eyas − flight test −11.4 → −10.3 % (0–45 kt), +2.7 → +3.6 % (45–95 kt), −0.5 → +0.1 % (95–160 kt). Against GenHel the low-speed gap grows (+1.5–2.4 → +2.4–3.3 %) and the cruise gap shrinks (−4.8 → −4.3 % at 160 kt).
+- *Over 0–160 kt against GenHel* (`m7c_differences.csv`, mean / rms): power −37 / 50 → −5 / 36 hp; collective +0.04 / 2.38 → +0.82 / 2.69 %; lateral cyclic +1.35 / 2.46 → +1.04 / 2.36 %; pedal +0.02 / 1.51 → −0.23 / 1.43 %; longitudinal cyclic, pitch, sideslip and stabilator within 0.1 in mean.
+- *The wash maps' inflow (code review):* first the airframe wash read the effective disc's larger λ₀, which counted tip loss twice on the airframe: pitch at 90 kt went to +0.51° against GenHel (tolerance 0.40°) and the cruise longitudinal cyclic 0.4 % forward. With the full disc's equivalent λ₀ (D-051) pitch is +0.37° and the cyclic as before, the power within 5 hp.
+
+**Records re-recorded (D-035 process):** every tracked open difference of `BallinTrim.*` at its new value (VALIDATION M7c gap register notes; the longitudinal cyclic's calibrated mean 0.28 → 0.33 %); every gated quantity stays within its tolerance; the 137.5 kt B4 power slope moved from +88 to +91 hp per 1000 ft/min against GenHel, past its old record (73.1 ± 16.6). `Uh60aGroundEffect.GrazingWheelIsRejectedOverTheRevolution` became `LightlyTouchingWheelIsRejected` (M9 ground effect above).
+
+**The L3 linearization gate's step at 150 kt** (`Linearize.PeriodicModelMatchesTheNonlinearResponse`): halved to T/1024. With D-051 the 150 kt collective doublet's leftover c₀ came out at 0.00116 against the 1e-3 floor (0.00083 before D-051); at T/1024 it is 0.00021, so it was the step, not the linearization. The test takes 77 s in Release instead of 48 s. `eyas_m7b_cases` keeps T/512 for its sweep.
+
+**Everything else moves little** (plots regenerated 2026-10-22; the statistics quoted in the earlier sections predate D-051 where not noted): the ground-effect ratio up to 0.001 lower; Fletcher's on-axis responses (servo) by at most 0.1 dB and 2.1° rms; Ballin App. D and E (GenHel servo) median rms 1.22 → 1.20 in each figure's units; Kaplita's transients by at most 0.3 in any rms; the VRS encounter (M8d) by about 2 % (the lag on the effective radius).
+
+**Builds:** 470 tests pass (GCC 13.3 Release) and the fast set with Clang 18.1 (Debug); clang-format and clang-tidy clean.

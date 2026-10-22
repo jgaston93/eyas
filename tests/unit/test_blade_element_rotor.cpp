@@ -155,6 +155,73 @@ TEST(BladeElementRotor, TipLossMatchesExactReference) {
         ref.lambda_i, 1e-9);
 }
 
+// Tip loss on the inflow too (D-051): the momentum relation over the disc of
+// radius B·R. The reference solves its own g(λ) for that disc (bet_reference.hpp);
+// in hover and at μ ≈ 0.2 in descent (the M3 forward-flight condition).
+// r_root = 0.3R and B = 0.965 put 5 % of the span outboard of B·R, so
+// N = 160·2^k gives 8·2^k tip elements of the same width and the refinement
+// stays regular.
+TEST(BladeElementRotor, InflowTipLossMatchesExactReference) {
+    const auto lin = airfoil_from(linear_airfoil_csv(5.9, 0.01));
+    SimContext forward = sea_level_context(0.0371);
+    forward.body.vel_b = Vec3(42.0, -6.0, 3.0);
+    forward.body.omega_b = Vec3(0.3, -0.2, 0.15);
+    for (const SimContext& ctx : {sea_level_context(0.0), forward}) {
+        const auto make = [&](int n) {
+            BladeElementRotorConfig c = test_rotor(lin, pitch(14.0, -6.0, 2.5), n);
+            c.root_cutout = 2.4;
+            c.tip_loss = 0.965;
+            c.inflow_tip_loss = InflowTipLoss::effective_disc;
+            return BladeElementRotor(c);
+        };
+        const BladeElementRotor r0 = make(10);
+        const RefLoads ref = reference_loads(reference_rotor(r0), reference_condition(r0, ctx));
+        ASSERT_GT(ref.thrust, 0.0);
+        test::RefRotor full = reference_rotor(r0);
+        full.momentum_radius = 1.0;
+        // The reference's inflow is the effective disc's, not the full disc's.
+        EXPECT_GT(ref.lambda_i, reference_loads(full, reference_condition(r0, ctx)).lambda_i);
+        const Scales sc{ref.thrust, ref.thrust * 8.0};
+        expect_converges_to(
+            make, [&](const BladeElementRotor& r) { return r.evaluate(ctx); }, as_vector(ref), 160,
+            sc, ref.lambda_i, 1e-9);
+    }
+}
+
+// effective_disc with B = 1 is the full disc, and so is none with B < 1 for
+// the inflow: the same bits as without the option, in both inflow models.
+TEST(BladeElementRotor, InflowTipLossAtUnitRadiusChangesNothing) {
+    const auto lin = airfoil_from(linear_airfoil_csv(5.9, 0.01));
+    SimContext ctx = sea_level_context(0.0371);
+    ctx.body.vel_b = Vec3(42.0, -6.0, 3.0);
+    for (const InflowModel inflow : {InflowModel::uniform, InflowModel::pitt_peters}) {
+        BladeElementRotorConfig c = test_rotor(lin, pitch(14.0, -6.0, 2.5), 20);
+        c.inflow = inflow;
+        const BladeElementRotor base(c);
+        c.inflow_tip_loss = InflowTipLoss::effective_disc;
+        const BladeElementRotor unit(c);
+        std::vector<double> x(base.num_states(), 0.0);
+        if (!x.empty()) {
+            x = {0.05, 0.01, -0.02};
+        }
+        const RotorLoads a = base.evaluate(ctx, x);
+        const RotorLoads b = unit.evaluate(ctx, x);
+        EXPECT_EQ(a.F_h, b.F_h);
+        EXPECT_EQ(a.M_h, b.M_h);
+        EXPECT_EQ(a.lambda_i, b.lambda_i);
+        if (!x.empty()) {
+            std::vector<double> xa(3);
+            std::vector<double> xb(3);
+            std::vector<double> G(18);
+            ComponentDerivs da{xa, G, Wrench{}, Mat66::Zero()};
+            ComponentDerivs db{xb, G, Wrench{}, Mat66::Zero()};
+            base.derivatives(ctx, x, da);
+            unit.derivatives(ctx, x, db);
+            EXPECT_EQ(xa, xb);
+        }
+    }
+}
+
 // Forward flight with everything on: in-plane and vertical hub velocity,
 // sideslip, body rates, cyclic, hub tilt and offset, both rotation
 // directions. μ ≈ 0.2 with r_root = 0.3R keeps the blades out of reverse
@@ -275,6 +342,45 @@ TEST(BladeElementRotor, HoverMatchesLeishmanClosedForm) {
             EXPECT_NEAR(l.ct / cf.ct, 1.0, 1e-2) << "θ0 = " << th << ", θtw = " << tw;
             EXPECT_NEAR(l.cq / cf.cp, 1.0, 1.5e-2) << "θ0 = " << th << ", θtw = " << tw;
             EXPECT_NEAR(l.lambda_i / cf.lambda, 1.0, 5e-3) << "θ0 = " << th << ", θtw = " << tw;
+        }
+    }
+}
+
+// With tip loss on lift and inflow (D-051): Johnson 2013 Eq. 3.112 (no lift
+// outboard of B·R) with the effective disc's momentum C_T = 2B²λ²
+// (Eq. 3.115), solved together:
+//   2λ² + (σa/4)λ − (σa/2)(θ0 B/3 + θ_tw B²/4) = 0,
+// and C_P = λC_T + σC_d0/8, the drag kept to the tip. The induced power is
+// then Johnson's Eq. 3.114, C_Pi = C_T^{3/2}/(√2 B), held to the inflow
+// solve's tolerance; the rest to the tolerances of the test above (the same
+// small-angle residual).
+TEST(BladeElementRotor, HoverWithInflowTipLossMatchesJohnsonClosedForm) {
+    const double a = 5.73;
+    const double cd0 = 0.01;
+    const double B = 0.97;
+    const auto lin = airfoil_from(linear_airfoil_csv(a, cd0));
+    const SimContext ctx = sea_level_context(0.0);
+    const double sigma = 4.0 * 0.53 / (std::numbers::pi * 8.0);
+    for (const double tw : {0.0, -10.0}) {
+        for (const double th75 : {4.0, 8.0, 12.0}) {
+            const double th = th75 - 0.75 * tw;
+            BladeElementRotorConfig c = test_rotor(lin, pitch(th), 400);
+            c.root_cutout = 0.0;
+            c.tip_loss = B;
+            c.inflow_tip_loss = InflowTipLoss::effective_disc;
+            c.twist = Table1D(Axis({0.0, 1.0}), {0.0, tw * kDeg});
+            const RotorLoads l = BladeElementRotor(c).evaluate(ctx);
+            const double k = sigma * a / 4.0;
+            const double rhs = th * kDeg * B / 3.0 + tw * kDeg * B * B / 4.0;
+            const double lam = (-k + std::sqrt(k * k + 16.0 * k * rhs)) / 4.0;
+            const double ct = 2.0 * B * B * lam * lam;
+            const double cp = lam * ct + sigma * cd0 / 8.0;
+            ASSERT_TRUE(l.converged);
+            EXPECT_NEAR(l.ct / ct, 1.0, 1e-2) << "θ0 = " << th << ", θtw = " << tw;
+            EXPECT_NEAR(l.cq / cp, 1.0, 1.5e-2) << "θ0 = " << th << ", θtw = " << tw;
+            EXPECT_NEAR(l.lambda_i / lam, 1.0, 5e-3) << "θ0 = " << th << ", θtw = " << tw;
+            const double cpi = std::pow(l.ct, 1.5) / (std::sqrt(2.0) * B);
+            EXPECT_NEAR(l.lambda_i * l.ct / cpi, 1.0, 1e-9) << "θ0 = " << th << ", θtw = " << tw;
         }
     }
 }

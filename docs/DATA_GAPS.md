@@ -123,6 +123,20 @@ Page references use the GenHel page label, plus the 1-based PDF page of the NASA
 
 **Review (2026-10-11):** every value was drawn as a cross over the figure (the overlay image is not kept in the repo, since the figure is copyrighted). The human reviewer confirmed that each cross sits on its marker, and confirmed C_lα = 5.73/rad on p. 120. A possible open square (σ = 0.106) hidden near 2° and the stacked markers at the origin were not added. An AI assistant's independent reading of the same plot was rejected: it listed points not on the plot and read some values off the theory curves. The data is in `tests/validation/reference/knight_hefner_1937.csv`.
 
+## Knight & Hefner (1937) hover power, digitized from Leishman Fig. 3.3 — `VERIFIED by human review (2026-10-22)`
+**Context:** evidence for tip loss on the inflow (issue #42); validation entry, not a gate. Test oracle, not aircraft data. The same rotors as Fig. 3.2 above, so the readings pair with its thrust readings at the same σ and θ₀.
+**Source:** Leishman, *Principles of Helicopter Aerodynamics*, 2nd ed., Fig. 3.3, p. 124 (DjVu page 162). The theory curves there use B = 0.97, κ = 1.25 and C_d0 = 0.011 (p. 124).
+**Method:** marker centres measured in pixels on a 500-dpi render: filled markers by a solid-core template, open markers by a ring template searched around a reading by eye, each centre checked at 4× zoom. Calibrated on the plot frame (θ₀ = 0 and 15°, C_P = 0 and 0.0015); the grid lines at 5°, 10° and C_P = 0.0005 fall within 1 px of the calibration (1 px = 1.4e-6 in C_P). Pitch values are taken as whole degrees, which the marker positions confirm (within 0.06°). Expect about ±0.00001 in C_P.
+
+| σ (marker) | θ₀ [deg] : C_P as read |
+|---|---|
+| 0.042 (filled circle) | 0 : 0.000052; 1 : 0.000052; 2 : 0.000059; 4 : 0.000093; 6 : 0.000155; 8 : 0.000246; 10 : 0.000345; 12 : 0.000439 |
+| 0.064 (open circle) | 2 : 0.000093; 4 : 0.000145; 6 : 0.000234; 8 : 0.000367; 10 : 0.000522; 12 : 0.000678 |
+| 0.085 (filled square) | 0 : 0.000132; 1 : 0.000133; 2 : 0.000148; 3 : 0.000166; 4 : 0.000201; 5 : 0.000247; 6 : 0.000308; 7 : 0.000370; 8 : 0.000460; 9 : 0.000581; 10 : 0.000698; 11 : 0.000854; 12 : 0.000954 |
+| 0.106 (open square) | 6 : 0.000340; 8 : 0.000540; 10 : 0.000817; 12 : 0.001140 |
+
+**Review (2026-10-22):** every value was drawn as a coloured cross over the figure (the overlay isn't kept in the repo, since the figure is copyrighted); the human reviewer confirmed each cross sits on its marker. Notes: the σ = 0.042 marker at 10° has a white bar through it (a print flaw), read at the centre of its outline; the σ = 0.106 square at 6° half overlaps the σ = 0.085 square; the σ = 0.064 circle at 0° (buried in the axis) and any σ = 0.106 point at 4° (not visible) were not added. The data is in `tests/validation/reference/knight_hefner_1937_power.csv`.
+
 ## M5 validation rotor (NACA TN 3044 / TN 1698 rotor B) — readings `VERIFIED by human review (2026-10-12)`; rotor data incomplete
 Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/reference/carpenter_fridovich_1953.csv`.
 

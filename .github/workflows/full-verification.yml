@@ -137,6 +137,8 @@ jobs:
           run ballin_app_d ./build/release/tests/eyas_ballin_app_d_cases tools/plot_ballin_app_d.py
           run kaplita ./build/release/tests/eyas_kaplita_cases tools/plot_kaplita.py
           run kaplita_transients ./build/release/tests/eyas_kaplita_transient_cases tools/plot_kaplita_transients.py
+          # Data only, no generator: Knight & Hefner against the tip-loss readings (D-051).
+          python tools/plot_m9_tip_loss.py validation-output/plots/m9_tip_loss || failed="$failed m9_tip_loss"
           if [ -n "$failed" ]; then echo "failed:$failed"; exit 1; fi
       - uses: actions/upload-artifact@v4
         if: always()

@@ -29,11 +29,14 @@ namespace eyas::test {
 
 struct RefRotor {
     int num_blades = 4;
-    double radius = 0.0;                  // R [m]
-    double omega = 0.0;                   // Ω [rad/s]
-    double s = 1.0;                       // +1 counter-clockwise from above, −1 clockwise
-    double root_cutout = 0.0;             // [m]
-    double tip_loss = 1.0;                // B
+    double radius = 0.0;       // R [m]
+    double omega = 0.0;        // Ω [rad/s]
+    double s = 1.0;            // +1 counter-clockwise from above, −1 clockwise
+    double root_cutout = 0.0;  // [m]
+    double tip_loss = 1.0;     // B
+    // Radius of the inflow's momentum disc / R (D-051): B with tip loss on
+    // the inflow, 1 for the full disc.
+    double momentum_radius = 1.0;
     std::function<double(double)> chord;  // [m] against r/R
     std::function<double(double)> twist;  // [rad] against r/R
     const Airfoil* airfoil = nullptr;
@@ -231,14 +234,19 @@ inline RefLoads reference_loads_at(const RefRotor& rotor, const RefCondition& co
 
 // Loads with λ_i solved from Padfield 3rd ed. Eq. 3.139 by bisection on
 // g(λ) = 2λ√(μ² + (λ − μ_z)²) − C_T(λ) over a bracket found by expanding
-// [−0.5, 0.5].
+// [−0.5, 0.5]. With a momentum disc of radius B_m R (D-051), the momentum
+// thrust is that disc's, T = 2ρ(πB_m²R²) v √(V² + v²), so in the full disc's
+// coefficients g(λ) = 2B_m²λ√(μ² + (λ − μ_z)²) − C_T(λ) (Johnson 2013
+// Eq. 3.115).
 inline RefLoads reference_loads(const RefRotor& rotor, const RefCondition& cond) {
     const double vr = rotor.omega * rotor.radius;
     const double mu = std::hypot(cond.v_hub_h.x(), cond.v_hub_h.y()) / vr;
     const double mu_z = cond.v_hub_h.z() / vr;
+    const double disc = rotor.momentum_radius * rotor.momentum_radius;  // π(B_m R)²/(πR²)
     const auto g = [&](double lam) {
         const double d = lam - mu_z;
-        return 2.0 * lam * std::sqrt(mu * mu + d * d) - reference_loads_at(rotor, cond, lam).ct;
+        return disc * 2.0 * lam * std::sqrt(mu * mu + d * d) -
+               reference_loads_at(rotor, cond, lam).ct;
     };
     double lo = -0.5;
     double hi = 0.5;

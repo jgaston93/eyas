@@ -116,6 +116,8 @@ BladeElementRotor::BladeElementRotor(BladeElementRotorConfig config)
       s_(config_.direction == RotationDirection::counter_clockwise ? 1.0 : -1.0),
       area_(std::numbers::pi * config_.radius * config_.radius),
       tip_speed_(config_.rotor_speed * config_.radius),
+      inflow_tip_(config_.inflow_tip_loss == InflowTipLoss::effective_disc ? config_.tip_loss
+                                                                           : 1.0),
       C_hb_(hub_rotation(config_.hub_pitch, config_.hub_roll)),
       C_bh_(C_hb_.transpose()) {
     validate(config_);
@@ -200,6 +202,17 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
         k.height = (ctx.ground_z_n - hub_z_n) / config_.radius;
     }
     return k;
+}
+
+double full_disc_inflow_ratio(double tip, double lambda0, double mu) noexcept {
+    const double mu2 = mu * mu;
+    const double v2 = mu2 + lambda0 * lambda0;
+    if (v2 == 0.0) {
+        return tip;  // the hover limit, at rest with no inflow
+    }
+    const double c = tip * tip * std::abs(lambda0) * std::sqrt(v2);
+    return std::numbers::sqrt2 * tip * tip * std::sqrt(v2) /
+           std::sqrt(mu2 + std::sqrt(mu2 * mu2 + 4.0 * c * c));
 }
 
 double BladeElementRotor::ground_factor(const Kinematics& k, double lambda0) const noexcept {
@@ -420,9 +433,14 @@ RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
     // Near the ground (D-050) the momentum term is taken at λ/κ_g, which
     // also rises strictly with λ (κ_g falls as λ rises at fixed μ), so the
     // root stays unique; with κ_g = 1 the term is unchanged, to the bit.
+    // With tip loss on the inflow (D-051) the momentum term is the thrust of
+    // the disc of radius B·R, B² times the full disc's at the same velocities
+    // (Johnson 2013 Eq. 3.115; Johnson's VRS curves are homogeneous in the
+    // velocities, so the same holds on them); at B = 1, to the bit.
     int passes = 0;
     bool vrs_converged = true;
     const bool vrs = config_.vortex_ring == VortexRingModel::johnson_2005;
+    const double disc_ratio = inflow_tip_ * inflow_tip_;  // momentum disc / πR²
     const auto eval = [&](double lambda, RotorLoads& l) {
         l = pass(k, LinearInflow{lambda, 0.0, 0.0}, x);
         ++passes;
@@ -430,10 +448,10 @@ RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
         if (vrs) {
             const VortexRingThrust t = vortex_ring_thrust(lt, mu, mu_z, false);
             vrs_converged = vrs_converged && t.converged;
-            return t.ct_vrs - l.ct;
+            return disc_ratio * t.ct_vrs - l.ct;
         }
         const double d = lt - mu_z;
-        return 2.0 * lt * std::sqrt(mu * mu + d * d) - l.ct;
+        return disc_ratio * (2.0 * lt * std::sqrt(mu * mu + d * d)) - l.ct;
     };
 
     // Bracket from a fixed start, with no warm start from earlier calls
@@ -447,7 +465,7 @@ RotorLoads BladeElementRotor::solve_uniform(const Kinematics& k,
     bool converged = fa == 0.0;
     RotorLoads* result = &la;
     if (!converged) {
-        const double c0 = la.ct;
+        const double c0 = la.ct / disc_ratio;  // the momentum disc's thrust coefficient
         double b = c0 / (2.0 * std::sqrt(mu * mu + mu_z * mu_z + 0.5 * std::abs(c0)));
         double fb = eval(b, lb);
         result = &lb;
@@ -542,7 +560,12 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
             config_.inflow == InflowModel::pitt_peters ? x[inflow_offset()] : loads.lambda_i;
         const double beta_1c =
             config_.flap ? multiblade_flap(x, kin.psi, config_.num_blades).beta1c : 0.0;
-        out.coupling->set(slots_.lambda0, lambda0);
+        // With tip loss on the inflow (D-051) the wash maps get the full
+        // disc's equivalent inflow; at B = 1 λ0 itself, to the bit.
+        out.coupling->set(slots_.lambda0,
+                          inflow_tip_ == 1.0
+                              ? lambda0
+                              : full_disc_inflow_ratio(inflow_tip_, lambda0, kin.mu) * lambda0);
         out.coupling->set(slots_.mu_x, kin.v_hub_h.x() / tip_speed_);
         out.coupling->set(slots_.mu_z, kin.mu_z);
         out.coupling->set(slots_.beta_1c, beta_1c);
@@ -559,8 +582,11 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
             // Vortex-ring correction (D-049): the thrust row's mass flow from
             // Johnson's baseline curve, quasi-static, and the VRS increment as
             // a thrust deficit D lagging its quasi-static value with
-            // τ = 0.7/λ_h revolutions (Johnson TP-2005 p. 16):
+            // τ = 0.7/λ_h revolutions (D-049: Johnson TP-2005 p. 16's 14
+            // revolutions at λ_h = 0.05, scaled with R/v_h):
             //   dD/dt = (D_qs − D) λ_h Ω / (0.7 · 2π),  D_qs = C_T,vrs − C_T,base.
+            // With tip loss on the inflow (D-051) the disc has radius B·R, so
+            // τ scales by B: the rate is divided by inflow_tip_.
             // Outside the region D_qs = 0, and with D = 0 the inflow equations
             // are those without the correction, to the bit.
             const double lambda0 = x[i] / kappa;
@@ -578,11 +604,11 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
             // inflow passes through, does D hold still.
             const double target = t.active ? t.ct_vrs - t.ct_base : 0.0;
             out.xdot0[iv] = (target - deficit) * t.lambda_h * config_.rotor_speed /
-                            (kVortexRingLagCoefficient * 2.0 * std::numbers::pi);
+                            (kVortexRingLagCoefficient * 2.0 * std::numbers::pi * inflow_tip_);
         }
-        const Vec3 rates = pitt_peters_rates(Vec3(x[i], x[i + 1], x[i + 2]),
-                                             Vec3(loads.ct, loads.c1s, loads.c1c), kin.mu, kin.mu_z,
-                                             kin.cos_w, kin.sin_w, config_.rotor_speed, row, kappa);
+        const Vec3 rates = pitt_peters_rates(
+            Vec3(x[i], x[i + 1], x[i + 2]), Vec3(loads.ct, loads.c1s, loads.c1c), kin.mu, kin.mu_z,
+            kin.cos_w, kin.sin_w, config_.rotor_speed, row, kappa, inflow_tip_);
         out.xdot0[i] = rates.x();
         out.xdot0[i + 1] = rates.y();
         out.xdot0[i + 2] = rates.z();
@@ -729,7 +755,8 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
 
 std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& node) {
     node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "direction", "inflow",
-                     "vortex_ring", "ground_effect", "hub", "blade", "controls", "pitch_input"});
+                     "vortex_ring", "ground_effect", "inflow_tip_loss", "hub", "blade", "controls",
+                     "pitch_input"});
     BladeElementRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -780,6 +807,15 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         c.ground_effect = GroundEffectModel::cheeseman_bennett;
     } else {
         node.fail("ground_effect", "must be none, genhel or cheeseman_bennett");
+    }
+    // Required, no default (D-021, D-051).
+    const std::string inflow_tip_loss = node.string("inflow_tip_loss");
+    if (inflow_tip_loss == "none") {
+        c.inflow_tip_loss = InflowTipLoss::none;
+    } else if (inflow_tip_loss == "effective_disc") {
+        c.inflow_tip_loss = InflowTipLoss::effective_disc;
+    } else {
+        node.fail("inflow_tip_loss", "must be none or effective_disc");
     }
 
     const Config hub = node.child("hub");

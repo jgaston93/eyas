@@ -387,24 +387,31 @@ std::vector<double> settle(const BladeElementRotor& rotor, SimContext ctx, std::
 }
 
 // Spec M5: "in steady state, the result reduces to uniform momentum inflow
-// in hover", from a zero start (no singularity at V = 0), and in climb.
+// in hover", from a zero start (no singularity at V = 0), and in climb; also
+// with tip loss on the inflow (D-051), both models over the disc of radius B·R.
 TEST(PittPetersAnchors, SteadyHoverEqualsUniformMomentum) {
     for (const double climb : {0.0, 5.0}) {
         for (const bool synthetic : {false, true}) {
-            BladeElementRotorConfig c = anchor_rotor(12 * kDeg);
-            if (synthetic) {
-                c.airfoil = test::airfoil_from(test::synthetic_airfoil_csv());
-                c.root_cutout = 1.2;
+            for (const bool tip : {false, true}) {
+                BladeElementRotorConfig c = anchor_rotor(12 * kDeg);
+                if (synthetic) {
+                    c.airfoil = test::airfoil_from(test::synthetic_airfoil_csv());
+                    c.root_cutout = 1.2;
+                }
+                if (tip) {
+                    c.tip_loss = 0.97;
+                    c.inflow_tip_loss = InflowTipLoss::effective_disc;
+                }
+                const BladeElementRotor rotor(c);
+                SimContext ctx = test::sea_level_context();
+                ctx.body.vel_b = Vec3(0.0, 0.0, -climb);
+                const std::vector<double> x = settle(rotor, ctx, {0.0, 0.0, 0.0}, 3.0);
+                const RotorLoads uni = rotor.evaluate_uniform(ctx);
+                ASSERT_TRUE(uni.converged);
+                EXPECT_NEAR(x[0], uni.lambda_i, 1e-9) << "climb " << climb << ", tip " << tip;
+                EXPECT_NEAR(x[1], 0.0, 1e-12);
+                EXPECT_NEAR(x[2], 0.0, 1e-12);
             }
-            const BladeElementRotor rotor(c);
-            SimContext ctx = test::sea_level_context();
-            ctx.body.vel_b = Vec3(0.0, 0.0, -climb);
-            const std::vector<double> x = settle(rotor, ctx, {0.0, 0.0, 0.0}, 3.0);
-            const RotorLoads uni = rotor.evaluate_uniform(ctx);
-            ASSERT_TRUE(uni.converged);
-            EXPECT_NEAR(x[0], uni.lambda_i, 1e-9) << "climb " << climb;
-            EXPECT_NEAR(x[1], 0.0, 1e-12);
-            EXPECT_NEAR(x[2], 0.0, 1e-12);
         }
     }
 }
@@ -438,6 +445,58 @@ TEST(PittPetersAnchors, HoverInflowTimeConstants) {
         EXPECT_NEAR(-1.0 / J(1, 1), tau1, 1e-6 * tau1);
         EXPECT_NEAR(-1.0 / J(2, 2), tau1, 1e-6 * tau1);
         EXPECT_NEAR((J - Eigen::Matrix3d(J.diagonal().asDiagonal())).norm(), 0.0, 1e-6 * J.norm());
+    }
+}
+
+// Tip loss on the inflow (D-051): the thrust row is the Pitt–Peters row of
+// the disc of radius B·R. Checked by running the independent Pitt & Peters
+// 1980 transcription on that disc, in its own coefficients (velocities over
+// ΩBR, so λ0, μ and μ_z over B, and λ1c, λ1s unchanged since their radial
+// weighting r/(BR) carries the B; C_T over ρπB²R²(ΩBR)², so over B⁴), then
+// mapping dλ0 back (times B). The moment rows are the full disc's (no tip
+// loss). In hover, the steady state is λ0 = √(C_T/2)/B (Johnson 2013
+// Eq. 3.114) and the time constant B·(128/75π)/(4λ0Ω).
+TEST(PittPetersAnchors, InflowTipLossIsTheEffectiveDiscsThrustRow) {
+    const double W = 27.0;
+    const double B = 0.97;
+    std::mt19937 rng(5);
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+    for (int trial = 0; trial < 50; ++trial) {
+        PPInputs in;
+        in.l0 = 0.05 + 0.03 * u(rng);
+        in.l1s = 0.02 * u(rng);
+        in.l1c = 0.02 * u(rng);
+        in.mu = trial < 5 ? 0.0 : 0.2 * (1.0 + u(rng));
+        in.mu_z = 0.03 * u(rng);
+        in.psi_w = kPi * u(rng);
+        in.omega = W;
+        const Vec3 C(0.006 + 0.003 * u(rng), 0.0004 * u(rng), 0.0004 * u(rng));
+        const Vec3 got =
+            pitt_peters_rates(Vec3(in.l0, in.l1s, in.l1c), C, in.mu, in.mu_z, std::cos(in.psi_w),
+                              std::sin(in.psi_w), W, std::nullopt, 1.0, B);
+        PPInputs disc = in;
+        disc.l0 = in.l0 / B;
+        disc.mu = in.mu / B;
+        disc.mu_z = in.mu_z / B;
+        const PPRates want = test::pitt_peters_1980(disc, C.x() / std::pow(B, 4), 0.0, 0.0);
+        EXPECT_NEAR(got.x(), B * want.l0, 1e-12 * W) << "trial " << trial;
+        const Vec3 full = pitt_peters_rates(Vec3(in.l0, in.l1s, in.l1c), C, in.mu, in.mu_z,
+                                            std::cos(in.psi_w), std::sin(in.psi_w), W);
+        EXPECT_EQ(got.y(), full.y());
+        EXPECT_EQ(got.z(), full.z());
+    }
+    for (const double l0 : {0.04, 0.06, 0.09}) {
+        const Vec3 C(2.0 * B * B * l0 * l0, 0.0, 0.0);
+        const auto f = [&](double l) {
+            return pitt_peters_rates(Vec3(l, 0.0, 0.0), C, 0.0, 0.0, 1.0, 0.0, W, std::nullopt, 1.0,
+                                     B)
+                .x();
+        };
+        EXPECT_NEAR(f(l0), 0.0, 1e-15);
+        EXPECT_NEAR(l0, std::sqrt(C.x() / 2.0) / B, 1e-15);
+        const double h = 1e-7;
+        const double tau0 = B * kM0 / (4.0 * l0 * W);
+        EXPECT_NEAR(-1.0 / ((f(l0 + h) - f(l0 - h)) / (2.0 * h)), tau0, 1e-6 * tau0);
     }
 }
 

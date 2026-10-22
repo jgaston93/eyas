@@ -54,6 +54,12 @@ enum class VortexRingModel : std::uint8_t {
     johnson_2005,  // Johnson NASA/TP-2005-213477 (D-049)
 };
 
+// Tip loss on the mean inflow (D-051).
+enum class InflowTipLoss : std::uint8_t {
+    none,            // momentum over the full disc πR² (GenHel)
+    effective_disc,  // momentum over the disc π(BR)² (Johnson 2013 §3.6.2)
+};
+
 // Linear induced inflow λ(r, ψ) = l0 + (r/R)(l1s sin ψ + l1c cos ψ) [-],
 // positive down along the shaft, ψ the blade azimuth, r the radius in the
 // hub plane (Pitt & Peters 1980 eq. 1; D-027).
@@ -134,6 +140,13 @@ struct BladeElementRotorConfig {
     // for λ0/κ_g, κ_g from the hub's height above the ground plane
     // (SimContext::ground_z_n, vertically; 1 with no ground).
     GroundEffectModel ground_effect = GroundEffectModel::none;
+    // Tip loss on the mean inflow (D-051). effective_disc: the momentum
+    // relation of both inflow models is taken over the disc of radius B·R
+    // (B = tip_loss), C_T = 2B²λ0 V in hover, so the induced velocity is 1/B
+    // of the full disc's (Johnson 2013 Eqs. 3.114–3.115); the Pitt–Peters
+    // thrust row's apparent mass is that disc's too. The cyclic inflow rows
+    // are unchanged. none: the full disc, as GenHel.
+    InflowTipLoss inflow_tip_loss = InflowTipLoss::none;
     std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
     // Yawed-flow drag (Johnson 2013 §6.22–6.23; D-039): the section drag acts
     // along the full local flow, spanwise component u_R included, with
@@ -186,6 +199,18 @@ struct BladeElement {
     double twist_mode = 0.0;  // m(r/R) of the elastic twist [-] (D-038); 0 without it
 };
 
+// The ratio r = λ_full/λ_e of the full disc's momentum inflow to the
+// inflow λ_e of the disc of radius B·R (D-051) carrying the same thrust, at
+// in-plane speed mu, all / ΩR, in level flight (μ_z = 0). The effective
+// disc's momentum thrust is c = C_T/2 = B²|λ_e|√(μ² + λ_e²); the full disc's
+// inflow for it has the closed form λ_full² = 2c²/(μ² + √(μ⁴ + 4c²)) (from
+// λ²(μ² + λ²) = c², Johnson 2013 Eq. 5.9 at λ_c = 0), so
+//   r = √2 B² √(μ² + λ_e²) / √(μ² + √(μ⁴ + 4c²)),
+// B in hover, tending to B² in edgewise flight; exactly 1 at B = 1, and B at
+// μ = λ_e = 0. From the inflow, not the blade loads, so it carries none of
+// their vibration. Climb and descent use the level-flight ratio.
+double full_disc_inflow_ratio(double tip, double lambda0, double mu) noexcept;
+
 class BladeElementRotor : public DynamicComponent {
 public:
     // Throws InitError on an invalid configuration.
@@ -210,7 +235,10 @@ public:
     // Coupling outputs (D-003, D-028), "<name>.<field>", all independent of
     // the body acceleration:
     //   lambda0    λ0 [-]: uniform induced inflow / ΩR, positive down (the
-    //              Pitt–Peters state, or the uniform solve);
+    //              Pitt–Peters state, or the uniform solve); with tip loss
+    //              on the inflow (D-051), the full disc's equivalent at the
+    //              same thrust, full_disc_inflow_ratio() times it, since GenHel's wash
+    //              maps, its consumer, are built on the full disc's λ0;
     //   mu_x, mu_z [-]: hub velocity relative to the air along x_h and z_h
     //              (z_h down the shaft) / ΩR;
     //   beta_1c    β_1c [rad]: longitudinal flapping (Padfield 3rd ed.
@@ -306,7 +334,10 @@ private:
     double s_;          // +1 counter-clockwise, −1 clockwise
     double area_;       // [m²]
     double tip_speed_;  // [m/s]
-    Mat3 C_hb_;         // body → hub
+    // Radius of the inflow's momentum disc / R [-] (D-051): B with
+    // effective_disc, 1 without.
+    double inflow_tip_;
+    Mat3 C_hb_;  // body → hub
     Mat3 C_bh_;
     struct Slots {
         CouplingSlot lambda0;
