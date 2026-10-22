@@ -593,6 +593,16 @@ airframe:
   mass: "{fmt(round(m_af, 6))} lbm"
   inertia: {{ixx: "{fmt(mp["I_X"])} slug*ft^2", iyy: "{fmt(mp["I_Y"])} slug*ft^2", izz: "{fmt(mp["I_Z"])} slug*ft^2", ixz: "{fmt(mp["I_XZ"])} slug*ft^2"}}
 
+# Rotor speed (D-052, M9 Stage A): main and tail rotors geared on one shaft, the
+# engines' governor ideal (the governed speed held whatever the load). No lumped
+# inertia yet: with an ideal drive it would only add a gyroscopic moment, which
+# GenHel's spinning parts already give (D-048); GenHel's drivetrain inertias come
+# with the engines (Stage B).
+shafts:
+  - name: rotor_drive
+    speed: "{fmt(mr["OMEGA"])} rad/s"
+    drive: ideal
+
 components:
   # Producers before consumers is the executive's job (D-003); config order is for reading.
 {fcs_block(rig, mr, travel, sens, stab, pos, variant is None)}
@@ -605,6 +615,7 @@ components:
     inflow: pitt_peters
     vortex_ring: johnson_2005  # Johnson NASA/TP-2005-213477 (D-049)
     ground_effect: genhel  # GenHel CR-166309 Eq. 5.8.2-1 (D-050)
+    shaft: {{name: rotor_drive}}  # D-052
     inflow_tip_loss: effective_disc  # Johnson 2013 §3.6.2 (D-051)
     hub:
       position: {pos(mr["FS_MR"], mr["BL_MR"], mr["WL_MR"])}
@@ -657,6 +668,7 @@ components:
     blades: {int(tr["NB_TR"])}
     radius: "{fmt(tr["R_TR"])} ft"
     rotor_speed: "{fmt(tr["OMEGA_TR"])} rad/s"
+    shaft: {{name: rotor_drive, gear: {fmt(tr["OMEGA_TR"] / mr["OMEGA"])}}}  # tail/main speed (D-052)
     chord: "{fmt(tr["C_TR"])} ft"
     lift_slope: "{fmt(tr["A_TR"])} 1/rad"
     tip_loss: {fmt(tr["B_TR"])}

@@ -59,7 +59,8 @@ namespace {
 // config's block is then optional, but still checked when present, so a
 // file is valid or invalid the same way whichever call loads it.
 std::unique_ptr<Model::Impl> build(const Config& config, const GeodeticOrigin* origin) {
-    config.allow_keys({"simulation", "geodetic_origin", "airframe", "components", "force_models"});
+    config.allow_keys(
+        {"simulation", "geodetic_origin", "airframe", "shafts", "components", "force_models"});
     if (origin != nullptr && config.contains("geodetic_origin")) {
         (void)read_origin(config);
     }
@@ -285,8 +286,10 @@ void Model::update_outputs() noexcept {
         const auto& rotor = static_cast<const BladeElementRotor&>(ex.component(impl_->main_rotor));
         const std::span<const double> xr = states(impl_->main_rotor);
         const RotorLoads loads = rotor.evaluate(ctx, xr);
-        const double psi = rotor.azimuth(t);
-        o.rotor_speed_percent = 100.0;  // Ω fixed until M9
+        const double psi = rotor.azimuth(ctx);
+        // Ω over its governed value: 100 % with a constant speed or an ideal
+        // drive (D-052).
+        o.rotor_speed_percent = 100.0 * rotor.rotor_speed(ctx) / rotor.config().rotor_speed;
         o.main_rotor_thrust = loads.thrust;
         o.main_rotor_torque = loads.torque;
         o.main_rotor_power = loads.power;
@@ -302,7 +305,7 @@ void Model::update_outputs() noexcept {
     if (impl_->tail_rotor != kNone) {
         const auto& rotor = static_cast<const BaileyRotor&>(ex.component(impl_->tail_rotor));
         o.tail_rotor_thrust = rotor.evaluate(ctx, states(impl_->tail_rotor)).thrust;
-        o.tail_rotor_azimuth = wrap_2pi(rotor.config().rotor_speed * t);
+        o.tail_rotor_azimuth = rotor.azimuth(ctx);
     }
     bool wow = false;
     for (const std::size_t i : impl_->gears) {

@@ -7,8 +7,8 @@
 #include "sim/executive.hpp"
 
 // One free step of the whole state by the scheme Executive::step uses: RK4,
-// then the quaternion renormalized. Shared by the linearization's flow map
-// (monodromy()) and the tests' free flights. Allocates nothing.
+// then the quaternion renormalized and the shaft azimuths wrapped. Shared by the linearization's
+// flow map (monodromy()) and the tests' free flights. Allocates nothing.
 namespace eyas {
 
 // Advances x (num_states() long) from t to t + dt [s], the controls given by
@@ -28,6 +28,7 @@ template <class ControlsAt>
     BodyState b = unpack_body(x);
     b.q_nb.normalize();
     pack_body(b, x);
+    ex.wrap_shaft_azimuths(x);  // D-052, as Executive::step
     return unconverged;
 }
 

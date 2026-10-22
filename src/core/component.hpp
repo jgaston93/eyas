@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <limits>
 #include <span>
@@ -30,6 +31,9 @@ struct SimContext {
     // Outputs of the components evaluated before this one (D-003); read
     // only the slots returned by bind().
     const CouplingOutputs* coupling = nullptr;
+    // The aircraft's shafts (D-052), in config order: shafts[0..num_shafts).
+    std::array<ShaftState, kMaxShafts> shafts{};
+    int num_shafts = 0;
 };
 
 // One component's results for one derivative evaluation, split into the value
@@ -51,6 +55,29 @@ struct ComponentDerivs {
     // Where a producer writes its coupling outputs (D-003); null when the
     // component is evaluated on its own, e.g. in a unit test.
     CouplingOutputs* coupling = nullptr;
+    // The shaft parts of the affine form (D-052), with Ω̇ the shaft
+    // accelerations [rad/s²] (entries past the aircraft's shaft count unused):
+    //   ẋ_c    += G_s Ω̇                 (Gs: n_c × kMaxShafts, row-major; may
+    //                                     be empty when the aircraft has no shaft)
+    //   load_c += H_s Ω̇                 (on the airframe, body axes)
+    //   Q_c     = Q0 + K_a a + K_s Ω̇     the torque the component applies to
+    //                                     each shaft, referred to it [N·m]:
+    //                                     gear ratio × its axial torque about
+    //                                     its own axis, positive along rotation.
+    // A component on no shaft leaves them zero.
+    // The braces keep existing aggregate initializations free of
+    // -Wmissing-field-initializers.
+    std::span<double> Gs{};  // NOLINT(readability-redundant-member-init)
+    Mat6S Hs = Mat6S::Zero();
+    VecS Q0 = VecS::Zero();
+    MatS6 Ka = MatS6::Zero();
+    MatSS Ks = MatSS::Zero();
+};
+
+// What a component on a shaft is told at init (D-052).
+struct ShaftInfo {
+    std::string name;
+    double speed = 0.0;  // governed speed [rad/s]
 };
 
 // How trim treats one state of a component (D-045, M8c3 amendment): its
@@ -81,6 +108,12 @@ public:
     virtual std::vector<std::string> produces() const { return {}; }
     virtual std::vector<std::string> consumes() const { return {}; }
     virtual void bind(const CouplingRegistry& /*registry*/) {}
+
+    // The aircraft's shafts (D-052), in config order, at init after bind():
+    // a component configured on a shaft finds its index here and checks its
+    // speed against the shaft's (throw InitError on a mismatch or a missing
+    // name). The default uses none.
+    virtual void bind_shafts(std::span<const ShaftInfo> /*shafts*/) {}
 
     // Pure function of (ctx, x). A cached table-search hint is the only hidden
     // state allowed, because it can change the search time but not the result.

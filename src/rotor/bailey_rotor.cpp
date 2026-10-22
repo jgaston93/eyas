@@ -119,6 +119,46 @@ void BaileyRotor::bind(const CouplingRegistry& registry) {
     }
 }
 
+double BaileyRotor::rotor_speed(const SimContext& ctx) const noexcept {
+    if (shaft_index_ < 0) {
+        return config_.rotor_speed;
+    }
+    return gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
+}
+
+double BaileyRotor::azimuth(const SimContext& ctx) const noexcept {
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    const double turned = shaft_index_ < 0
+                              ? config_.rotor_speed * ctx.t
+                              : gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].psi;
+    double psi = std::fmod(turned, kTwoPi);
+    if (psi < 0.0) {
+        psi += kTwoPi;
+    }
+    return psi;
+}
+
+void BaileyRotor::bind_shafts(std::span<const ShaftInfo> shafts) {
+    if (!config_.shaft) {
+        return;
+    }
+    const std::string who = "bailey_rotor '" + config_.name + "'";
+    const auto& link = config_.shaft.value();
+    for (std::size_t k = 0; k < shafts.size(); ++k) {
+        if (shafts[k].name == link.name) {
+            const double want = link.gear * shafts[k].speed;
+            if (std::abs(config_.rotor_speed - want) > 1e-9 * want) {
+                throw InitError(who + ": rotor_speed must be gear × shaft '" + shafts[k].name +
+                                "' speed (D-052)");
+            }
+            shaft_index_ = static_cast<int>(k);
+            gear_ = link.gear;
+            return;
+        }
+    }
+    throw InitError(who + ": no shaft named '" + link.name + "' (D-052)");
+}
+
 BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx,
                                        std::span<const double> x) const noexcept {
     Vec3 wash_b = Vec3::Zero();
@@ -168,9 +208,11 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i, c
         out.downwash_rate = rate * (out.downwash - wake->downwash_d);
     }
     const Vec3 v_h = C_hb_ * v_b;
-    const double mu2 = (v_h.x() * v_h.x() + v_h.y() * v_h.y()) / (tip_speed_ * tip_speed_);
+    const double omega = rotor_speed(ctx);  // D-052
+    const double tip_speed = omega * c.radius;
+    const double mu2 = (v_h.x() * v_h.x() + v_h.y() * v_h.y()) / (tip_speed * tip_speed);
     out.mu = std::sqrt(mu2);
-    out.mu_z = v_h.z() / tip_speed_;
+    out.mu_z = v_h.z() / tip_speed;
 
     // Bailey coefficients (p. 5.4-7).
     const double B = c.tip_loss;
@@ -191,7 +233,7 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i, c
     // θ = θ_c − (∂a₀/∂T) T tan δ₃ with T = K_BLK ρA(ΩR)² C_T and
     // C_T = G(λ t₃₁ + θ t₃₂ + θ_tw t₃₃), solved for C_T (D-028).
     const double rho = ctx.air.density;
-    const double q_area = rho * area_ * tip_speed_ * tip_speed_;
+    const double q_area = rho * area_ * tip_speed * tip_speed;
     double theta_cmd = 0.0;  // a pitch input evaluated on its own: zero (D-003)
     if (c.controls) {
         theta_cmd = c.controls->pitch(ctx.controls).theta0;
@@ -206,7 +248,7 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i, c
 
     // Inflow: Pitt–Peters thrust row (D-027, D-028).
     const double V = std::sqrt(mu2 + lambda * lambda);
-    out.lambda_dot = c.rotor_speed * (out.ct - 2.0 * lambda_i * V) / PittPetersMass::m0;
+    out.lambda_dot = omega * (out.ct - 2.0 * lambda_i * V) / PittPetersMass::m0;
 
     // Thrust along −z_h, drag along x_b (p. 5.4-8), at the hub.
     Vec3 F_b = C_bh_ * Vec3(0.0, 0.0, -out.thrust);
@@ -221,6 +263,12 @@ void BaileyRotor::derivatives(const SimContext& ctx, std::span<const double> x,
     const BaileyRotorLoads loads = evaluate(ctx, x);
     out.load0_b = loads.body;
     out.xdot0[0] = loads.lambda_dot;
+    if (shaft_index_ >= 0 && !out.Gs.empty()) {
+        // λ_i is a velocity over ΩR: with it held, λ̇ gains −λ Ω̇/Ω (D-052).
+        // No torque on the shaft: the tail-rotor torque isn't modelled (issue
+        // #40), and the thrust and drag act at the hub, with no axial moment.
+        out.Gs[static_cast<std::size_t>(shaft_index_)] = -gear_ * x[0] / rotor_speed(ctx);
+    }
     if (config_.fuselage_wake) {
         out.xdot0[1] = loads.sidewash_rate;
         out.xdot0[2] = loads.downwash_rate;
@@ -241,10 +289,11 @@ FuselageWake fuselage_wake_from_config(const Config& node) {
 
 std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
     using units::Dimension;
-    node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "chord", "lift_slope",
-                     "tip_loss", "twist", "delta3", "coning_per_thrust", "pitch_bias", "drag_area",
-                     "blockage", "hub", "controls", "pitch_input", "main_rotor_wash",
-                     "fuselage_wake"});
+    node.allow_keys(
+        {"type",          "name",     "blades", "radius",   "rotor_speed",       "chord",
+         "lift_slope",    "tip_loss", "twist",  "delta3",   "coning_per_thrust", "pitch_bias",
+         "drag_area",     "blockage", "hub",    "controls", "pitch_input",       "main_rotor_wash",
+         "fuselage_wake", "shaft"});
     BaileyRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -259,6 +308,20 @@ std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
     c.num_blades = static_cast<int>(blades);
     c.radius = node.quantity("radius", Dimension::length);
     c.rotor_speed = node.quantity("rotor_speed", Dimension::angular_rate);
+    if (node.contains("shaft")) {  // optional (D-052)
+        const Config sh = node.child("shaft");
+        sh.allow_keys({"name", "gear"});
+        BaileyRotorConfig::ShaftLink link;
+        link.name = sh.string("name");
+        link.gear = sh.contains("gear") ? sh.number("gear") : 1.0;
+        if (link.name.empty()) {
+            sh.fail("name", "must not be empty");
+        }
+        if (!(link.gear > 0.0) || !std::isfinite(link.gear)) {
+            sh.fail("gear", "must be positive and finite");
+        }
+        c.shaft = link;
+    }
     c.chord = node.quantity("chord", Dimension::length);
     c.lift_slope = node.quantity("lift_slope", Dimension::per_angle);
     c.tip_loss = node.number("tip_loss");

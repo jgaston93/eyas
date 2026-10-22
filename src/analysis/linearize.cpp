@@ -300,6 +300,13 @@ std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const Linea
 
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& o) {
+    for (const ShaftConfig& sh : ex.shafts()) {
+        if (sh.drive != ShaftDrive::ideal) {
+            throw InitError("linearize: shaft '" + sh.name +
+                            "' has a free drive; its speed as a state comes with the engines "
+                            "(D-052)");
+        }
+    }
     if (!o.height && !std::isnan(c.ground_height)) {
         throw InitError(
             "linearize: with a ground the height is a coordinate (ground effect, D-050); set "

@@ -148,6 +148,14 @@ struct BladeElementRotorConfig {
     // are unchanged. none: the full disc, as GenHel.
     InflowTipLoss inflow_tip_loss = InflowTipLoss::none;
     std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
+    // The shaft the rotor turns on (D-052): its speed and azimuth are the
+    // shaft's times `gear`; rotor_speed must equal gear × the shaft's governed
+    // speed. None: a constant rotor_speed and ψ = Ω t.
+    struct ShaftLink {
+        std::string name;
+        double gear = 1.0;  // rotor speed / shaft speed [-], positive
+    };
+    std::optional<ShaftLink> shaft;
     // Yawed-flow drag (Johnson 2013 §6.22–6.23; D-039): the section drag acts
     // along the full local flow, spanwise component u_R included, with
     // magnitude ½ρc W² c_d, W² = U² + u_R², so a radial drag force appears
@@ -248,6 +256,7 @@ public:
     std::vector<std::string> produces() const override;
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
+    void bind_shafts(std::span<const ShaftInfo> shafts) override;
 
     // Aerodynamic loads at rotor states x (empty: every state zero; otherwise
     // num_states() long), with the configured inflow: uniform inflow solved
@@ -283,7 +292,13 @@ public:
     const BladeElementRotorConfig& config() const noexcept { return config_; }
     std::span<const BladeElement> elements() const noexcept { return elements_; }
     double disk_area() const noexcept { return area_; }       // π R² [m²]
-    double tip_speed() const noexcept { return tip_speed_; }  // ΩR [m/s]
+    double tip_speed() const noexcept { return tip_speed_; }  // nominal ΩR [m/s]
+    // The shaft index bound at init, or −1 (D-052).
+    int shaft_index() const noexcept { return shaft_index_; }
+    // Ω [rad/s] and ψ [rad, in [0, 2π)] in this context: from the shaft
+    // (D-052), or the constant rotor_speed and Ω t.
+    double rotor_speed(const SimContext& ctx) const noexcept;
+    double azimuth(const SimContext& ctx) const noexcept;
     const Mat3& C_hb() const noexcept { return C_hb_; }
 
     // Iteration limit and tolerance of the inflow solve.
@@ -301,9 +316,11 @@ private:
 
     // Per-evaluation inputs to a blade-element pass, in hub axes.
     struct Kinematics {
-        Vec3 v_hub_h;  // [m/s] hub velocity relative to the air
-        Vec3 omega_h;  // [rad/s] body angular rate
-        double psi;    // [rad] rotor azimuth
+        Vec3 v_hub_h;      // [m/s] hub velocity relative to the air
+        Vec3 omega_h;      // [rad/s] body angular rate
+        double psi;        // [rad] rotor azimuth
+        double omega;      // Ω [rad/s]: the shaft's × gear (D-052), or rotor_speed
+        double tip_speed;  // ΩR [m/s]
         SwashplatePitch pitch;
         double rho;       // [kg/m³]
         double a;         // [m/s] speed of sound
@@ -324,6 +341,8 @@ private:
                     std::span<const double> x) const noexcept;
     RotorLoads solve_uniform(const Kinematics& k, std::span<const double> x) const noexcept;
     void finish(RotorLoads& loads, const Kinematics& k) const noexcept;
+    // The shaft torque Q0, K_a, K_s from the loads already in `out` (D-052).
+    void shaft_terms(ComponentDerivs& out) const noexcept;
     // Ground factor κ_g [-] (D-050) at induced inflow λ0; 1 without ground effect.
     double ground_factor(const Kinematics& k, double lambda0) const noexcept;
     // Elastic-twist gain K(V) [rad/N] at the kinematics' airspeed (D-038); 0 without it.
@@ -331,9 +350,11 @@ private:
 
     BladeElementRotorConfig config_;
     std::vector<BladeElement> elements_;
-    double s_;          // +1 counter-clockwise, −1 clockwise
-    double area_;       // [m²]
-    double tip_speed_;  // [m/s]
+    double s_;              // +1 counter-clockwise, −1 clockwise
+    double area_;           // [m²]
+    double tip_speed_;      // [m/s] nominal: rotor_speed × R
+    int shaft_index_ = -1;  // D-052
+    double gear_ = 1.0;     // the shaft link's gear, set with shaft_index_
     // Radius of the inflow's momentum disc / R [-] (D-051): B with
     // effective_disc, 1 without.
     double inflow_tip_;

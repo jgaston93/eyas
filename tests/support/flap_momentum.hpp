@@ -29,6 +29,10 @@ inline Momentum system_momentum(const Executive& ex, const BladeElementRotor& ro
     const BodyState b = ex.body_state();
     const std::span<const double> x = ex.state().subspan(body_layout::kSize);
     const double t = ex.sim_time();
+    // Azimuth and speed from the context: Ω t at a constant speed, the
+    // shaft's state on one (D-052).
+    const SimContext ctx = ex.context(t, ex.state(), Controls{}, Environment{});
+    const double omega = rotor.rotor_speed(ctx);
     const Mat3 C = b.q_nb.toRotationMatrix();
     struct Pt {
         double m;
@@ -40,10 +44,10 @@ inline Momentum system_momentum(const Executive& ex, const BladeElementRotor& ro
     const int nb = rotor.config().num_blades;
     for (int k = 0; k < nb; ++k) {
         const std::size_t ib = 2 * static_cast<std::size_t>(k);
-        const double psi = rotor.blade_azimuth(rotor.azimuth(t), k);
+        const double psi = rotor.blade_azimuth(rotor.azimuth(ctx), k);
         for (std::size_t i = 0; i < beads.rho.size(); ++i) {
             const Jet tau{0.0, 1.0, 0.0};
-            const JVec P = ref.point(mo, tau, constant(psi) + rotor.config().rotor_speed * tau,
+            const JVec P = ref.point(mo, tau, constant(psi) + omega * tau,
                                      Jet{x[ib], x[ib + 1], 0.0}, constant(beads.rho[i]));
             pts.push_back({beads.mass[i], value(P), d1(P)});
         }
@@ -61,6 +65,12 @@ inline Momentum system_momentum(const Executive& ex, const BladeElementRotor& ro
         out.H_cg_n += p.m * (p.p - xc).cross(p.v - vc);
     }
     out.H_cg_n += C * (mp.inertia_b * b.omega_b);  // airframe spin
+    // The shafts' lumped parts spinning relative to the airframe (D-052);
+    // their rigid inertia is in mp.
+    for (std::size_t k = 0; k < ex.shafts().size(); ++k) {
+        const ShaftConfig& sh = ex.shafts()[k];
+        out.H_cg_n += C * (sh.inertia * ctx.shafts[k].omega * sh.axis_b);
+    }
     return out;
 }
 

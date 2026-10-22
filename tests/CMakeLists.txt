@@ -35,6 +35,7 @@ add_executable(eyas_unit_tests
     unit/test_pitt_peters.cpp
     unit/test_vortex_ring.cpp
     unit/test_ground_effect.cpp
+    unit/test_shafts.cpp
     unit/test_realtime.cpp
     unit/test_recorder.cpp
     unit/test_rotor_inputs.cpp

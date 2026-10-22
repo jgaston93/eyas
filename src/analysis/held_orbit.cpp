@@ -76,6 +76,7 @@ void HeldIntegrator::step(int s, const Controls& u, std::vector<double>& x, Vec6
     for (std::size_t i = b; i < n_; ++i) {
         x[i] += h / 6.0 * (k1_[i] + 2.0 * k2_[i] + 2.0 * k3_[i] + k4_[i]);
     }
+    ex_.wrap_shaft_azimuths(x);  // D-052, as the executive's step
     integral += h / 6.0 * (n1 + 2.0 * n2 + 2.0 * n3 + n4);
 }
 

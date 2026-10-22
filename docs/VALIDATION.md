@@ -1600,3 +1600,18 @@ Tip loss on the main rotor's mean inflow (D-051): the momentum relation of both 
 **Everything else moves little** (plots regenerated 2026-10-22; the statistics quoted in the earlier sections predate D-051 where not noted): the ground-effect ratio up to 0.001 lower; Fletcher's on-axis responses (servo) by at most 0.1 dB and 2.1° rms; Ballin App. D and E (GenHel servo) median rms 1.22 → 1.20 in each figure's units; Kaplita's transients by at most 0.3 in any rms; the VRS encounter (M8d) by about 2 % (the lag on the effective radius).
 
 **Builds:** 470 tests pass (GCC 13.3 Release) and the fast set with Clang 18.1 (Debug); clang-format and clang-tidy clean.
+
+## M9 — Rotor speed, Stage A: shafts in the coupled solve (2026-10-22; issue #39)
+
+The rotor speed becomes a degree of freedom (D-052). Shafts are executive states, (ψ, Ω) each, after the components'; their accelerations join the airframe's in the coupled solve (spec §5), so the shaft's acceleration reaches the blades' loads exactly. Components on a shaft turn at gear × its speed; the rotor reports the torque its blades put on the hub, and its inflow states (velocities over ΩR) follow the tip speed. An `ideal` drive holds the governed speed, the model as before; a `free` one is solved (engines in Stage B). The UH-60A's main and tail rotors are on one `ideal` shaft.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Closed form: airframe and free shaft | ✅ | `Shafts.FreeShaftWithInternalMotorMatchesClosedForm`: an internal motor, lumped parts, two spin axes, a full inertia tensor; the shaft and body accelerations from angular-momentum conservation, to 1e-12. |
+| Conservation with blades | ✅ | `Shafts.RotorOnFreeShaftConservesMomentum`: a tumbling airframe with flapping blades on a free shaft, in vacuum, 1 s; angular momentum about the system CG conserved to RK4 truncation (fourth order in the step), the shaft speed exchanging momentum with the tumbling. It caught the missing gyroscopic term of the shaft's parts while building, and catches the blades' Ω̇ terms dropped. |
+| The rotor's shaft terms | ✅ | `Shafts.RotorShaftTermsAreConsistent`: the shaft torque's sensitivity to the body acceleration equals the airframe load's to the shaft acceleration (a symmetric coupled matrix), with and without air; the blades' in-plane inertia; a massless rotor's shaft torque minus gear × its aerodynamic torque. |
+| Ideal drive = constant speed | ✅ | `Shafts.IdealDriveIsTheConstantSpeedRotor` (bit-identical derivatives, a run within round-off). The UH-60A on its ideal shaft: all 477 tests pass; Ballin's trims differ by round-off only (roll of order 1e-8 deg); the ground-effect runs identical. |
+| Inflow, config, real-time | ✅ | `InflowStatesFollowTheTipSpeed`, `ConfigIsReadAndChecked`, `FreeShaftAllocatesNothing`. `eyas_bench` against `main`: about 4 % on step() (15.4 against 14.8 µs), every `advance()` within budget. |
+| Trim and linearization | ✅ (ideal) | Each shaft starts at ψ = 0 at its governed speed; ψ is a phase, not a trim unknown or linear-model state. Free shafts are refused until the engines (Stage B) give them an equilibrium. |
+
+No plots in Stage A: with the ideal drive nothing a plot would show moves. Stage B (engines, governor, clutch) brings the rotor-speed responses and their checks against GenHel and flight test.

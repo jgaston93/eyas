@@ -64,7 +64,10 @@ inline HeldOrbitDrift held_orbit_drift(double kt, int revolutions, int steps = 2
             held.step(s, r.controls, x, integral);
         }
         double dev = 0.0;
-        for (std::size_t i = body_layout::kSize; i < x.size(); ++i) {
+        // The component states; a shaft's ψ advances 2π a revolution, a
+        // phase, not a state that repeats (D-052).
+        for (std::size_t i = body_layout::kSize; i < body_layout::kSize + ex.num_component_states();
+             ++i) {
             dev = std::max(dev, std::abs(x[i] - x0[i]));
         }
         d.deviation.push_back(dev);

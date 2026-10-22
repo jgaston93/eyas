@@ -96,6 +96,13 @@ struct BaileyRotorConfig {
     std::string pitch_input;
     std::optional<RotorWash> wash;              // main-rotor wash at the hub
     std::optional<FuselageWake> fuselage_wake;  // airframe wake at the hub (M6b)
+    // The shaft it turns on (D-052): speed = gear × the shaft's; rotor_speed
+    // must equal gear × the shaft's governed speed. None: constant rotor_speed.
+    struct ShaftLink {
+        std::string name;
+        double gear = 1.0;  // rotor speed / shaft speed [-], positive
+    };
+    std::optional<ShaftLink> shaft;
 };
 
 struct BaileyRotorLoads {
@@ -135,6 +142,13 @@ public:
     std::string_view name() const noexcept override { return config_.name; }
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
+    void bind_shafts(std::span<const ShaftInfo> shafts) override;
+
+    // Rotor speed Ω [rad/s] in this context: the shaft's × gear (D-052), or
+    // the constant rotor_speed.
+    double rotor_speed(const SimContext& ctx) const noexcept;
+    // Its azimuth [rad, in [0, 2π)]: gear × the shaft's (D-052), or Ω t.
+    double azimuth(const SimContext& ctx) const noexcept;
 
     // Loads at states x. The main-rotor wash and the airframe's wake values
     // come from ctx.coupling; without it the wash is zero and the wake
@@ -146,9 +160,10 @@ public:
                               const FuselageWakeInput* wake = nullptr) const noexcept;
 
     const BaileyRotorConfig& config() const noexcept { return config_; }
-    double solidity() const noexcept { return solidity_; }  // σ = bc/(πR)
-    double disk_area() const noexcept { return area_; }     // πR² [m²]
-    double tip_speed() const noexcept { return tip_speed_; }
+    double solidity() const noexcept { return solidity_; }     // σ = bc/(πR)
+    double disk_area() const noexcept { return area_; }        // πR² [m²]
+    double tip_speed() const noexcept { return tip_speed_; }   // nominal ΩR [m/s]
+    int shaft_index() const noexcept { return shaft_index_; }  // D-052; −1: none
 
 private:
     BaileyRotorConfig config_;
@@ -163,6 +178,8 @@ private:
     CouplingSlot q_factor_;
     CouplingSlot sidewash_;
     CouplingSlot downwash_;
+    int shaft_index_ = -1;  // D-052
+    double gear_ = 1.0;     // the shaft link's gear, set with shaft_index_
 };
 
 }  // namespace eyas
