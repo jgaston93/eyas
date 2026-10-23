@@ -133,6 +133,7 @@ jobs:
           for m in m1 m2 m3 m4 m5 m6 m6c m6d m7 m7b m7c m8a m8c m8d m9_ground_effect; do
             run "$m" "./build/release/tests/eyas_${m}_cases" "tools/plot_${m}.py"
           done
+          run m9_engines ./build/release/tests/eyas_m9_engine_cases tools/plot_m9_engines.py
           run m7c_fletcher ./build/release/tests/eyas_m7c_fletcher tools/plot_m7c_fletcher.py
           run ballin_app_d ./build/release/tests/eyas_ballin_app_d_cases tools/plot_ballin_app_d.py
           run kaplita ./build/release/tests/eyas_kaplita_cases tools/plot_kaplita.py
