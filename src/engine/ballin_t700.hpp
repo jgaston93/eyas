@@ -133,9 +133,8 @@ struct BallinT700Config {
 
     // Fuel control: Table C.1 (pp. 69-70) and the figures' own constants, SI.
     // ECU.
-    double ctpl = 0.0;   // NP sensor lag [s]
-    double pcprf = 0.0;  // NP reference [fraction of NP_des]; set from the shaft (D-054 item 2)
-    double cb = 0.0;     // speed-error dead band [fraction]
+    double ctpl = 0.0;              // NP sensor lag [s]
+    double cb = 0.0;                // speed-error dead band [fraction]
     double ct13 = 0.0, ct14 = 0.0;  // rate compensation lags [s]
     // C3's gains: ZK9, ZK10 [V per fraction] and ZK5 [V·s per fraction] turn the
     // speed error into volts; ZK7 and ZK1 [-] scale the sum (H&W B64, B65).
@@ -213,18 +212,21 @@ struct BallinT700Gas {
 // The fuel control's signals at one state (outputs and tests).
 struct BallinT700Signals {
     BallinT700Gas gas;
-    double fuel = 0.0;   // W_f per engine [kg/s]
-    double spder = 0.0;  // speed error [fraction]
+    double fuel = 0.0;        // W_f per engine [kg/s]
+    double spder = 0.0;       // speed error [fraction]
+    double rate_input = 0.0;  // the speed error past C3's dead band [fraction]
     double spds1 = 0.0, spdsf = 0.0, tsig = 0.0, spdss = 0.0, spdsp = 0.0;  // [V]
     double b4 = 0.0;          // the gain switch [0 or 1]
     double zlolim = 0.0;      // [V]
+    double motor_in = 0.0;    // the torque motor's input, SPDG − 0.44 V − feedback [V]
     double tm_current = 0.0;  // [A], after the dead band
     double tmru = 0.0;        // the torque motor's trim [kg/(s·Pa)]
     double wfpdm = 0.0, wfidm = 0.0, wfpdc = 0.0, hmusel = 0.0;  // [kg/(s·Pa)]
     double ps3l = 0.0;                                           // [Pa]
     double xldsa = 0.0;                                          // [rad]
-    double fuel_command = 0.0;                                   // WFMV, limited [kg/s]
-    double q_shaft = 0.0;  // all engines at the shaft, less the drive train [N·m]
+    double dwfp = 0.0;          // the load-demand spindle's command [kg/(s·Pa)]
+    double fuel_command = 0.0;  // WFMV, limited [kg/s]
+    double q_shaft = 0.0;       // all engines at the shaft, less the drive train [N·m]
 };
 
 class BallinT700 : public DynamicComponent {
@@ -324,6 +326,9 @@ public:
     const BallinT700Config& config() const noexcept { return config_; }
     int shaft_index() const noexcept { return shaft_index_; }
     double governed_speed() const noexcept { return governed_; }  // [rad/s]
+    // The ECU's NP reference PCPRF [fraction of NP_des]: the shaft's governed
+    // speed once bound (D-054 item 2), the design speed until then.
+    double np_reference() const noexcept { return np_reference_; }
 
 private:
     // Lookup hints (spec §7).
@@ -332,6 +337,17 @@ private:
         std::array<TableCursor<1>, 19>
             t{};  // f2-f_hs 0-9, F_HM1, 2, 6, 5 10-13, starts 14-16, F_HM3, 4 17-18
     };
+    // Shared by the dynamics, trim and linearization, so they can't disagree.
+    double xldsa(double collective) const noexcept;                      // Fig. C13 [rad]
+    double gain_switch(double spder, double torque_int) const noexcept;  // B4, Fig. C3
+    double zlolim(double trql) const noexcept;                           // Fig. C8 [V]
+    double dwfp(double xldsh) const noexcept;                            // Fig. C17
+    double motor_input(double spdg, double pos) const noexcept;          // Fig. C10 [V]
+    double flapper_at_rest(double spdg) const noexcept;                  // zero current [m]
+    // The shaft's speed, or the design speed if the shaft isn't in ctx [rad/s].
+    double shaft_speed(const SimContext& ctx) const noexcept;
+    bool on_shaft(const SimContext& ctx) const noexcept;
+
     double residuals(const double* y, double ng, double np, double metal, double fuel, double p2,
                      double t2, double* r, BallinT700Gas* out) const noexcept;
 
@@ -339,6 +355,12 @@ private:
     std::shared_ptr<const Table1D> start_p3_, start_p41_, start_p45_;  // the steady line by NGC
     mutable Cursors cursors_;
     CouplingSlot demand_;
+    // A steady state known at init (sea level, zero shaft torque, the design
+    // speed), where a trim-time solve that fails falls back.
+    double rest_fuel_ = 0.0;
+    double rest_ng_ = 0.0;
+    BallinT700Gas rest_gas_;
+    double np_reference_ = 1.0;
     int shaft_index_ = -1;
     double governed_ = 0.0;
 };

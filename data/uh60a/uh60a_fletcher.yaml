@@ -17,7 +17,7 @@
 # The longitudinal rows put neutral cyclic in three places 0.812 in apart; neutral is the
 # pinned row's, the end nearest the fit to Ballin's GenHel longitudinal stick (D-035 M7c amendment).
 #
-# Validation variant (uh60a_fletcher.yaml): WEIGHT and CG from Fletcher, 21st ERF (1995) Paper VII-4, p. VII-4-6: takeoff gross weight approximately 14,350 lb, CG at station 360; no waterline given, so GenHel's WLCG is kept (DATA_GAPS.md).
+# Validation variant (uh60a_fletcher.yaml): WEIGHT and CG from Fletcher, 21st ERF (1995) Paper VII-4, p. VII-4-6: takeoff gross weight approximately 14,350 lbm, CG at station 360; no waterline given, so GenHel's WLCG is kept (DATA_GAPS.md).
 # Inertias are GenHel's (D-002); not for use as the aircraft's own data.
 
 geodetic_origin: {latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}  # scenario, not aircraft data

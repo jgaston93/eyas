@@ -47,12 +47,12 @@ OUT = DATA / "uh60a.yaml"
 VARIANTS = {
     "uh60a_ballin.yaml": (
         16000.0, 351.0, None, 231.5,
-        "Ballin, NASA TM-88360 (1987), Fig. B1 (p. 28): gross weight 16000 lb, CG station "
+        "Ballin, NASA TM-88360 (1987), Fig. B1 (p. 28): gross weight 16000 lbm, CG station "
         "351.0 in, CG waterline 231.5 in (the level-flight and climb trims of App. B)"),
     "uh60a_fletcher.yaml": (
         14350.0, 360.0, None, None,
         "Fletcher, 21st ERF (1995) Paper VII-4, p. VII-4-6: takeoff gross weight approximately "
-        "14,350 lb, CG at station 360; no waterline given, so GenHel's WLCG is kept (DATA_GAPS.md)"),
+        "14,350 lbm, CG at station 360; no waterline given, so GenHel's WLCG is kept (DATA_GAPS.md)"),
 }
 
 # Ballin's transient responses (App. D and E; D-046): one variant per plotted test file, at
@@ -105,12 +105,12 @@ VARIANTS.update(table_c1_variants())
 # standin.
 VARIANTS["kaplita/uh60a_kaplita_fig4_standin.yaml"] = (
     15410.0, 352.1, 0.0, 231.8,
-    "Kaplita, NASA CR-177360 (1985), Fig. 4 header (PDF p. 59): gross weight 15410 lb, CG "
+    "Kaplita, NASA CR-177360 (1985), Fig. 4 header (PDF p. 59): gross weight 15410 lbm, CG "
     "station 352.1 in. STAND-IN: CG waterline 231.8 in, Kaplita Fig. 13's (flight 19), in place "
     "of Fig. 4's, which isn't given (DATA_GAPS.md); for comparison only, not a reading")
 VARIANTS["kaplita/uh60a_kaplita_fig2_standin.yaml"] = (
     16170.0, 350.4, 0.0, 231.8,
-    "Kaplita, NASA CR-177360 (1985), Fig. 2 header (PDF p. 51): gross weight 16170 lb, CG "
+    "Kaplita, NASA CR-177360 (1985), Fig. 2 header (PDF p. 51): gross weight 16170 lbm, CG "
     "station 350.4 in. STAND-IN: CG waterline 231.8 in, Kaplita Fig. 13's (flight 19), in place "
     "of Fig. 2's, which isn't given (DATA_GAPS.md); for comparison only, not a reading")
 
@@ -1088,18 +1088,11 @@ def ballin_shaft_parts(mo, mr):
 
 def ballin_component_entry():
     """The ballin_t700 block (ballin_engine_block) as an entry of an aircraft config's
-    components, its tables in engine_ballin/."""
+    components. The aircraft configs on Ballin's engines sit beside its tables, in
+    engine_ballin/, so the tables' bare names stand."""
     lines = [ln for ln in ballin_engine_block().splitlines() if not ln.startswith("#")]
     out = []
-    in_maps = False
     for k, ln in enumerate(lines):
-        if ln.startswith("maps:"):
-            in_maps = True
-        elif not ln.startswith(" "):
-            in_maps = False
-        if in_maps and ln.startswith("  ") and ln.strip().endswith(".csv"):
-            key, value = ln.split(":", 1)
-            ln = f"{key}: engine_ballin/{value.strip()}"
         prefix = "  - " if k == 0 else "    "
         comment = "  # Ballin, NASA TM-100991 (1988); engine_ballin/ballin_t700.yaml (D-054)" \
             if k == 0 else ""
@@ -1168,6 +1161,16 @@ def engine_block(en, mr, mo):
 """
 
 
+def ballin_relocate(text):
+    """An aircraft config in engine_ballin/: every table path gains one "../" except the
+    engine's own tables, which sit beside it."""
+    import re
+    own = set(re.findall(r"^\s+f[\w]*: (\S+\.csv)", ballin_engine_block(), re.M))
+    return re.sub(r"([\s{:,])([A-Za-z0-9_.][A-Za-z0-9_./-]*\.csv)",
+                  lambda m: m.group(1) + (m.group(2) if m.group(2) in own else "../" + m.group(2)),
+                  text)
+
+
 def relocate(text, name):
     """Config text written to a subdirectory of DATA (name "dir/file.yaml"): the table paths,
     relative to the config's own directory, gain one "../" per level."""
@@ -1185,7 +1188,7 @@ def main():
     gain, mode = dynamic_twist_tables()
     outputs = [(OUT, build())] + [(DATA / name, relocate(build(name), name))
                                   for name in VARIANTS] + [
-        (BALLIN / name, relocate(build(variant, "ballin"), "engine_ballin/" + name))
+        (BALLIN / name, ballin_relocate(build(variant, "ballin")))
         for name, variant in BALLIN_AIRCRAFT.items()] + [
         (DATA / "dynamic_twist_gain.csv", gain), (DATA / "dynamic_twist_mode.csv", mode)] + \
         list(engine_tables().items()) + list(ballin_engine_tables().items()) + \

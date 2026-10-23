@@ -73,24 +73,24 @@ components:
     output: {inertia: "0.124 slug*ft^2", axis: {x: 1, y: 0, z: 0}}  # JE, TM-88360 p. 23; GenHel's power-turbine axis (D-053)
     gas_generator_spool: {axis: {x: 1, y: 0, z: 0}}
     maps:  # Figs. A1-A11, C23-C29, digitized (D-054 item 9)
-      f1: ../engine_ballin/f1_compressor_flow.csv
-      f2: ../engine_ballin/f2_compressor_temperature.csv
-      f3: ../engine_ballin/f3_seal_bleed.csv
-      f4: ../engine_ballin/f4_interstage_bleed.csv
-      f5: ../engine_ballin/f5_cooling_bleed.csv
-      f6: ../engine_ballin/f6_combustor_efficiency.csv
-      f7: ../engine_ballin/f7_gas_generator_turbine.csv
-      f8: ../engine_ballin/f8_power_turbine.csv
-      f9: ../engine_ballin/f9_power_turbine_flow.csv
-      f10: ../engine_ballin/f10_exhaust_pressure.csv
-      f_hs: ../engine_ballin/f_hs_heat_sink.csv
-      fec1: ../engine_ballin/fec1_harness_time_constant.csv
-      fhm1: ../engine_ballin/fhm1_topping_line.csv
-      fhm2: ../engine_ballin/fhm2_power_available.csv
-      fhm3: ../engine_ballin/fhm3_load_demand_speed.csv
-      fhm4: ../engine_ballin/fhm4_load_demand_fuel.csv
-      fhm5: ../engine_ballin/fhm5_idle_fuel.csv
-      fhm6: ../engine_ballin/fhm6_idle_speed.csv
+      f1: f1_compressor_flow.csv
+      f2: f2_compressor_temperature.csv
+      f3: f3_seal_bleed.csv
+      f4: f4_interstage_bleed.csv
+      f5: f5_cooling_bleed.csv
+      f6: f6_combustor_efficiency.csv
+      f7: f7_gas_generator_turbine.csv
+      f8: f8_power_turbine.csv
+      f9: f9_power_turbine_flow.csv
+      f10: f10_exhaust_pressure.csv
+      f_hs: f_hs_heat_sink.csv
+      fec1: fec1_harness_time_constant.csv
+      fhm1: fhm1_topping_line.csv
+      fhm2: fhm2_power_available.csv
+      fhm3: fhm3_load_demand_speed.csv
+      fhm4: fhm4_load_demand_fuel.csv
+      fhm5: fhm5_idle_fuel.csv
+      fhm6: fhm6_idle_speed.csv
     ecu:  # Figs. C1-C8; speed errors in % NP, so the gains read V/%
       np_sensor_lag: "0.01 s"
       dead_band: "0.75 %"  # CB

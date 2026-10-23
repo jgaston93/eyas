@@ -7,12 +7,17 @@
 
 #include <Eigen/Dense>
 
+#include "engine/control_blocks.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
 #include "util/error.hpp"
 
 namespace eyas {
 namespace {
+
+using engine::lead_lag;
+using engine::limited_rate;
+using engine::pushes_on_limit;
 
 // Symmetric dead band (Figs. C3, C10): zero within ±w, else u ∓ w.
 double dead_band(double u, double w) noexcept {
@@ -23,30 +28,6 @@ double dead_band(double u, double w) noexcept {
         return u + w;
     }
     return 0.0;
-}
-
-// The output of (1 + a s)/(1 + b s) u realized with state z, ż = (u − z)/b.
-double lead_lag(double z, double u, double a, double b) noexcept {
-    return z + (a / b) * (u - z);
-}
-
-// A limited integrator's rate: its input inside the range and at a limit it
-// pulls off, zero at a limit it pushes against; past a limit (an integration
-// step's overshoot) it returns within kLimitReturn, as GenHel's do (D-053
-// amendment 2).
-constexpr double kLimitReturn = 0.05;  // [s]
-
-double limited_rate(double x, double rate, double lo, double hi) noexcept {
-    if (x > hi) {
-        return std::min(rate, 0.0) + (hi - x) / kLimitReturn;
-    }
-    if (x < lo) {
-        return std::max(rate, 0.0) + (lo - x) / kLimitReturn;
-    }
-    if ((x == hi && rate > 0.0) || (x == lo && rate < 0.0)) {
-        return 0.0;
-    }
-    return rate;
 }
 
 // A play operator of full width w (Figs. C11, C13, C15; D-054 item 7): the
@@ -277,7 +258,15 @@ BallinT700Gas BallinT700::gas(double ng, double np, double metal, double fuel, d
     int iterations = 0;
     g.converged = newton<4>(f, ok, y, kMaxIter, kTol, iterations);
     Vec r;
-    residuals(y.data(), ng, np, metal, fuel, p2, t2, r.data(), &g);
+    if (residuals(y.data(), ng, np, metal, fuel, p2, t2, r.data(), &g) != 0.0) {
+        // No gas path at this state (outside the maps' domain, or NaN): finite
+        // stand-ins, so the rates stay finite, flagged unconverged (§7).
+        g = BallinT700Gas{};
+        g.p3 = g.ps3 = g.p41 = g.p45 = g.p49 = p2;
+        g.t3 = g.t41 = g.t41ns = g.t45 = t2;
+        g.metal_lag = 1.0;
+        g.converged = false;
+    }
     g.iterations = iterations;
     return g;
 }
@@ -337,10 +326,9 @@ bool BallinT700::steady_for_torque(double shaft_torque, double omega, double p2,
         return c.engines * c.gear * g.q_pt - shaft_torque;
     };
     double w0 = fuel > 0.0 ? fuel : 0.06 * p2 / kPstd;
-    double n0 = ng;
-    double r0 = torque(w0, n0, out);
+    double n1 = ng;
+    double r0 = torque(w0, n1, out);
     double w1 = 1.05 * w0;
-    double n1 = n0;
     double r1 = torque(w1, n1, out);
     for (int it = 0; it < 60; ++it) {
         if (!std::isfinite(r0) || !std::isfinite(r1)) {
@@ -359,10 +347,8 @@ bool BallinT700::steady_for_torque(double shaft_torque, double omega, double p2,
         w2 = std::clamp(w2, 0.5 * w1, 2.0 * w1);
         w0 = w1;
         r0 = r1;
-        n0 = n1;
         w1 = w2;
-        n1 = n0;
-        r1 = torque(w1, n1, out);
+        r1 = torque(w1, n1, out);  // NG warm-started from the last solve
     }
     return false;
 }
@@ -472,6 +458,12 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     start_p3_ = std::make_shared<const Table1D>(Axis(ngc), std::move(p3));
     start_p41_ = std::make_shared<const Table1D>(Axis(ngc), std::move(p41));
     start_p45_ = std::make_shared<const Table1D>(Axis(ngc), std::move(p45));
+    // The rest point: zero torque at the shaft, the design speed, sea level.
+    const double omega = c.np_des / c.gear;
+    if (!steady_for_torque(drive_train_load(omega), omega, kPstd, kTstd, rest_fuel_, rest_ng_,
+                           rest_gas_)) {
+        throw InitError("ballin_t700: no steady state at zero shaft torque from the maps");
+    }
 }
 
 double BallinT700::drive_train_load(double omega) const noexcept {
@@ -502,12 +494,60 @@ void BallinT700::bind_shafts(std::span<const ShaftInfo> shafts) {
             shaft_index_ = static_cast<int>(k);
             governed_ = shafts[k].speed;
             // The NP reference is the shaft's governed speed (D-054 item 2).
-            config_.pcprf = config_.gear * governed_ / config_.np_des;
+            np_reference_ = config_.gear * governed_ / config_.np_des;
             return;
         }
     }
     throw InitError("ballin_t700 '" + config_.name + "': no shaft named '" + config_.shaft +
                     "' (D-054)");
+}
+
+bool BallinT700::on_shaft(const SimContext& ctx) const noexcept {
+    return shaft_index_ >= 0 && shaft_index_ < ctx.num_shafts;
+}
+
+double BallinT700::shaft_speed(const SimContext& ctx) const noexcept {
+    return on_shaft(ctx) ? ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega
+                         : config_.np_des / config_.gear;
+}
+
+double BallinT700::xldsa(double collective) const noexcept {
+    // XLDSA = 0.914 XCPC + 5.34 deg, XCPC = 100 × collective (Fig. C13).
+    return config_.rig_gain * collective + config_.rig_bias;
+}
+
+double BallinT700::gain_switch(double spder, double torque_int) const noexcept {
+    // B4 (Fig. C3): on outside the speed band, or once the torque integrator
+    // passes CORR.
+    const BallinT700Config& c = config_;
+    const bool relay = spder < c.band_low || spder > c.band_high;
+    return c.relay_gain * c.b6 * (relay ? 1.0 : 0.0) + torque_int > c.corr ? 1.0 : 0.0;
+}
+
+double BallinT700::zlolim(double trql) const noexcept {
+    // Fig. C8: the P+I integrator's floor rises above the switch torque.
+    const BallinT700Config& c = config_;
+    return trql < c.zlolim_torque ? c.zlolim_low : c.zlolim_high;
+}
+
+double BallinT700::dwfp(double xldsh) const noexcept {
+    // Fig. C17: KNDRP (NGREF − PNG) + (3.26 − WFQPS3).
+    const BallinT700Config& c = config_;
+    const double png = (*c.fhm3)(xldsh, cursors_.t[17]);
+    const double wfqps3 = (*c.fhm4)(xldsh, cursors_.t[18]);
+    return c.kndrp * (c.ngref - png) + (c.lds_fuel_bias - wfqps3);
+}
+
+double BallinT700::motor_input(double spdg, double pos) const noexcept {
+    // Fig. C10: SPDG − 0.44 V − TMLVG × position.
+    return spdg + config_.tm_bias - config_.tmlvg * pos;
+}
+
+double BallinT700::flapper_at_rest(double spdg) const noexcept {
+    // The position where the torque motor's current is zero (the dead band's
+    // middle): 564 (SPDG − 0.44 − TMLVG x) − 31 mA = 0, within the stops.
+    const BallinT700Config& c = config_;
+    return std::clamp((spdg + c.tm_bias + c.tm_offset / c.tm_gain) / c.tmlvg, c.xlolim, c.xhilim);
 }
 
 BallinT700Signals BallinT700::signals(std::span<const double> x, double omega, double collective,
@@ -523,28 +563,28 @@ BallinT700Signals BallinT700::signals(std::span<const double> x, double omega, d
     s.gas = gas(ng, np, x[kMetal] * kTstd, s.fuel, p2, t2);
     const BallinT700Gas& g = s.gas;
     // ECU (Figs. C1, C3-C8): speed error, rate compensation and gain switch.
-    s.spder = x[kNpSensor] - c.pcprf;  // XQLO = 0 for identical engines (D-054 item 8)
-    const double u1 = dead_band(s.spder, c.cb);
-    const double rate = c.zk9 * s.spder + c.zk10 * u1 + c.zk5 / c.ct14 * (x[kRate1] - x[kRate2]);
-    const bool relay = s.spder < c.band_low || s.spder > c.band_high;
-    const double torque_int = std::clamp(x[kTorqueInt], c.ylolim, c.yhilim);
-    s.b4 = c.relay_gain * c.b6 * (relay ? 1.0 : 0.0) + torque_int > c.corr ? 1.0 : 0.0;
+    s.spder = x[kNpSensor] - np_reference_;  // XQLO = 0 for identical engines (D-054 item 8)
+    s.rate_input = dead_band(s.spder, c.cb);
+    const double rate =
+        c.zk9 * s.spder + c.zk10 * s.rate_input + c.zk5 / c.ct14 * (x[kRate1] - x[kRate2]);
+    s.b4 = gain_switch(s.spder, std::clamp(x[kTorqueInt], c.ylolim, c.yhilim));
     s.spds1 = rate * (c.zk7 + s.b4 * c.zk1);
     s.spdsf = x[kSpdsf];
     // T4.5 compensation (C6) and the selector (C1; D-054 item 6(a)).
     s.tsig = lead_lag(x[kTsig], x[kTemp1], c.t8, c.t10);
     s.spdss = std::max(s.spdsf, s.tsig);
     // P+I compensation (C7, C8).
-    s.zlolim = x[kTorqueSensed] < c.zlolim_torque ? c.zlolim_low : c.zlolim_high;
+    s.zlolim = zlolim(x[kTorqueSensed]);
     s.spdsp = c.xkprop * s.spdss + std::clamp(x[kZ], s.zlolim, c.zhilim);
     // Torque motor (C10): the flapper's position trims the HMU's demand.
-    const double motor_in = x[kSpdg] + c.tm_bias - c.tmlvg * x[kTmPos];
+    s.motor_in = motor_input(x[kSpdg], x[kTmPos]);
     s.tm_current = dead_band(
-        c.tm_gain * lead_lag(x[kTm1], motor_in, c.tm_lead, c.tm_lag) + c.tm_offset, c.tmdb);
+        c.tm_gain * lead_lag(x[kTm1], s.motor_in, c.tm_lead, c.tm_lag) + c.tm_offset, c.tmdb);
     s.tmru = c.tmlg * std::clamp(x[kTmPos], c.xlolim, c.xhilim);
     // HMU (C9, C13-C22).
     s.ps3l = x[kPs3Hys] * kPstd;
-    s.xldsa = c.rig_gain * collective + c.rig_bias;
+    s.xldsa = xldsa(collective);
+    s.dwfp = dwfp(x[kLdsHys]);
     const double pcnghl = x[kNgSensor];
     const double rulds = std::max(x[kDwfpl] * kRatioScale + s.tmru, 0.0);
     s.wfpdm =
@@ -560,13 +600,11 @@ BallinT700Signals BallinT700::signals(std::span<const double> x, double omega, d
 void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
                              ComponentDerivs& out) const {
     const BallinT700Config& c = config_;
-    const auto ks = static_cast<std::size_t>(shaft_index_);
-    const auto k = static_cast<Eigen::Index>(shaft_index_);
-    const double omega = ctx.shafts[ks].omega;
-    const double p2 = ctx.air.pressure;
-    const double t2 = ctx.air.temperature;
-    const BallinT700Signals s = signals(x, omega, ctx.controls.collective, p2, t2);
+    const double omega = shaft_speed(ctx);
+    const BallinT700Signals s =
+        signals(x, omega, ctx.controls.collective, ctx.air.pressure, ctx.air.temperature);
     const BallinT700Gas& g = s.gas;
+    out.converged = out.converged && g.converged;  // the quasi-steady solve (§7, D-054 item 4)
     const auto set_g = [&](std::size_t row, const Vec3& w) {  // ∂ẋ_row/∂ω̇
         for (std::size_t j = 0; j < 3; ++j) {
             out.G[row * 6 + 3 + j] = w(static_cast<Eigen::Index>(j));
@@ -581,7 +619,7 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
     out.xdot0[kMetal] = (g.t41ns / kTstd - x[kMetal]) / g.metal_lag;
     // ECU.
     out.xdot0[kNpSensor] = (c.gear * omega / c.np_des - x[kNpSensor]) / c.ctpl;
-    out.xdot0[kRate1] = (dead_band(s.spder, c.cb) - x[kRate1]) / c.ct13;
+    out.xdot0[kRate1] = (s.rate_input - x[kRate1]) / c.ct13;
     out.xdot0[kRate2] = (x[kRate1] - x[kRate2]) / c.ct14;
     out.xdot0[kTorqueInt] =
         limited_rate(x[kTorqueInt], x[kTorqueSensed] - c.cr, c.ylolim, c.yhilim);
@@ -599,16 +637,12 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
     out.xdot0[kZ] = limited_rate(x[kZ], c.xkintg * s.spdss, s.zlolim, c.zhilim);
     out.xdot0[kSpdg] = (s.spdsp - x[kSpdg]) / c.ct16;
     // HMU.
-    const double motor_in = x[kSpdg] + c.tm_bias - c.tmlvg * x[kTmPos];
-    out.xdot0[kTm1] = (motor_in - x[kTm1]) / c.tm_lag;
+    out.xdot0[kTm1] = (s.motor_in - x[kTm1]) / c.tm_lag;
     out.xdot0[kTmPos] = limited_rate(x[kTmPos], c.tmgn * s.tm_current, c.xlolim, c.xhilim);
     out.xdot0[kPs3Lag] = (g.ps3 / kPstd - x[kPs3Lag]) / c.ctps3;
     out.xdot0[kPs3Hys] = play_rate(x[kPs3Lag], x[kPs3Hys], c.ps3hys / kPstd, c.hysteresis_lag);
     out.xdot0[kLdsHys] = play_rate(s.xldsa, x[kLdsHys], c.xldhys, c.hysteresis_lag);
-    const double png = (*c.fhm3)(x[kLdsHys], cursors_.t[17]);
-    const double wfqps3 = (*c.fhm4)(x[kLdsHys], cursors_.t[18]);
-    const double dwfp = c.kndrp * (c.ngref - png) + (c.lds_fuel_bias - wfqps3);  // Fig. C17
-    out.xdot0[kDwfpl] = (dwfp / kRatioScale - x[kDwfpl]) / c.clld;
+    out.xdot0[kDwfpl] = (s.dwfp / kRatioScale - x[kDwfpl]) / c.clld;
     out.xdot0[kNgHys] = play_rate(x[kNg], x[kNgHys], c.ch, c.hysteresis_lag);
     out.xdot0[kNgSensor] = (x[kNgHys] - x[kNgSensor]) / c.cntl;
     out.xdot0[kValve] = (s.fuel_command / kFuelScale - x[kValve]) / c.clmv;
@@ -619,12 +653,17 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
 
     // The shaft: the engines' torque and output inertia, the drive train's
     // load (D-054 item 3); the spools' momentum to the airframe (D-053 item 5).
-    out.Q0(k) += s.q_shaft;
+    // Not on a shaft in ctx (a context built by hand), the engine runs at its
+    // design speed and drives nothing.
     const double j_out = c.engines * c.output_inertia * c.gear * c.gear;  // referred to the shaft
     const double h_pt = j_out / c.gear;                                   // momentum per unit Ω
-    out.Ks(k, k) -= j_out;
-    out.Ka.block<1, 3>(k, 3) -= h_pt * c.pt_axis_b.transpose();
-    out.Hs.block<3, 1>(3, k) -= h_pt * c.pt_axis_b;
+    if (on_shaft(ctx)) {
+        const auto k = static_cast<Eigen::Index>(shaft_index_);
+        out.Q0(k) += s.q_shaft;
+        out.Ks(k, k) -= j_out;
+        out.Ka.block<1, 3>(k, 3) -= h_pt * c.pt_axis_b.transpose();
+        out.Hs.block<3, 1>(3, k) -= h_pt * c.pt_axis_b;
+    }
     const double j_gg = c.engines * c.j_gt;
     const Vec3 h = h_pt * omega * c.pt_axis_b + j_gg * x[kNg] * c.ng_des * c.gg_axis_b;
     out.load0_b.M -= ctx.body.omega_b.cross(h);
@@ -640,23 +679,26 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     std::fill(x.begin(), x.end(), 0.0);
     double ng = 0.0;
     BallinT700Gas g;
-    steady_gas(fuel, c.gear * omega, p2, t2, ng, g);
+    if (!steady_gas(fuel, c.gear * omega, p2, t2, ng, g)) {
+        // No steady gas path for this fuel: the rest point, which trim moves on from.
+        fuel = rest_fuel_;
+        ng = rest_ng_;
+        g = rest_gas_;
+    }
     x[kNg] = ng / c.ng_des;
     x[kMetal] = g.t41ns / kTstd;
     // ECU at rest: sensors at their inputs, lags at their inputs.
     const double pcnp = c.gear * omega / c.np_des;
     x[kNpSensor] = pcnp;
-    const double spder = pcnp - c.pcprf;
+    const double spder = pcnp - np_reference_;
     const double u1 = dead_band(spder, c.cb);
     x[kRate1] = u1;
     x[kRate2] = u1;
     x[kTorqueLag] = g.q_pt;
     x[kTorqueSensed] = g.q_pt;
     x[kTorqueInt] = g.q_pt > c.cr ? c.yhilim : c.ylolim;
-    const bool relay = spder < c.band_low || spder > c.band_high;
-    const double b4 =
-        c.relay_gain * c.b6 * (relay ? 1.0 : 0.0) + x[kTorqueInt] > c.corr ? 1.0 : 0.0;
-    const double spds1 = (c.zk9 * spder + c.zk10 * u1) * (c.zk7 + b4 * c.zk1);
+    const double spds1 =
+        (c.zk9 * spder + c.zk10 * u1) * (c.zk7 + gain_switch(spder, x[kTorqueInt]) * c.zk1);
     x[kGov1] = spds1;
     x[kSpdsf] = spds1;
     x[kT45l] = (g.t45 + c.t45cor) / kTstd;
@@ -669,12 +711,9 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     // of their bands (D-054 item 7).
     x[kPs3Lag] = g.ps3 / kPstd;
     x[kPs3Hys] = x[kPs3Lag];
-    const double xldsa = c.rig_gain * collective + c.rig_bias;
-    x[kLdsHys] = xldsa;
-    const double png = (*c.fhm3)(xldsa);
-    const double wfqps3 = (*c.fhm4)(xldsa);
-    const double dwfp = c.kndrp * (c.ngref - png) + (c.lds_fuel_bias - wfqps3);
-    x[kDwfpl] = dwfp / kRatioScale;
+    x[kLdsHys] = xldsa(collective);
+    const double command = dwfp(x[kLdsHys]);
+    x[kDwfpl] = command / kRatioScale;
     x[kNgHys] = x[kNg];
     x[kNgSensor] = x[kNg];
     // The torque motor trims the demand down to the fuel's ratio: the flapper
@@ -682,29 +721,23 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     // P+I integrator holding that SPDG, as far as the stops and limits allow.
     const double ratio = fuel / g.ps3;
     const double before = (*c.fhm1)(t2) + c.kndrp * (c.ngref - x[kNgSensor]) - (*c.fhm2)(c.pas);
-    const double tmru = before - ratio - dwfp;
+    const double tmru = before - ratio - command;
     const double pos = std::clamp(tmru / c.tmlg, c.xlolim, c.xhilim);
     x[kTmPos] = pos;
-    const double spdg = c.tmlvg * pos - c.tm_bias - c.tm_offset / c.tm_gain;
-    const double zlolim = x[kTorqueSensed] < c.zlolim_torque ? c.zlolim_low : c.zlolim_high;
-    x[kZ] = std::clamp(spdg - c.xkprop * spdss, zlolim, c.zhilim);
+    const double spdg = c.tmlvg * pos - c.tm_bias - c.tm_offset / c.tm_gain;  // flapper_at_rest⁻¹
+    x[kZ] = std::clamp(spdg - c.xkprop * spdss, zlolim(x[kTorqueSensed]), c.zhilim);
     x[kSpdg] = c.xkprop * spdss + x[kZ];
-    x[kTm1] = x[kSpdg] + c.tm_bias - c.tmlvg * pos;
+    x[kTm1] = motor_input(x[kSpdg], pos);
     x[kValve] = fuel / kFuelScale;
     x[kDelay1] = x[kValve];
     x[kDelay2] = 0.0;
 }
 
 void BallinT700::initial_states(std::span<double> x) const {
-    // At sea level, zero torque at the shaft with the power turbine at its
-    // design speed and the collective down.
-    const BallinT700Config& c = config_;
-    double fuel = 0.0;
-    double ng = 0.0;
-    BallinT700Gas g;
-    const double omega = c.np_des / c.gear;
-    steady_for_torque(drive_train_load(omega), omega, kPstd, kTstd, fuel, ng, g);
-    equilibrium(fuel, omega, 0.0, kPstd, kTstd, x);
+    // The rest point (sea level, zero torque at the shaft, the power turbine at
+    // its design speed) with the collective down. It runs before the shafts are
+    // bound, so the NP reference is still the design speed.
+    equilibrium(rest_fuel_, config_.np_des / config_.gear, 0.0, kPstd, kTstd, x);
 }
 
 void BallinT700::steady_states(const SimContext& ctx, std::span<double> x) const {
@@ -714,10 +747,9 @@ void BallinT700::steady_states(const SimContext& ctx, std::span<double> x) const
     const BallinT700Config& c = config_;
     x[kTorqueInt] = x[kTorqueSensed] > c.cr ? c.yhilim : c.ylolim;
     x[kPs3Hys] = x[kPs3Lag];
-    x[kLdsHys] = c.rig_gain * ctx.controls.collective + c.rig_bias;
+    x[kLdsHys] = xldsa(ctx.controls.collective);
     x[kNgHys] = x[kNg];
-    x[kTmPos] =
-        std::clamp((x[kSpdg] + c.tm_bias + c.tm_offset / c.tm_gain) / c.tmlvg, c.xlolim, c.xhilim);
+    x[kTmPos] = flapper_at_rest(x[kSpdg]);
 }
 
 void BallinT700::steady_kinds(std::span<SteadyKind> kinds) const {
@@ -728,34 +760,40 @@ void BallinT700::steady_kinds(std::span<SteadyKind> kinds) const {
 }
 
 void BallinT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
-    const double omega = ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
+    const double omega = shaft_speed(ctx);
     const double load = rotor_demand(ctx) + drive_train_load(omega);
     double fuel = 0.0;
     double ng = 0.0;
     BallinT700Gas g;
-    steady_for_torque(load, omega, ctx.air.pressure, ctx.air.temperature, fuel, ng, g);
+    if (!steady_for_torque(load, omega, ctx.air.pressure, ctx.air.temperature, fuel, ng, g)) {
+        // Past the maps (a demand no steady state delivers): seed from the rest
+        // point's fuel, scaled to the inlet's pressure; trim moves on from it.
+        fuel = rest_fuel_ * ctx.air.pressure / kPstd;
+    }
     equilibrium(fuel, omega, ctx.controls.collective, ctx.air.pressure, ctx.air.temperature, x);
 }
 
 void BallinT700::pinned_states(const SimContext& ctx, std::span<const double> x,
                                std::span<unsigned char> pinned) const {
     // Held for small perturbations: the play operators inside their bands, the
-    // flapper inside its dead band or on a stop, the torque integrator and the
-    // P+I integrator on a limit their inputs push against.
+    // flapper inside its dead band (no current) or pressed on a stop, the
+    // torque integrator and the P+I integrator on a limit their inputs push
+    // against.
     const BallinT700Config& c = config_;
     std::fill(pinned.begin(), pinned.end(), static_cast<unsigned char>(0));
-    const double omega = ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
-    const BallinT700Signals s =
-        signals(x, omega, ctx.controls.collective, ctx.air.pressure, ctx.air.temperature);
-    const auto at_limit = [](double v, double rate, double lo, double hi) {
-        return (v >= hi && rate > 0.0) || (v <= lo && rate < 0.0);
-    };
-    for (const std::size_t i : {kPs3Hys, kLdsHys, kNgHys, kTmPos}) {
-        pinned[i] = 1;
-    }
+    const BallinT700Signals s = signals(x, shaft_speed(ctx), ctx.controls.collective,
+                                        ctx.air.pressure, ctx.air.temperature);
+    const auto in_band = [](double u, double h, double w) { return std::abs(u - h) <= 0.5 * w; };
+    pinned[kPs3Hys] = in_band(x[kPs3Lag], x[kPs3Hys], c.ps3hys / kPstd) ? 1 : 0;
+    pinned[kLdsHys] = in_band(s.xldsa, x[kLdsHys], c.xldhys) ? 1 : 0;
+    pinned[kNgHys] = in_band(x[kNg], x[kNgHys], c.ch) ? 1 : 0;
+    pinned[kTmPos] =
+        s.tm_current == 0.0 || pushes_on_limit(x[kTmPos], c.tmgn * s.tm_current, c.xlolim, c.xhilim)
+            ? 1
+            : 0;
     pinned[kTorqueInt] =
-        at_limit(x[kTorqueInt], x[kTorqueSensed] - c.cr, c.ylolim, c.yhilim) ? 1 : 0;
-    pinned[kZ] = at_limit(x[kZ], c.xkintg * s.spdss, s.zlolim, c.zhilim) ? 1 : 0;
+        pushes_on_limit(x[kTorqueInt], x[kTorqueSensed] - c.cr, c.ylolim, c.yhilim) ? 1 : 0;
+    pinned[kZ] = pushes_on_limit(x[kZ], c.xkintg * s.spdss, s.zlolim, c.zhilim) ? 1 : 0;
 }
 
 }  // namespace eyas

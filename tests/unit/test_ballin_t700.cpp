@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <string>
@@ -398,6 +399,98 @@ TEST(BallinT700, GovernsTheShaftIsochronously) {
     EXPECT_GT(low, 0.95 * Harness::kGoverned);
     EXPECT_NEAR(tail_sum / tail_n, Harness::kGoverned, 2e-4 * Harness::kGoverned);
     EXPECT_LT(tail_hi - tail_lo, 2e-3 * Harness::kGoverned);
+}
+
+// The executive sets the initial states before it binds the shafts, so they
+// can't depend on the shaft (code review of PR #71): the NP reference is the
+// design speed until bound, and the initial state, evaluated off any shaft
+// (where the engine runs at its design speed and drives nothing), is at rest.
+TEST(BallinT700, InitialStatesBeforeBindingAreAtRest) {
+    const auto engine = load_engine();
+    EXPECT_EQ(engine->np_reference(), 1.0);
+    std::vector<double> x(BallinT700::kNumStates);
+    engine->initial_states(x);
+    SimContext ctx;
+    ctx.air = isa_atmosphere(0.0, 0.0);
+    std::vector<double> xdot(BallinT700::kNumStates);
+    std::vector<double> g(6 * BallinT700::kNumStates);
+    ComponentDerivs d{xdot, g, Wrench{}, Mat66::Zero()};
+    engine->derivatives(ctx, x, d);
+    EXPECT_TRUE(d.converged);
+    for (std::size_t i = 0; i < xdot.size(); ++i) {
+        EXPECT_NEAR(xdot[i], 0.0, 1e-6) << "state " << i;
+    }
+    const BallinT700Config& c = engine->config();
+    EXPECT_GT(x[BallinT700::kZ], c.zlolim_high);
+    EXPECT_LT(x[BallinT700::kZ], c.zhilim);
+    EXPECT_NEAR(x[BallinT700::kSpdsf], 0.0, 1e-12);  // no speed error
+}
+
+// A state where the gas path has no solution (here NaN) is reported:
+// derivatives() clears the convergence flag (§7), as the rotors do.
+TEST(BallinT700, ReportsAnUnconvergedGasPath) {
+    const Harness h;
+    const BallinT700Config& c = h.engine().config();
+    const SimContext ctx = h.context(Harness::kGoverned, 0.55, c.engines * c.gear * 229.0 * kFtLbf);
+    std::vector<double> x(BallinT700::kNumStates);
+    h.engine().trim_seed(ctx, x);
+    std::vector<double> xdot(BallinT700::kNumStates);
+    std::vector<double> g(6 * BallinT700::kNumStates);
+    {
+        ComponentDerivs d{xdot, g, Wrench{}, Mat66::Zero()};
+        h.engine().derivatives(ctx, x, d);
+        EXPECT_TRUE(d.converged);
+    }
+    x[BallinT700::kNg] = std::numeric_limits<double>::quiet_NaN();
+    ComponentDerivs d{xdot, g, Wrench{}, Mat66::Zero()};
+    h.engine().derivatives(ctx, x, d);
+    EXPECT_FALSE(d.converged);
+    EXPECT_TRUE(std::isfinite(xdot[BallinT700::kMetal]));  // the stand-ins keep it finite
+}
+
+// A demand no steady state delivers (ten times the hover torque; the steady
+// solve fails from twice it) seeds a finite, fuelled state: the seed falls
+// back to the rest point's fuel, not the failed solve's zero fuel, nor 0/0
+// where no steady state at zero fuel exists (code review of PR #71).
+TEST(BallinT700, TrimSeedPastTheMapsIsFinite) {
+    const Harness h;
+    const BallinT700Config& c = h.engine().config();
+    const SimContext ctx =
+        h.context(Harness::kGoverned, 0.9, 10.0 * c.engines * c.gear * 229.0 * kFtLbf);
+    std::vector<double> x(BallinT700::kNumStates);
+    h.engine().trim_seed(ctx, x);
+    for (std::size_t i = 0; i < x.size(); ++i) {
+        EXPECT_TRUE(std::isfinite(x[i])) << "state " << i;
+    }
+    EXPECT_GT(x[BallinT700::kValve] * BallinT700::kFuelScale, 100.0 * kLbmHr);
+    EXPECT_GT(x[BallinT700::kNg], 0.65);
+}
+
+// Linearization holds the flapper only where it doesn't move: at rest in the
+// dead band (the trim seed), or pressed on a stop; a current that drives it
+// mid-travel leaves it free (code review of PR #71).
+TEST(BallinT700, PinsTheFlapperOnlyWhereItDoesntMove) {
+    const Harness h;
+    const BallinT700Config& c = h.engine().config();
+    const SimContext ctx = h.context(Harness::kGoverned, 0.55, c.engines * c.gear * 229.0 * kFtLbf);
+    std::vector<double> x(BallinT700::kNumStates);
+    h.engine().trim_seed(ctx, x);
+    std::vector<unsigned char> pinned(BallinT700::kNumStates);
+    h.engine().pinned_states(ctx, x, pinned);
+    EXPECT_EQ(pinned[BallinT700::kTmPos], 1);
+    EXPECT_EQ(pinned[BallinT700::kPs3Hys], 1);
+    // A current: SPDG half a volt up, its lead-lag settled, the flapper mid-travel.
+    x[BallinT700::kSpdg] += 0.5;
+    x[BallinT700::kTm1] += 0.5;
+    h.engine().pinned_states(ctx, x, pinned);
+    EXPECT_EQ(pinned[BallinT700::kTmPos], 0);
+    // The same current with the flapper on the stop it drives toward.
+    x[BallinT700::kTmPos] = c.xlolim;
+    x[BallinT700::kTm1] = x[BallinT700::kSpdg] + c.tm_bias - c.tmlvg * c.xlolim;
+    const BallinT700Signals s =
+        h.engine().signals(x, Harness::kGoverned, 0.55, ctx.air.pressure, ctx.air.temperature);
+    h.engine().pinned_states(ctx, x, pinned);
+    EXPECT_EQ(pinned[BallinT700::kTmPos], s.tm_current < 0.0 ? 1 : 0);
 }
 
 // Real-time rules (§7): derivatives() allocates nothing, and depends only on
