@@ -237,6 +237,8 @@ TEST(Units, BallinT700Units) {
     EXPECT_EQ(si("ft*lbf*s"), si("ft*lbf"));
     EXPECT_EQ(dim("V/degR"), Dimension::voltage_per_temperature);
     EXPECT_NEAR(si("V/degR") * si("degR"), 1.0, 1e-15);
+    EXPECT_EQ(dim("V*s/%"), Dimension::voltage_time);
+    EXPECT_EQ(si("V*s/%") * si("%"), 1.0);
     EXPECT_EQ(dim("hp"), Dimension::power);
     EXPECT_NEAR(si("hp"), 745.69987158227022, 1e-10);  // NIST SP 811 App. B.9
     EXPECT_EQ(dim("in/(mA*s)"), Dimension::length_per_current_time);
@@ -247,7 +249,7 @@ TEST(Units, BallinT700Units) {
           Dimension::burner_resistance, Dimension::heat_sink_constant, Dimension::current,
           Dimension::length_per_current_time, Dimension::mass_flow_per_pressure_length,
           Dimension::flow_parameter, Dimension::moment_time, Dimension::power,
-          Dimension::voltage_per_temperature}) {
+          Dimension::voltage_per_temperature, Dimension::voltage_time}) {
         EXPECT_NE(dimension_name(d), "unknown");
     }
 }

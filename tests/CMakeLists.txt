@@ -154,6 +154,12 @@ target_compile_definitions(eyas_m9_ground_effect_cases PRIVATE EYAS_VEHICLE_DATA
 eyas_target_defaults(eyas_m9_ground_effect_cases)
 
 # Writes the M9 Stage B engine data (VALIDATION.md; tools/plot_m9_engines.py; D-053).
+add_executable(eyas_m9_ballin_engine_cases validation/m9_ballin_engine_cases.cpp)
+target_include_directories(eyas_m9_ballin_engine_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m9_ballin_engine_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m9_ballin_engine_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m9_ballin_engine_cases)
+
 add_executable(eyas_m9_engine_cases validation/m9_engine_cases.cpp)
 target_include_directories(eyas_m9_engine_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(eyas_m9_engine_cases PRIVATE eyas_internal)

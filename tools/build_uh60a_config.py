@@ -341,6 +341,18 @@ def engine_tables():
 
 
 BALLIN = DATA / "engine_ballin"
+# The aircraft on Ballin's engines (D-054), for validation: GenHel's weight, and the weights
+# of Ballin's (TM-88360) and Fletcher's flights.
+BALLIN_AIRCRAFT = {"uh60a.yaml": None, "uh60a_ballin.yaml": "uh60a_ballin.yaml",
+                   "uh60a_fletcher.yaml": "uh60a_fletcher.yaml",
+                   "uh60a_table_b1.yaml": "uh60a_table_b1.yaml"}
+# Weights and CGs flown only on Ballin's engines.
+BALLIN_VARIANTS = {
+    "uh60a_table_b1.yaml": (
+        16825.0, 355.0, 0.0, 248.2,
+        "Ballin, NASA TM-100991 (1988), Table B.1 (p. 53): aircraft weight 16825 lbm, CG "
+        "station 355.0 in, waterline 248.2 in, buttline 0.0 in (the engine's trim conditions)"),
+}
 BALLIN_SRC = DATA / "ballin_t700"
 
 
@@ -518,8 +530,10 @@ ecu:  # Figs. C1-C8; speed errors in % NP, so the gains read V/%
   np_sensor_lag: {v(c, 'CTPL', 's')}
   dead_band: {v(c, 'CB', '%')}  # CB
   rate_lags: {{ct13: {v(c, 'CT13', 's')}, ct14: {v(c, 'CT14', 's')}}}
-  gains: {{zk1: {v(c, 'ZK1', 'V/%')}, zk5: {v(c, 'ZK5', 'V/%')}, zk7: {v(c, 'ZK7', 'V/%')}, zk9: {v(c, 'ZK9', 'V/%')}, zk10: {v(c, 'ZK10', 'V/%')}}}
-  relay: {{low: "-1 %", high: "4 %", gain: "1000 ft*lbf*s", b6: {n(c, 'B6')}}}  # Fig. C3; breakpoints UNVERIFIED (DATA_GAPS.md)
+  # ZK9, ZK10 and ZK5 turn the error into volts (ZK5 through the washout (v1 - v2)/CT14,
+  # so V*s/%); ZK7 and ZK1 scale the sum, 2.0 in all with B4 = 1 (H&W TM-83579 B64, B65).
+  gains: {{zk1: {n(c, 'ZK1')}, zk5: {v(c, 'ZK5', 'V*s/%')}, zk7: {n(c, 'ZK7')}, zk9: {v(c, 'ZK9', 'V/%')}, zk10: {v(c, 'ZK10', 'V/%')}}}
+  relay: {{low: "-1 %", high: "4 %", gain: "1000 ft*lbf*s", b6: {n(c, 'B6')}}}  # Fig. C3; breakpoints human-reviewed (DATA_GAPS.md)
   torque_switch: {{threshold: {v(c, 'CR', 'ft*lbf')}, lower: {v(c, 'YLOLIM', 'ft*lbf*s')}, upper: {v(c, 'YHILIM', 'ft*lbf*s')}, switch_point: {v(c, 'CORR', 'ft*lbf*s')}}}
   torque_sensor_lags: {{tl1: {v(c, 'TL1', 's')}, tl2: {v(c, 'TL2', 's')}}}
   governor: {{t11: {v(c, 'T11', 's')}, ct2: {v(c, 'CT2', 's')}, ct12: {v(c, 'CT12', 's')}}}
@@ -758,12 +772,13 @@ def map_rows(rows, indent, placeholders=()):
     return "\n".join(lines)
 
 
-def build(variant=None):
-    """Config text: GenHel's aircraft, or a VARIANTS entry's weight and CG."""
+def build(variant=None, engine="genhel"):
+    """Config text: GenHel's aircraft, or a VARIANTS entry's weight and CG; on GenHel's
+    engines (D-053) or Ballin's (engine="ballin", D-054)."""
     mr = constants("main_rotor_constants_5_1_5.txt")
     note = ""
     if variant is not None:
-        weight, fs, bl, wl, source = VARIANTS[variant]
+        weight, fs, bl, wl, source = {**VARIANTS, **BALLIN_VARIANTS}[variant]
         for key, v in (("WEIGHT", weight), ("FSCG", fs), ("BLCG", bl), ("WLCG", wl)):
             if v is not None:
                 mr[key] = v
@@ -862,22 +877,17 @@ airframe:
   mass: "{fmt(round(m_af, 6))} lbm"
   inertia: {{ixx: "{fmt(mp["I_X"])} slug*ft^2", iyy: "{fmt(mp["I_Y"])} slug*ft^2", izz: "{fmt(mp["I_Z"])} slug*ft^2", ixz: "{fmt(mp["I_XZ"])} slug*ft^2"}}
 
-# Rotor speed (D-052, D-053): main and tail rotors geared on one shaft, driven by
-# GenHel's T700 engines through their clutch (free drive). Its parts: GenHel's
-# spinning parts geared to the drive (p. 5.10-19, D-048), turning with it, each
-# as its own inertia at its speed; and the rest of J_REST ("downstream of clutch
-# less blades", p. 5.6-23), referred to rotor speed, with no angular momentum:
-# GenHel's gyroscopics are the p. 5.10-19 list alone (D-053 amendment 4).
+{shaft_comment(engine)}
 shafts:
   - name: rotor_drive
     speed: "{fmt(mr["OMEGA"])} rad/s"
     parts:
-{shaft_parts(mo, mr, en)}
+{shaft_parts(mo, mr, en) if engine == "genhel" else ballin_shaft_parts(mo, mr)}
     drive: free
 
 components:
   # Producers before consumers is the executive's job (D-003); config order is for reading.
-{engine_block(en, mr, mo)}
+{engine_block(en, mr, mo) if engine == "genhel" else ballin_component_entry()}
 {fcs_block(rig, mr, travel, sens, stab, pos, variant is None)}
   - type: blade_element_rotor
     name: main_rotor
@@ -1028,6 +1038,75 @@ def shaft_parts(mo, mr, en):
     return "".join(rows).rstrip("\n")
 
 
+def shaft_comment(engine):
+    if engine == "genhel":
+        return """# Rotor speed (D-052, D-053): main and tail rotors geared on one shaft, driven by
+# GenHel's T700 engines through their clutch (free drive). Its parts: GenHel's
+# spinning parts geared to the drive (p. 5.10-19, D-048), turning with it, each
+# as its own inertia at its speed; and the rest of J_REST ("downstream of clutch
+# less blades", p. 5.6-23), referred to rotor speed, with no angular momentum:
+# GenHel's gyroscopics are the p. 5.10-19 list alone (D-053 amendment 4)."""
+    return """# Rotor speed (D-052, D-054): main and tail rotors geared on one shaft, driven by
+# Ballin's component-level T700s (NASA TM-100991). Its parts: GenHel's spinning
+# parts geared to the drive (p. 5.10-19, D-048), each its own inertia at its speed,
+# for the gyroscopics (D-053 amendment 4); and the rest of Ballin's drive train
+# (TM-88360 App. A: gearbox, main-rotor shafting and hub, tail-rotor drive,
+# accessories), referred to rotor speed, with no angular momentum (D-054 item 3).
+# The engines' output inertia is the engine component's."""
+
+
+def ballin_shaft_parts(mo, mr):
+    """The drive shaft's parts on Ballin's engines (D-054 item 3): GenHel's spinning parts
+    geared to the drive, as on GenHel's engines, and the rest of TM-88360 App. A's drive train
+    referred to rotor speed (J n^2), less what those parts take, with no momentum."""
+    d = transcription("drive_train_constants.txt")
+    omega = mr["OMEGA"]
+    n_tr = d["OMEGTR"][0] / omega
+    budget = (d["JGBX"][0] + d["JSHMR"][0] + d["JSHTR"][0] * n_tr ** 2 +
+              d["J_ACC"][0] * d["n_ACC"][0] ** 2)
+    rows = []
+    taken = 0.0
+    for axis, j_name, w_name in SPINNING:
+        i = 1
+        while f"{j_name}{i}" in mo:
+            name = f"{j_name}{i}"
+            if name not in ENGINE_PARTS:
+                j, w = mo[name], mo[f"{w_name}{i}"]
+                vec = {"x": "{x: 1, y: 0, z: 0}", "y": "{x: 0, y: 1, z: 0}",
+                       "z": "{x: 0, y: 0, z: 1}"}[axis]
+                rows.append(f'      - {{inertia: "{fmt(j)} slug*ft^2", speed: "{fmt(w)} rad/s", '
+                            f'axis: {vec}}}  # {name}, p. 5.10-19\n')
+                taken += j * (w / omega) ** 2
+            i += 1
+    rest = budget - taken
+    rows.append(
+        f'      - {{inertia: "{fmt(round(rest, 6))} slug*ft^2"}}  # TM-88360 App. A: JGBX + JSHMR + '
+        f'JSHTR (OMEGTR/OMEGA)^2 + J_ACC n_ACC^2 = {fmt(round(budget, 4))}, less the parts above '
+        f'({fmt(round(taken, 4))}); no momentum\n')
+    return "".join(rows).rstrip("\n")
+
+
+def ballin_component_entry():
+    """The ballin_t700 block (ballin_engine_block) as an entry of an aircraft config's
+    components, its tables in engine_ballin/."""
+    lines = [ln for ln in ballin_engine_block().splitlines() if not ln.startswith("#")]
+    out = []
+    in_maps = False
+    for k, ln in enumerate(lines):
+        if ln.startswith("maps:"):
+            in_maps = True
+        elif not ln.startswith(" "):
+            in_maps = False
+        if in_maps and ln.startswith("  ") and ln.strip().endswith(".csv"):
+            key, value = ln.split(":", 1)
+            ln = f"{key}: engine_ballin/{value.strip()}"
+        prefix = "  - " if k == 0 else "    "
+        comment = "  # Ballin, NASA TM-100991 (1988); engine_ballin/ballin_t700.yaml (D-054)" \
+            if k == 0 else ""
+        out.append(prefix + ln + comment)
+    return "\n".join(out)
+
+
 def engine_block(en, mr, mo):
     """GenHel's T700 engines, governor and clutch (CR-166309 §5.6; D-053) as the genhel_t700
     component: the constants of p. 5.6-24 (engine_constants_5_6_5.txt) and Tables 6.5.1 to
@@ -1106,6 +1185,8 @@ def main():
     gain, mode = dynamic_twist_tables()
     outputs = [(OUT, build())] + [(DATA / name, relocate(build(name), name))
                                   for name in VARIANTS] + [
+        (BALLIN / name, relocate(build(variant, "ballin"), "engine_ballin/" + name))
+        for name, variant in BALLIN_AIRCRAFT.items()] + [
         (DATA / "dynamic_twist_gain.csv", gain), (DATA / "dynamic_twist_mode.csv", mode)] + \
         list(engine_tables().items()) + list(ballin_engine_tables().items()) + \
         [(BALLIN / "ballin_t700.yaml", ballin_engine_block())]

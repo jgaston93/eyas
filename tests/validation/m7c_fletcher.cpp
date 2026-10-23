@@ -21,7 +21,8 @@
 // below 3 rad/s against the Floquet exponents of the free flow map (V2 mode
 // character).
 //
-// Usage: eyas_m7c_fletcher <output-dir>
+// Usage: eyas_m7c_fletcher <output-dir> [config]  (default
+// data/uh60a/uh60a_fletcher.yaml)
 
 #include <array>
 #include <cmath>
@@ -41,8 +42,12 @@ namespace {
 using namespace eyas;
 using test::ballin::kDeg;
 
+// The aircraft: Fletcher's weight on GenHel's engines, or another config given
+// on the command line (Ballin's engines, data/uh60a/engine_ballin/; D-054).
+std::string g_config;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 std::string fletcher_config() {
-    return std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a_fletcher.yaml";
+    return g_config.empty() ? std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a_fletcher.yaml"
+                            : g_config;
 }
 
 constexpr double kBand = 3.0;  // [rad/s] the flight-dynamic band of the Floquet comparison
@@ -178,9 +183,12 @@ void write(const std::filesystem::path& dir) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "usage: eyas_m7c_fletcher <output-dir>\n";
+    if (argc != 2 && argc != 3) {
+        std::cerr << "usage: eyas_m7c_fletcher <output-dir> [config]\n";
         return 2;
+    }
+    if (argc == 3) {
+        g_config = argv[2];
     }
     try {
         const std::filesystem::path dir(argv[1]);

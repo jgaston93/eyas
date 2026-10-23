@@ -67,8 +67,8 @@ double play_rate(double u, double h, double w, double tau) noexcept {
 // leaving the residual's domain. Deterministic, bounded (spec §7). Returns
 // converged; `iterations` the iterations used.
 template <int N, typename F, typename Ok>
-bool newton(F&& residual, Ok&& feasible, Eigen::Matrix<double, N, 1>& y, int max_iter,
-            double tol, int& iterations) noexcept {
+bool newton(F&& residual, Ok&& feasible, Eigen::Matrix<double, N, 1>& y, int max_iter, double tol,
+            int& iterations) noexcept {
     using Vec = Eigen::Matrix<double, N, 1>;
     using Mat = Eigen::Matrix<double, N, N>;
     Vec r;
@@ -103,7 +103,8 @@ bool newton(F&& residual, Ok&& feasible, Eigen::Matrix<double, N, 1>& y, int max
         Vec yn = y;
         Vec rn = r;
         bool stepped = false;
-        for (int k = 0; k < 30; ++k, lambda *= 0.5) {
+        for (int k = 0; k < 30; ++k) {
+            lambda = std::ldexp(1.0, -k);  // 1, 1/2, 1/4, ...
             yn = y + lambda * dy;
             if (feasible(yn) && residual(yn, rn) && rn.norm() <= (1.0 - 1e-4 * lambda) * r.norm()) {
                 stepped = true;
@@ -155,8 +156,7 @@ double CurveFamily::operator()(double p, double x, Cursor& cursor) const noexcep
 // ---- The gas path --------------------------------------------------------------
 
 double BallinT700::residuals(const double* y, double ng, double np, double metal, double fuel,
-                             double p2, double t2, double* r,
-                             BallinT700Gas* out) const noexcept {
+                             double p2, double t2, double* r, BallinT700Gas* out) const noexcept {
     const BallinT700Config& c = config_;
     Cursors& k = cursors_;
     const double p3 = y[0] * p2;
@@ -164,22 +164,22 @@ double BallinT700::residuals(const double* y, double ng, double np, double metal
     const double p45 = y[2] * p2;
     const double t41 = y[3] * t2;
     // Inlet and compressor (TM-100991 eqs. 1-11).
-    const double h2 = c.k_h2 * t2;                                // (3)
-    const double ps3 = c.k_ps3 * p3;                              // (4)
-    const double theta2 = t2 / kTstd;                             // (5)
-    const double ngc = ng / (c.ng_des * std::sqrt(theta2));       // (6), a fraction
-    const double wa2c = (*c.f1)(ngc, ps3 / p2, k.f1);             // (7)
-    const double delta2 = p2 / kPstd;                             // (8)
-    const double wa2 = wa2c * delta2 / std::sqrt(theta2);         // (9)
-    const double t3 = t2 * (*c.f2)(ps3 / p2, k.t[0]);             // (10)
-    const double h3 = c.k_h3_1 * t3 + c.k_h3_2;                   // (11)
+    const double h2 = c.k_h2 * t2;                           // (3)
+    const double ps3 = c.k_ps3 * p3;                         // (4)
+    const double theta2 = t2 / kTstd;                        // (5)
+    const double ngc = ng / (c.ng_des * std::sqrt(theta2));  // (6), a fraction
+    const double wa2c = (*c.f1)(ngc, ps3 / p2, k.f1);        // (7)
+    const double delta2 = p2 / kPstd;                        // (8)
+    const double wa2 = wa2c * delta2 / std::sqrt(theta2);    // (9)
+    const double t3 = t2 * (*c.f2)(ps3 / p2, k.t[0]);        // (10)
+    const double h3 = c.k_h3_1 * t3 + c.k_h3_2;              // (11)
     // Bleeds and combustor (eqs. 12-24).
-    const double b1 = (*c.f3)(ngc, k.t[1]);                       // (12)
-    const double b2 = (*c.f4)(wa2c, k.t[2]);                      // (13)
-    const double b3 = (*c.f5)(wa2c, k.t[3]);                      // (14)
-    const double wa24bl = wa2 * (b1 + b2);                        // (15)
-    const double wa3bl = wa2 * (b3 + c.k_b3);                     // (16)
-    const double wa3 = wa2 - wa24bl;                              // (17)
+    const double b1 = (*c.f3)(ngc, k.t[1]);    // (12)
+    const double b2 = (*c.f4)(wa2c, k.t[2]);   // (13)
+    const double b3 = (*c.f5)(wa2c, k.t[3]);   // (14)
+    const double wa24bl = wa2 * (b1 + b2);     // (15)
+    const double wa3bl = wa2 * (b3 + c.k_b3);  // (16)
+    const double wa3 = wa2 - wa24bl;           // (17)
     const double drop = p3 * (p3 - p41);
     if (!(drop > 0.0) || !(t3 > 0.0) || !(t41 > 0.0) || !(wa2 > 0.0)) {
         return -1.0;
@@ -191,22 +191,22 @@ double BallinT700::residuals(const double* y, double ng, double np, double metal
     const double t41ns = c.k_t41_1 * h41ns + c.k_t41_2;           // (22)
     const double h41 = c.k_h41_1 * t41 + c.k_h41_2;               // (24)
     // Turbines (eqs. 25-38).
-    const double th41 = c.k_th41_1 * t41 + c.k_th41_2;            // (25)
+    const double th41 = c.k_th41_1 * t41 + c.k_th41_2;  // (25)
     if (!(th41 > 0.0) || !(p41 > 0.0) || !(p45 > 0.0)) {
         return -1.0;
     }
-    const double dh_gt = th41 * (*c.f7)(p45 / p41, k.t[5]);       // (26)
-    const double h44 = h41 - dh_gt;                               // (27)
-    const double w41 = c.k_wgt * p41 / std::sqrt(th41);           // (28)
-    const double h45 = c.k_h45 * h44;                             // (29)
-    const double t45 = c.k_t45_1 * h45 + c.k_t45_2;               // (30)
-    const double th45 = c.k_th45_1 * t45 + c.k_th45_2;            // (31)
+    const double dh_gt = th41 * (*c.f7)(p45 / p41, k.t[5]);  // (26)
+    const double h44 = h41 - dh_gt;                          // (27)
+    const double w41 = c.k_wgt * p41 / std::sqrt(th41);      // (28)
+    const double h45 = c.k_h45 * h44;                        // (29)
+    const double t45 = c.k_t45_1 * h45 + c.k_t45_2;          // (30)
+    const double th45 = c.k_th45_1 * t45 + c.k_th45_2;       // (31)
     if (!(th45 > 0.0)) {
         return -1.0;
     }
-    const double ps9 = p2;                                        // (37)
-    const double p49 = ps9 * (*c.f10)(ngc, k.t[6]);               // (38)
-    const double dh_pt = th45 * (*c.f8)(p49 / p45, k.t[7]);       // (32)
+    const double ps9 = p2;                                                  // (37)
+    const double p49 = ps9 * (*c.f10)(ngc, k.t[6]);                         // (38)
+    const double dh_pt = th45 * (*c.f8)(p49 / p45, k.t[7]);                 // (32)
     const double w45 = (*c.f9)(ps9 / p45, k.t[8]) * p45 / std::sqrt(th45);  // (33), (34)
     // The heat sink's gas side (eqs. 50-53): T41 = T41ns − (τ3/τ2)(T41ns − T_m).
     const double tau2 = c.tc_t41 * std::sqrt(t41) / std::pow(w41, 0.8);  // (51)
@@ -241,7 +241,7 @@ double BallinT700::residuals(const double* y, double ng, double np, double metal
         // Torques (eqs. 39-41), Ballin's 778.12 (60/2π)/N in SI: power over speed.
         g.q_c = (wa2 * (c.k_qc_1 * h3 - h2) + wa3 * c.k_qc_2 * h3) / ng;  // (39)
         g.q_gt = w41 * dh_gt / ng;                                        // (40)
-        g.q_pt = w45 * dh_pt / np - c.k_damp * (np - c.np_des);          // (41)
+        g.q_pt = w45 * dh_pt / np - c.k_damp * (np - c.np_des);           // (41)
         g.metal_lag = tau2;
     }
     return 0.0;
@@ -394,9 +394,9 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     require_positive(c.np_des, "NP_des");
     require_positive(c.j_gt, "J_GT");
     require_positive(c.output_inertia, "JE");
-    for (const double t : {c.ctpl, c.ct13, c.ct14, c.torque_lag1, c.torque_lag2, c.ct2, c.ct12,
-                           c.tlge, c.ct9, c.t10, c.ct16, c.tm_lag, c.ctps3, c.clld, c.cntl, c.clmv,
-                           c.delay, c.hysteresis_lag}) {
+    for (const double t :
+         {c.ctpl, c.ct13, c.ct14, c.torque_lag1, c.torque_lag2, c.ct2, c.ct12, c.tlge, c.ct9, c.t10,
+          c.ct16, c.tm_lag, c.ctps3, c.clld, c.cntl, c.clmv, c.delay, c.hysteresis_lag}) {
         require_positive(t, "a lag");
     }
     if (!(c.xlolim < c.xhilim) || !(c.ylolim < c.yhilim) || !(c.zlolim_low < c.zhilim) ||
@@ -547,8 +547,8 @@ BallinT700Signals BallinT700::signals(std::span<const double> x, double omega, d
     s.xldsa = c.rig_gain * collective + c.rig_bias;
     const double pcnghl = x[kNgSensor];
     const double rulds = std::max(x[kDwfpl] * kRatioScale + s.tmru, 0.0);
-    s.wfpdm = (*c.fhm1)(t2, k.t[10]) + c.kndrp * (c.ngref - pcnghl) - (*c.fhm2)(c.pas, k.t[11]) -
-              rulds;
+    s.wfpdm =
+        (*c.fhm1)(t2, k.t[10]) + c.kndrp * (c.ngref - pcnghl) - (*c.fhm2)(c.pas, k.t[11]) - rulds;
     s.wfidm = c.kndrp * ((*c.fhm6)(t2, k.t[12]) - pcnghl) + (*c.fhm5)(t2, k.t[13]);  // + WFIRF
     s.wfpdc = std::clamp(c.awfp * pcnghl + c.bwfp, c.wfpdcl, c.wfpdch);
     s.hmusel = std::max(std::max(s.wfpdm, s.wfidm), s.wfpdc);  // WFPAC: Stage B2 (D-054 item 8)
@@ -603,8 +603,7 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
     out.xdot0[kTm1] = (motor_in - x[kTm1]) / c.tm_lag;
     out.xdot0[kTmPos] = limited_rate(x[kTmPos], c.tmgn * s.tm_current, c.xlolim, c.xhilim);
     out.xdot0[kPs3Lag] = (g.ps3 / kPstd - x[kPs3Lag]) / c.ctps3;
-    out.xdot0[kPs3Hys] =
-        play_rate(x[kPs3Lag], x[kPs3Hys], c.ps3hys / kPstd, c.hysteresis_lag);
+    out.xdot0[kPs3Hys] = play_rate(x[kPs3Lag], x[kPs3Hys], c.ps3hys / kPstd, c.hysteresis_lag);
     out.xdot0[kLdsHys] = play_rate(s.xldsa, x[kLdsHys], c.xldhys, c.hysteresis_lag);
     const double png = (*c.fhm3)(x[kLdsHys], cursors_.t[17]);
     const double wfqps3 = (*c.fhm4)(x[kLdsHys], cursors_.t[18]);
@@ -615,14 +614,14 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
     out.xdot0[kValve] = (s.fuel_command / kFuelScale - x[kValve]) / c.clmv;
     // The delay's Padé approximant: (T²/12) q̈ + (T/2) q̇ + q = u.
     out.xdot0[kDelay1] = x[kDelay2];
-    out.xdot0[kDelay2] = (x[kValve] - x[kDelay1] - 0.5 * c.delay * x[kDelay2]) /
-                         (c.delay * c.delay / 12.0);
+    out.xdot0[kDelay2] =
+        (x[kValve] - x[kDelay1] - 0.5 * c.delay * x[kDelay2]) / (c.delay * c.delay / 12.0);
 
     // The shaft: the engines' torque and output inertia, the drive train's
     // load (D-054 item 3); the spools' momentum to the airframe (D-053 item 5).
     out.Q0(k) += s.q_shaft;
     const double j_out = c.engines * c.output_inertia * c.gear * c.gear;  // referred to the shaft
-    const double h_pt = j_out / c.gear;  // momentum per unit Ω
+    const double h_pt = j_out / c.gear;                                   // momentum per unit Ω
     out.Ks(k, k) -= j_out;
     out.Ka.block<1, 3>(k, 3) -= h_pt * c.pt_axis_b.transpose();
     out.Hs.block<3, 1>(3, k) -= h_pt * c.pt_axis_b;
@@ -655,7 +654,8 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     x[kTorqueSensed] = g.q_pt;
     x[kTorqueInt] = g.q_pt > c.cr ? c.yhilim : c.ylolim;
     const bool relay = spder < c.band_low || spder > c.band_high;
-    const double b4 = c.relay_gain * c.b6 * (relay ? 1.0 : 0.0) + x[kTorqueInt] > c.corr ? 1.0 : 0.0;
+    const double b4 =
+        c.relay_gain * c.b6 * (relay ? 1.0 : 0.0) + x[kTorqueInt] > c.corr ? 1.0 : 0.0;
     const double spds1 = (c.zk9 * spder + c.zk10 * u1) * (c.zk7 + b4 * c.zk1);
     x[kGov1] = spds1;
     x[kSpdsf] = spds1;
@@ -716,8 +716,8 @@ void BallinT700::steady_states(const SimContext& ctx, std::span<double> x) const
     x[kPs3Hys] = x[kPs3Lag];
     x[kLdsHys] = c.rig_gain * ctx.controls.collective + c.rig_bias;
     x[kNgHys] = x[kNg];
-    x[kTmPos] = std::clamp((x[kSpdg] + c.tm_bias + c.tm_offset / c.tm_gain) / c.tmlvg, c.xlolim,
-                           c.xhilim);
+    x[kTmPos] =
+        std::clamp((x[kSpdg] + c.tm_bias + c.tm_offset / c.tm_gain) / c.tmlvg, c.xlolim, c.xhilim);
 }
 
 void BallinT700::steady_kinds(std::span<SteadyKind> kinds) const {
@@ -784,17 +784,17 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     c.engines = static_cast<int>(engines);
     c.gear = node.number("gear");
 
-    const auto affine = [](const Config& n, std::string_view key, Dimension slope,
-                           Dimension offset, double& a, double& b) {
+    const auto affine = [](const Config& n, std::string_view key, Dimension slope, Dimension offset,
+                           double& a, double& b) {
         const Config v = n.child(key);
         v.allow_keys({"slope", "offset"});
         a = v.quantity("slope", slope);
         b = v.quantity("offset", offset);
     };
     const Config g = node.child("gas_path");
-    g.allow_keys({"hvf", "j_gt", "k_bl", "k_b3", "k_damp", "k_dpb", "k_h2", "k_h3", "k_h41",
-                  "k_h45", "k_ps3", "k_qc_1", "k_qc_2", "k_t41", "k_t45", "k_th41", "k_th45",
-                  "k_wgt", "ng_des", "np_des", "tc_t41"});
+    g.allow_keys({"hvf",   "j_gt",   "k_bl",   "k_b3",  "k_damp", "k_dpb",  "k_h2",
+                  "k_h3",  "k_h41",  "k_h45",  "k_ps3", "k_qc_1", "k_qc_2", "k_t41",
+                  "k_t45", "k_th41", "k_th45", "k_wgt", "ng_des", "np_des", "tc_t41"});
     c.hvf = g.quantity("hvf", Dimension::specific_energy);
     c.j_gt = g.quantity("j_gt", Dimension::inertia);
     c.k_bl = g.number("k_bl");
@@ -803,8 +803,7 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     c.k_dpb = g.quantity("k_dpb", Dimension::burner_resistance);
     c.k_h2 = g.quantity("k_h2", Dimension::specific_heat);
     affine(g, "k_h3", Dimension::specific_heat, Dimension::specific_energy, c.k_h3_1, c.k_h3_2);
-    affine(g, "k_h41", Dimension::specific_heat, Dimension::specific_energy, c.k_h41_1,
-           c.k_h41_2);
+    affine(g, "k_h41", Dimension::specific_heat, Dimension::specific_energy, c.k_h41_1, c.k_h41_2);
     c.k_h45 = g.number("k_h45");
     c.k_ps3 = g.number("k_ps3");
     c.k_qc_1 = g.number("k_qc_1");
@@ -892,14 +891,13 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     c.f_hs = table("f_hs", "ngc", Dimension::dimensionless, "t41sgn", Dimension::mass);
     c.fec1 = family("fec1", "t45l", Dimension::temperature, "w45r", Dimension::flow_parameter,
                     "tau45", Dimension::time);
-    c.fhm1 = table("fhm1", "t2", Dimension::temperature, "wfptp",
-                   Dimension::mass_flow_per_pressure);
+    c.fhm1 =
+        table("fhm1", "t2", Dimension::temperature, "wfptp", Dimension::mass_flow_per_pressure);
     c.fhm2 = table("fhm2", "pas", Dimension::angle, "wfprf", Dimension::mass_flow_per_pressure);
     c.fhm3 = table("fhm3", "xldsa", Dimension::angle, "png", Dimension::dimensionless);
-    c.fhm4 = table("fhm4", "xldsa", Dimension::angle, "wfqps3",
-                   Dimension::mass_flow_per_pressure);
-    c.fhm5 = table("fhm5", "t2", Dimension::temperature, "wfirf",
-                   Dimension::mass_flow_per_pressure);
+    c.fhm4 = table("fhm4", "xldsa", Dimension::angle, "wfqps3", Dimension::mass_flow_per_pressure);
+    c.fhm5 =
+        table("fhm5", "t2", Dimension::temperature, "wfirf", Dimension::mass_flow_per_pressure);
     c.fhm6 = table("fhm6", "t2", Dimension::temperature, "pcngi", Dimension::dimensionless);
 
     // ECU (Figs. C1-C8, Table C.1). Speed errors are fractions, so a gain
@@ -915,9 +913,9 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     c.ct14 = rl.quantity("ct14", Dimension::time);
     const Config gn = e.child("gains");
     gn.allow_keys({"zk1", "zk5", "zk7", "zk9", "zk10"});
-    c.zk1 = gn.quantity("zk1", Dimension::voltage);
-    c.zk5 = gn.quantity("zk5", Dimension::voltage);
-    c.zk7 = gn.quantity("zk7", Dimension::voltage);
+    c.zk1 = gn.number("zk1");
+    c.zk5 = gn.quantity("zk5", Dimension::voltage_time);
+    c.zk7 = gn.number("zk7");
     c.zk9 = gn.quantity("zk9", Dimension::voltage);
     c.zk10 = gn.quantity("zk10", Dimension::voltage);
     const Config re = e.child("relay");

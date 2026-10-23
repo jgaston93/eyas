@@ -56,8 +56,10 @@ ecu:  # Figs. C1-C8; speed errors in % NP, so the gains read V/%
   np_sensor_lag: "0.01 s"
   dead_band: "0.75 %"  # CB
   rate_lags: {ct13: "1.0 s", ct14: "0.1 s"}
-  gains: {zk1: "1.7 V/%", zk5: "0.4 V/%", zk7: "0.3 V/%", zk9: "0.625 V/%", zk10: "0.375 V/%"}
-  relay: {low: "-1 %", high: "4 %", gain: "1000 ft*lbf*s", b6: 1.0}  # Fig. C3; breakpoints UNVERIFIED (DATA_GAPS.md)
+  # ZK9, ZK10 and ZK5 turn the error into volts (ZK5 through the washout (v1 - v2)/CT14,
+  # so V*s/%); ZK7 and ZK1 scale the sum, 2.0 in all with B4 = 1 (H&W TM-83579 B64, B65).
+  gains: {zk1: 1.7, zk5: "0.4 V*s/%", zk7: 0.3, zk9: "0.625 V/%", zk10: "0.375 V/%"}
+  relay: {low: "-1 %", high: "4 %", gain: "1000 ft*lbf*s", b6: 1.0}  # Fig. C3; breakpoints human-reviewed (DATA_GAPS.md)
   torque_switch: {threshold: "20.0 ft*lbf", lower: "0 ft*lbf*s", upper: "40.0 ft*lbf*s", switch_point: "20.0 ft*lbf*s"}
   torque_sensor_lags: {tl1: "0.01 s", tl2: "0.01 s"}
   governor: {t11: "0.87 s", ct2: "0.088 s", ct12: "0.088 s"}

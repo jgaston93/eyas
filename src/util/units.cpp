@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 131> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 133> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -150,6 +150,8 @@ constexpr std::array<std::pair<std::string_view, Unit>, 131> kRegistry{{
     {"hp",                  {550.0 * kFoot * kPoundForce, D::power}},  // 550 ft·lbf/s exactly
     {"V/K",                 {1.0, D::voltage_per_temperature}},
     {"V/degR",              {1.0 / kRankine, D::voltage_per_temperature}},
+    {"V*s",                 {1.0, D::voltage_time}},
+    {"V*s/%",               {1.0 / 0.01, D::voltage_time}},
 }};
 // clang-format on
 
@@ -288,6 +290,8 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "power";
         case Dimension::voltage_per_temperature:
             return "voltage per temperature";
+        case Dimension::voltage_time:
+            return "voltage time";
     }
     return "unknown";
 }

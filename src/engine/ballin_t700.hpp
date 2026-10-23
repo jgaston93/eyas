@@ -87,33 +87,33 @@ struct BallinT700Config {
     double gear = 0.0;  // n_E: power-turbine speed over the shaft's [-]
 
     // Table A.1 (p. 41), SI.
-    double hvf = 0.0;        // fuel's heating value [J/kg]
-    double j_gt = 0.0;       // gas-generator spool [kg·m²]
-    double k_bl = 0.0;       // share of the cooling bleed returned at 4.5 [-]
-    double k_b3 = 0.0;       // station 3 leakage fraction [-]
-    double k_damp = 0.0;     // power turbine's damping about its design speed [N·m·s/rad]
-    double k_dpb = 0.0;      // burner pressure-drop constant [Pa²·s²/(kg²·K)]
-    double k_h2 = 0.0;       // [J/(kg·K)]
-    double k_h3_1 = 0.0;     // [J/(kg·K)]
-    double k_h3_2 = 0.0;     // [J/kg]
-    double k_h41_1 = 0.0;    // [J/(kg·K)]
-    double k_h41_2 = 0.0;    // [J/kg]
-    double k_h45 = 0.0;      // [-]
-    double k_ps3 = 0.0;      // P_s3 / P3 [-]
-    double k_qc_1 = 0.0;     // [-]
-    double k_qc_2 = 0.0;     // [-]
-    double k_t41_1 = 0.0;    // [K·kg/J]
-    double k_t41_2 = 0.0;    // [K]
-    double k_t45_1 = 0.0;    // [K·kg/J]
-    double k_t45_2 = 0.0;    // [K]
-    double k_th41_1 = 0.0;   // [1/K]
-    double k_th41_2 = 0.0;   // [-]
-    double k_th45_1 = 0.0;   // [1/K]
-    double k_th45_2 = 0.0;   // [-]
-    double k_wgt = 0.0;      // gas-generator turbine nozzle flow constant [kg/(s·Pa)]
-    double ng_des = 0.0;     // [rad/s]
-    double np_des = 0.0;     // [rad/s]
-    double tc_t41 = 0.0;     // heat sink [kg^0.8·s^0.2/K^0.5]
+    double hvf = 0.0;             // fuel's heating value [J/kg]
+    double j_gt = 0.0;            // gas-generator spool [kg·m²]
+    double k_bl = 0.0;            // share of the cooling bleed returned at 4.5 [-]
+    double k_b3 = 0.0;            // station 3 leakage fraction [-]
+    double k_damp = 0.0;          // power turbine's damping about its design speed [N·m·s/rad]
+    double k_dpb = 0.0;           // burner pressure-drop constant [Pa²·s²/(kg²·K)]
+    double k_h2 = 0.0;            // [J/(kg·K)]
+    double k_h3_1 = 0.0;          // [J/(kg·K)]
+    double k_h3_2 = 0.0;          // [J/kg]
+    double k_h41_1 = 0.0;         // [J/(kg·K)]
+    double k_h41_2 = 0.0;         // [J/kg]
+    double k_h45 = 0.0;           // [-]
+    double k_ps3 = 0.0;           // P_s3 / P3 [-]
+    double k_qc_1 = 0.0;          // [-]
+    double k_qc_2 = 0.0;          // [-]
+    double k_t41_1 = 0.0;         // [K·kg/J]
+    double k_t41_2 = 0.0;         // [K]
+    double k_t45_1 = 0.0;         // [K·kg/J]
+    double k_t45_2 = 0.0;         // [K]
+    double k_th41_1 = 0.0;        // [1/K]
+    double k_th41_2 = 0.0;        // [-]
+    double k_th45_1 = 0.0;        // [1/K]
+    double k_th45_2 = 0.0;        // [-]
+    double k_wgt = 0.0;           // gas-generator turbine nozzle flow constant [kg/(s·Pa)]
+    double ng_des = 0.0;          // [rad/s]
+    double np_des = 0.0;          // [rad/s]
+    double tc_t41 = 0.0;          // heat sink [kg^0.8·s^0.2/K^0.5]
     double output_inertia = 0.0;  // JE, each engine's output side at its speed [kg·m²]
     Vec3 pt_axis_b = Vec3(1.0, 0.0, 0.0);  // power turbines' spin axis (unit)
     Vec3 gg_axis_b = Vec3(1.0, 0.0, 0.0);  // gas generators' spin axis (unit)
@@ -127,62 +127,64 @@ struct BallinT700Config {
     std::shared_ptr<const Table1D> f6;      // FAR → η
     std::shared_ptr<const Table1D> f7;      // P45/P41 → ΔH_GT/θ41 [J/kg]
     std::shared_ptr<const Table1D> f8;      // P49/P45 → ΔH_PT/θ45 [J/kg]
-    std::shared_ptr<const Table1D> f9;      // P_s9/P45 → W45C [kg/(s·Pa)] (W45 = W45C P45/√θ45)
-    std::shared_ptr<const Table1D> f10;     // NGC → P49/P_s9
-    std::shared_ptr<const Table1D> f_hs;    // NGC → T41SGN [kg]
+    std::shared_ptr<const Table1D> f9;    // P_s9/P45 → W45C [kg/(s·Pa)] (W45 = W45C P45/√θ45)
+    std::shared_ptr<const Table1D> f10;   // NGC → P49/P_s9
+    std::shared_ptr<const Table1D> f_hs;  // NGC → T41SGN [kg]
 
     // Fuel control: Table C.1 (pp. 69-70) and the figures' own constants, SI.
     // ECU.
-    double ctpl = 0.0;       // NP sensor lag [s]
-    double pcprf = 0.0;      // NP reference [fraction of NP_des]; set from the shaft (D-054 item 2)
-    double cb = 0.0;         // speed-error dead band [fraction]
+    double ctpl = 0.0;   // NP sensor lag [s]
+    double pcprf = 0.0;  // NP reference [fraction of NP_des]; set from the shaft (D-054 item 2)
+    double cb = 0.0;     // speed-error dead band [fraction]
     double ct13 = 0.0, ct14 = 0.0;  // rate compensation lags [s]
-    double zk1 = 0.0, zk5 = 0.0, zk7 = 0.0, zk9 = 0.0, zk10 = 0.0;  // [V per fraction]
-    double band_low = 0.0, band_high = 0.0;  // C3's relay breakpoints [fraction]
-    double relay_gain = 0.0;  // C3's 1000 [N·m·s]
-    double b6 = 0.0;          // [-]
-    double cr = 0.0;          // torque threshold [N·m]
+    // C3's gains: ZK9, ZK10 [V per fraction] and ZK5 [V·s per fraction] turn the
+    // speed error into volts; ZK7 and ZK1 [-] scale the sum (H&W B64, B65).
+    double zk1 = 0.0, zk5 = 0.0, zk7 = 0.0, zk9 = 0.0, zk10 = 0.0;
+    double band_low = 0.0, band_high = 0.0;         // C3's relay breakpoints [fraction]
+    double relay_gain = 0.0;                        // C3's 1000 [N·m·s]
+    double b6 = 0.0;                                // [-]
+    double cr = 0.0;                                // torque threshold [N·m]
     double ylolim = 0.0, yhilim = 0.0, corr = 0.0;  // the torque integrator [N·m·s]
-    double torque_lag1 = 0.0, torque_lag2 = 0.0;  // TL1, TL2: torque sensor lags [s]
-    double gov_lead = 0.0, ct2 = 0.0, ct12 = 0.0;  // T11, CT2, CT12: governor dynamics [s]
-    double t45cor = 0.0;      // [K]
-    double tlge = 0.0;        // harness lag [s]
+    double torque_lag1 = 0.0, torque_lag2 = 0.0;    // TL1, TL2: torque sensor lags [s]
+    double gov_lead = 0.0, ct2 = 0.0, ct12 = 0.0;   // T11, CT2, CT12: governor dynamics [s]
+    double t45cor = 0.0;                            // [K]
+    double tlge = 0.0;                              // harness lag [s]
     std::shared_ptr<const CurveFamily> fec1;  // (T45L [K], W45R [kg·K^0.5/(s·Pa)]) → TAU45 [s]
-    double t45ref = 0.0;      // [K]
-    double zk3 = 0.0;         // [V/K]
-    double ct9 = 0.0, t8 = 0.0, t10 = 0.0;  // [s]
-    double xkprop = 0.0, xkintg = 0.0;      // [-], [1/s]
-    double zhilim = 0.0;      // [V]
+    double t45ref = 0.0;                      // [K]
+    double zk3 = 0.0;                         // [V/K]
+    double ct9 = 0.0, t8 = 0.0, t10 = 0.0;    // [s]
+    double xkprop = 0.0, xkintg = 0.0;        // [-], [1/s]
+    double zhilim = 0.0;                      // [V]
     double zlolim_low = 0.0, zlolim_high = 0.0;  // C8, below and above the switch torque [V]
-    double zlolim_torque = 0.0;  // C8's switch torque [N·m]
-    double ct16 = 0.0;        // [s]
+    double zlolim_torque = 0.0;                  // C8's switch torque [N·m]
+    double ct16 = 0.0;                           // [s]
     // HMU.
-    double tm_bias = 0.0;     // C10's −0.44 V [V]
+    double tm_bias = 0.0;                // C10's −0.44 V [V]
     double tm_lead = 0.0, tm_lag = 0.0;  // C10's lead-lag [s]
-    double tm_gain = 0.0;     // C10's 564 [A/V]
-    double tm_offset = 0.0;   // C10's −31 mA [A]
-    double tmdb = 0.0;        // [A]
-    double tmgn = 0.0;        // [m/(A·s)]
-    double xlolim = 0.0, xhilim = 0.0;  // the flapper's stops [m] (D-054 item 6(b))
-    double tmlvg = 0.0;       // [V/m]
-    double tmlg = 0.0;        // [kg/(s·Pa·m)]
-    double ctps3 = 0.0;       // [s]
-    double ps3hys = 0.0;      // [Pa]
-    double rig_gain = 0.0;    // C13's 0.914 [rad per fraction of collective]
-    double rig_bias = 0.0;    // C13's 5.34 deg [rad]
-    double xldhys = 0.0;      // [rad]
-    double kndrp = 0.0;       // droop slope [kg/(s·Pa) per fraction of NG]
-    double ngref = 0.0;       // [fraction]
-    double lds_fuel_bias = 0.0;  // C17's 3.26 [kg/(s·Pa)]
-    double clld = 0.0;        // CLLDS [s]
-    double ch = 0.0;          // NG sensor hysteresis [fraction]
-    double cntl = 0.0;        // [s]
-    double pas = 0.0;         // power-available spindle [rad] (D-054 item 2)
+    double tm_gain = 0.0;                // C10's 564 [A/V]
+    double tm_offset = 0.0;              // C10's −31 mA [A]
+    double tmdb = 0.0;                   // [A]
+    double tmgn = 0.0;                   // [m/(A·s)]
+    double xlolim = 0.0, xhilim = 0.0;   // the flapper's stops [m] (D-054 item 6(b))
+    double tmlvg = 0.0;                  // [V/m]
+    double tmlg = 0.0;                   // [kg/(s·Pa·m)]
+    double ctps3 = 0.0;                  // [s]
+    double ps3hys = 0.0;                 // [Pa]
+    double rig_gain = 0.0;               // C13's 0.914 [rad per fraction of collective]
+    double rig_bias = 0.0;               // C13's 5.34 deg [rad]
+    double xldhys = 0.0;                 // [rad]
+    double kndrp = 0.0;                  // droop slope [kg/(s·Pa) per fraction of NG]
+    double ngref = 0.0;                  // [fraction]
+    double lds_fuel_bias = 0.0;          // C17's 3.26 [kg/(s·Pa)]
+    double clld = 0.0;                   // CLLDS [s]
+    double ch = 0.0;                     // NG sensor hysteresis [fraction]
+    double cntl = 0.0;                   // [s]
+    double pas = 0.0;                    // power-available spindle [rad] (D-054 item 2)
     double awfp = 0.0, bwfp = 0.0, wfpdch = 0.0, wfpdcl = 0.0;  // deceleration schedule
-    double wfmax = 0.0, wfmin = 0.0;  // [kg/s]
-    double clmv = 0.0;        // [s]
-    double delay = 0.0;       // the valve's transport delay [s]
-    double hysteresis_lag = 0.0;  // the play operators' lag [s] (D-054 item 7)
+    double wfmax = 0.0, wfmin = 0.0;                            // [kg/s]
+    double clmv = 0.0;                                          // [s]
+    double delay = 0.0;                                         // the valve's transport delay [s]
+    double hysteresis_lag = 0.0;          // the play operators' lag [s] (D-054 item 7)
     std::shared_ptr<const Table1D> fhm1;  // T2 [K] → WFPTP [kg/(s·Pa)]
     std::shared_ptr<const Table1D> fhm2;  // PAS [rad] → WFPRF
     std::shared_ptr<const Table1D> fhm3;  // XLDSH [rad] → PNG [fraction]
@@ -197,13 +199,13 @@ struct BallinT700Config {
 
 // The gas path at one state: the quasi-steady solution and what follows from it.
 struct BallinT700Gas {
-    double p3 = 0.0, ps3 = 0.0, p41 = 0.0, p45 = 0.0, p49 = 0.0;  // [Pa]
-    double t3 = 0.0, t41 = 0.0, t41ns = 0.0, t45 = 0.0;           // [K]
+    double p3 = 0.0, ps3 = 0.0, p41 = 0.0, p45 = 0.0, p49 = 0.0;                // [Pa]
+    double t3 = 0.0, t41 = 0.0, t41ns = 0.0, t45 = 0.0;                         // [K]
     double wa2 = 0.0, wa2c = 0.0, wa3 = 0.0, wa31 = 0.0, w41 = 0.0, w45 = 0.0;  // [kg/s]
-    double far = 0.0;         // fuel-air ratio [-]
-    double ngc = 0.0;         // corrected NG [fraction]
+    double far = 0.0;                          // fuel-air ratio [-]
+    double ngc = 0.0;                          // corrected NG [fraction]
     double q_c = 0.0, q_gt = 0.0, q_pt = 0.0;  // per engine [N·m]
-    double metal_lag = 0.0;   // Mc_pm/hA [s]
+    double metal_lag = 0.0;                    // Mc_pm/hA [s]
     int iterations = 0;
     bool converged = false;
 };
@@ -211,56 +213,56 @@ struct BallinT700Gas {
 // The fuel control's signals at one state (outputs and tests).
 struct BallinT700Signals {
     BallinT700Gas gas;
-    double fuel = 0.0;       // W_f per engine [kg/s]
-    double spder = 0.0;      // speed error [fraction]
+    double fuel = 0.0;   // W_f per engine [kg/s]
+    double spder = 0.0;  // speed error [fraction]
     double spds1 = 0.0, spdsf = 0.0, tsig = 0.0, spdss = 0.0, spdsp = 0.0;  // [V]
-    double b4 = 0.0;         // the gain switch [0 or 1]
-    double zlolim = 0.0;     // [V]
-    double tm_current = 0.0; // [A], after the dead band
-    double tmru = 0.0;       // the torque motor's trim [kg/(s·Pa)]
+    double b4 = 0.0;          // the gain switch [0 or 1]
+    double zlolim = 0.0;      // [V]
+    double tm_current = 0.0;  // [A], after the dead band
+    double tmru = 0.0;        // the torque motor's trim [kg/(s·Pa)]
     double wfpdm = 0.0, wfidm = 0.0, wfpdc = 0.0, hmusel = 0.0;  // [kg/(s·Pa)]
-    double ps3l = 0.0;       // [Pa]
-    double xldsa = 0.0;      // [rad]
-    double fuel_command = 0.0;  // WFMV, limited [kg/s]
-    double q_shaft = 0.0;    // all engines at the shaft, less the drive train [N·m]
+    double ps3l = 0.0;                                           // [Pa]
+    double xldsa = 0.0;                                          // [rad]
+    double fuel_command = 0.0;                                   // WFMV, limited [kg/s]
+    double q_shaft = 0.0;  // all engines at the shaft, less the drive train [N·m]
 };
 
 class BallinT700 : public DynamicComponent {
 public:
     // State indices.
-    static constexpr std::size_t kNg = 0;        // NG / NG_des
-    static constexpr std::size_t kMetal = 1;     // T_m / T_std
-    static constexpr std::size_t kNpSensor = 2;  // PCNP lagged [fraction]
-    static constexpr std::size_t kRate1 = 3;     // C3's CT13 lag [fraction]
-    static constexpr std::size_t kRate2 = 4;     // C3's CT14 lag [fraction]
-    static constexpr std::size_t kTorqueInt = 5; // C3's ∫(TRQL − CR) [N·m·s]
+    static constexpr std::size_t kNg = 0;            // NG / NG_des
+    static constexpr std::size_t kMetal = 1;         // T_m / T_std
+    static constexpr std::size_t kNpSensor = 2;      // PCNP lagged [fraction]
+    static constexpr std::size_t kRate1 = 3;         // C3's CT13 lag [fraction]
+    static constexpr std::size_t kRate2 = 4;         // C3's CT14 lag [fraction]
+    static constexpr std::size_t kTorqueInt = 5;     // C3's ∫(TRQL − CR) [N·m·s]
     static constexpr std::size_t kTorqueLag = 6;     // TL1 lag [N·m]
     static constexpr std::size_t kTorqueSensed = 7;  // TRQL [N·m]
-    static constexpr std::size_t kGov1 = 8;      // C4's lead-lag [V]
-    static constexpr std::size_t kSpdsf = 9;     // SPDSF [V]
-    static constexpr std::size_t kT45l = 10;     // T45L / T_std
-    static constexpr std::size_t kT45el = 11;    // T45EL / T_std
-    static constexpr std::size_t kTemp1 = 12;    // C6's CT9 lag [V]
-    static constexpr std::size_t kTsig = 13;     // C6's lead-lag [V]
-    static constexpr std::size_t kZ = 14;        // C7's integrator [V]
-    static constexpr std::size_t kSpdg = 15;     // SPDG [V]
-    static constexpr std::size_t kTm1 = 16;      // C10's lead-lag [V]
-    static constexpr std::size_t kTmPos = 17;    // the flapper's position [m]
-    static constexpr std::size_t kPs3Lag = 18;   // P_s3 lagged / P_std
-    static constexpr std::size_t kPs3Hys = 19;   // PS3L / P_std
-    static constexpr std::size_t kLdsHys = 20;   // XLDSH [rad]
-    static constexpr std::size_t kDwfpl = 21;    // DWFPL / ratio scale
-    static constexpr std::size_t kNgHys = 22;    // PCNG after hysteresis [fraction]
-    static constexpr std::size_t kNgSensor = 23; // PCNGHL [fraction]
-    static constexpr std::size_t kValve = 24;    // the metering valve's lag / fuel scale
-    static constexpr std::size_t kDelay1 = 25;   // Padé states / fuel scale
+    static constexpr std::size_t kGov1 = 8;          // C4's lead-lag [V]
+    static constexpr std::size_t kSpdsf = 9;         // SPDSF [V]
+    static constexpr std::size_t kT45l = 10;         // T45L / T_std
+    static constexpr std::size_t kT45el = 11;        // T45EL / T_std
+    static constexpr std::size_t kTemp1 = 12;        // C6's CT9 lag [V]
+    static constexpr std::size_t kTsig = 13;         // C6's lead-lag [V]
+    static constexpr std::size_t kZ = 14;            // C7's integrator [V]
+    static constexpr std::size_t kSpdg = 15;         // SPDG [V]
+    static constexpr std::size_t kTm1 = 16;          // C10's lead-lag [V]
+    static constexpr std::size_t kTmPos = 17;        // the flapper's position [m]
+    static constexpr std::size_t kPs3Lag = 18;       // P_s3 lagged / P_std
+    static constexpr std::size_t kPs3Hys = 19;       // PS3L / P_std
+    static constexpr std::size_t kLdsHys = 20;       // XLDSH [rad]
+    static constexpr std::size_t kDwfpl = 21;        // DWFPL / ratio scale
+    static constexpr std::size_t kNgHys = 22;        // PCNG after hysteresis [fraction]
+    static constexpr std::size_t kNgSensor = 23;     // PCNGHL [fraction]
+    static constexpr std::size_t kValve = 24;        // the metering valve's lag / fuel scale
+    static constexpr std::size_t kDelay1 = 25;       // Padé states / fuel scale
     static constexpr std::size_t kDelay2 = 26;
     static constexpr std::size_t kNumStates = 27;
 
     // Scales of the states held as ratios (so that trim's tolerances fit).
-    static constexpr double kTstd = 288.15;     // [K]
-    static constexpr double kPstd = 101325.0;   // [Pa]
-    static constexpr double kFuelScale = 0.1;   // [kg/s]
+    static constexpr double kTstd = 288.15;      // [K]
+    static constexpr double kPstd = 101325.0;    // [Pa]
+    static constexpr double kFuelScale = 0.1;    // [kg/s]
     static constexpr double kRatioScale = 1e-6;  // [kg/(s·Pa)], about 0.24 lbm/(hr·psi)
 
     // Throws InitError on an invalid configuration.
@@ -303,13 +305,13 @@ public:
     // The steady fuel flow per engine [kg/s] for which the engines deliver
     // `shaft_torque` [N·m] to the shaft at speed `omega` [rad/s], with the
     // gas path at steady state. Trim time. Returns converged.
-    bool steady_for_torque(double shaft_torque, double omega, double p2, double t2,
-                           double& fuel, double& ng, BallinT700Gas& out) const noexcept;
+    bool steady_for_torque(double shaft_torque, double omega, double p2, double t2, double& fuel,
+                           double& ng, BallinT700Gas& out) const noexcept;
 
     // Signals at x with the shaft at `omega` [rad/s], the collective at
     // `collective` [0, 1] and inlet P2 [Pa], T2 [K]. Pure.
-    BallinT700Signals signals(std::span<const double> x, double omega, double collective,
-                              double p2, double t2) const noexcept;
+    BallinT700Signals signals(std::span<const double> x, double omega, double collective, double p2,
+                              double t2) const noexcept;
 
     // The drive train's torque on the shaft at speed `omega` [rad/s] [N·m, a load].
     double drive_train_load(double omega) const noexcept;
@@ -327,10 +329,11 @@ private:
     // Lookup hints (spec §7).
     struct Cursors {
         CurveFamily::Cursor f1, fec1;
-        std::array<TableCursor<1>, 19> t{};  // f2-f_hs 0-9, F_HM1, 2, 6, 5 10-13, starts 14-16, F_HM3, 4 17-18
+        std::array<TableCursor<1>, 19>
+            t{};  // f2-f_hs 0-9, F_HM1, 2, 6, 5 10-13, starts 14-16, F_HM3, 4 17-18
     };
-    double residuals(const double* y, double ng, double np, double metal, double fuel,
-                     double p2, double t2, double* r, BallinT700Gas* out) const noexcept;
+    double residuals(const double* y, double ng, double np, double metal, double fuel, double p2,
+                     double t2, double* r, BallinT700Gas* out) const noexcept;
 
     BallinT700Config config_;
     std::shared_ptr<const Table1D> start_p3_, start_p41_, start_p45_;  // the steady line by NGC

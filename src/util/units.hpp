@@ -21,7 +21,7 @@ inline constexpr double kRpm = 2.0 * std::numbers::pi / 60.0;         // [rad/s]
 inline constexpr double kPsi = kPoundForce / (kInch * kInch);         // [Pa] lbf/in²
 inline constexpr double kRankine = 5.0 / 9.0;                         // [K] exact
 // International Table Btu: 1 Btu/lbm = 2326 J/kg exactly, so 1 Btu = 2326 kPoundMass J.
-inline constexpr double kBtu = 2326.0 * kPoundMass;                   // [J]
+inline constexpr double kBtu = 2326.0 * kPoundMass;  // [J]
 
 // Physical dimension of a unit. Config quantities are read with the dimension
 // they must have, so a value in a unit of the wrong kind ("1000 s" for a rate)
@@ -89,6 +89,7 @@ enum class Dimension : std::uint8_t {
     moment_time,                      // a torque integrated over time [N·m·s]
     power,                            // [W]
     voltage_per_temperature,          // [V/K]
+    voltage_time,                     // a rate network's gain [V·s per unit input]
 };
 
 // Name used in error messages, e.g. "length".
