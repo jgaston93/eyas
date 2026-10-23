@@ -164,6 +164,25 @@ double BladeElementRotor::azimuth(double t) const noexcept {
     return psi;
 }
 
+double BladeElementRotor::rotor_speed(const SimContext& ctx) const noexcept {
+    if (shaft_index_ < 0) {
+        return config_.rotor_speed;
+    }
+    return gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
+}
+
+double BladeElementRotor::azimuth(const SimContext& ctx) const noexcept {
+    if (shaft_index_ < 0) {
+        return azimuth(ctx.t);
+    }
+    // D-052: the shaft's azimuth × gear, wrapped as azimuth(t) wraps Ω t.
+    double psi = std::fmod(gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].psi, kTwoPi);
+    if (psi < 0.0) {
+        psi += kTwoPi;
+    }
+    return psi;
+}
+
 double BladeElementRotor::blade_azimuth(double psi, int k) const noexcept {
     return psi - kTwoPi * static_cast<double>(k) / static_cast<double>(config_.num_blades);
 }
@@ -176,7 +195,9 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     Kinematics k;
     k.v_hub_h = C_hb_ * v_hub_b;
     k.omega_h = C_hb_ * b.omega_b;
-    k.psi = azimuth(ctx.t);
+    k.omega = rotor_speed(ctx);
+    k.psi = azimuth(ctx);
+    k.tip_speed = k.omega * config_.radius;
     if (config_.controls) {
         k.pitch = config_.controls->pitch(ctx.controls);
     } else if (ctx.coupling != nullptr && slots_.theta0.valid()) {
@@ -186,8 +207,8 @@ BladeElementRotor::Kinematics BladeElementRotor::kinematics(const SimContext& ct
     k.rho = ctx.air.density;
     k.a = ctx.air.speed_of_sound;
     const double v_xy = std::hypot(k.v_hub_h.x(), k.v_hub_h.y());
-    k.mu = v_xy / tip_speed_;  // Padfield 3rd ed. Eq. 3.140
-    k.mu_z = k.v_hub_h.z() / tip_speed_;
+    k.mu = v_xy / k.tip_speed;  // Padfield 3rd ed. Eq. 3.140
+    k.mu_z = k.v_hub_h.z() / k.tip_speed;
     // Downwind azimuth (D-027): the blade at ψ_w points along the in-plane
     // free stream relative to the hub, e_r(ψ_w) ∥ −v_xy.
     k.cos_w = v_xy > 0.0 ? k.v_hub_h.x() / v_xy : 1.0;
@@ -234,7 +255,7 @@ double BladeElementRotor::twist_gain(const Kinematics& k) const noexcept {
 RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lambda,
                                    std::span<const double> x) const noexcept {
     const BladeElementRotorConfig& c = config_;
-    const double omega = c.rotor_speed;
+    const double omega = k.omega;
     const bool flapping = c.flap.has_value() && !x.empty();
     const Vec3 e_z(0.0, 0.0, 1.0);
     const std::size_t n_el = elements_.size();
@@ -274,12 +295,12 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
         const double a_T = v0.dot(e_t);
         const double b_T = v1.dot(e_t);
         const double lambda_h = lambda.l1s * sp + lambda.l1c * cp;
-        const double a_P = -v0.dot(n) + tip_speed_ * cb * (lambda.l0 + e / c.radius * lambda_h);
+        const double a_P = -v0.dot(n) + k.tip_speed * cb * (lambda.l0 + e / c.radius * lambda_h);
         const double b_P = -v1.dot(n) + omega * cb * cb * lambda_h;
         // The air's velocity relative to the blade along the span, outward
         // positive (Johnson 2013 u_R; D-039): −v·e_s plus the induced
         // velocity's component, v_i e_z·e_s = −sin β v_i. Affine in ρ too.
-        const double a_S = -v0.dot(e_s) - sb * tip_speed_ * (lambda.l0 + e / c.radius * lambda_h);
+        const double a_S = -v0.dot(e_s) - sb * k.tip_speed * (lambda.l0 + e / c.radius * lambda_h);
         const double b_S = -v1.dot(e_s) - sb * omega * cb * lambda_h;
         // Padfield 3rd ed. Eq. 3.59, with pitch–flap coupling −tan δ₃ β
         // (Johnson 2013 §6.18); twist is added per element (spec §6.3).
@@ -351,7 +372,7 @@ RotorLoads BladeElementRotor::pass(const Kinematics& k, const LinearInflow& lamb
     }
 
     out.blade_force /= static_cast<double>(c.num_blades);
-    const double q_disk = k.rho * area_ * tip_speed_ * tip_speed_;  // ρA(ΩR)² [N]
+    const double q_disk = k.rho * area_ * k.tip_speed * k.tip_speed;  // ρA(ΩR)² [N]
     out.thrust = -out.F_h.z();
     out.torque = s_ * out.M_h.z();  // rotation axis is −s e_z
     out.power = out.torque * omega;
@@ -566,10 +587,10 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
                           inflow_tip_ == 1.0
                               ? lambda0
                               : full_disc_inflow_ratio(inflow_tip_, lambda0, kin.mu) * lambda0);
-        out.coupling->set(slots_.mu_x, kin.v_hub_h.x() / tip_speed_);
+        out.coupling->set(slots_.mu_x, kin.v_hub_h.x() / kin.tip_speed);
         out.coupling->set(slots_.mu_z, kin.mu_z);
         out.coupling->set(slots_.beta_1c, beta_1c);
-        out.coupling->set(slots_.tip_speed, tip_speed_);
+        out.coupling->set(slots_.tip_speed, kin.tip_speed);
     }
     if (config_.inflow == InflowModel::pitt_peters) {
         // Pitt–Peters inflow (D-027), forced by the loads of the same pass.
@@ -603,15 +624,24 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
             // zero, Johnson's scaling); only at λ0 = 0 exactly, a point the
             // inflow passes through, does D hold still.
             const double target = t.active ? t.ct_vrs - t.ct_base : 0.0;
-            out.xdot0[iv] = (target - deficit) * t.lambda_h * config_.rotor_speed /
+            out.xdot0[iv] = (target - deficit) * t.lambda_h * kin.omega /
                             (kVortexRingLagCoefficient * 2.0 * std::numbers::pi * inflow_tip_);
         }
         const Vec3 rates = pitt_peters_rates(
             Vec3(x[i], x[i + 1], x[i + 2]), Vec3(loads.ct, loads.c1s, loads.c1c), kin.mu, kin.mu_z,
-            kin.cos_w, kin.sin_w, config_.rotor_speed, row, kappa, inflow_tip_);
+            kin.cos_w, kin.sin_w, kin.omega, row, kappa, inflow_tip_);
         out.xdot0[i] = rates.x();
         out.xdot0[i + 1] = rates.y();
         out.xdot0[i + 2] = rates.z();
+        // On a shaft (D-052) the states are velocities over ΩR: with v held,
+        // λ̇ gains −λ Ω̇/Ω, Ω̇ = gear × the shaft's acceleration.
+        if (shaft_index_ >= 0 && !out.Gs.empty()) {
+            const double per_shaft = -gear_ / kin.omega;
+            for (std::size_t j = 0; j < 3; ++j) {
+                out.Gs[(i + j) * kMaxShafts + static_cast<std::size_t>(shaft_index_)] =
+                    per_shaft * x[i + j];
+            }
+        }
     }
     if (config_.dynamic_twist) {
         // The tip twist lags GenHel's θ_DYTIP = K_FP0 F_P0 (CR-166309
@@ -621,6 +651,7 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
         out.xdot0[i] = (twist_gain(kin) * loads.blade_force - x[i]) / config_.dynamic_twist->lag;
     }
     if (!config_.flap) {
+        shaft_terms(out);
         return;
     }
 
@@ -632,7 +663,10 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
     // a_cg = v̇_b + ω × v_b. Relative to the hub, e_r turns at Ω about −s e_z
     // (ė_r = Ω e_t, ė_t = −Ω e_r) and the blade flaps about the hinge:
     //   ṗ_rel = Ω e e_t + ρ (Ω cos β e_t − β̇ n)
-    //   p̈_rel = −Ω² e e_r + ρ (−Ω² cos β e_r − 2Ω β̇ sin β e_t − β̇² e_s − β̈ n).
+    //   p̈_rel = −Ω² e e_r + ρ (−Ω² cos β e_r − 2Ω β̇ sin β e_t − β̇² e_s − β̈ n),
+    // plus, on a shaft (D-052), Ω̇ (e + ρ cos β) e_t: c0 gains Ω̇ e e_t and c1
+    // Ω̇ cos β e_t, which don't enter the flap equation (n·e_t = 0) but do
+    // the loads, through H_s.
     // Everything is affine in ρ, a_p = c0 + ρ c1 − ρ β̈ n, so the span
     // integrals need only m = ∫dm, S = ∫ρ dm and I = ∫ρ² dm. The flap
     // equation is the virtual work for δp = −ρ n δβ (moments about the hinge):
@@ -643,7 +677,7 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
     // G and H (spec §5, "Coupling"). Linearized at β = 0 this reduces to
     // Johnson (2013) Eqs. 16.240 and 6.261; tests check both.
     const FlapHinge& f = *config_.flap;
-    const double W = config_.rotor_speed;
+    const double W = kin.omega;
     const double e = f.offset;
     const double m = f.mass;
     const double S = f.first_moment;
@@ -654,7 +688,7 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
     const Vec3 a_cg0 = C_hb_ * b.omega_b.cross(b.vel_b);
     const Vec3 g = C_hb_ * (b.q_nb.conjugate() * gravity_n());
     const Vec3 r_hub = C_hb_ * config_.hub_position_b;
-    const double psi0 = azimuth(ctx.t);
+    const double psi0 = kin.psi;
 
     using Mat36 = Eigen::Matrix<double, 3, 6>;
     const auto skew = [](const Vec3& v) {
@@ -666,6 +700,8 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
     Vec3 M = Vec3::Zero();
     Mat36 FA = Mat36::Zero();  // ∂F/∂a, ∂M/∂a (hub axes)
     Mat36 MA = Mat36::Zero();
+    Vec3 FS = Vec3::Zero();  // ∂F/∂Ω̇, ∂M/∂Ω̇ (hub axes; the rotor's own Ω̇, D-052)
+    Vec3 MS = Vec3::Zero();
     for (int blade = 0; blade < config_.num_blades; ++blade) {
         const std::size_t ib = 2 * static_cast<std::size_t>(blade);
         const double beta = x[ib];
@@ -712,11 +748,66 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
         M += (m * p0 + S * e_s).cross(g) - p0.cross(Fi0) - e_s.cross(Ki0);
         FA -= FiA;
         MA -= skew(p0) * FiA + skew(e_s) * KiA;
+        // Ω̇ (D-052): ∂c0/∂Ω̇ = e e_t, ∂c1/∂Ω̇ = cos β e_t; β̈ doesn't change.
+        const Vec3 FiS = (m * e + S * cb) * e_t;
+        const Vec3 KiS = (S * e + I * cb) * e_t;
+        FS -= FiS;
+        MS -= p0.cross(FiS) + e_s.cross(KiS);
     }
     out.load0_b.F += C_bh_ * F;
     out.load0_b.M += C_bh_ * M;
     out.H.topRows<3>() = C_bh_ * FA;
     out.H.bottomRows<3>() = C_bh_ * MA;
+    if (shaft_index_ >= 0) {
+        const double gear = gear_;
+        const auto k = static_cast<Eigen::Index>(shaft_index_);
+        out.Hs.block<3, 1>(0, k) = gear * (C_bh_ * FS);
+        out.Hs.block<3, 1>(3, k) = gear * (C_bh_ * MS);
+    }
+    shaft_terms(out);
+}
+
+// The torque the rotor applies to its shaft (D-052): the axial moment of the
+// blades' loads on the hub, the moment about any point on the axis, so about
+// the hub, M − r_hub × F (body axes), along the rotation axis −s z_h, times
+// the gear ratio; affine in a and Ω̇ through the loads' own H and H_s.
+void BladeElementRotor::shaft_terms(ComponentDerivs& out) const noexcept {
+    if (shaft_index_ < 0) {
+        return;
+    }
+    const double gear = gear_;
+    const auto k = static_cast<Eigen::Index>(shaft_index_);
+    const Vec3 axis_b = C_bh_ * Vec3(0.0, 0.0, -s_);
+    const Vec3& r = config_.hub_position_b;
+    const auto axial = [&](const Vec3& F, const Vec3& M) {
+        return gear * axis_b.dot(M - r.cross(F));
+    };
+    out.Q0(k) = axial(out.load0_b.F, out.load0_b.M);
+    for (Eigen::Index j = 0; j < 6; ++j) {
+        out.Ka(k, j) = axial(out.H.block<3, 1>(0, j), out.H.block<3, 1>(3, j));
+    }
+    out.Ks(k, k) = axial(out.Hs.block<3, 1>(0, k), out.Hs.block<3, 1>(3, k));
+}
+
+void BladeElementRotor::bind_shafts(std::span<const ShaftInfo> shafts) {
+    if (!config_.shaft) {
+        return;
+    }
+    const std::string who = "blade_element_rotor '" + config_.name + "'";
+    const auto& link = config_.shaft.value();
+    for (std::size_t k = 0; k < shafts.size(); ++k) {
+        if (shafts[k].name == link.name) {
+            const double want = link.gear * shafts[k].speed;
+            if (std::abs(config_.rotor_speed - want) > 1e-9 * want) {
+                throw InitError(who + ": rotor_speed must be gear × shaft '" + shafts[k].name +
+                                "' speed (D-052)");
+            }
+            shaft_index_ = static_cast<int>(k);
+            gear_ = link.gear;
+            return;
+        }
+    }
+    throw InitError(who + ": no shaft named '" + link.name + "' (D-052)");
 }
 
 // ---- Config ------------------------------------------------------------------
@@ -756,7 +847,7 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
 std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& node) {
     node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "direction", "inflow",
                      "vortex_ring", "ground_effect", "inflow_tip_loss", "hub", "blade", "controls",
-                     "pitch_input"});
+                     "pitch_input", "shaft"});
     BladeElementRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -807,6 +898,21 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         c.ground_effect = GroundEffectModel::cheeseman_bennett;
     } else {
         node.fail("ground_effect", "must be none, genhel or cheeseman_bennett");
+    }
+    // Optional (D-052): the shaft it turns on.
+    if (node.contains("shaft")) {
+        const Config sh = node.child("shaft");
+        sh.allow_keys({"name", "gear"});
+        BladeElementRotorConfig::ShaftLink link;
+        link.name = sh.string("name");
+        link.gear = sh.contains("gear") ? sh.number("gear") : 1.0;
+        if (link.name.empty()) {
+            sh.fail("name", "must not be empty");
+        }
+        if (!(link.gear > 0.0) || !std::isfinite(link.gear)) {
+            sh.fail("gear", "must be positive and finite");
+        }
+        c.shaft = link;
     }
     // Required, no default (D-021, D-051).
     const std::string inflow_tip_loss = node.string("inflow_tip_loss");

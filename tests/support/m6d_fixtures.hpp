@@ -106,6 +106,7 @@ public:
             component(i).initial_states(
                 std::span<double>(x).subspan(offset(i), ex_.component_size(i)));
         }
+        ex_.initial_shaft_states(x);  // D-052
         return x;
     }
 

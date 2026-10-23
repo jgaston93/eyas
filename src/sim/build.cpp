@@ -111,6 +111,45 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
     return components;
 }
 
+// The rotor-speed degrees of freedom (D-052), in config order.
+std::vector<ShaftConfig> read_shafts(const Config& config) {
+    std::vector<ShaftConfig> shafts;
+    if (!config.contains("shafts")) {
+        return shafts;
+    }
+    const Config list = config.child("shafts");
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        const Config s = list[i];
+        s.allow_keys({"name", "speed", "inertia", "axis", "drive"});
+        ShaftConfig sh;
+        sh.name = s.string("name");
+        sh.speed = s.quantity("speed", Dimension::angular_rate);
+        if (s.contains("inertia")) {
+            sh.inertia = s.quantity("inertia", Dimension::inertia);
+        }
+        if (s.contains("axis")) {
+            const Config a = s.child("axis");
+            a.allow_keys({"x", "y", "z"});
+            const Vec3 v(a.number("x"), a.number("y"), a.number("z"));
+            if (!(v.norm() > 0.0) || !v.allFinite()) {
+                s.fail("axis", "must be a nonzero, finite direction");
+            }
+            sh.axis_b = v.normalized();
+        }
+        // Required, no default (D-021, D-052).
+        const std::string drive = s.string("drive");
+        if (drive == "ideal") {
+            sh.drive = ShaftDrive::ideal;
+        } else if (drive == "free") {
+            sh.drive = ShaftDrive::free;
+        } else {
+            s.fail("drive", "must be ideal or free");
+        }
+        shafts.push_back(sh);
+    }
+    return shafts;
+}
+
 }  // namespace
 
 FlatEarthMap read_origin(const Config& config) {
@@ -146,11 +185,12 @@ Executive build_executive(const Config& config, double origin_altitude) {
             }
         }
     }
+    ec.shafts = read_shafts(config);
     auto components = read_components(config);
     auto forces = read_force_models(config);
     // Step, substeps and origin are checked above, and the components and
     // force models by their readers, so what the executive can still reject
-    // is the airframe's mass properties.
+    // is the airframe's mass properties, the shafts and their bindings.
     return config.in_context(
         "airframe", [&] { return Executive(ec, std::move(components), std::move(forces)); });
 }

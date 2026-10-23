@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "core/component.hpp"
@@ -11,19 +12,36 @@
 #include "core/rk4.hpp"
 
 // Simulation executive (spec §6.10). Owns the global state vector, with the
-// airframe body states first (body_layout) and each component's states after
-// them in config order. Evaluates the components in an order fixed at init,
-// producers of coupling outputs before their consumers (D-003). Solves the
-// coupled body/component accelerations in every derivative evaluation (spec
-// §5, "Coupling") and advances everything with RK4 in fixed
-// integer-nanosecond steps (D-006).
+// airframe body states first (body_layout), each component's states after
+// them in config order, and each shaft's (ψ, Ω) last (D-052). Evaluates the components in an order
+// fixed at init, producers of coupling outputs before their consumers (D-003). Solves the coupled
+// body/component accelerations in every derivative evaluation (spec §5, "Coupling") and advances
+// everything with RK4 in fixed integer-nanosecond steps (D-006).
 namespace eyas {
+
+// How a shaft's speed is set (D-052).
+enum class ShaftDrive : unsigned char {
+    ideal,  // held at its governed speed whatever the load (Ω̇ ≡ 0): no equation
+    free,   // its equation is solved with the airframe's (engines in M9 Stage B)
+};
+
+// A rotor-speed degree of freedom (D-052): the rotating parts geared together,
+// each component on it turning at gear × Ω about its own axis.
+struct ShaftConfig {
+    std::string name;
+    double speed = 0.0;                  // governed speed [rad/s], the initial Ω
+    double inertia = 0.0;                // J [kg·m²] of parts no component models,
+                                         // referred to the shaft
+    Vec3 axis_b = Vec3(0.0, 0.0, -1.0);  // the parts' spin axis, body axes (unit)
+    ShaftDrive drive = ShaftDrive::ideal;
+};
 
 struct ExecutiveConfig {
     MassProperties mass;               // airframe only, about its CG (D-002)
     double origin_altitude = 0.0;      // [m] MSL height of the NED origin (D-016, D-017)
     std::int64_t step_ns = 1'000'000;  // [ns] physics step (1 kHz)
     std::int64_t max_substeps = 100;   // per advance() call
+    std::vector<ShaftConfig> shafts;   // at most kMaxShafts (D-052)
 };
 
 class Executive {
@@ -99,6 +117,20 @@ public:
     const DynamicComponent& component(std::size_t i) const noexcept { return *components_[i]; }
     std::size_t component_offset(std::size_t i) const noexcept { return offsets_[i]; }
     std::size_t component_size(std::size_t i) const noexcept { return sizes_[i]; }
+    // The shafts (D-052): their configs, and shaft k's ψ at state index
+    // shaft_offset(k), its Ω at shaft_offset(k) + 1.
+    std::span<const ShaftConfig> shafts() const noexcept { return shafts_; }
+    std::size_t shaft_offset(std::size_t k) const noexcept { return shaft_offset_ + 2 * k; }
+    // The components' states only: those between the body's and the shafts'.
+    std::size_t num_component_states() const noexcept { return shaft_offset_ - body_layout::kSize; }
+    // Writes every shaft's start state, ψ = 0 at its governed speed, into a
+    // full state vector x (D-052).
+    void initial_shaft_states(std::span<double> x) const noexcept;
+    // Wraps every shaft's ψ in x into [0, 2π) (D-052): a phase, kept small so
+    // its rounding doesn't grow with the run, as the quaternion is kept unit.
+    // Called after each step; changes nothing a component sees, which reads
+    // the azimuth modulo 2π.
+    void wrap_shaft_azimuths(std::span<double> x) const noexcept;
     // Every state's label for trim (D-045): the body's free, each
     // component's from its steady_kinds(), checked against its
     // steady_states() at construction.
@@ -129,14 +161,28 @@ private:
     // throws InitError naming the component and state on a mismatch.
     void label_steady_states();
 
+    // The coupled system (spec §5, D-052): unknowns z = [a; Ω̇ of the free
+    // shafts], A z = rhs, sized 6 + free shafts (fixed capacity, no heap).
+    static constexpr int kMaxUnknowns = 6 + kMaxShafts;
+    using MatZ =
+        Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, 0, kMaxUnknowns, kMaxUnknowns>;
+    using VecZ = Eigen::Matrix<double, Eigen::Dynamic, 1, 0, kMaxUnknowns, 1>;
+
     // Shared by derivatives() and held_derivatives(): evaluates the force
-    // models and the components at (t, x), writing xdot0_ and G_, adding the
-    // loads into `rhs` and their H into `A`, and each component's load0 into
+    // models and the components at (t, x), writing xdot0_, G_ and Gs_, adding
+    // the loads into the body rows of `rhs` and their H into `A`, the free
+    // shafts' rows after them, and each component's load0 into
     // `component_loads` if it isn't empty. Returns false if some bounded
     // iteration did not converge.
     bool evaluate(double t, std::span<const double> x, const Controls& controls,
-                  const Environment& env, Mat66& A, Vec6& rhs,
+                  const Environment& env, MatZ& A, VecZ& rhs,
                   std::span<Wrench> component_loads) const noexcept;
+    // Solves A z = rhs: with no free shaft through the 6 × 6 path exactly as
+    // before D-052 (bit for bit), else through the generalized one.
+    VecZ solve(const MatZ& A, const VecZ& rhs) const noexcept;
+    // Writes ẋ from the solution z: body kinematics, components, shafts.
+    void back_substitute(std::span<const double> x, const VecZ& z,
+                         std::span<double> xdot) const noexcept;
 
     // One RK4 step. Returns false, leaving the state unchanged, if the result
     // is not finite.
@@ -154,6 +200,9 @@ private:
     std::vector<std::size_t> sizes_;        // each component's state count, fixed at init
     std::vector<SteadyKind> steady_kinds_;  // one per state (D-045)
     std::vector<std::size_t> order_;        // evaluation order, producers first (D-003)
+    std::vector<ShaftConfig> shafts_;       // D-052
+    std::size_t shaft_offset_ = 0;          // first shaft state index
+    std::vector<int> free_shafts_;          // the free shafts' indices, in order
 
     std::vector<double> x_;
     std::vector<double> x_prev_;  // state before the current step
@@ -162,6 +211,7 @@ private:
     // Per-evaluation scratch (sized at init, contents never carried over).
     mutable std::vector<double> xdot0_;  // all components' xdot0, in state order
     mutable std::vector<double> G_;      // all components' G, n × 6 row-major
+    mutable std::vector<double> Gs_;     // all components' G_s, n × kMaxShafts (D-052)
     mutable CouplingOutputs coupling_;   // rebuilt in every evaluation (D-003)
 
     std::int64_t n_steps_ = 0;

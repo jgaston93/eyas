@@ -1,9 +1,11 @@
 #include "sim/executive.hpp"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 #include <string>
 
 #include <Eigen/Cholesky>
@@ -34,11 +36,34 @@ void validate(const ExecutiveConfig& c) {
     if (I.llt().info() != Eigen::Success) {
         throw InitError("executive: inertia tensor must be positive definite");
     }
+    if (c.shafts.size() > static_cast<std::size_t>(kMaxShafts)) {
+        throw InitError("executive: at most " + std::to_string(kMaxShafts) + " shafts (D-052)");
+    }
+    for (std::size_t k = 0; k < c.shafts.size(); ++k) {
+        const ShaftConfig& sh = c.shafts[k];
+        const std::string who = "executive: shaft '" + sh.name + "'";
+        if (sh.name.empty()) {
+            throw InitError("executive: a shaft needs a name (D-052)");
+        }
+        for (std::size_t j = 0; j < k; ++j) {
+            if (c.shafts[j].name == sh.name) {
+                throw InitError(who + " is declared twice");
+            }
+        }
+        if (!(sh.speed > 0.0) || !std::isfinite(sh.speed)) {
+            throw InitError(who + ": speed must be positive and finite");
+        }
+        if (!(sh.inertia >= 0.0) || !std::isfinite(sh.inertia)) {
+            throw InitError(who + ": inertia must be non-negative and finite");
+        }
+        if (!sh.axis_b.allFinite() || std::abs(sh.axis_b.norm() - 1.0) > 1e-9) {
+            throw InitError(who + ": axis must be a unit vector");
+        }
+    }
 }
 
-// Runs in the member initializers, so it checks for null before the body can.
-std::size_t total_states(const std::vector<std::unique_ptr<DynamicComponent>>& components) {
-    std::size_t n = body_layout::kSize;
+std::size_t component_states(const std::vector<std::unique_ptr<DynamicComponent>>& components) {
+    std::size_t n = 0;
     for (const auto& c : components) {
         if (!c) {
             throw InitError("executive: null component");
@@ -46,6 +71,12 @@ std::size_t total_states(const std::vector<std::unique_ptr<DynamicComponent>>& c
         n += c->num_states();
     }
     return n;
+}
+
+// Runs in the member initializers, so it checks for null before the body can.
+std::size_t total_states(const std::vector<std::unique_ptr<DynamicComponent>>& components,
+                         const ExecutiveConfig& config) {
+    return body_layout::kSize + component_states(components) + 2 * config.shafts.size();
 }
 
 std::string label(const DynamicComponent& c, std::size_t i) {
@@ -120,11 +151,13 @@ Executive::Executive(const ExecutiveConfig& config,
       max_substeps_(config.max_substeps),
       components_(std::move(components)),
       forces_(std::move(forces)),
-      x_(total_states(components_), 0.0),
+      shafts_(config.shafts),
+      x_(total_states(components_, config), 0.0),
       x_prev_(x_.size(), 0.0),
       rk4_(x_.size()),
-      xdot0_(x_.size() - body_layout::kSize, 0.0),
-      G_((x_.size() - body_layout::kSize) * 6, 0.0) {
+      xdot0_(component_states(components_), 0.0),
+      G_(component_states(components_) * 6, 0.0),
+      Gs_(config.shafts.empty() ? 0 : component_states(components_) * kMaxShafts, 0.0) {
     validate(config);
     std::size_t offset = body_layout::kSize;
     for (const auto& c : components_) {
@@ -139,9 +172,22 @@ Executive::Executive(const ExecutiveConfig& config,
             throw InitError("executive: null force model");
         }
     }
+    shaft_offset_ = offset;
+    std::vector<ShaftInfo> info;
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        x_[shaft_offset(k)] = 0.0;
+        x_[shaft_offset(k) + 1] = shafts_[k].speed;
+        if (shafts_[k].drive == ShaftDrive::free) {
+            free_shafts_.push_back(static_cast<int>(k));
+        }
+        info.push_back({shafts_[k].name, shafts_[k].speed});
+    }
     CouplingRegistry registry;
     order_ = order_and_bind(components_, registry);
     coupling_ = CouplingOutputs(registry.size());
+    for (const auto& c : components_) {
+        c->bind_shafts(info);
+    }
     pack_body(BodyState{}, x_);
     label_steady_states();
 }
@@ -185,6 +231,23 @@ void Executive::set_body_state(const BodyState& body) {
     pack_body(b, x_);
 }
 
+void Executive::initial_shaft_states(std::span<double> x) const noexcept {
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        x[shaft_offset(k)] = 0.0;
+        x[shaft_offset(k) + 1] = shafts_[k].speed;
+    }
+}
+
+void Executive::wrap_shaft_azimuths(std::span<double> x) const noexcept {
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        double& psi = x[shaft_offset(k)];
+        if (psi >= kTwoPi || psi < 0.0) {
+            psi -= kTwoPi * std::floor(psi / kTwoPi);
+        }
+    }
+}
+
 bool Executive::reset(const BodyState& body) noexcept {
     const bool finite = body.pos_n.allFinite() && body.vel_b.allFinite() &&
                         body.q_nb.coeffs().allFinite() && body.omega_b.allFinite();
@@ -196,6 +259,7 @@ bool Executive::reset(const BodyState& body) noexcept {
     for (std::size_t i = 0; i < components_.size(); ++i) {
         components_[i]->initial_states(std::span<double>(x_).subspan(offsets_[i], sizes_[i]));
     }
+    initial_shaft_states(x_);
     pack_body(b, x_);
     n_steps_ = 0;
     remainder_ns_ = 0;
@@ -241,27 +305,46 @@ SimContext Executive::context(double t, std::span<const double> x, const Control
     ctx.air = isa_atmosphere(origin_altitude_ - ctx.body.pos_n.z(), env.isa_delta_T);  // D-016
     ctx.ground_z_n = origin_altitude_ - env.ground_height;                             // D-033
     ctx.coupling = &coupling_;
+    ctx.num_shafts = static_cast<int>(shafts_.size());  // D-052
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        ctx.shafts[k] = {x[shaft_offset(k)], x[shaft_offset(k) + 1]};
+    }
     return ctx;
 }
 
 bool Executive::evaluate(double t, std::span<const double> x, const Controls& controls,
-                         const Environment& env, Mat66& A, Vec6& rhs,
+                         const Environment& env, MatZ& A, VecZ& rhs,
                          std::span<Wrench> component_loads) const noexcept {
     SimContext ctx = context(t, x, controls, env);
     // Force models run before every component and can't consume (D-003), so
     // they get no store; components get it once it is reset for this evaluation.
     ctx.coupling = nullptr;
 
-    // (M_rb − Σ H) a = bias + Σ load0 + Σ forces   (spec §5, "Coupling")
-    A = mass_matrix_;
-    rhs = rigid_body_bias(mass_, ctx.body);
+    // (M_rb − Σ H) a = bias + Σ load0 + Σ forces   (spec §5, "Coupling"),
+    // with the free shafts' accelerations and equations added (D-052).
+    const auto nf = static_cast<Eigen::Index>(free_shafts_.size());
+    A.setZero(6 + nf, 6 + nf);
+    rhs.setZero(6 + nf);
+    A.topLeftCorner<6, 6>() = mass_matrix_;
+    rhs.head<6>() = rigid_body_bias(mass_, ctx.body);
+    // The shafts' lumped parts spin relative to the airframe with angular
+    // momentum J Ω n, which turns with it: the gyroscopic moment −ω × (J Ω n)
+    // (D-052). Zero without shaft inertia, so models without shafts are
+    // unchanged.
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        if (shafts_[k].inertia != 0.0) {
+            rhs.segment<3>(3) -= ctx.body.omega_b.cross((shafts_[k].inertia * ctx.shafts[k].omega) *
+                                                        shafts_[k].axis_b);
+        }
+    }
     for (const auto& f : forces_) {
         const Wrench w = f->compute(ctx);
         rhs.head<3>() += w.F;
-        rhs.tail<3>() += w.M;
+        rhs.segment<3>(3) += w.M;
     }
     std::fill(xdot0_.begin(), xdot0_.end(), 0.0);
     std::fill(G_.begin(), G_.end(), 0.0);
+    std::fill(Gs_.begin(), Gs_.end(), 0.0);
     coupling_.begin_evaluation();
     ctx.coupling = &coupling_;
     bool converged = true;
@@ -274,53 +357,133 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
                           Mat66::Zero(),
                           true,
                           &coupling_};
+        if (!Gs_.empty()) {
+            d.Gs = std::span<double>(Gs_).subspan(local * kMaxShafts, n * kMaxShafts);
+        }
         components_[i]->derivatives(ctx, x.subspan(offsets_[i], n), d);
         rhs.head<3>() += d.load0_b.F;
-        rhs.tail<3>() += d.load0_b.M;
-        A -= d.H;
+        rhs.segment<3>(3) += d.load0_b.M;
+        A.topLeftCorner<6, 6>() -= d.H;
+        // Free shafts (D-052): the loads' Ω̇ terms in the body rows, and each
+        // shaft's row  Σ Q_c − J(Ω̇ + n·ω̇) = 0, Q_c = Q0 + K_a a + K_s Ω̇.
+        for (Eigen::Index r = 0; r < nf; ++r) {
+            const int k = free_shafts_[static_cast<std::size_t>(r)];
+            A.block<6, 1>(0, 6 + r) -= d.Hs.col(k);
+            A.block<1, 6>(6 + r, 0) -= d.Ka.row(k);
+            for (Eigen::Index c = 0; c < nf; ++c) {
+                A(6 + r, 6 + c) -= d.Ks(k, free_shafts_[static_cast<std::size_t>(c)]);
+            }
+            rhs(6 + r) += d.Q0(k);
+        }
         converged = converged && d.converged;
         if (component_loads.size() == components_.size()) {
             component_loads[i] = d.load0_b;
         }
     }
+    // The parts no component models, J about axis n (D-052): their rigid
+    // inertia is the airframe's (D-002), so only the spin relative to it is
+    // added: −J Ω̇ n on the airframe and −J(Ω̇ + n·ω̇) on the shaft, a
+    // symmetric pair.
+    for (Eigen::Index r = 0; r < nf; ++r) {
+        const ShaftConfig& sh =
+            shafts_[static_cast<std::size_t>(free_shafts_[static_cast<std::size_t>(r)])];
+        A.block<3, 1>(3, 6 + r) += sh.inertia * sh.axis_b;
+        A.block<1, 3>(6 + r, 3) += sh.inertia * sh.axis_b.transpose();
+        A(6 + r, 6 + r) += sh.inertia;
+    }
     return converged;
 }
 
-bool Executive::derivatives(double t, std::span<const double> x, const Controls& controls,
-                            const Environment& env, std::span<double> xdot) const noexcept {
-    Mat66 A;
-    Vec6 rhs;
-    const bool converged = evaluate(t, x, controls, env, A, rhs, {});
-    const Vec6 a = A.partialPivLu().solve(rhs);
+Executive::VecZ Executive::solve(const MatZ& A, const VecZ& rhs) const noexcept {
+    if (free_shafts_.empty()) {
+        // Exactly the pre-D-052 solve, so models without free shafts keep
+        // their results to the bit.
+        const Mat66 A6 = A.topLeftCorner<6, 6>();
+        const Vec6 r6 = rhs.head<6>();
+        return VecZ(A6.partialPivLu().solve(r6));
+    }
+    return A.partialPivLu().solve(rhs);
+}
 
-    // Back-substitution: ẋ_c = ẋ0_c + G_c a
+void Executive::back_substitute(std::span<const double> x, const VecZ& z,
+                                std::span<double> xdot) const noexcept {
+    const Vec6 a = z.head<6>();
+    // ẋ_c = ẋ0_c + G_c a + G_s,c Ω̇
     body_kinematics(unpack_body(x), a, xdot);
+    std::array<double, kMaxShafts> shaft_acc{};
+    for (std::size_t r = 0; r < free_shafts_.size(); ++r) {
+        shaft_acc[static_cast<std::size_t>(free_shafts_[r])] = z(static_cast<Eigen::Index>(6 + r));
+    }
     for (std::size_t j = 0; j < xdot0_.size(); ++j) {
         double v = xdot0_[j];
         for (std::size_t k = 0; k < 6; ++k) {
             v += G_[j * 6 + k] * a(static_cast<Eigen::Index>(k));
         }
+        if (!Gs_.empty()) {
+            for (std::size_t k = 0; k < shafts_.size(); ++k) {
+                v += Gs_[j * kMaxShafts + k] * shaft_acc[k];
+            }
+        }
         xdot[body_layout::kSize + j] = v;
     }
+    // ψ̇ = Ω; Ω̇ from the solve, 0 for an ideal drive (D-052).
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        xdot[shaft_offset(k)] = x[shaft_offset(k) + 1];
+        xdot[shaft_offset(k) + 1] = shaft_acc[k];
+    }
+}
+
+bool Executive::derivatives(double t, std::span<const double> x, const Controls& controls,
+                            const Environment& env, std::span<double> xdot) const noexcept {
+    MatZ A;
+    VecZ rhs;
+    const bool converged = evaluate(t, x, controls, env, A, rhs, {});
+    back_substitute(x, solve(A, rhs), xdot);
     return converged;
 }
 
 bool Executive::body_acceleration(const Controls& controls, const Environment& env,
                                   Vec6& a) const noexcept {
-    Mat66 A;
-    Vec6 rhs;
+    MatZ A;
+    VecZ rhs;
     const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {});
-    a = A.partialPivLu().solve(rhs);
+    a = solve(A, rhs).head<6>();
     return converged;
 }
 
 bool Executive::held_derivatives(double t, std::span<const double> x, const Controls& controls,
                                  const Environment& env, std::span<double> xdot, Vec6& net,
                                  std::span<Wrench> component_loads) const noexcept {
-    Mat66 A;
-    const bool converged = evaluate(t, x, controls, env, A, net, component_loads);
+    MatZ A;
+    VecZ rhs;
+    const bool converged = evaluate(t, x, controls, env, A, rhs, component_loads);
+    // The body held (a = 0): the free shafts still accelerate, by their own
+    // rows; the body feels what is left of its rows (D-052).
+    VecZ z = VecZ::Zero(A.rows());
+    const auto nf = static_cast<Eigen::Index>(free_shafts_.size());
+    if (nf > 0) {
+        z.tail(nf) = A.bottomRightCorner(nf, nf).partialPivLu().solve(rhs.tail(nf));
+    }
+    net = rhs.head<6>();
+    if (nf > 0) {
+        net -= A.topRows<6>() * z;
+    }
     std::copy(xdot0_.begin(), xdot0_.end(),
               xdot.begin() + static_cast<std::ptrdiff_t>(body_layout::kSize));
+    for (std::size_t j = 0; j < xdot0_.size() && !Gs_.empty(); ++j) {
+        for (Eigen::Index r = 0; r < nf; ++r) {
+            const auto k = static_cast<std::size_t>(free_shafts_[static_cast<std::size_t>(r)]);
+            xdot[body_layout::kSize + j] += Gs_[j * kMaxShafts + k] * z(6 + r);
+        }
+    }
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        xdot[shaft_offset(k)] = x[shaft_offset(k) + 1];
+        xdot[shaft_offset(k) + 1] = 0.0;
+    }
+    for (Eigen::Index r = 0; r < nf; ++r) {
+        xdot[shaft_offset(static_cast<std::size_t>(free_shafts_[static_cast<std::size_t>(r)])) +
+             1] = z(6 + r);
+    }
     return converged;
 }
 
@@ -353,6 +516,7 @@ bool Executive::step(const Controls& controls, const Environment& env) noexcept 
     for (int i = 0; i < 4; ++i) {
         q[i] /= norm;
     }
+    wrap_shaft_azimuths(x_);  // D-052
     return true;
 }
 

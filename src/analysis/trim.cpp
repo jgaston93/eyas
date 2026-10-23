@@ -104,7 +104,7 @@ public:
         : ex_(ex),
           c_(c),
           n_(ex.num_states()),
-          nc_(n_ - body_layout::kSize),
+          nc_(ex.num_component_states()),  // the shafts aren't unknowns (D-052)
           held_(ex, trim_environment(c), trim_period(ex), o.steps_per_period),
           x_(n_, 0.0) {
         weight_ = ex.airframe_mass().mass * units::kStandardGravity;
@@ -139,6 +139,9 @@ public:
         for (std::size_t j = 0; j < nc_; ++j) {
             x_[body_layout::kSize + j] = z(static_cast<Eigen::Index>(kHead + j));
         }
+        // The shafts start at ψ = 0 at their governed speeds; with ideal drives
+        // the speeds hold and ψ advances 2π a revolution (D-052).
+        ex_.initial_shaft_states(x_);
         // States with an algebraic equilibrium on the held body take it
         // (GenHel's IC mode, D-045); their unknowns in z then have no effect,
         // and the minimum-norm step leaves them alone.
@@ -477,11 +480,17 @@ bool trim_body_state(const TrimCondition& c, double pitch, double roll, double o
 TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimResult* start,
                       std::vector<double>& x, const TrimOptions& o) {
     check(c);
+    for (const ShaftConfig& sh : ex.shafts()) {
+        if (sh.drive != ShaftDrive::ideal) {
+            throw InitError("trim: shaft '" + sh.name +
+                            "' has a free drive; trimming one comes with the engines (D-052)");
+        }
+    }
     Problem p(ex, c, o);
-    const std::size_t nc = ex.num_states() - body_layout::kSize;
+    const std::size_t nc = ex.num_component_states();
     VecX z = VecX::Zero(static_cast<Eigen::Index>(p.unknowns()));
     if (start != nullptr) {
-        if (start->component_states.size() != nc) {
+        if (start->component_states.size() != ex.num_states() - body_layout::kSize) {
             throw InitError("trim: the starting point's component states don't fit this model");
         }
         z(0) = start->controls.collective;

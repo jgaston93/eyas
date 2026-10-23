@@ -77,6 +77,12 @@ std::vector<double> random_state(const Executive& ex, std::mt19937& rng) {
     for (std::size_t i = body_layout::kSize; i < x.size(); ++i) {
         x[i] = 0.05 * u(rng);
     }
+    // The shafts at their governed speeds, ψ random (D-052): a random speed of
+    // order 0.05 rad/s isn't a rotor state the inflow solve is built for.
+    ex.initial_shaft_states(x);
+    for (std::size_t k = 0; k < ex.shafts().size(); ++k) {
+        x[ex.shaft_offset(k)] = 3.0 + 3.0 * u(rng);
+    }
     return x;
 }
 
