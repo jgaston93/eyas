@@ -147,6 +147,10 @@ afloat.
 - the stick's X and Y to the cyclic and its twist to the pedals (wider
   deadband, against twisting by accident);
 - the throttle lever to the collective;
+- the throttle's right lever to both engines' power levers (aft the idle
+  stop, forward fly; it holds fly until brought to it, PCL on the HUD; it
+  moves the engines on Ballin's T700s, `data/uh60a/engine_ballin/uh60a.yaml`,
+  D-055); the engine-select and speed-trim buttons are left to assign;
 - the stick trigger to trim release;
 - throttle E to the brakes and throttle G to trim reset.
 
