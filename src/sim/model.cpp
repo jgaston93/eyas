@@ -305,7 +305,7 @@ void Model::update_outputs() noexcept {
     if (impl_->tail_rotor != kNone) {
         const auto& rotor = static_cast<const BaileyRotor&>(ex.component(impl_->tail_rotor));
         o.tail_rotor_thrust = rotor.evaluate(ctx, states(impl_->tail_rotor)).thrust;
-        o.tail_rotor_azimuth = rotor.azimuth(ctx);
+        o.tail_rotor_azimuth = rotor.azimuth(ctx, states(impl_->tail_rotor));
     }
     bool wow = false;
     for (const std::size_t i : impl_->gears) {

@@ -133,9 +133,17 @@ public:
     static std::unique_ptr<BaileyRotor> from_config(const Config& node);
 
     // States: x[0] = λ_i [-]; with a fuselage wake also x[1] = σ_d and
-    // x[2] = ε_d [rad]. All start at zero.
-    std::size_t num_states() const override { return config_.fuselage_wake ? 3 : 1; }
+    // x[2] = ε_d [rad]; on a shaft, last, its own azimuth ψ [rad], ψ̇ = gear
+    // × the shaft's Ω (D-053 amendment 3: as gear × the shaft's wrapped
+    // azimuth it would jump at each wrap unless the gear were whole). All
+    // start at zero.
+    std::size_t num_states() const override {
+        return std::size_t{config_.fuselage_wake ? 3U : 1U} + (config_.shaft ? 1U : 0U);
+    }
     void initial_states(std::span<double> x) const override;
+    // Trim (D-053 amendment 3): its azimuth starts at zero, a phase.
+    void steady_states(const SimContext& ctx, std::span<double> x) const override;
+    void steady_kinds(std::span<SteadyKind> kinds) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
 
@@ -147,8 +155,9 @@ public:
     // Rotor speed Ω [rad/s] in this context: the shaft's × gear (D-052), or
     // the constant rotor_speed.
     double rotor_speed(const SimContext& ctx) const noexcept;
-    // Its azimuth [rad, in [0, 2π)]: gear × the shaft's (D-052), or Ω t.
-    double azimuth(const SimContext& ctx) const noexcept;
+    // Its azimuth [rad, in [0, 2π)] at states x: its own state on a shaft
+    // (D-053 amendment 3), else Ω t.
+    double azimuth(const SimContext& ctx, std::span<const double> x) const noexcept;
 
     // Loads at states x. The main-rotor wash and the airframe's wake values
     // come from ctx.coupling; without it the wash is zero and the wake

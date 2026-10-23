@@ -86,6 +86,12 @@ enum class SteadyKind : unsigned char {
     free,   // not set by steady_states(); trim solves it as an unknown
     orbit,  // set by steady_states(), then started on its free-flight orbit
     held,   // set by steady_states() and kept there (integrators, synchronizers)
+    // A rotor's own azimuth, ψ̇ its speed (D-053 amendment 3): set by
+    // steady_states() (zero at a trim's start, as the shafts' azimuths are)
+    // and wrapped into [0, 2π) by the executive after every step. A geared
+    // rotor needn't turn a whole number of times in a trim's revolution, so
+    // trim leaves it out of its periodicity and drift.
+    phase,
 };
 
 // A model with states: blades, inflow, gear, ... (spec §6; D-004).

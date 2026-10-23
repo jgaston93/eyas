@@ -207,6 +207,31 @@ TEST(Outputs, RotorFieldsInHover) {
     EXPECT_FALSE(o.weight_on_wheels);
 }
 
+// The tail rotor turns 4.6156 times a main-rotor revolution on the one shaft
+// (D-052). Its azimuth is its own state, wrapped on its own (D-053 amendment
+// 3): through a second of flight, many wraps of the shaft's azimuth, it
+// advances by its speed times the step every step, with no jump. Taken as
+// gear × the shaft's wrapped azimuth it jumped 0.6156 of a turn at each wrap.
+TEST(Outputs, TailRotorAzimuthIsContinuous) {
+    Model m = Model::from_file(test::uh60a_config_path());
+    const TrimResult r = m.trim(condition(0.0));
+    ASSERT_TRUE(r.converged);
+    const Uh60aHarness ac;
+    const double tail = ac.get<BaileyRotor>("tail_rotor").config().rotor_speed;
+    double last = m.outputs().tail_rotor_azimuth;
+    double worst = 0.0;
+    for (int k = 0; k < 1000; ++k) {
+        (void)m.advance(r.controls, Environment{}, 1'000'000);
+        const AircraftState& o = m.outputs();
+        const double step = std::remainder(o.tail_rotor_azimuth - last, 2.0 * kPi);
+        worst = std::max(worst, std::abs(step - tail * o.rotor_speed_percent / 100.0 * 1e-3));
+        EXPECT_GE(o.tail_rotor_azimuth, 0.0);
+        EXPECT_LT(o.tail_rotor_azimuth, 2.0 * kPi);
+        last = o.tail_rotor_azimuth;
+    }
+    EXPECT_LT(worst, 1e-6);  // [rad] a step's change of speed, at most
+}
+
 // On the ground, brakes set, at low collective: weight on wheels, which is
 // false before the first contact; the load factor then settles to 1.
 TEST(Outputs, WeightOnWheels) {

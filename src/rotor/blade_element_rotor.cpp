@@ -820,6 +820,13 @@ void BladeElementRotor::bind_shafts(std::span<const ShaftInfo> shafts) {
     }
     const std::string who = "blade_element_rotor '" + config_.name + "'";
     const auto& link = config_.shaft.value();
+    // The blades' azimuth is gear × the shaft's, which the executive wraps
+    // at 2π: with a gear that isn't whole the blades would jump at each wrap
+    // (D-053 amendment 3; the tail rotor keeps its own azimuth instead).
+    if (link.gear != std::round(link.gear)) {
+        throw InitError(who + ": the gear on shaft '" + link.name +
+                        "' must be a whole number (D-053)");
+    }
     for (std::size_t k = 0; k < shafts.size(); ++k) {
         if (shafts[k].name == link.name) {
             const double want = link.gear * shafts[k].speed;

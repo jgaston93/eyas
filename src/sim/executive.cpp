@@ -232,9 +232,14 @@ void Executive::label_steady_states() {
                                 std::to_string(j) +
                                 (written ? ": steady_states() sets it but steady_kinds() labels it "
                                            "free (D-045)"
-                                         : ": steady_kinds() labels it orbit or held but "
+                                         : ": steady_kinds() labels it orbit, held or phase but "
                                            "steady_states() doesn't set it (D-045)"));
             }
+        }
+    }
+    for (std::size_t i = 0; i < steady_kinds_.size(); ++i) {
+        if (steady_kinds_[i] == SteadyKind::phase) {
+            phases_.push_back(i);
         }
     }
 }
@@ -257,11 +262,16 @@ void Executive::initial_shaft_states(std::span<double> x) const noexcept {
 
 void Executive::wrap_shaft_azimuths(std::span<double> x) const noexcept {
     constexpr double kTwoPi = 2.0 * std::numbers::pi;
-    for (std::size_t k = 0; k < shafts_.size(); ++k) {
-        double& psi = x[shaft_offset(k)];
+    const auto wrap = [&](double& psi) {
         if (psi >= kTwoPi || psi < 0.0) {
             psi -= kTwoPi * std::floor(psi / kTwoPi);
         }
+    };
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        wrap(x[shaft_offset(k)]);
+    }
+    for (const std::size_t i : phases_) {
+        wrap(x[i]);
     }
 }
 

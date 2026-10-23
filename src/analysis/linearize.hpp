@@ -60,7 +60,8 @@ public:
     // (a component state other than the blades' flap, a shaft's Ω), else
     // size().
     std::size_t reduced_of(std::size_t full) const noexcept;
-    // The reduced indices of the free shafts' azimuths ("<shaft>.psi").
+    // The reduced indices of the free shafts' azimuths ("<shaft>.psi") and
+    // of the component states labelled phase (a rotor's own azimuth).
     std::vector<std::size_t> azimuth_states() const;
 
     // Full state for reduced coordinates xr at time t [s]: the quaternion
@@ -113,7 +114,8 @@ private:
     // Full index of every other reduced coordinate after the body block,
     // with its reduced index.
     std::vector<std::pair<std::size_t, std::size_t>> copied_;
-    // The free shafts' azimuths: full index, reduced index.
+    // The free shafts' azimuths and the phase states: full index, reduced
+    // index.
     std::vector<std::pair<std::size_t, std::size_t>> azimuths_;
 };
 

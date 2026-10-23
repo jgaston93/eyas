@@ -134,7 +134,8 @@ public:
     // Writes every shaft's start state, ψ = 0 at its governed speed, into a
     // full state vector x (D-052).
     void initial_shaft_states(std::span<double> x) const noexcept;
-    // Wraps every shaft's ψ in x into [0, 2π) (D-052): a phase, kept small so
+    // Wraps every shaft's ψ and every component state labelled phase in x
+    // into [0, 2π) (D-052, D-053 amendment 3): a phase, kept small so
     // its rounding doesn't grow with the run, as the quaternion is kept unit.
     // Called after each step; changes nothing a component sees, which reads
     // the azimuth modulo 2π.
@@ -207,6 +208,7 @@ private:
     std::vector<std::size_t> offsets_;      // each component's first state index
     std::vector<std::size_t> sizes_;        // each component's state count, fixed at init
     std::vector<SteadyKind> steady_kinds_;  // one per state (D-045)
+    std::vector<std::size_t> phases_;       // the states labelled phase
     std::vector<std::size_t> order_;        // evaluation order, producers first (D-003)
     std::vector<ShaftConfig> shafts_;       // D-052
     std::size_t shaft_offset_ = 0;          // first shaft state index

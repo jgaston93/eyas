@@ -77,7 +77,13 @@ ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height, do
             first = 2 * static_cast<std::size_t>(r.blades);
         }
         for (std::size_t j = first; j < ex.component_size(i); ++j) {
-            copied_.emplace_back(off + j, names_.size());
+            // A rotor's own azimuth is a phase, as a free shaft's (D-053
+            // amendment 3).
+            if (ex.steady_kinds()[off + j] == SteadyKind::phase) {
+                azimuths_.emplace_back(off + j, names_.size());
+            } else {
+                copied_.emplace_back(off + j, names_.size());
+            }
             names_.push_back(prefix + "[" + std::to_string(j) + "]");
         }
     }

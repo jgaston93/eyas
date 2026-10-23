@@ -88,6 +88,19 @@ void BaileyRotor::initial_states(std::span<double> x) const {
     std::fill(x.begin(), x.end(), 0.0);
 }
 
+void BaileyRotor::steady_states(const SimContext& /*ctx*/, std::span<double> x) const {
+    if (config_.shaft) {
+        x[num_states() - 1] = 0.0;
+    }
+}
+
+void BaileyRotor::steady_kinds(std::span<SteadyKind> kinds) const {
+    std::fill(kinds.begin(), kinds.end(), SteadyKind::free);
+    if (config_.shaft) {
+        kinds[num_states() - 1] = SteadyKind::phase;
+    }
+}
+
 std::vector<std::string> BaileyRotor::consumes() const {
     std::vector<std::string> names =
         config_.wash ? config_.wash->consumes() : std::vector<std::string>{};
@@ -126,11 +139,9 @@ double BaileyRotor::rotor_speed(const SimContext& ctx) const noexcept {
     return gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
 }
 
-double BaileyRotor::azimuth(const SimContext& ctx) const noexcept {
+double BaileyRotor::azimuth(const SimContext& ctx, std::span<const double> x) const noexcept {
     constexpr double kTwoPi = 2.0 * std::numbers::pi;
-    const double turned = shaft_index_ < 0
-                              ? config_.rotor_speed * ctx.t
-                              : gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].psi;
+    const double turned = config_.shaft ? x[num_states() - 1] : config_.rotor_speed * ctx.t;
     double psi = std::fmod(turned, kTwoPi);
     if (psi < 0.0) {
         psi += kTwoPi;
@@ -272,6 +283,9 @@ void BaileyRotor::derivatives(const SimContext& ctx, std::span<const double> x,
     if (config_.fuselage_wake) {
         out.xdot0[1] = loads.sidewash_rate;
         out.xdot0[2] = loads.downwash_rate;
+    }
+    if (config_.shaft) {
+        out.xdot0[num_states() - 1] = rotor_speed(ctx);
     }
 }
 

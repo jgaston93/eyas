@@ -210,7 +210,7 @@ TEST(Shafts, RotorShaftTermsAreConsistent) {
         BladeElementRotorConfig c = test::flap_rotor(airfoil, {12 * kDeg, 0.0, 0.0}, beads, e, 20);
         c.hub_position_b = Vec3(0.3, 0.1, -2.0);
         c.hub_pitch = -4 * kDeg;
-        const double gear = 1.5;
+        const double gear = 2.0;  // whole: the blades' azimuth is gear × the shaft's
         c.shaft = BladeElementRotorConfig::ShaftLink{"main", gear};
         BladeElementRotor rotor(c);
         const std::vector<ShaftInfo> info = {{"main", c.rotor_speed / gear}};
@@ -406,6 +406,12 @@ airframe:
     bad = one;
     bad.replace(bad.find("    drive: ideal\n"), 17, "");
     EXPECT_THROW((void)Model::from_string(yaml(bad, "shaft: {name: main, gear: 2}"), "a"),
+                 InitError);
+    // A blade-element rotor's azimuth is gear × the shaft's, which wraps at
+    // 2π, so its gear must be whole (D-053 amendment 3).
+    std::string half = one;
+    half.replace(half.find("13.5 rad/s"), 10, "10.8 rad/s");
+    EXPECT_THROW((void)Model::from_string(yaml(half, "shaft: {name: main, gear: 2.5}"), "a"),
                  InitError);
     const std::string twice = one + "  - {name: main, speed: \"1 rad/s\", drive: ideal}\n";
     EXPECT_THROW((void)Model::from_string(yaml(twice, "shaft: {name: main, gear: 2}"), "a"),

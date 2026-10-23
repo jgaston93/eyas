@@ -409,9 +409,13 @@ public:
         // 5.5-2; D-045), so its residual is zero. The change it would have
         // made is reported as a mean rate instead (held_drift_rate()).
         held_drift_ = 0.0;
+        const std::span<const SteadyKind> kinds = ex_.steady_kinds();
         for (std::size_t j = 0; j < nc_; ++j) {
             const std::size_t i = body_layout::kSize + j;
-            r(static_cast<Eigen::Index>(kHead + j)) = x_[i] - start_[i];
+            // A rotor's own azimuth needn't come round in a revolution of the
+            // trim's rotor (D-053 amendment 3), as the shafts' needn't.
+            r(static_cast<Eigen::Index>(kHead + j)) =
+                kinds[i] == SteadyKind::phase ? 0.0 : x_[i] - start_[i];
             held_drift_ = std::max(held_drift_, std::abs(held_.held_change()[i]) / held_.period());
         }
         for (std::size_t q = 0; q < free_.size(); ++q) {
