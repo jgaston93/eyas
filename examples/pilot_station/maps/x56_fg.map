@@ -39,6 +39,14 @@ trim_reset_button = 2:2
 # (device:button as above). Unmapped, they fall back to the default map's
 # device 0 (the gamepad), or start them with --afcs sas,pba,fps.
 
+# The AFCS buttons aren't assigned on the X-56 yet (issue #48). Unset, they'd
+# fall back to the fg defaults on joystick 0, which here is a controller that
+# sends phantom presses (the switches flickered, 2026-10-23); --afcs sets them
+# at each start.
+sas_button = -1
+pba_button = -1
+fps_button = -1
+
 # Engine controls (D-055): the throttle's right lever as both power levers,
 # aft = idle stop, forward = fly. Flown from fly: the lever takes over once
 # brought forward to it (pickup). Check the axis and pick the buttons with
