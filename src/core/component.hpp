@@ -126,10 +126,22 @@ public:
     // on every state it builds, so these states drop out of its unknowns. The
     // default sets nothing.
     // Contract: write exactly the states steady_kinds() labels orbit or held,
-    // and don't depend on the values x arrives with (reading back what was
-    // just written is fine). The executive checks the first part when it is
-    // built (InitError).
+    // and don't depend on the values those states arrive with (reading back
+    // what was just written is fine); the free states may be read, as trim
+    // solves for them (a limited integrator's limit follows the torque the
+    // free states give, D-053). The executive checks the first part when it
+    // is built (InitError).
     virtual void steady_states(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
+
+    // Marks (1) the states pinned at x on a limit or a switch, whose rates
+    // aren't differentiable there: a limited integrator at the limit its
+    // input pushes against, an engaged clutch's slip. Linearization holds
+    // them (D-053 amendment 2): small perturbations leave them where they
+    // are. pinned.size() == num_states(); the default marks none (0).
+    virtual void pinned_states(const SimContext& /*ctx*/, std::span<const double> /*x*/,
+                               std::span<unsigned char> pinned) const {
+        std::fill(pinned.begin(), pinned.end(), static_cast<unsigned char>(0));
+    }
 
     // Labels every state (kinds.size() == num_states()) for trim: free,
     // orbit or held (SteadyKind). Fixed for a configured component. The

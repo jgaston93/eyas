@@ -122,7 +122,7 @@ TEST(ReducedCoordinates, RoundTrip) {
 }
 
 // The UH-60A's multiblade coordinates are multiblade_flap()'s (Padfield 3rd
-// ed. Eqs. 3.42–3.45), in the order β0, β1c, β1s, β_d.
+// ed. Eqs. 3.42–3.45) at the rotor's azimuth, in the order β0, β1c, β1s, β_d.
 TEST(ReducedCoordinates, MatchesMultibladeFlap) {
     const Executive ex = uh60a_executive();
     const RC rc(ex, true);
@@ -143,8 +143,11 @@ TEST(ReducedCoordinates, MatchesMultibladeFlap) {
         const std::vector<double> x = random_state(ex, rng);
         const double t = 0.11 * trial;
         const VecX xr = rc.to_reduced(t, x, x);
+        // At the rotor's own azimuth, as the Tier 4 outputs: on the engines'
+        // free shaft (D-053) the shaft's ψ, not Ω t.
+        const SimContext ctx = ex.context(t, x, Controls{}, Environment{});
         const MultibladeFlap m =
-            multiblade_flap(std::span<const double>(x).subspan(off, 8), rotor.azimuth(t), 4);
+            multiblade_flap(std::span<const double>(x).subspan(off, 8), rotor.azimuth(ctx), 4);
         const auto at = [&](std::size_t i) { return xr(static_cast<Eigen::Index>(first + i)); };
         EXPECT_NEAR(at(0), m.beta0, 1e-15);
         EXPECT_NEAR(at(1), m.beta1c, 1e-15);
@@ -794,6 +797,122 @@ TEST(Linearize, FrequencyResponseMatchesClosedForms) {
 // artifact, so |c0| is gated. In hover and at 150 kt again with the SAS and
 // PBA on (M8c2); not at 60 kt, where a level trim's body-x airspeed sits just
 // below the SAS's 60 kt switches and the u perturbation crosses them.
+// D-053: on a free shaft the rotor's azimuth and speed are states of the
+// linear model, and the multiblade coordinates turn at the trim's own rotor
+// speed, 2π/T. A
+// perturbation of Ω at the 5250 ft hover (the ECU in low gain and inside its
+// limits, so the governor is smooth there) is followed by the periodic model
+// as by the nonlinear aircraft: the relative error of the linear response
+// (body coordinates and Ω, weighted as the L3 cases) shrinks in proportion to
+// the amplitude, the mark of a linearization error rather than a modelling
+// one, and is small.
+TEST(Linearize, RotorSpeedIsAStateOnAFreeShaft) {
+    const Executive ex = uh60a_executive();
+    TrimCondition c = level(0);
+    c.altitude = 5250.0 * units::kFoot;
+    std::vector<double> start;
+    const TrimResult r = solve_trim(ex, c, nullptr, start);
+    ASSERT_TRUE(r.converged);
+    LinearizeOptions o;
+    o.azimuths = 512;
+    o.steps_per_period = 512;
+    const LinearModel m = linearize(ex, c, r, o);
+    EXPECT_EQ(m.unconverged, 0U);
+    EXPECT_EQ(m.period, r.period);
+    const auto at = std::find(m.states.begin(), m.states.end(), "rotor_drive.omega");
+    ASSERT_NE(at, m.states.end());
+    const auto k = static_cast<Eigen::Index>(at - m.states.begin());
+    // The azimuth is cyclic in the averaged model: its column is set to zero
+    // there. With the multiblade coordinates turning with the rotor, the
+    // periodic model's column averages to nearly zero; what is left comes
+    // from the non-rotating states' 4/rev vibration, which a phase shift
+    // doesn't move. Measured: 1.6 % of the column's amplitude, the largest
+    // in the lateral accelerometer's row (1.5e-3 1/s). With the basis at the
+    // reference azimuth instead it was 11.4 in the flap rows (Ω² β1).
+    const auto psi = static_cast<Eigen::Index>(
+        std::find(m.states.begin(), m.states.end(), "rotor_drive.psi") - m.states.begin());
+    ASSERT_LT(psi, static_cast<Eigen::Index>(m.states.size()));
+    EXPECT_EQ(m.A.col(psi).cwiseAbs().maxCoeff(), 0.0);
+    VecX mean = VecX::Zero(m.A.rows());
+    double amplitude = 0.0;
+    for (const MatX& A : m.A_periodic) {
+        mean += A.col(psi) / static_cast<double>(m.A_periodic.size());
+        amplitude = std::max(amplitude, A.col(psi).cwiseAbs().maxCoeff());
+    }
+    EXPECT_LT(mean.cwiseAbs().maxCoeff(), 0.05 * amplitude);
+
+    const RC rc(ex, true, m.period);
+    const Environment env = trim_environment(c);
+    const int per_rev = o.azimuths / 2;
+    const double dt = m.period / per_rev;
+    const int steps = static_cast<int>(std::ceil(3.0 / m.period)) * per_rev;
+    const auto hold = [&](double) { return r.controls; };
+    const auto none = [](double) { return Eigen::Vector4d::Zero().eval(); };
+    const auto base = test::free_flight(ex, env, start, hold, dt, steps);
+    const VecX x0 = rc.to_reduced(0.0, start, start);
+    VecX w = VecX::Zero(static_cast<Eigen::Index>(rc.size()));
+    w.head(10).setOnes();
+    w.segment(3, 6).setConstant(10.0);  // 0.1 rad/s, 0.1 rad
+    w(k) = 10.0;                        // 0.1 rad/s
+    std::array<double, 3> error{};
+    for (std::size_t level = 0; level < error.size(); ++level) {
+        const double a = 0.02 / std::pow(2.0, static_cast<double>(level));  // [rad/s]
+        VecX dx0 = VecX::Zero(static_cast<Eigen::Index>(rc.size()));
+        dx0(k) = a;
+        std::vector<double> x1(start.size());
+        rc.to_full(0.0, VecX(x0 + dx0), start, x1);
+        const auto pert = test::free_flight(ex, env, x1, hold, dt, steps);
+        const std::vector<VecX> lin = linear_response(m, dx0, none, steps, false);
+        double err = 0.0;
+        double size = 0.0;
+        for (int n = 0; n <= steps; ++n) {
+            const auto i = static_cast<std::size_t>(n);
+            const double t = dt * n;
+            const VecX dnl = rc.to_reduced(t, pert[i], start) - rc.to_reduced(t, base[i], start);
+            err = std::max(err, (dnl - lin[i]).cwiseProduct(w).norm());
+            size = std::max(size, lin[i].cwiseProduct(w).norm());
+        }
+        error[level] = err / size;
+    }
+    SCOPED_TRACE(testing::Message() << error[0] << " " << error[1] << " " << error[2]);
+    // Measured: 1.4e-4, 6.5e-5, 2.7e-5. Without the shaft's azimuth as a state
+    // the error was 1.7e-2 at every amplitude: the phase of the 4/rev loads.
+    EXPECT_LT(error[2], 1e-4);
+    for (std::size_t level = 1; level < error.size(); ++level) {
+        EXPECT_GT(error[level - 1] / error[level], 1.7);
+    }
+}
+
+// D-053 amendment 2: states pinned on a switch or a limit at the trim (the
+// engaged clutch's slip, the switch integrator at its limit) have rates that
+// aren't differentiable there; a central difference across the switch gave
+// entries up to 2.8e7 that spread into Ω, r and the sensors. Linearization
+// holds them: their rows and columns are zero, at every azimuth, and the
+// largest entry is again the landing gear's stiffness scale (2.3e5).
+TEST(Linearize, PinnedEngineStatesAreHeld) {
+    const Executive ex = uh60a_executive();
+    const TrimCondition c = level(0);
+    const TrimResult r = trim(ex, c);
+    LinearizeOptions o;
+    o.azimuths = 8;
+    const LinearModel m = linearize(ex, c, r, o);
+    for (const std::string name : {"engines[6]", "engines[13]"}) {
+        const auto i = static_cast<Eigen::Index>(std::find(m.states.begin(), m.states.end(), name) -
+                                                 m.states.begin());
+        ASSERT_LT(i, static_cast<Eigen::Index>(m.states.size())) << name;
+        for (const MatX& A : m.A_periodic) {
+            EXPECT_EQ(A.row(i).cwiseAbs().maxCoeff(), 0.0) << name;
+            EXPECT_EQ(A.col(i).cwiseAbs().maxCoeff(), 0.0) << name;
+        }
+        for (const MatX& B : m.B_periodic) {
+            EXPECT_EQ(B.row(i).cwiseAbs().maxCoeff(), 0.0) << name;
+        }
+        EXPECT_EQ(m.A.row(i).cwiseAbs().maxCoeff(), 0.0) << name;
+        EXPECT_EQ(m.A.col(i).cwiseAbs().maxCoeff(), 0.0) << name;
+    }
+    EXPECT_LT(m.A.cwiseAbs().maxCoeff(), 1e6);
+}
+
 TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {
     const Executive ex = uh60a_executive();
     TrimResult previous;

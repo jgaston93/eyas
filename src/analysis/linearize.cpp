@@ -40,7 +40,7 @@ std::string multiblade_name(int blades, int i) {
 
 // ---- Reduced coordinates -------------------------------------------------------
 
-ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height)
+ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height, double period)
     : with_height_(with_height) {
     names_ = {"u", "v", "w", "p", "q", "r", "phi", "theta", "psi_h"};
     if (with_height_) {
@@ -59,7 +59,14 @@ ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height)
             r.full = off;
             r.reduced = names_.size();
             r.blades = b->config().num_blades;
-            r.omega = b->config().rotor_speed;
+            r.omega = period > 0.0 ? 2.0 * kPi / period : b->config().rotor_speed;
+            const auto& link = b->config().shaft;
+            if (b->shaft_index() >= 0 && link.has_value() &&
+                ex.shafts()[static_cast<std::size_t>(b->shaft_index())].drive == ShaftDrive::free) {
+                r.on_free_shaft = true;
+                r.shaft = ex.shaft_offset(static_cast<std::size_t>(b->shaft_index()));
+                r.gear = link->gear;
+            }
             for (int k = 0; k < r.blades; ++k) {
                 names_.push_back(prefix + "." + multiblade_name(r.blades, k));
             }
@@ -74,11 +81,41 @@ ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height)
             names_.push_back(prefix + "[" + std::to_string(j) + "]");
         }
     }
+    // A free shaft's azimuth and speed are degrees of freedom (D-052,
+    // D-053): a change of speed shifts the rotor's phase on its orbit, and
+    // with it the phase of every load periodic in it.
+    for (std::size_t k = 0; k < ex.shafts().size(); ++k) {
+        if (ex.shafts()[k].drive == ShaftDrive::free) {
+            azimuths_.emplace_back(ex.shaft_offset(k), names_.size());
+            names_.push_back(ex.shafts()[k].name + ".psi");
+            copied_.emplace_back(ex.shaft_offset(k) + 1, names_.size());
+            names_.push_back(ex.shafts()[k].name + ".omega");
+        }
+    }
 }
 
-void ReducedCoordinates::basis(const Rotor& r, double t, int k, std::span<double> phi,
+ReducedCoordinates::Phase ReducedCoordinates::phase(const Rotor& r, double t,
+                                                    std::span<const double> x) {
+    Phase p;
+    if (r.on_free_shaft) {
+        // The rotor's own azimuth, so the multiblade coordinates turn with it
+        // and the shaft's azimuth is cyclic (D-053 amendment 2).
+        p.psi = r.gear * x[r.shaft];
+        p.rate = r.gear * x[r.shaft + 1];
+    } else {
+        p.psi = r.omega * t;
+        p.rate = r.omega;
+    }
+    p.psi = std::fmod(p.psi, 2.0 * kPi);
+    if (p.psi < 0.0) {
+        p.psi += 2.0 * kPi;
+    }
+    return p;
+}
+
+void ReducedCoordinates::basis(const Rotor& r, double psi_rotor, int k, std::span<double> phi,
                                std::span<double> dphi) {
-    const double psi = r.rotor->blade_azimuth(r.rotor->azimuth(t), k);
+    const double psi = r.rotor->blade_azimuth(psi_rotor, k);
     const auto n_b = static_cast<std::size_t>(r.blades);
     phi[0] = 1.0;
     dphi[0] = 0.0;
@@ -113,6 +150,24 @@ ReducedCoordinates::FlapKind ReducedCoordinates::flap_kind(std::size_t i) const 
     return FlapKind::none;
 }
 
+std::size_t ReducedCoordinates::reduced_of(std::size_t full) const noexcept {
+    for (const auto& [f, red] : copied_) {
+        if (f == full) {
+            return red;
+        }
+    }
+    return size();
+}
+
+std::vector<std::size_t> ReducedCoordinates::azimuth_states() const {
+    std::vector<std::size_t> out;
+    out.reserve(azimuths_.size());
+    for (const auto& [full, red] : azimuths_) {
+        out.push_back(red);
+    }
+    return out;
+}
+
 void ReducedCoordinates::derivative(int blades, std::span<const double> q, std::span<double> out) {
     std::fill(out.begin(), out.end(), 0.0);
     // Σ_j q_j φ_j′ = Σ_n n (q_ns cos nψ − q_nc sin nψ), n = 1…(N_b−1)/2.
@@ -134,6 +189,13 @@ void ReducedCoordinates::to_full(double t, const VecX& xr, std::span<const doubl
         b.pos_n.z() -= xr(kHeight);
     }
     pack_body(b, x);
+    // The shafts first: the blades' basis turns with their rotor.
+    for (const auto& [full, red] : copied_) {
+        x[full] = xr(static_cast<Eigen::Index>(red));
+    }
+    for (const auto& [full, red] : azimuths_) {
+        x[full] = xr(static_cast<Eigen::Index>(red));
+    }
     std::array<double, kMaxBlades> phi{};
     std::array<double, kMaxBlades> dphi{};
     for (const Rotor& r : rotors_) {
@@ -142,21 +204,19 @@ void ReducedCoordinates::to_full(double t, const VecX& xr, std::span<const doubl
         const auto qd = [&](std::size_t i) {
             return xr(static_cast<Eigen::Index>(r.reduced + n_b + i));
         };
+        const Phase ph = phase(r, t, x);
         for (int k = 0; k < r.blades; ++k) {
-            basis(r, t, k, phi, dphi);
+            basis(r, ph.psi, k, phi, dphi);
             double beta = 0.0;
             double rate = 0.0;
             for (std::size_t i = 0; i < n_b; ++i) {
                 beta += q(i) * phi[i];
-                rate += qd(i) * phi[i] + r.omega * q(i) * dphi[i];
+                rate += qd(i) * phi[i] + ph.rate * q(i) * dphi[i];
             }
             const std::size_t j = r.full + 2 * static_cast<std::size_t>(k);
             x[j] = beta;
             x[j + 1] = rate;
         }
-    }
-    for (const auto& [full, red] : copied_) {
-        x[full] = xr(static_cast<Eigen::Index>(red));
     }
 }
 
@@ -187,8 +247,9 @@ VecX ReducedCoordinates::to_reduced(double t, std::span<const double> x,
         const auto n_b = static_cast<std::size_t>(r.blades);
         std::fill(q.begin(), q.end(), 0.0);
         std::fill(m.begin(), m.end(), 0.0);
+        const Phase ph = phase(r, t, x);
         for (int k = 0; k < r.blades; ++k) {
-            basis(r, t, k, phi, dphi);
+            basis(r, ph.psi, k, phi, dphi);
             const std::size_t j = r.full + 2 * static_cast<std::size_t>(k);
             for (std::size_t i = 0; i < n_b; ++i) {
                 // Inverse weights: 1/N for β0 and β_d, 2/N for the harmonics.
@@ -198,15 +259,19 @@ VecX ReducedCoordinates::to_reduced(double t, std::span<const double> x,
                 m[i] += w * phi[i] * x[j + 1];
             }
         }
-        // m = q̇ + Ω D q.
+        // m = q̇ + ψ̇ D q.
         derivative(r.blades, q, dq);
         for (std::size_t i = 0; i < n_b; ++i) {
             xr(static_cast<Eigen::Index>(r.reduced + i)) = q[i];
-            xr(static_cast<Eigen::Index>(r.reduced + n_b + i)) = m[i] - r.omega * dq[i];
+            xr(static_cast<Eigen::Index>(r.reduced + n_b + i)) = m[i] - ph.rate * dq[i];
         }
     }
     for (const auto& [full, red] : copied_) {
         xr(static_cast<Eigen::Index>(red)) = x[full];
+    }
+    // Within ±π of ref's, as ψ_h: continuous across the wrap.
+    for (const auto& [full, red] : azimuths_) {
+        xr(static_cast<Eigen::Index>(red)) = ref[full] + wrap_pi(x[full] - ref[full]);
     }
     return xr;
 }
@@ -241,8 +306,9 @@ VecX ReducedCoordinates::rates(double t, std::span<const double> x,
     for (const Rotor& rot : rotors_) {
         const auto n_b = static_cast<std::size_t>(rot.blades);
         std::fill(a.begin(), a.end(), 0.0);
+        const Phase ph = phase(rot, t, x);
         for (int k = 0; k < rot.blades; ++k) {
-            basis(rot, t, k, phi_k, dphi);
+            basis(rot, ph.psi, k, phi_k, dphi);
             const std::size_t j = rot.full + 2 * static_cast<std::size_t>(k);
             for (std::size_t i = 0; i < n_b; ++i) {
                 const bool single = i == 0 || (n_b % 2 == 0 && i == n_b - 1);
@@ -258,14 +324,20 @@ VecX ReducedCoordinates::rates(double t, std::span<const double> x,
         derivative(rot.blades, qv, d2);   // D q
         std::array<double, kMaxBlades> dd{};
         derivative(rot.blades, d2, dd);  // D² q
-        const double w = rot.omega;
+        // q̈ = a − 2ψ̇ D q̇ − ψ̇² D² q − ψ̈ D q; ψ̈ = 0 with a uniform rotation,
+        // gear × Ω̇ on a free shaft.
+        const double w = ph.rate;
+        const double wdot = rot.on_free_shaft ? rot.gear * xdot[rot.shaft + 1] : 0.0;
         for (std::size_t i = 0; i < n_b; ++i) {
             f(static_cast<Eigen::Index>(rot.reduced + i)) = qdv[i];
             f(static_cast<Eigen::Index>(rot.reduced + n_b + i)) =
-                a[i] - 2.0 * w * d1[i] - w * w * dd[i];
+                a[i] - 2.0 * w * d1[i] - w * w * dd[i] - wdot * d2[i];
         }
     }
     for (const auto& [full, red] : copied_) {
+        f(static_cast<Eigen::Index>(red)) = xdot[full];
+    }
+    for (const auto& [full, red] : azimuths_) {
         f(static_cast<Eigen::Index>(red)) = xdot[full];
     }
     return f;
@@ -300,23 +372,16 @@ std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const Linea
 
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& o) {
-    for (const ShaftConfig& sh : ex.shafts()) {
-        if (sh.drive != ShaftDrive::ideal) {
-            throw InitError("linearize: shaft '" + sh.name +
-                            "' has a free drive; its speed as a state comes with the engines "
-                            "(D-052)");
-        }
-    }
     if (!o.height && !std::isnan(c.ground_height)) {
         throw InitError(
             "linearize: with a ground the height is a coordinate (ground effect, D-050); set "
             "options.height");
     }
-    const ReducedCoordinates rc(ex, o.height);
+    const double T = trim_period(ex, r);
+    const ReducedCoordinates rc(ex, o.height, T);
     const HeldOrbit held = held_orbit(ex, c, r, o.azimuths, o.steps_per_period);
     const std::vector<std::vector<double>>& orbit = held.states;
     const Environment env = trim_environment(c);
-    const double T = trim_period(ex);
     const auto n = static_cast<Eigen::Index>(rc.size());
     const std::vector<double> h = perturbation_steps(rc, o);
 
@@ -369,6 +434,51 @@ LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimRes
         m.A_periodic.push_back(std::move(A));
         m.B_periodic.push_back(std::move(B));
     }
+    // States pinned on a limit or a switch anywhere on the orbit are held
+    // (D-053 amendment 2): a central difference across the switch is no
+    // derivative, and small perturbations leave them where they are.
+    std::vector<unsigned char> pinned;
+    std::vector<bool> frozen(rc.size(), false);
+    for (std::size_t j = 0; j < orbit.size(); ++j) {
+        const double t = T * static_cast<double>(j) / static_cast<double>(orbit.size());
+        const SimContext ctx = ex.context(t, orbit[j], r.controls, env);
+        for (std::size_t i = 0; i < ex.num_components(); ++i) {
+            pinned.assign(ex.component_size(i), 0);
+            ex.component(i).pinned_states(ctx,
+                                          std::span<const double>(orbit[j]).subspan(
+                                              ex.component_offset(i), ex.component_size(i)),
+                                          pinned);
+            for (std::size_t k = 0; k < pinned.size(); ++k) {
+                const std::size_t red = rc.reduced_of(ex.component_offset(i) + k);
+                if (pinned[k] != 0 && red < rc.size()) {
+                    frozen[red] = true;
+                }
+            }
+        }
+    }
+    for (std::size_t i = 0; i < frozen.size(); ++i) {
+        if (!frozen[i]) {
+            continue;
+        }
+        const auto k = static_cast<Eigen::Index>(i);
+        for (MatX& A : m.A_periodic) {
+            A.row(k).setZero();
+            A.col(k).setZero();
+        }
+        for (MatX& B : m.B_periodic) {
+            B.row(k).setZero();
+        }
+        m.A.row(k).setZero();
+        m.A.col(k).setZero();
+        m.B.row(k).setZero();
+    }
+    // A free shaft's azimuth is cyclic in the averaged model: its column is
+    // the mean of a periodic function's derivative over the revolution, zero
+    // but for sampling and rounding, so it is set to zero and the azimuth
+    // feeds nothing (D-053 amendment 2). The periodic model keeps it.
+    for (const std::size_t i : rc.azimuth_states()) {
+        m.A.col(static_cast<Eigen::Index>(i)).setZero();
+    }
     return m;
 }
 
@@ -410,10 +520,10 @@ Monodromy monodromy(const Executive& ex, const TrimCondition& c, const TrimResul
     if (!o.height) {
         throw InitError("monodromy: the flow map needs h (density changes with height)");
     }
-    const ReducedCoordinates rc(ex, true);
+    const double T = trim_period(ex, r);
+    const ReducedCoordinates rc(ex, true, T);
     const std::vector<double> start = held_orbit_start(ex, c, r);
     const Environment env = trim_environment(c);
-    const double T = trim_period(ex);
     const int steps = o.steps_per_period;
     const double dt = T / steps;
     std::vector<double> x(ex.num_states());

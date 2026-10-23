@@ -541,7 +541,15 @@ std::vector<std::string> BladeElementRotor::produces() const {
         return {};
     }
     const std::string& n = config_.name;
-    return {n + ".lambda0", n + ".mu_x", n + ".mu_z", n + ".beta_1c", n + ".tip_speed"};
+    std::vector<std::string> out = {n + ".lambda0", n + ".mu_x", n + ".mu_z", n + ".beta_1c",
+                                    n + ".tip_speed"};
+    if (config_.shaft) {
+        out.push_back(n + ".shaft_torque");  // D-053
+        for (int j = 0; j < 6; ++j) {
+            out.push_back(n + ".shaft_torque_a" + std::to_string(j));
+        }
+    }
+    return out;
 }
 
 std::vector<std::string> BladeElementRotor::consumes() const {
@@ -568,6 +576,12 @@ void BladeElementRotor::bind(const CouplingRegistry& registry) {
     slots_.mu_z = registry.find(n + ".mu_z", n);
     slots_.beta_1c = registry.find(n + ".beta_1c", n);
     slots_.tip_speed = registry.find(n + ".tip_speed", n);
+    if (config_.shaft) {
+        slots_.shaft_torque = registry.find(n + ".shaft_torque", n);
+        for (std::size_t j = 0; j < 6; ++j) {
+            slots_.shaft_torque_a[j] = registry.find(n + ".shaft_torque_a" + std::to_string(j), n);
+        }
+    }
 }
 
 void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const double> x,
@@ -787,6 +801,17 @@ void BladeElementRotor::shaft_terms(ComponentDerivs& out) const noexcept {
         out.Ka(k, j) = axial(out.H.block<3, 1>(0, j), out.H.block<3, 1>(3, j));
     }
     out.Ks(k, k) = axial(out.Hs.block<3, 1>(0, k), out.Hs.block<3, 1>(3, k));
+    // The torque it takes from the shaft at zero shaft acceleration, positive
+    // as a demand, affine in the body acceleration: GenHel's Q_HMR, for an
+    // engine's clutch and losses (D-053). Its body-acceleration terms go with
+    // it so that gravity, in Q0, and the body's acceleration enter together:
+    // uniform gravity then changes nothing on the shaft.
+    if (out.coupling != nullptr && slots_.shaft_torque.valid()) {
+        out.coupling->set(slots_.shaft_torque, -out.Q0(k));
+        for (std::size_t j = 0; j < 6; ++j) {
+            out.coupling->set(slots_.shaft_torque_a[j], -out.Ka(k, static_cast<Eigen::Index>(j)));
+        }
+    }
 }
 
 void BladeElementRotor::bind_shafts(std::span<const ShaftInfo> shafts) {

@@ -1,0 +1,14 @@
+# Transcribed by eye from rendered page images (110-250 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Table 6.5.4 "Steady fuel flow required",
+# p. 5.6-26 (PDF p. 222), handwritten. Plotted as Fig. 6.5.4, p. 5.6-32 (PDF p. 228, 70-100 % only), which agrees.
+# status: read with high confidence. Per engine (docs/DATA_GAPS.md, "UH-60A engine and fuel control").
+#
+# ngg_pct  wf_lbm_per_hr
+65         120
+70         140
+75         166
+80         210
+85         280
+90         390
+95         575
+100        790

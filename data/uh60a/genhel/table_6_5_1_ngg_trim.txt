@@ -1,0 +1,15 @@
+# Transcribed by eye from rendered page images (110-250 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Table 6.5.1 "Steady state engine performance",
+# p. 5.6-25 (PDF p. 221), handwritten. Plotted as Fig. 6.5.1, p. 5.6-29 (PDF p. 225), which agrees.
+# status: read with high confidence.
+# Torque required per engine referred to the main rotor, (Q_REQ)_TRIM/N_E [ft*lbf], against
+# gas-generator speed (N_GG)_TRIM [%].
+#
+# q_per_engine_ftlbf  ngg_pct
+0                     70
+6000                  84.6
+12000                 89.9
+18000                 94.0
+24000                 97.2
+30000                 100.1
+36000                 102.6

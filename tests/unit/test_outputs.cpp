@@ -177,11 +177,17 @@ TEST(Outputs, RotorFieldsInHover) {
         (void)m.advance(r.controls, Environment{}, 16'666'667);
     }
     const AircraftState& o = m.outputs();
-    EXPECT_EQ(o.rotor_speed_percent, 100.0);
-    EXPECT_NEAR(o.main_rotor_power, o.main_rotor_torque * omega, 1e-6 * o.main_rotor_power);
-    EXPECT_NEAR(o.main_rotor_azimuth, std::fmod(omega * o.sim_time, 2.0 * kPi), 1e-9);
-    EXPECT_NEAR(o.tail_rotor_azimuth, std::fmod(tr.config().rotor_speed * o.sim_time, 2.0 * kPi),
-                1e-9);
+    // The rotor on the engines' free shaft (D-053), governed: 100 % to its
+    // 4/rev ripple, and the azimuth Ω t to within that over 0.05 s.
+    EXPECT_NEAR(o.rotor_speed_percent, 100.0, 1e-4);
+    const double speed = omega * o.rotor_speed_percent / 100.0;
+    EXPECT_NEAR(o.main_rotor_power, o.main_rotor_torque * speed, 1e-6 * o.main_rotor_power);
+    EXPECT_NEAR(o.main_rotor_azimuth, std::fmod(omega * o.sim_time, 2.0 * kPi), 1e-6);
+    // Both rotors turn on the one shaft: before its azimuth first wraps (at
+    // 2π, 0.23 s), the tail rotor's is the main rotor's times their gear.
+    ASSERT_LT(omega * o.sim_time, 2.0 * kPi);
+    EXPECT_NEAR(o.tail_rotor_azimuth,
+                std::fmod(tr.config().rotor_speed / omega * o.main_rotor_azimuth, 2.0 * kPi), 1e-9);
     // The rotors carry the weight, 16 638 lbm (GenHel, p. 5.1-49), and the
     // fuselage download: the canted tail rotor (hub rolled 70°) lifts with
     // T_TR cos 70°, so the main rotor alone is just below the weight.

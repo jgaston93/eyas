@@ -11,6 +11,7 @@
 #include "airframe/landing_gear.hpp"
 #include "control/genhel_fcs.hpp"
 #include "core/spinning_parts.hpp"
+#include "engine/genhel_t700.hpp"
 #include "rotor/bailey_rotor.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "rotor/ideal_thrust.hpp"
@@ -104,6 +105,8 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
             components.push_back(LandingGear::from_config(c));
         } else if (type == "genhel_fcs") {
             components.push_back(GenHelFcs::from_config(c));
+        } else if (type == "genhel_t700") {
+            components.push_back(GenHelT700::from_config(c));
         } else {
             c.fail("type", "unknown component '" + type + "'");
         }
@@ -120,21 +123,37 @@ std::vector<ShaftConfig> read_shafts(const Config& config) {
     const Config list = config.child("shafts");
     for (std::size_t i = 0; i < list.size(); ++i) {
         const Config s = list[i];
-        s.allow_keys({"name", "speed", "inertia", "axis", "drive"});
+        s.allow_keys({"name", "speed", "parts", "drive"});
         ShaftConfig sh;
         sh.name = s.string("name");
         sh.speed = s.quantity("speed", Dimension::angular_rate);
-        if (s.contains("inertia")) {
-            sh.inertia = s.quantity("inertia", Dimension::inertia);
+        if (!(sh.speed > 0.0) || !std::isfinite(sh.speed)) {
+            s.fail("speed", "must be positive and finite");
         }
-        if (s.contains("axis")) {
-            const Config a = s.child("axis");
-            a.allow_keys({"x", "y", "z"});
-            const Vec3 v(a.number("x"), a.number("y"), a.number("z"));
-            if (!(v.norm() > 0.0) || !v.allFinite()) {
-                s.fail("axis", "must be a nonzero, finite direction");
+        // Each part: its own inertia about its axis and its speed at the
+        // shaft's governed speed (D-053), as the spinning parts (D-048); the
+        // executive takes gear = speed / shaft speed, J = inertia × gear².
+        if (s.contains("parts")) {
+            const Config parts = s.child("parts");
+            for (std::size_t k = 0; k < parts.size(); ++k) {
+                const Config p = parts[k];
+                p.allow_keys({"inertia", "speed", "axis"});
+                const Config a = p.child("axis");
+                a.allow_keys({"x", "y", "z"});
+                const Vec3 v(a.number("x"), a.number("y"), a.number("z"));
+                if (!(v.norm() > 0.0) || !v.allFinite()) {
+                    p.fail("axis", "must be a nonzero, finite direction");
+                }
+                const double speed = p.quantity("speed", Dimension::angular_rate);
+                if (!(speed != 0.0) || !std::isfinite(speed)) {
+                    p.fail("speed", "must be nonzero and finite");
+                }
+                ShaftPart part;
+                part.gear = speed / sh.speed;
+                part.inertia = p.quantity("inertia", Dimension::inertia) * part.gear * part.gear;
+                part.axis_b = v.normalized();
+                sh.parts.push_back(part);
             }
-            sh.axis_b = v.normalized();
         }
         // Required, no default (D-021, D-052).
         const std::string drive = s.string("drive");

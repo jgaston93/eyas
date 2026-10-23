@@ -26,18 +26,73 @@ airframe:
   mass: "14818.365054 lbm"
   inertia: {ixx: "4659.0 slug*ft^2", iyy: "38512.0 slug*ft^2", izz: "36796.0 slug*ft^2", ixz: "1882.0 slug*ft^2"}
 
-# Rotor speed (D-052, M9 Stage A): main and tail rotors geared on one shaft, the
-# engines' governor ideal (the governed speed held whatever the load). No lumped
-# inertia yet: with an ideal drive it would only add a gyroscopic moment, which
-# GenHel's spinning parts already give (D-048); GenHel's drivetrain inertias come
-# with the engines (Stage B).
+# Rotor speed (D-052, D-053): main and tail rotors geared on one shaft, driven by
+# GenHel's T700 engines through their clutch (free drive). Its parts: GenHel's
+# spinning parts geared to the drive (p. 5.10-19, D-048), turning with it, and the
+# rest of J_REST ("downstream of clutch less blades", p. 5.6-23) at rotor speed
+# about the main rotor's axis, as each part's own inertia at its speed.
 shafts:
   - name: rotor_drive
     speed: "27.0 rad/s"
-    drive: ideal
+    parts:
+      - {inertia: "0.082 slug*ft^2", speed: "609.0 rad/s", axis: {x: 1, y: 0, z: 0}}  # JXGY3, p. 5.10-19
+      - {inertia: "0.715 slug*ft^2", speed: "127.1 rad/s", axis: {x: 0, y: 1, z: 0}}  # JYGY1, p. 5.10-19
+      - {inertia: "18.0 slug*ft^2", speed: "-27.0 rad/s", axis: {x: 0, y: 0, z: 1}}  # JZGZ1, p. 5.10-19
+      - {inertia: "868.338072 slug*ft^2", speed: "27.0 rad/s", axis: {x: 0.052335956243, y: 0, z: -0.998629534755}}  # J_REST less the parts above (943.9 - 75.5619)
+    drive: free
 
 components:
   # Producers before consumers is the executive's job (D-003); config order is for reading.
+  - type: genhel_t700  # GenHel §5.6, pp. 5.6-8 to 5.6-28; engine_constants_5_6_5.txt (D-053)
+    name: engines
+    shaft: {name: rotor_drive}
+    rotor: main_rotor  # reads main_rotor.shaft_torque, GenHel's Q_HMR
+    engines: 2
+    gear: 76.0216
+    power_turbine_speed: "20000.0 rpm"
+    gas_generator_speed: "44700.0 rpm"
+    loss_factor: 0.1
+    maps:
+      torque: ../engine/t700_torque.csv
+      lds_rigging: ../engine/t700_lds_rigging.csv
+      lds_cam: ../engine/t700_lds_cam.csv
+      fuel: ../engine/t700_fuel.csv
+      p3: ../engine/t700_p3.csv
+      partials: ../engine/t700_partials.csv
+    ecu:  # Fig. 6.1.3, pp. 5.6-11 to 5.6-13
+      k1: "3.0 V/%"
+      k3: "0.6 V/%"
+      k4: "0.059 V/(ft*lbf)"  # in no printed equation; Q_INT (D-053 item 2)
+      k6: 0.2
+      k9: "0.08 1/s"
+      k10: "0.020408 s^2"
+      k11: "0.1 s"
+      dead_band: {a: "0.4 V", b: "0.8 V"}
+      t1: "0.55 s"
+      t2: "0.107 s"
+      t3: "0.08 s"
+      t4: "1.58 s"
+      integrator_limits: {upper: "0 V", lower: "-3.5 V"}
+      g4: "564.0 mA/V"
+      g5: "0.0159 in/mA"
+      g6: "56.0 V/in"
+      g7: "336.0 %/in"
+      T2: "0.2 s"
+      T3: "0.04 s"
+    switch: {speed_band: {low: "-4 %", high: "1 %"}, torque_gain: "0.7 1/s", threshold: "20 V", limit: "40 V"}  # p. 5.6-12
+    fuel_control:  # pp. 5.6-14, 5.6-15
+      speed_lag: "0.02 s"
+      ratio_gain: "0.25 lbm/(hr*psi*%)"
+      p3_lag: "0.01 s"
+      valve_lag: "0.004 s"
+    gas_generator: {acceleration: "0.479 %/(ft*lbf*s)", heat_sink: 0.65}
+    clutch:  # Fig. 6.1.4, pp. 5.6-17, 5.6-18
+      demand_lag: "0.3 s"
+      drive_inertia: "7911.204351 slug*ft^2"  # J_REST + 4 (I_B + 2 E M_B + m E^2)
+      engine_inertia: "690.6 slug*ft^2"  # J_TOTE
+    power_turbine_spool: {axis: {x: 1, y: 0, z: 0}}  # JXGY2's axis (p. 5.10-19)
+    gas_generator_spool: {inertia: "0.116 slug*ft^2", axis: {x: 1, y: 0, z: 0}}  # JXGY1
+
   - type: genhel_fcs
     name: fcs
     rigging:  # Figs. 5.1.6(a)-(d), p. 5.5-20; control_rigging_5_5.txt
@@ -273,12 +328,3 @@ components:
             high: {coefficient: "66.72 lbf*s^2/ft^2", offset: "0 lbf"}
           stop_stiffness: !placeholder "19000.0 lbf/in"
           stop_damping: !placeholder "954.987 lbf*s/ft"
-
-force_models:
-  - type: spinning_parts  # p. 5.10-19 gyroscopic components (D-048)
-    parts:
-      - {axis: x, inertia: "0.116 slug*ft^2", speed: "4188.0 rad/s"}
-      - {axis: x, inertia: "0.124 slug*ft^2", speed: "2094.0 rad/s"}
-      - {axis: x, inertia: "0.082 slug*ft^2", speed: "609.0 rad/s"}
-      - {axis: y, inertia: "0.715 slug*ft^2", speed: "127.1 rad/s"}
-      - {axis: z, inertia: "18.0 slug*ft^2", speed: "-27.0 rad/s"}

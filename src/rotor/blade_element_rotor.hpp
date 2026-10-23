@@ -366,6 +366,9 @@ private:
         CouplingSlot mu_z;
         CouplingSlot beta_1c;
         CouplingSlot tip_speed;
+        CouplingSlot shaft_torque;  // produced on a shaft (D-053)
+        // ∂(shaft_torque)/∂a, a = [v̇_b; ω̇_b], produced with it
+        std::array<CouplingSlot, 6> shaft_torque_a;
         CouplingSlot theta0;  // consumed, with pitch_input
         CouplingSlot theta1s;
         CouplingSlot theta1c;

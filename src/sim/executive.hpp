@@ -25,14 +25,22 @@ enum class ShaftDrive : unsigned char {
     free,   // its equation is solved with the airframe's (engines in M9 Stage B)
 };
 
+// A spinning part on a shaft that no component models (D-053 item 5): it
+// turns at gear × Ω about axis_b relative to the airframe, so its angular
+// momentum is (J/gear) Ω n with J its inertia referred to the shaft (its own
+// inertia about the axis × gear²). Its rigid inertia is the airframe's (D-002).
+struct ShaftPart {
+    double inertia = 0.0;                // J [kg·m²], referred to the shaft
+    double gear = 1.0;                   // its speed over the shaft's (sign: sense about axis_b)
+    Vec3 axis_b = Vec3(0.0, 0.0, -1.0);  // spin axis, body axes (unit)
+};
+
 // A rotor-speed degree of freedom (D-052): the rotating parts geared together,
 // each component on it turning at gear × Ω about its own axis.
 struct ShaftConfig {
     std::string name;
-    double speed = 0.0;                  // governed speed [rad/s], the initial Ω
-    double inertia = 0.0;                // J [kg·m²] of parts no component models,
-                                         // referred to the shaft
-    Vec3 axis_b = Vec3(0.0, 0.0, -1.0);  // the parts' spin axis, body axes (unit)
+    double speed = 0.0;            // governed speed [rad/s], the initial Ω
+    std::vector<ShaftPart> parts;  // the parts no component models (D-053)
     ShaftDrive drive = ShaftDrive::ideal;
 };
 

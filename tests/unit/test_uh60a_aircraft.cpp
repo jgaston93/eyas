@@ -16,6 +16,7 @@
 #include "eyas/model.hpp"
 #include "support/alloc_counter.hpp"
 #include "support/m6d_fixtures.hpp"
+#include "support/m7c_ballin.hpp"
 
 namespace eyas {
 namespace {
@@ -35,8 +36,9 @@ TEST(Uh60aAircraft, ConfigLoadsWithTheDeclaredPlaceholders) {
     std::sort(p.begin(), p.end());
     std::vector<std::string> expect;
     for (const char* g : {"0", "1", "2"}) {
-        expect.push_back(std::string("components[4].gears[") + g + "].strut.stop_damping");
-        expect.push_back(std::string("components[4].gears[") + g + "].strut.stop_stiffness");
+        // components[5]: the engines (D-053) come first in the config.
+        expect.push_back(std::string("components[5].gears[") + g + "].strut.stop_damping");
+        expect.push_back(std::string("components[5].gears[") + g + "].strut.stop_stiffness");
     }
     std::sort(expect.begin(), expect.end());
     EXPECT_EQ(p, expect);
@@ -271,9 +273,12 @@ TEST(Uh60aAircraft, ControlMapsAreGenHelsRigging) {
 // collective and pedal found by a root search give zero vertical force and
 // zero yaw moment. At that point the tail rotor's yaw moment, worked out by
 // hand from its thrust, its cant and GenHel's stations, balances the other
-// components' yaw moments; and every sign is the aircraft's.
+// components' yaw moments; and every sign is the aircraft's. The rotor shaft
+// is held at its governed speed: on the engines' free shaft (D-053) the
+// held body has no steady state until they deliver the rotor's torque, and
+// this is a check of the airframe's arms, not of the engines.
 TEST(Uh60aAircraft, HoverPedalBalancesMainRotorTorque) {
-    const Uh60aHarness ac;
+    const Uh60aHarness ac(test::ballin::ideal_shaft_config());
     BodyState b;
     b.pos_n = Vec3(0.0, 0.0, -500.0);  // no ground (Environment::ground_height is NaN)
     std::vector<double> x = ac.initial(b);

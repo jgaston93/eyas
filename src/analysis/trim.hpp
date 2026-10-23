@@ -28,6 +28,10 @@ struct TrimOptions {
 // InitError if rotors turn at different speeds. Without a rotor the
 // equations don't depend on time and any period will do; 0.1 s is used.
 double trim_period(const Executive& ex);
+// The period of trim `r`'s revolution [s]: r.period, which differs from
+// trim_period(ex) when the rotor's shaft is free and its governor droops
+// (D-053), or trim_period(ex) if r.period is unset (0).
+double trim_period(const Executive& ex, const TrimResult& r);
 
 // The body state of a trim: CG at the condition's altitude above the NED
 // origin, attitude (heading, θ, φ), ω = 0, and the body velocity whose air

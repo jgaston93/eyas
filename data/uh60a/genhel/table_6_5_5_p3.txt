@@ -1,0 +1,13 @@
+# Transcribed by eye from rendered page images (110-250 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Table 6.5.5 "Discharge pressure for steady
+# conditions", p. 5.6-27 (PDF p. 223), handwritten. Plotted as Fig. 6.5.5, p. 5.6-33 (PDF p. 229), which agrees.
+# status: read with high confidence.
+#
+# ngg_pct  p3_psi
+70         69
+75         78
+80         94
+85         118
+90         149
+95         184
+100        226

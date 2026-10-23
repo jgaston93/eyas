@@ -40,6 +40,10 @@ struct TrimResult {
     Controls controls;       // the trimmed pilot inputs (brakes released)
     double pitch = 0.0;      // θ [rad]
     double roll = 0.0;       // φ [rad]
+    // [s] The held revolution's period: one turn of the rotor, 2π/Ω at its
+    // trimmed speed, which a free shaft's governor may hold a little off
+    // its governed speed (D-053).
+    double period = 0.0;
     // [m/s] CG inertial velocity, body axes: its mean over the revolution,
     // as the condition asks. The state Model::trim installs adds the body's
     // zero-mean 4/rev vibration to it and to ω = 0 (their values at t = 0),

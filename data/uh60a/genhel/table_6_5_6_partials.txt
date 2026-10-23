@@ -1,0 +1,18 @@
+# Transcribed by eye from rendered page images (110-250 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), Table 6.5.6 "Time varying coefficients",
+# pp. 5.6-27 and 5.6-28 (PDF pp. 223-224), handwritten. Plotted one column each as Figs. 6.5.6 to 6.5.13,
+# pp. 5.6-34 to 5.6-41 (PDF pp. 230-237), which agree, including the 85 % dip of dP3/dWf and the 100 % row's
+# break in dP3/dNGG, dQGG/dNGG and dQPT/dNGG.
+# status: read with high confidence.
+# Units: dp3_dwf psi/(lbm/hr); dp3_dngg psi/%; dwf_dp3 (lbm/hr)/psi; dqgg_dwf ft*lbf/(lbm/hr);
+# dqgg_dngg ft*lbf/%; dqpt_dwf ft*lbf/(lbm/hr); dqpt_dnpt ft*lbf/rpm; dqpt_dngg ft*lbf/%.
+# Torques at the gas generator (QGG) and the power turbine (QPT), per engine.
+#
+# ngg_pct  dp3_dwf  dp3_dngg  dwf_dp3  dqgg_dwf  dqgg_dngg  dqpt_dwf  dqpt_dnpt  dqpt_dngg
+70         0.051    5.10      2.60     0.29      -1.10      0.24      0.0045     0
+75         0.071    4.30      2.50     0.285     -2.1       0.325     0.0065     4.8
+80         0.078    3.97      2.40     0.283     -3.1       0.358     0.0086     7.0
+85         0.072    4.20      2.32     0.273     -4.3       0.363     0.0094     8.3
+90         0.089    4.73      2.49     0.261     -5.65      0.387     0.0107     9.9
+95         0.080    4.97      2.75     0.200     -7.20      0.380     0.0132     11.8
+100        0.075    1.71      3.20     0.173     -4.62      0.331     0.0151     5.5

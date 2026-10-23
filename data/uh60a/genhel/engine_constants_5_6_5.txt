@@ -1,0 +1,46 @@
+# Transcribed by eye from rendered page images (110-250 dpi) of the NASA scan of GenHel,
+# NASA CR-166309 (1981), §5.6.5 "Blackhawk/T700 engine module input data", input constants,
+# p. 5.6-24 (PDF p. 220), handwritten. Symbols and roles: notation pp. 5.6-20 to 5.6-23 (PDF pp. 216-219);
+# equations pp. 5.6-8 to 5.6-18 (PDF pp. 204-214); the ECU block diagram is Fig. 6.1.3 (PDF p. 202).
+# status: read with high confidence; T_NGG and G_7 VERIFIED by human review (2026-10-22). K_4 appears in
+# no printed equation; D-053 item 2 puts it in the high/low-gain switch's torque integrator (adopted
+# correction, docs/DATA_GAPS.md, "UH-60A engine and fuel control").
+#
+# K_1..K_11, G_4..G_7: "ECU gain constants" (p. 5.6-21); a role is given where Fig. 6.1.3 shows it.
+#
+# name       value      unit            note
+K_Q          0.1        -               tail rotor torque plus losses, on main-rotor torque
+# K_FRQ      printed "1E" (UNVERIFIED, perhaps 15); GenHel's trim-mode torque filter only, not used
+N_E          2          -               number of engines
+G_E          76.0216    -               power-turbine to main-rotor gear ratio
+N_PT100      20000      rpm             power-turbine 100 % speed
+K_1          3.0        V/%             ECU gain, high-gain path (Fig. 6.1.3)
+K_3          0.6        V/%             ECU gain, low-gain path (Fig. 6.1.3)
+K_4          0.059      V/(ft*lbf)      ECU gain; D-053 puts it in Q_INT
+K_6          0.2        V/V
+K_9          0.08       V/(V*s)         ECU gain, the K_9/s integrator (Fig. 6.1.3)
+K_10         0.020408   -
+K_11         0.1        -
+A_DB         0.4        V               ECU dead band, a
+B_DB         0.8        V               ECU dead band, b
+T_1          0.55       s               ECU time constant t_1
+T_2LL        0.107      s               ECU time constant t_2
+T_3LL        0.08       s               ECU time constant t_3
+T_4          1.58       s               ECU time constant t_4
+A_U          0          V               ECU integrator upper limit (printed without unit)
+A_L          -3.5       V               ECU integrator lower limit (printed without unit)
+G_4          564        mA/V
+G_5          0.0159     in/mA
+G_6          56         V/in
+G_7          336        %/in            VERIFIED by human review (2026-10-22)
+T_2          0.2        s               ECU time constant T_2
+T_3          0.04       s               ECU time constant T_3
+T_NGG        0.02       s               SPD servo; VERIFIED by human review (2026-10-22)
+DWP3_DNGG    0.25       (pph/psi)/%     d(W_f/P3)/dN_GG, ratio units
+T_P3         0.01       s               lag in the fuel feedback loop
+KCF_JGG      0.479      %/(ft*lbf*s)    K_CF/J_GG, printed "% RPM/ft lb"; per second as a rate
+K_HS         0.65       -               gas generator heat sink factor
+J_TOTE       690.6      slug*ft^2       upstream of clutch, referred to rotor speed
+J_REST       943.9      slug*ft^2       downstream of clutch less blades, referred to rotor speed
+N_GG100      44700      rpm             gas-generator 100 % speed
+T_MV         0.004      s               fuel metering valve
