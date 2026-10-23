@@ -393,13 +393,21 @@ TEST(StationMapping, WrittenMapReadsBack) {
                                 InputSource::mouse_keyboard, InputSource::flightgear}) {
         ControlsMapConfig m = default_map(s);
         m.feet_on_pedals = 0.3;  // not the default, so the read-back shows
+        m.power_lever = absolute(5);
+        m.engine_select_button = 7;
+        m.rpm_up_button = 8;
+        m.rpm_down_button = 9;
+        m.rpm_rate = 0.02;
+        m.rpm_low = 0.95;
+        m.rpm_high = 1.02;
         std::ostringstream out;
         write_map(out, m);
         const ControlsMapConfig r = parse_map(out.str(), ControlsMapConfig{}, "written");
         for (const auto& [a, b] : {std::pair{m.collective, r.collective},
                                    {m.lat_cyclic, r.lat_cyclic},
                                    {m.lon_cyclic, r.lon_cyclic},
-                                   {m.pedal, r.pedal}}) {
+                                   {m.pedal, r.pedal},
+                                   {m.power_lever, r.power_lever}}) {
             EXPECT_EQ(a.axis, b.axis);
             EXPECT_EQ(a.invert, b.invert);
             EXPECT_EQ(a.deadband, b.deadband);
@@ -417,7 +425,14 @@ TEST(StationMapping, WrittenMapReadsBack) {
         EXPECT_EQ(m.recentre, r.recentre);
         EXPECT_EQ(m.pickup, r.pickup);
         EXPECT_EQ(m.feet_on_pedals, r.feet_on_pedals);
+        EXPECT_EQ(m.engine_select_button, r.engine_select_button);
+        EXPECT_EQ(m.rpm_up_button, r.rpm_up_button);
+        EXPECT_EQ(m.rpm_down_button, r.rpm_down_button);
+        EXPECT_EQ(m.rpm_rate, r.rpm_rate);
+        EXPECT_EQ(m.rpm_low, r.rpm_low);
+        EXPECT_EQ(m.rpm_high, r.rpm_high);
     }
+    EXPECT_THROW((void)parse_map("rpm_low = 1.2\n", ControlsMapConfig{}, "t"), std::runtime_error);
     EXPECT_THROW((void)parse_map("feet_on_pedals = 1.5\n", ControlsMapConfig{}, "t"),
                  std::runtime_error);
 }
@@ -817,6 +832,29 @@ TEST(StationRecorder, BrakeChangeIsMarked) {
     EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s"), 1);
 }
 
+// eyas_drive has no engine input either (D-055): a lever or speed-trim
+// change is marked, once.
+TEST(StationRecorder, EngineControlChangeIsMarked) {
+    Station& st = uh60a();
+    ASSERT_TRUE(st.start(1));
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "eyas_station_engines.csv").string();
+    {
+        Recorder rec(path, "", "cfg.yaml", "", 60);
+        rec.begin(st, st.outputs());
+        eyas::Controls c = st.starts()[1].controls;
+        rec.frame(0.0, {}, c, st.outputs());
+        c.engines[1].power_lever = 0.0;
+        rec.frame(0.5, {}, c, st.outputs());
+        c.rotor_speed_reference = 1.01;
+        rec.frame(0.6, {}, c, st.outputs());
+        rec.end();
+    }
+    const std::string text = read_file(path);
+    EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s: the engine controls"), 1);
+    EXPECT_EQ(count(text, "# NOT REPLAYABLE"), 1);
+}
+
 // The start's AFCS switches go into the replay command (M8c2), and every
 // row carries the switches, a new row where they change, so eyas_drive
 // replays them (M8c3): no NOT REPLAYABLE mark.
@@ -917,6 +955,86 @@ TEST(StationControls, RearmedPickupHoldsAfterInputLoss) {
     EXPECT_TRUE(m.collective_held());
     EXPECT_DOUBLE_EQ(m.update(axes(0.08), 0.1).collective, 0.54);  // within 2 %: taken
     EXPECT_FALSE(m.collective_held());
+}
+
+// The power lever (D-055): full axis travel from the idle stop (−1) to fly
+// (+1), for both engines; from the start (fly) it waits until brought to it
+// (pickup), as the collective does.
+TEST(StationControls, PowerLeverPicksUpThenMovesBothEngines) {
+    ControlsMapConfig cfg;
+    cfg.power_lever = absolute(1);
+    ControlsMap m(cfg, start_controls());
+    EXPECT_TRUE(m.power_lever_held(0));
+    eyas::Controls c = m.update(axes(0.0, -1.0), 0.1);  // lever aft: held at fly
+    EXPECT_EQ(c.engines[0].power_lever, 1.0);
+    EXPECT_EQ(c.engines[1].power_lever, 1.0);
+    c = m.update(axes(0.0, 0.99), 0.1);  // brought to fly: taken
+    EXPECT_FALSE(m.power_lever_held(0));
+    EXPECT_FALSE(m.power_lever_held(1));
+    c = m.update(axes(0.0, -1.0), 0.1);
+    EXPECT_EQ(c.engines[0].power_lever, 0.0);
+    EXPECT_EQ(c.engines[1].power_lever, 0.0);
+    c = m.update(axes(0.0, 0.0), 0.1);
+    EXPECT_DOUBLE_EQ(c.engines[0].power_lever, 0.5);
+    // Unmapped: the start's levers.
+    ControlsMap u(ControlsMapConfig{}, start_controls());
+    EXPECT_EQ(u.update(axes(0.0, -1.0), 0.1).engines[1].power_lever, 1.0);
+}
+
+// The engine-select button cycles which engines the lever moves (all,
+// engine 1, engine 2, all); a newly selected engine waits for the lever.
+TEST(StationControls, EngineSelectMovesOneLever) {
+    ControlsMapConfig cfg;
+    cfg.power_lever = absolute(1);
+    cfg.engine_select_button = 2;
+    ControlsMap m(cfg, start_controls());
+    RawInput in = axes(0.0, 1.0);
+    (void)m.update(in, 0.1);  // both picked up at fly
+    in.buttons[2] = true;
+    (void)m.update(in, 0.1);  // engine 1 only
+    EXPECT_EQ(m.engine_selection(), 1);
+    in.buttons[2] = false;
+    (void)m.update(in, 0.1);  // at fly: engine 1 picked up again
+    in.axes[1] = -1.0;
+    eyas::Controls c = m.update(in, 0.1);
+    EXPECT_EQ(c.engines[0].power_lever, 0.0);  // engine 1 to idle
+    EXPECT_EQ(c.engines[1].power_lever, 1.0);  // engine 2 stays at fly
+    in.buttons[2] = true;
+    (void)m.update(in, 0.1);  // engine 2 only, waiting: the lever is at idle
+    in.buttons[2] = false;
+    c = m.update(in, 0.1);
+    EXPECT_EQ(m.engine_selection(), 2);
+    EXPECT_TRUE(m.power_lever_held(1));
+    EXPECT_EQ(c.engines[1].power_lever, 1.0);
+    EXPECT_EQ(c.engines[0].power_lever, 0.0);  // engine 1 holds where it was left
+}
+
+// The engine-speed trim buttons move the reference at rpm_rate within its
+// range; the start's reference is where it begins.
+TEST(StationControls, SpeedTrimButtonsBeepTheReference) {
+    ControlsMapConfig cfg;
+    cfg.rpm_up_button = 0;
+    cfg.rpm_down_button = 1;
+    ControlsMap m(cfg, start_controls());
+    RawInput in;
+    in.buttons[0] = true;
+    eyas::Controls c;
+    for (int i = 0; i < 10; ++i) {
+        c = m.update(in, 0.1);
+    }
+    EXPECT_NEAR(c.rotor_speed_reference, 1.01, 1e-12);
+    for (int i = 0; i < 100; ++i) {
+        c = m.update(in, 0.1);
+    }
+    EXPECT_EQ(c.rotor_speed_reference, cfg.rpm_high);
+    in.buttons[0] = false;
+    in.buttons[1] = true;
+    for (int i = 0; i < 200; ++i) {
+        c = m.update(in, 0.1);
+    }
+    EXPECT_EQ(c.rotor_speed_reference, cfg.rpm_low);
+    m.restart(start_controls());
+    EXPECT_EQ(m.rotor_speed_reference(), 1.0);
 }
 
 TEST(StationMapping, PickupMustBeAFraction) {

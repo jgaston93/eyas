@@ -38,3 +38,16 @@ trim_reset_button = 2:2
 #   pba_button = 2:4
 # (device:button as above). Unmapped, they fall back to the default map's
 # device 0 (the gamepad), or start them with --afcs sas,pba,fps.
+
+# Engine controls (D-055): the throttle's right lever as both power levers,
+# aft = idle stop, forward = fly. Flown from fly: the lever takes over once
+# brought forward to it (pickup). Check the axis and pick the buttons with
+# FlightGear's /devices/status/joysticks (--httpd), then set:
+power_lever.axis = 2:1
+power_lever.mode = absolute
+power_lever.invert = true
+power_lever.deadband = 0
+power_lever.expo = 0
+# engine_select_button = 2:<n>   # cycles: both, engine 1, engine 2
+# rpm_up_button = 2:<n>           # held: engine-speed trim up, 1 %/s
+# rpm_down_button = 2:<n>
