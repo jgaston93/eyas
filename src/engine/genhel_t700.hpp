@@ -217,10 +217,11 @@ public:
     void bind_shafts(std::span<const ShaftInfo> shafts) override;
 
     // The signals at x with the shaft at speed `omega` [rad/s], the collective
-    // stick at `collective` [0, 1] and the main rotor's demand `rotor_demand`
-    // [N·m]. Pure.
+    // stick at `collective` [0, 1], the main rotor's demand `rotor_demand`
+    // [N·m] and the speed reference `reference` [fraction of the governed
+    // speed]. Pure.
     GenHelT700Signals signals(std::span<const double> x, double omega, double collective,
-                              double rotor_demand) const noexcept;
+                              double rotor_demand, double reference = 1.0) const noexcept;
 
     // The equilibrium states with the shaft at its governed speed, the engines
     // delivering `engine_torque` [N·m, referred to the shaft], the main rotor

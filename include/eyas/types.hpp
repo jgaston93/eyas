@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 
@@ -42,6 +44,19 @@ struct AfcsSwitches {
     friend bool operator==(const AfcsSwitches&, const AfcsSwitches&) = default;
 };
 
+// At most this many engines per aircraft (D-055): Controls::engines' size.
+inline constexpr std::size_t kMaxEngines = 4;
+
+// One engine's cockpit controls (D-055). The aircraft's engines take
+// Controls::engines' entries in config order; entries past them are unused.
+struct EngineControls {
+    // Power control lever: 0 = the idle stop, 1 = the fly stop. Clamped to
+    // [0, 1]; NaN reads as fly. Engines without levers (GenHel's) ignore it.
+    double power_lever = 1.0;  // [0, 1]
+
+    friend bool operator==(const EngineControls&, const EngineControls&) = default;
+};
+
 // Normalized pilot inputs (sign conventions per D-024).
 struct Controls {
     double collective = 0.0;  // [0, 1]  0 = full down, 1 = full up
@@ -53,6 +68,12 @@ struct Controls {
     double brake_left = 0.0;   // [0, 1]
     double brake_right = 0.0;  // [0, 1]
     AfcsSwitches afcs;         // switch positions, not inputs that trim solves for
+    // Engine controls (D-055), not inputs that trim solves for.
+    std::array<EngineControls, kMaxEngines> engines{};
+    // The engines' power-turbine speed reference (the cockpit's engine-speed
+    // trim) as a fraction of the drive's governed speed; a value that isn't
+    // positive and finite reads as 1. The governors hold the rotor there.
+    double rotor_speed_reference = 1.0;  // [-]
 };
 
 // Atmospheric conditions set by the host (D-016). Eyas evaluates the

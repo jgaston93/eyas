@@ -98,7 +98,8 @@ void GenHelT700::steady_states(const SimContext& ctx, std::span<double> x) const
     // value here is the revolution's to well within the model's accuracy
     // (D-053 amendment).
     const double omega = ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
-    const GenHelT700Signals s = signals(x, omega, ctx.controls.collective, 0.0);
+    const GenHelT700Signals s = signals(x, omega, ctx.controls.collective, 0.0,
+                                        speed_reference(ctx.controls.rotor_speed_reference));
     x[kQint] = config_.k4 * s.q_pt - config_.threshold > 0.0 ? config_.qint_limit : 0.0;
 }
 
@@ -119,7 +120,8 @@ void GenHelT700::pinned_states(const SimContext& ctx, std::span<const double> x,
     std::fill(pinned.begin(), pinned.end(), static_cast<unsigned char>(0));
     const double omega = ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
     // The demand only labels the signals; the clutch reads its lagged state.
-    const GenHelT700Signals s = signals(x, omega, ctx.controls.collective, 0.0);
+    const GenHelT700Signals s = signals(x, omega, ctx.controls.collective, 0.0,
+                                        speed_reference(ctx.controls.rotor_speed_reference));
     pinned[kSlip] = s.engaged ? 1 : 0;
     pinned[kQint] =
         pushes_on_limit(x[kQint], c.k4 * s.q_pt - c.threshold, 0.0, c.qint_limit) ? 1 : 0;
@@ -168,15 +170,16 @@ double GenHelT700::steady_torque(double n_gg) const noexcept {
 }
 
 GenHelT700Signals GenHelT700::signals(std::span<const double> x, double omega, double collective,
-                                      double rotor_demand) const noexcept {
+                                      double rotor_demand, double reference) const noexcept {
     const GenHelT700Config& c = config_;
     GenHelT700Signals s;
+    const double n_ref = governed_ * reference;  // the shaft's reference speed [rad/s]
     s.rotor_demand = rotor_demand;
     s.n_gg = x[kNgg];
     s.fuel = x[kFuel];
     s.engine_speed = omega - std::max(x[kSlip], 0.0);
     // ECU (Fig. 6.1.3; pp. 5.6-11 to 5.6-13).
-    s.n_ptd = c.gear * (governed_ - s.engine_speed) / c.power_turbine_100;
+    s.n_ptd = c.gear * (n_ref - s.engine_speed) / c.power_turbine_100;
     const double v_hg = dead_band(x[kIdb], c.dead_band_a, c.dead_band_b);
     const double v_lg = c.k3 * s.n_ptd;
     // A and B on the same scale: GenHel prints both as 40 V (p. 5.6-12).
@@ -199,7 +202,7 @@ GenHelT700Signals GenHelT700::signals(std::span<const double> x, double omega, d
     s.p3 = lookup(kP3Map, *c.p3, n) + lookup(kDp3, *c.dp3_dwf, n) * off;
     s.q_gg = lookup(kDqgg, *c.dqgg_dwf, n) * off;
     s.q_pt = steady_torque(n) + lookup(kDqpt, *c.dqpt_dwf, n) * off +
-             lookup(kDqptN, *c.dqpt_dnpt, n) * c.gear * (governed_ - s.engine_speed);
+             lookup(kDqptN, *c.dqpt_dnpt, n) * c.gear * (n_ref - s.engine_speed);
     s.q_engine = c.engines * c.gear * s.q_pt;
     // Clutch (D-053 item 3).
     // FLQREQ is held as the drive's unpowered deceleration FLQREQ/J_d.
@@ -213,7 +216,8 @@ void GenHelT700::derivatives(const SimContext& ctx, std::span<const double> x,
     const auto k = static_cast<Eigen::Index>(shaft_index_);
     const double omega = ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
     const double demand = rotor_demand(ctx);
-    const GenHelT700Signals s = signals(x, omega, ctx.controls.collective, demand);
+    const GenHelT700Signals s = signals(x, omega, ctx.controls.collective, demand,
+                                        speed_reference(ctx.controls.rotor_speed_reference));
     const auto ksz = static_cast<std::size_t>(shaft_index_);
     const auto set_g = [&](std::size_t row, const Vec3& w) {  // ∂ẋ_row/∂ω̇
         for (std::size_t j = 0; j < 3; ++j) {

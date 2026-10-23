@@ -1,8 +1,10 @@
-"""Plots for the M9 Stage B1' entry (Ballin's T700, D-054) in docs/VALIDATION.md.
+"""Plots for the M9 Stage B1' and B2a entries (Ballin's T700, D-054, D-055) in
+docs/VALIDATION.md.
 
 Reads the CSVs written by the eyas_m9_ballin_engine_cases executable and writes PNGs: the
 UH-60A on Ballin's engines at Table B.1's conditions against Table B.1 (NASA TM-100991 p. 53),
-and a collective step from hover on Ballin's engines, on GenHel's and with the rotor speed held.
+a collective step from hover on Ballin's engines, on GenHel's and with the rotor speed held,
+and one engine's power lever to idle and back at 80 kt.
 
     cmake --build --preset release
     ./build/release/tests/eyas_m9_ballin_engine_cases build/m9_ballin
@@ -84,6 +86,45 @@ def plot_step(data, outdir):
     plt.close(fig)
 
 
+def plot_lever(data, outdir):
+    engines = (("1", "engine 1 (lever at fly)", "C0"), ("2", "engine 2 (lever cut)", "C3"))
+    fig, ax = plt.subplots(4, 1, figsize=(9.0, 11.0), sharex=True)
+    for e, name, color in engines:
+        r = [x for x in data if x["engine"] == e]
+        t = [float(x["time_s"]) for x in r]
+        if e == "1":
+            ax[0].plot(t, [float(x["rotor_speed_pct"]) for x in r], color="black")
+        ax[1].plot(t, [float(x["torque_ftlbf"]) for x in r], color=color, label=name)
+        ax[2].plot(t, [float(x["n_g_pct"]) for x in r], color=color, label=name)
+        if e == "2":
+            ax[3].plot(t, [float(x["hmusel"]) for x in r], color=color, lw=2.0,
+                       label="selected, HMUSEL")
+            ax[3].plot(t, [float(x["wfpac"]) for x in r], "--", color="C2",
+                       label="acceleration limit, WFPAC (Fig. C30)")
+            ax[3].plot(t, [float(x["wfidm"]) for x in r], ":", color="C1",
+                       label="idle floor, WFIDM (Fig. C20)")
+            ax[3].plot(t, [float(x["wfpdc"]) for x in r], ":", color="C4",
+                       label="deceleration floor, WFPDC (Fig. C22)")
+            ax[3].plot(t, [float(x["wfpdm"]) for x in r], "-.", color="0.4",
+                       label="demand, WFPDM")
+    ax[0].set_ylabel("rotor speed [%]")
+    ax[1].set_ylabel("power-turbine torque [ft·lbf]")
+    ax[2].set_ylabel("gas-generator speed [%]")
+    ax[3].set_ylabel("engine 2's fuel ratio [lbm·in²/(lbf·hr)]")
+    ax[3].set_ylim(-1.0, 5.0)
+    ax[-1].set_xlabel("time [s]")
+    ax[0].set_title("UH-60A on Ballin's T700s, 80 kt, SAS and FPS on: engine 2's lever to idle "
+                    "at 2 s, to fly at 22 s")
+    for a in ax:
+        a.grid(True, alpha=0.3)
+        a.axvspan(2.0, 22.0, color="0.92", zorder=0)
+    for a in ax[1:]:
+        a.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(outdir / "m9_ballin_lever.png", dpi=110)
+    plt.close(fig)
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit("usage: plot_m9_ballin.py <data-dir> <output-dir>")
@@ -92,6 +133,7 @@ def main():
     table = rows(data / "m9_ballin_table_b1.csv")
     plot_table_b1(table, out)
     plot_step(rows(data / "m9_ballin_step.csv"), out)
+    plot_lever(rows(data / "m9_ballin_lever.csv"), out)
     for case, _ in CASES:
         for q, label in QUANTITIES:
             (r,) = [x for x in table if x["case"] == case and x["quantity"] == q]

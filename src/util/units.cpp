@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 133> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 135> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -98,6 +98,8 @@ constexpr std::array<std::pair<std::string_view, Unit>, 133> kRegistry{{
     {"lbm/(hr*psi*%)",   {kPoundMass / (3600.0 * kPsi * 0.01), D::mass_flow_per_pressure}},
     {"1/(N*m*s)",        {1.0, D::per_moment_time}},
     {"%/(ft*lbf*s)",     {0.01 / (kFoot * kPoundForce), D::per_moment_time}},
+    {"1/(N*m)",          {1.0, D::per_moment}},
+    {"%/(ft*lbf)",       {0.01 / (kFoot * kPoundForce), D::per_moment}},
     {"V",                {1.0, D::voltage}},
     {"V/%",              {1.0 / 0.01, D::voltage}},
     {"V/(N*m)",          {1.0, D::voltage_per_moment}},
@@ -292,6 +294,8 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "voltage per temperature";
         case Dimension::voltage_time:
             return "voltage time";
+        case Dimension::per_moment:
+            return "per moment";
     }
     return "unknown";
 }

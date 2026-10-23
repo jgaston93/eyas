@@ -10,10 +10,18 @@
 //   16 638 lbm), a 0.05 collective step held for 10 s, the body free, no
 //   stability augmentation: on Ballin's engines, on GenHel's (D-053), and with
 //   the rotor speed held (an ideal drive): rotor speed, the engines' torque
-//   referred to the rotor, NG, the fuel flow and the yaw rate, every 0.05 s.
+//   referred to the rotor, NG, the fuel flow and the yaw rate, every 0.05 s;
+// - m9_ballin_lever.csv (Stage B2a, D-055): the UH-60A on Ballin's engines
+//   (GenHel's loading) trimmed at 80 kt, sea level, SAS and FPS on; at 2 s
+//   engine 2's power lever goes to the idle stop, at 22 s back to fly, the
+//   other controls held: rotor speed, and per engine the turbine's torque,
+//   NG, the fuel ratio selected (HMUSEL) with the acceleration limit (WFPAC),
+//   the idle and deceleration floors (WFIDM, WFPDC) and the demand (WFPDM), and
+//   the clutch's slip, every 0.05 s.
 //
 // Usage: eyas_m9_ballin_engine_cases <output-dir>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <exception>
@@ -102,12 +110,14 @@ void write_table_b1(const std::filesystem::path& dir) {
             throw std::runtime_error(std::string("Table B.1 trim did not converge: ") + c.name);
         }
         const double omega = x[ex.shaft_offset(0) + 1];
-        const std::span<const double> xe(x.data() + offset, BallinT700::kNumStates);
+        const std::span<const double> xe(x.data() + offset, BallinT700::kEngineStates);
         const AirState air = isa_atmosphere(0.0, 0.0);
         const BallinT700Signals s =
-            engine->signals(xe, omega, r.controls.collective, air.pressure, air.temperature);
+            engine->signals(xe, {omega, r.controls.collective, 1.0, engine->np_reference(),
+                                 air.pressure, air.temperature});
         const BallinT700Config& k = engine->config();
-        const double hub = s.q_shaft;  // the engines less the drive train: the rotors' demand
+        // The engines less the drive train: the rotors' demand.
+        const double hub = k.engines * s.q_engine - engine->drive_train_load(omega);
         const std::array<std::pair<const char*, double>, 12> rows{{
             {"collective_pct", 100.0 * r.controls.collective},
             {"rotor_speed_rad_s", omega},
@@ -160,9 +170,10 @@ void write_step(std::ofstream& f, const Executive& ex, const std::string& drive,
             double n_g = 0.0;
             double fuel = 0.0;
             if (ballin != nullptr) {
-                const std::span<const double> xe(x.data() + ballin_at, BallinT700::kNumStates);
+                const std::span<const double> xe(x.data() + ballin_at, BallinT700::kEngineStates);
                 const BallinT700Signals s =
-                    ballin->signals(xe, omega, u.collective, air.pressure, air.temperature);
+                    ballin->signals(xe, {omega, u.collective, 1.0, ballin->np_reference(),
+                                         air.pressure, air.temperature});
                 q_e = ballin->config().engines * ballin->config().gear * s.gas.q_pt;
                 n_g = xe[BallinT700::kNg];
                 fuel = s.fuel * ballin->config().engines;
@@ -181,6 +192,67 @@ void write_step(std::ofstream& f, const Executive& ex, const std::string& drive,
             (void)free_step(ex, rk4, [&](double) { return u; }, env, n * dt, dt, x);
         }
     }
+}
+
+// Engine 2's lever to idle and back at 80 kt (D-055).
+void write_lever(const std::filesystem::path& dir, const Executive& ex) {
+    TrimCondition c;
+    c.airspeed = 80.0 * units::kKnot;
+    c.afcs.sas_digital = true;
+    c.afcs.sas_analog = true;
+    c.afcs.fps = true;
+    std::vector<double> x;
+    const TrimResult r = solve_trim(ex, c, nullptr, x);
+    if (!r.converged) {
+        throw std::runtime_error("80 kt trim did not converge");
+    }
+    const auto [engine, at] = find<BallinT700>(ex);
+    const Environment env = trim_environment(c);
+    const double dt = trim_period(ex, r) / 64.0;
+    Rk4 rk4(x.size());
+    const double governed = ex.shafts()[0].speed;
+    const AirState air = isa_atmosphere(0.0, 0.0);
+    const double ratio = kLbmHr / units::kPsi;  // lbm*in^2/(lbf*hr)
+    const auto controls = [&](double t) {
+        Controls u = r.controls;
+        u.engines[1].power_lever = (t >= 2.0 && t < 22.0) ? 0.0 : 1.0;
+        return u;
+    };
+    std::ofstream f(dir / "m9_ballin_lever.csv");
+    f.precision(8);
+    f << "# UH-60A on Ballin's T700s, 80 kt, sea level, SAS and FPS on: engine 2's power lever "
+         "to idle at 2 s, back to fly at 22 s (D-055)\n";
+    f << "time_s,rotor_speed_pct,engine,lever,torque_ftlbf,n_g_pct,hmusel,wfpac,wfidm,wfpdc,wfpdm,"
+         "slip_rad_s\n";
+    const int every = static_cast<int>(std::lround(0.05 / dt));
+    const int steps = static_cast<int>(std::lround(40.0 / dt));
+    double low = governed;
+    for (int n = 0; n <= steps; ++n) {
+        const double t = n * dt;
+        const double omega = x[ex.shaft_offset(0) + 1];
+        low = std::min(low, omega);
+        if (n % every == 0) {
+            const Controls u = controls(t);
+            for (int e = 0; e < engine->config().engines; ++e) {
+                const std::span<const double> xe(
+                    x.data() + at + static_cast<std::size_t>(e) * BallinT700::kEngineStates,
+                    BallinT700::kEngineStates);
+                const double lever = u.engines[static_cast<std::size_t>(e)].power_lever;
+                const BallinT700Signals s =
+                    engine->signals(xe, {omega, u.collective, lever, engine->np_reference(),
+                                         air.pressure, air.temperature});
+                f << t << ',' << 100.0 * omega / governed << ',' << e + 1 << ',' << lever << ','
+                  << s.gas.q_pt / kFtLbf << ',' << 100.0 * xe[BallinT700::kNg] << ','
+                  << s.hmusel / ratio << ',' << s.wfpac / ratio << ',' << s.wfidm / ratio << ','
+                  << s.wfpdc / ratio << ',' << s.wfpdm / ratio << ',' << xe[BallinT700::kSlip]
+                  << '\n';
+            }
+        }
+        if (n < steps) {
+            (void)free_step(ex, rk4, controls, env, t, dt, x);
+        }
+    }
+    std::cout << "lever cut: lowest rotor speed " << 100.0 * low / governed << " %\n";
 }
 
 }  // namespace
@@ -209,6 +281,7 @@ int main(int argc, char** argv) {
             write_step(f, held, "held", feet, 0.05, 10.0);
             std::cout << "collective step at " << feet << " ft done\n";
         }
+        write_lever(dir, ballin);
     } catch (const std::exception& err) {
         std::cerr << "eyas_m9_ballin_engine_cases: " << err.what() << '\n';
         return 1;

@@ -90,6 +90,7 @@ enum class Dimension : std::uint8_t {
     power,                            // [W]
     voltage_per_temperature,          // [V/K]
     voltage_time,                     // a rate network's gain [V·s per unit input]
+    per_moment,                       // a torque into a speed error [1/(N·m)] (D-055)
 };
 
 // Name used in error messages, e.g. "length".

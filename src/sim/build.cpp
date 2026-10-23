@@ -93,6 +93,14 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
         return components;
     }
     const Config list = config.child("components");
+    int engines = 0;  // the engines so far, each taking a Controls::engines entry (D-055)
+    const auto take_engines = [&](const Config& c, int n) {
+        if (engines + n > static_cast<int>(kMaxEngines)) {
+            c.fail("engines", "more than " + std::to_string(kMaxEngines) +
+                                  " engines in the aircraft (Controls::engines, D-055)");
+        }
+        engines += n;
+    };
     for (std::size_t i = 0; i < list.size(); ++i) {
         const Config c = list[i];
         const std::string type = c.string("type");
@@ -107,9 +115,14 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
         } else if (type == "genhel_fcs") {
             components.push_back(GenHelFcs::from_config(c));
         } else if (type == "genhel_t700") {
-            components.push_back(GenHelT700::from_config(c));
+            auto e = GenHelT700::from_config(c);
+            take_engines(c, e->config().engines);
+            components.push_back(std::move(e));
         } else if (type == "ballin_t700") {
-            components.push_back(BallinT700::from_config(c));
+            const int first = engines;
+            auto e = BallinT700::from_config(c, first);
+            take_engines(c, e->config().engines);
+            components.push_back(std::move(e));
         } else {
             c.fail("type", "unknown component '" + type + "'");
         }
