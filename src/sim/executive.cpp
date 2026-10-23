@@ -53,11 +53,17 @@ void validate(const ExecutiveConfig& c) {
         if (!(sh.speed > 0.0) || !std::isfinite(sh.speed)) {
             throw InitError(who + ": speed must be positive and finite");
         }
-        if (!(sh.inertia >= 0.0) || !std::isfinite(sh.inertia)) {
-            throw InitError(who + ": inertia must be non-negative and finite");
-        }
-        if (!sh.axis_b.allFinite() || std::abs(sh.axis_b.norm() - 1.0) > 1e-9) {
-            throw InitError(who + ": axis must be a unit vector");
+        for (const ShaftPart& p : sh.parts) {
+            if (!(p.inertia >= 0.0) || !std::isfinite(p.inertia)) {
+                throw InitError(who + ": a part's inertia must be non-negative and finite");
+            }
+            if (!(p.gear != 0.0) || !std::isfinite(p.gear)) {
+                throw InitError(who + ": a part's gear must be nonzero and finite");
+            }
+            if (!p.axis_b.allFinite() ||
+                (p.axis_b.norm() != 0.0 && std::abs(p.axis_b.norm() - 1.0) > 1e-9)) {
+                throw InitError(who + ": a part's axis must be a unit vector, or zero");
+            }
         }
     }
 }
@@ -192,9 +198,11 @@ Executive::Executive(const ExecutiveConfig& config,
     label_steady_states();
 }
 
-// A slot steady_states() writes holds the same value whatever x arrives
-// with (its contract); one it leaves keeps the value it arrived with. So two
-// probes filled differently tell them apart, a written NaN included.
+// A slot steady_states() writes holds the same value whatever that slot
+// arrives with (its contract; it may read the free states, D-053); one it
+// leaves keeps the value it arrived with. So probes that differ only in the
+// labelled slots tell the written ones apart, a written NaN included, and
+// free slots must come back as they went in.
 void Executive::label_steady_states() {
     steady_kinds_.assign(x_.size(), SteadyKind::free);
     const SimContext ctx = context(0.0, x_, Controls{}, Environment{});
@@ -204,20 +212,35 @@ void Executive::label_steady_states() {
             std::span(steady_kinds_).subspan(offsets_[i], sizes_[i]);
         c.steady_kinds(kinds);
         std::vector<double> a(sizes_[i], 0.0);
-        std::vector<double> b(sizes_[i], 1.0);
+        std::vector<double> b(sizes_[i], 0.0);
+        std::vector<double> ones(sizes_[i], 1.0);
+        for (std::size_t j = 0; j < sizes_[i]; ++j) {
+            if (kinds[j] != SteadyKind::free) {
+                b[j] = 1.0;
+            }
+        }
         c.steady_states(ctx, a);
         c.steady_states(ctx, b);
+        c.steady_states(ctx, ones);
+        const auto same = [](double u, double v) {
+            return std::bit_cast<std::uint64_t>(u) == std::bit_cast<std::uint64_t>(v);
+        };
         for (std::size_t j = 0; j < sizes_[i]; ++j) {
-            const bool written =
-                std::bit_cast<std::uint64_t>(a[j]) == std::bit_cast<std::uint64_t>(b[j]);
-            if (written == (kinds[j] == SteadyKind::free)) {
+            const bool free = kinds[j] == SteadyKind::free;
+            const bool written = free ? !(same(a[j], 0.0) && same(ones[j], 1.0)) : same(a[j], b[j]);
+            if (written == free) {
                 throw InitError("executive: component '" + std::string(c.name()) + "' state " +
                                 std::to_string(j) +
                                 (written ? ": steady_states() sets it but steady_kinds() labels it "
                                            "free (D-045)"
-                                         : ": steady_kinds() labels it orbit or held but "
+                                         : ": steady_kinds() labels it orbit, held or phase but "
                                            "steady_states() doesn't set it (D-045)"));
             }
+        }
+    }
+    for (std::size_t i = 0; i < steady_kinds_.size(); ++i) {
+        if (steady_kinds_[i] == SteadyKind::phase) {
+            phases_.push_back(i);
         }
     }
 }
@@ -240,11 +263,16 @@ void Executive::initial_shaft_states(std::span<double> x) const noexcept {
 
 void Executive::wrap_shaft_azimuths(std::span<double> x) const noexcept {
     constexpr double kTwoPi = 2.0 * std::numbers::pi;
-    for (std::size_t k = 0; k < shafts_.size(); ++k) {
-        double& psi = x[shaft_offset(k)];
+    const auto wrap = [&](double& psi) {
         if (psi >= kTwoPi || psi < 0.0) {
             psi -= kTwoPi * std::floor(psi / kTwoPi);
         }
+    };
+    for (std::size_t k = 0; k < shafts_.size(); ++k) {
+        wrap(x[shaft_offset(k)]);
+    }
+    for (const std::size_t i : phases_) {
+        wrap(x[i]);
     }
 }
 
@@ -327,14 +355,15 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
     rhs.setZero(6 + nf);
     A.topLeftCorner<6, 6>() = mass_matrix_;
     rhs.head<6>() = rigid_body_bias(mass_, ctx.body);
-    // The shafts' lumped parts spin relative to the airframe with angular
-    // momentum J Ω n, which turns with it: the gyroscopic moment −ω × (J Ω n)
-    // (D-052). Zero without shaft inertia, so models without shafts are
-    // unchanged.
+    // The shafts' parts spin relative to the airframe with angular momentum
+    // (J/g) Ω n, which turns with it: the gyroscopic moment −ω × ((J/g) Ω n),
+    // as GenHel's spinning parts give it (CR-166309 p. 5.10-19, J_XGY ω_XGY
+    // and the like; D-048), here following the shaft's speed (D-052, D-053).
+    // None without parts, so models without them are unchanged.
     for (std::size_t k = 0; k < shafts_.size(); ++k) {
-        if (shafts_[k].inertia != 0.0) {
-            rhs.segment<3>(3) -= ctx.body.omega_b.cross((shafts_[k].inertia * ctx.shafts[k].omega) *
-                                                        shafts_[k].axis_b);
+        for (const ShaftPart& p : shafts_[k].parts) {
+            rhs.segment<3>(3) -=
+                ctx.body.omega_b.cross((p.inertia / p.gear * ctx.shafts[k].omega) * p.axis_b);
         }
     }
     for (const auto& f : forces_) {
@@ -365,7 +394,10 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
         rhs.segment<3>(3) += d.load0_b.M;
         A.topLeftCorner<6, 6>() -= d.H;
         // Free shafts (D-052): the loads' Ω̇ terms in the body rows, and each
-        // shaft's row  Σ Q_c − J(Ω̇ + n·ω̇) = 0, Q_c = Q0 + K_a a + K_s Ω̇.
+        // shaft's row  Σ Q_c − J(Ω̇ + n·ω̇) = 0, Q_c = Q0 + K_a a + K_s Ω̇:
+        // GenHel's rotor-speed degree of freedom, Ω̇ = (Q_E − Q_REQ)/(J_TOTE
+        // + J_REST) (CR-166309 p. 5.6-17), with the blades' inertia and every
+        // torque's dependence on the accelerations kept in the coupled solve.
         for (Eigen::Index r = 0; r < nf; ++r) {
             const int k = free_shafts_[static_cast<std::size_t>(r)];
             A.block<6, 1>(0, 6 + r) -= d.Hs.col(k);
@@ -380,16 +412,18 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
             component_loads[i] = d.load0_b;
         }
     }
-    // The parts no component models, J about axis n (D-052): their rigid
-    // inertia is the airframe's (D-002), so only the spin relative to it is
-    // added: −J Ω̇ n on the airframe and −J(Ω̇ + n·ω̇) on the shaft, a
-    // symmetric pair.
+    // The parts no component models, J referred to the shaft, gear g, about
+    // axis n (D-052, D-053): their rigid inertia is the airframe's (D-002), so
+    // only the spin relative to it is added: −(J/g) Ω̇ n on the airframe and
+    // −J Ω̇ − (J/g) n·ω̇ on the shaft, a symmetric pair.
     for (Eigen::Index r = 0; r < nf; ++r) {
         const ShaftConfig& sh =
             shafts_[static_cast<std::size_t>(free_shafts_[static_cast<std::size_t>(r)])];
-        A.block<3, 1>(3, 6 + r) += sh.inertia * sh.axis_b;
-        A.block<1, 3>(6 + r, 3) += sh.inertia * sh.axis_b.transpose();
-        A(6 + r, 6 + r) += sh.inertia;
+        for (const ShaftPart& p : sh.parts) {
+            A.block<3, 1>(3, 6 + r) += (p.inertia / p.gear) * p.axis_b;
+            A.block<1, 3>(6 + r, 3) += (p.inertia / p.gear) * p.axis_b.transpose();
+            A(6 + r, 6 + r) += p.inertia;
+        }
     }
     return converged;
 }

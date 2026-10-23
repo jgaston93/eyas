@@ -26,6 +26,7 @@
 #include "sim/executive.hpp"
 #include "util/config.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 #include "util/units.hpp"
 
 namespace eyas {
@@ -90,16 +91,6 @@ std::unique_ptr<Model::Impl> build(const Config& config, const GeodeticOrigin* o
         }
     }
     return impl;
-}
-
-// Angle in [0, 2π).
-double wrap_2pi(double a) noexcept {
-    constexpr double kTwoPi = 2.0 * std::numbers::pi;
-    double w = std::fmod(a, kTwoPi);
-    if (w < 0.0) {
-        w += kTwoPi;
-    }
-    return w >= kTwoPi ? 0.0 : w;
 }
 
 }  // namespace
@@ -305,7 +296,7 @@ void Model::update_outputs() noexcept {
     if (impl_->tail_rotor != kNone) {
         const auto& rotor = static_cast<const BaileyRotor&>(ex.component(impl_->tail_rotor));
         o.tail_rotor_thrust = rotor.evaluate(ctx, states(impl_->tail_rotor)).thrust;
-        o.tail_rotor_azimuth = rotor.azimuth(ctx);
+        o.tail_rotor_azimuth = rotor.azimuth(ctx, states(impl_->tail_rotor));
     }
     bool wow = false;
     for (const std::size_t i : impl_->gears) {

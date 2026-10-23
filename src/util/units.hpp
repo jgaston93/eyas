@@ -59,6 +59,18 @@ enum class Dimension : std::uint8_t {
     rate_per_acceleration,  // an acceleration scaled into a rate path [(deg/s)/(ft/s²)]
     per_angle_time,         // an attitude integrator's gain [%/(deg s)]
     per_length,             // an airspeed integrator's gain [%/(kt s)]
+    // Engines and their fuel control (GenHel §5.6; D-053). Speeds in % are
+    // fractions of the 100 % speed, so "V/%" is a voltage.
+    mass_flow,               // fuel flow [kg/s]
+    pressure_per_mass_flow,  // ∂P3/∂W_f [Pa·s/kg]
+    moment_per_mass_flow,    // ∂Q/∂W_f [N·m·s/kg]
+    mass_flow_per_pressure,  // a fuel ratio W_f/P3 [kg/(s·Pa)]
+    per_moment_time,         // a spool's acceleration per torque [1/(N·m·s)], speed a fraction
+    voltage,                 // ECU signals [V]
+    voltage_per_moment,      // [V/(N·m)]
+    current_per_voltage,     // [A/V]
+    length_per_current,      // [m/A]
+    voltage_per_length,      // [V/m]
 };
 
 // Name used in error messages, e.g. "length".

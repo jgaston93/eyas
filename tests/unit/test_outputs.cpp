@@ -177,11 +177,17 @@ TEST(Outputs, RotorFieldsInHover) {
         (void)m.advance(r.controls, Environment{}, 16'666'667);
     }
     const AircraftState& o = m.outputs();
-    EXPECT_EQ(o.rotor_speed_percent, 100.0);
-    EXPECT_NEAR(o.main_rotor_power, o.main_rotor_torque * omega, 1e-6 * o.main_rotor_power);
-    EXPECT_NEAR(o.main_rotor_azimuth, std::fmod(omega * o.sim_time, 2.0 * kPi), 1e-9);
-    EXPECT_NEAR(o.tail_rotor_azimuth, std::fmod(tr.config().rotor_speed * o.sim_time, 2.0 * kPi),
-                1e-9);
+    // The rotor on the engines' free shaft (D-053), governed: 100 % to its
+    // 4/rev ripple, and the azimuth Ω t to within that over 0.05 s.
+    EXPECT_NEAR(o.rotor_speed_percent, 100.0, 1e-4);
+    const double speed = omega * o.rotor_speed_percent / 100.0;
+    EXPECT_NEAR(o.main_rotor_power, o.main_rotor_torque * speed, 1e-6 * o.main_rotor_power);
+    EXPECT_NEAR(o.main_rotor_azimuth, std::fmod(omega * o.sim_time, 2.0 * kPi), 1e-6);
+    // Both rotors turn on the one shaft: before its azimuth first wraps (at
+    // 2π, 0.23 s), the tail rotor's is the main rotor's times their gear.
+    ASSERT_LT(omega * o.sim_time, 2.0 * kPi);
+    EXPECT_NEAR(o.tail_rotor_azimuth,
+                std::fmod(tr.config().rotor_speed / omega * o.main_rotor_azimuth, 2.0 * kPi), 1e-9);
     // The rotors carry the weight, 16 638 lbm (GenHel, p. 5.1-49), and the
     // fuselage download: the canted tail rotor (hub rolled 70°) lifts with
     // T_TR cos 70°, so the main rotor alone is just below the weight.
@@ -199,6 +205,31 @@ TEST(Outputs, RotorFieldsInHover) {
     const double arm = -tr.config().hub_position_b.x();
     EXPECT_NEAR(o.tail_rotor_thrust * arm, o.main_rotor_torque, 0.15 * o.main_rotor_torque);
     EXPECT_FALSE(o.weight_on_wheels);
+}
+
+// The tail rotor turns 4.6156 times a main-rotor revolution on the one shaft
+// (D-052). Its azimuth is its own state, wrapped on its own (D-053 amendment
+// 3): through a second of flight, many wraps of the shaft's azimuth, it
+// advances by its speed times the step every step, with no jump. Taken as
+// gear × the shaft's wrapped azimuth it jumped 0.6156 of a turn at each wrap.
+TEST(Outputs, TailRotorAzimuthIsContinuous) {
+    Model m = Model::from_file(test::uh60a_config_path());
+    const TrimResult r = m.trim(condition(0.0));
+    ASSERT_TRUE(r.converged);
+    const Uh60aHarness ac;
+    const double tail = ac.get<BaileyRotor>("tail_rotor").config().rotor_speed;
+    double last = m.outputs().tail_rotor_azimuth;
+    double worst = 0.0;
+    for (int k = 0; k < 1000; ++k) {
+        (void)m.advance(r.controls, Environment{}, 1'000'000);
+        const AircraftState& o = m.outputs();
+        const double step = std::remainder(o.tail_rotor_azimuth - last, 2.0 * kPi);
+        worst = std::max(worst, std::abs(step - tail * o.rotor_speed_percent / 100.0 * 1e-3));
+        EXPECT_GE(o.tail_rotor_azimuth, 0.0);
+        EXPECT_LT(o.tail_rotor_azimuth, 2.0 * kPi);
+        last = o.tail_rotor_azimuth;
+    }
+    EXPECT_LT(worst, 1e-6);  // [rad] a step's change of speed, at most
 }
 
 // On the ground, brakes set, at low collective: weight on wheels, which is

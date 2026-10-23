@@ -68,8 +68,9 @@ inline Momentum system_momentum(const Executive& ex, const BladeElementRotor& ro
     // The shafts' lumped parts spinning relative to the airframe (D-052);
     // their rigid inertia is in mp.
     for (std::size_t k = 0; k < ex.shafts().size(); ++k) {
-        const ShaftConfig& sh = ex.shafts()[k];
-        out.H_cg_n += C * (sh.inertia * ctx.shafts[k].omega * sh.axis_b);
+        for (const ShaftPart& p : ex.shafts()[k].parts) {
+            out.H_cg_n += C * (p.inertia / p.gear * ctx.shafts[k].omega * p.axis_b);
+        }
     }
     return out;
 }

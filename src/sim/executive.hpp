@@ -25,14 +25,26 @@ enum class ShaftDrive : unsigned char {
     free,   // its equation is solved with the airframe's (engines in M9 Stage B)
 };
 
+// A spinning part on a shaft that no component models (D-053 item 5): it
+// turns at gear × Ω about axis_b relative to the airframe, so its angular
+// momentum is (J/gear) Ω n with J its inertia referred to the shaft (its own
+// inertia about the axis × gear²). Its rigid inertia is the airframe's (D-002).
+struct ShaftPart {
+    double inertia = 0.0;  // J [kg·m²], referred to the shaft
+    double gear = 1.0;     // its speed over the shaft's (sign: sense about axis_b)
+    // Spin axis, body axes: unit, or zero for inertia on the shaft with no
+    // angular momentum relative to the airframe (gear trains whose momenta
+    // cancel or are negligible: GenHel's J_REST beyond its gyroscopic list,
+    // D-053 amendment 4).
+    Vec3 axis_b = Vec3(0.0, 0.0, -1.0);
+};
+
 // A rotor-speed degree of freedom (D-052): the rotating parts geared together,
 // each component on it turning at gear × Ω about its own axis.
 struct ShaftConfig {
     std::string name;
-    double speed = 0.0;                  // governed speed [rad/s], the initial Ω
-    double inertia = 0.0;                // J [kg·m²] of parts no component models,
-                                         // referred to the shaft
-    Vec3 axis_b = Vec3(0.0, 0.0, -1.0);  // the parts' spin axis, body axes (unit)
+    double speed = 0.0;            // governed speed [rad/s], the initial Ω
+    std::vector<ShaftPart> parts;  // the parts no component models (D-053)
     ShaftDrive drive = ShaftDrive::ideal;
 };
 
@@ -126,7 +138,8 @@ public:
     // Writes every shaft's start state, ψ = 0 at its governed speed, into a
     // full state vector x (D-052).
     void initial_shaft_states(std::span<double> x) const noexcept;
-    // Wraps every shaft's ψ in x into [0, 2π) (D-052): a phase, kept small so
+    // Wraps every shaft's ψ and every component state labelled phase in x
+    // into [0, 2π) (D-052, D-053 amendment 3): a phase, kept small so
     // its rounding doesn't grow with the run, as the quaternion is kept unit.
     // Called after each step; changes nothing a component sees, which reads
     // the azimuth modulo 2π.
@@ -199,6 +212,7 @@ private:
     std::vector<std::size_t> offsets_;      // each component's first state index
     std::vector<std::size_t> sizes_;        // each component's state count, fixed at init
     std::vector<SteadyKind> steady_kinds_;  // one per state (D-045)
+    std::vector<std::size_t> phases_;       // the states labelled phase
     std::vector<std::size_t> order_;        // evaluation order, producers first (D-003)
     std::vector<ShaftConfig> shafts_;       // D-052
     std::size_t shaft_offset_ = 0;          // first shaft state index

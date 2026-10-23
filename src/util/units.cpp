@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 73> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 98> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -86,6 +86,32 @@ constexpr std::array<std::pair<std::string_view, Unit>, 73> kRegistry{{
     {"%/(deg*s)",        {0.01 / kDegree, D::per_angle_time}},
     {"%/(kt*s)",         {0.01 / kKnot, D::per_length}},
     {"%/(ft/s^2*s)",     {0.01 / kFoot, D::per_speed}},
+    // Engines (GenHel §5.6, D-053); "lbm/hr" is pounds mass per hour.
+    {"kg/s",             {1.0, D::mass_flow}},
+    {"lbm/hr",           {kPoundMass / 3600.0, D::mass_flow}},
+    {"Pa*s/kg",          {1.0, D::pressure_per_mass_flow}},
+    {"psi*hr/lbm",       {kPsi * 3600.0 / kPoundMass, D::pressure_per_mass_flow}},
+    {"N*m*s/kg",         {1.0, D::moment_per_mass_flow}},
+    {"ft*lbf*hr/lbm",    {kFoot * kPoundForce * 3600.0 / kPoundMass, D::moment_per_mass_flow}},
+    {"ft*lbf/rpm",       {kFoot * kPoundForce / kRpm, D::rotational_damping}},
+    {"kg/(s*Pa)",        {1.0, D::mass_flow_per_pressure}},
+    {"lbm/(hr*psi*%)",   {kPoundMass / (3600.0 * kPsi * 0.01), D::mass_flow_per_pressure}},
+    {"1/(N*m*s)",        {1.0, D::per_moment_time}},
+    {"%/(ft*lbf*s)",     {0.01 / (kFoot * kPoundForce), D::per_moment_time}},
+    {"V",                {1.0, D::voltage}},
+    {"V/%",              {1.0 / 0.01, D::voltage}},
+    {"V/(N*m)",          {1.0, D::voltage_per_moment}},
+    {"V/(ft*lbf)",       {1.0 / (kFoot * kPoundForce), D::voltage_per_moment}},
+    {"A/V",              {1.0, D::current_per_voltage}},
+    {"mA/V",             {0.001, D::current_per_voltage}},
+    {"m/A",              {1.0, D::length_per_current}},
+    {"in/mA",            {kInch / 0.001, D::length_per_current}},
+    {"V/m",              {1.0, D::voltage_per_length}},
+    {"V/in",             {1.0 / kInch, D::voltage_per_length}},
+    {"%/in",             {0.01 / kInch, D::per_length}},
+    {"psi/%",            {kPsi / 0.01, D::pressure}},
+    {"ft*lbf/%",         {kFoot * kPoundForce / 0.01, D::moment}},
+    {"lbm/(hr*psi)",     {kPoundMass / (3600.0 * kPsi), D::mass_flow_per_pressure}},
 }};
 // clang-format on
 
@@ -176,6 +202,26 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "per angle time";
         case Dimension::per_length:
             return "per length";
+        case Dimension::mass_flow:
+            return "mass flow";
+        case Dimension::pressure_per_mass_flow:
+            return "pressure per mass flow";
+        case Dimension::moment_per_mass_flow:
+            return "moment per mass flow";
+        case Dimension::mass_flow_per_pressure:
+            return "mass flow per pressure";
+        case Dimension::per_moment_time:
+            return "per moment time";
+        case Dimension::voltage:
+            return "voltage";
+        case Dimension::voltage_per_moment:
+            return "voltage per moment";
+        case Dimension::current_per_voltage:
+            return "current per voltage";
+        case Dimension::length_per_current:
+            return "length per current";
+        case Dimension::voltage_per_length:
+            return "voltage per length";
     }
     return "unknown";
 }

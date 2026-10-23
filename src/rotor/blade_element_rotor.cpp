@@ -157,30 +157,24 @@ BladeElementRotor::BladeElementRotor(BladeElementRotorConfig config)
 }
 
 double BladeElementRotor::azimuth(double t) const noexcept {
-    double psi = std::fmod(config_.rotor_speed * t, kTwoPi);
-    if (psi < 0.0) {
-        psi += kTwoPi;
-    }
-    return psi;
+    return wrap_2pi(config_.rotor_speed * t);
 }
 
 double BladeElementRotor::rotor_speed(const SimContext& ctx) const noexcept {
-    if (shaft_index_ < 0) {
+    // Off a shaft, or evaluated with a context that doesn't carry it (one
+    // built by hand), the configured speed.
+    if (shaft_index_ < 0 || shaft_index_ >= ctx.num_shafts) {
         return config_.rotor_speed;
     }
     return gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
 }
 
 double BladeElementRotor::azimuth(const SimContext& ctx) const noexcept {
-    if (shaft_index_ < 0) {
+    if (shaft_index_ < 0 || shaft_index_ >= ctx.num_shafts) {
         return azimuth(ctx.t);
     }
     // D-052: the shaft's azimuth × gear, wrapped as azimuth(t) wraps Ω t.
-    double psi = std::fmod(gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].psi, kTwoPi);
-    if (psi < 0.0) {
-        psi += kTwoPi;
-    }
-    return psi;
+    return wrap_2pi(gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].psi);
 }
 
 double BladeElementRotor::blade_azimuth(double psi, int k) const noexcept {
@@ -541,7 +535,15 @@ std::vector<std::string> BladeElementRotor::produces() const {
         return {};
     }
     const std::string& n = config_.name;
-    return {n + ".lambda0", n + ".mu_x", n + ".mu_z", n + ".beta_1c", n + ".tip_speed"};
+    std::vector<std::string> out = {n + ".lambda0", n + ".mu_x", n + ".mu_z", n + ".beta_1c",
+                                    n + ".tip_speed"};
+    if (config_.shaft) {
+        out.push_back(n + ".shaft_torque");  // D-053
+        for (int j = 0; j < 6; ++j) {
+            out.push_back(n + ".shaft_torque_a" + std::to_string(j));
+        }
+    }
+    return out;
 }
 
 std::vector<std::string> BladeElementRotor::consumes() const {
@@ -568,6 +570,12 @@ void BladeElementRotor::bind(const CouplingRegistry& registry) {
     slots_.mu_z = registry.find(n + ".mu_z", n);
     slots_.beta_1c = registry.find(n + ".beta_1c", n);
     slots_.tip_speed = registry.find(n + ".tip_speed", n);
+    if (config_.shaft) {
+        slots_.shaft_torque = registry.find(n + ".shaft_torque", n);
+        for (std::size_t j = 0; j < 6; ++j) {
+            slots_.shaft_torque_a[j] = registry.find(n + ".shaft_torque_a" + std::to_string(j), n);
+        }
+    }
 }
 
 void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const double> x,
@@ -634,12 +642,19 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
         out.xdot0[i + 1] = rates.y();
         out.xdot0[i + 2] = rates.z();
         // On a shaft (D-052) the states are velocities over ΩR: with v held,
-        // λ̇ gains −λ Ω̇/Ω, Ω̇ = gear × the shaft's acceleration.
+        // λ̇ gains −λ Ω̇/Ω, Ω̇ = gear × the shaft's acceleration. The VRS
+        // deficit D is a thrust coefficient, ΔT/(ρA(ΩR)²): with the thrust
+        // deficit held as the velocities are, Ḋ gains −2 D Ω̇/Ω (D-053
+        // amendment 5).
         if (shaft_index_ >= 0 && !out.Gs.empty()) {
             const double per_shaft = -gear_ / kin.omega;
+            const auto k = static_cast<std::size_t>(shaft_index_);
             for (std::size_t j = 0; j < 3; ++j) {
-                out.Gs[(i + j) * kMaxShafts + static_cast<std::size_t>(shaft_index_)] =
-                    per_shaft * x[i + j];
+                out.Gs[(i + j) * kMaxShafts + k] = per_shaft * x[i + j];
+            }
+            if (has_vortex_ring_state()) {
+                const std::size_t iv = vortex_ring_offset();
+                out.Gs[iv * kMaxShafts + k] = 2.0 * per_shaft * x[iv];
             }
         }
     }
@@ -787,6 +802,17 @@ void BladeElementRotor::shaft_terms(ComponentDerivs& out) const noexcept {
         out.Ka(k, j) = axial(out.H.block<3, 1>(0, j), out.H.block<3, 1>(3, j));
     }
     out.Ks(k, k) = axial(out.Hs.block<3, 1>(0, k), out.Hs.block<3, 1>(3, k));
+    // The torque it takes from the shaft at zero shaft acceleration, positive
+    // as a demand, affine in the body acceleration: GenHel's Q_HMR, for an
+    // engine's clutch and losses (D-053). Its body-acceleration terms go with
+    // it so that gravity, in Q0, and the body's acceleration enter together:
+    // uniform gravity then changes nothing on the shaft.
+    if (out.coupling != nullptr && slots_.shaft_torque.valid()) {
+        out.coupling->set(slots_.shaft_torque, -out.Q0(k));
+        for (std::size_t j = 0; j < 6; ++j) {
+            out.coupling->set(slots_.shaft_torque_a[j], -out.Ka(k, static_cast<Eigen::Index>(j)));
+        }
+    }
 }
 
 void BladeElementRotor::bind_shafts(std::span<const ShaftInfo> shafts) {
@@ -795,19 +821,15 @@ void BladeElementRotor::bind_shafts(std::span<const ShaftInfo> shafts) {
     }
     const std::string who = "blade_element_rotor '" + config_.name + "'";
     const auto& link = config_.shaft.value();
-    for (std::size_t k = 0; k < shafts.size(); ++k) {
-        if (shafts[k].name == link.name) {
-            const double want = link.gear * shafts[k].speed;
-            if (std::abs(config_.rotor_speed - want) > 1e-9 * want) {
-                throw InitError(who + ": rotor_speed must be gear × shaft '" + shafts[k].name +
-                                "' speed (D-052)");
-            }
-            shaft_index_ = static_cast<int>(k);
-            gear_ = link.gear;
-            return;
-        }
+    // The blades' azimuth is gear × the shaft's, which the executive wraps
+    // at 2π: with a gear that isn't whole the blades would jump at each wrap
+    // (D-053 amendment 3; the tail rotor keeps its own azimuth instead).
+    if (link.gear != std::round(link.gear)) {
+        throw InitError(who + ": the gear on shaft '" + link.name +
+                        "' must be a whole number (D-053)");
     }
-    throw InitError(who + ": no shaft named '" + link.name + "' (D-052)");
+    shaft_index_ = bind_shaft_link(link, shafts, config_.rotor_speed, who);
+    gear_ = link.gear;
 }
 
 // ---- Config ------------------------------------------------------------------
@@ -901,18 +923,7 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
     }
     // Optional (D-052): the shaft it turns on.
     if (node.contains("shaft")) {
-        const Config sh = node.child("shaft");
-        sh.allow_keys({"name", "gear"});
-        BladeElementRotorConfig::ShaftLink link;
-        link.name = sh.string("name");
-        link.gear = sh.contains("gear") ? sh.number("gear") : 1.0;
-        if (link.name.empty()) {
-            sh.fail("name", "must not be empty");
-        }
-        if (!(link.gear > 0.0) || !std::isfinite(link.gear)) {
-            sh.fail("gear", "must be positive and finite");
-        }
-        c.shaft = link;
+        c.shaft = read_shaft_link(node.child("shaft"));
     }
     // Required, no default (D-021, D-051).
     const std::string inflow_tip_loss = node.string("inflow_tip_loss");

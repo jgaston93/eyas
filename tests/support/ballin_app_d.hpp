@@ -366,7 +366,8 @@ inline Run fly(const Case& c, Servo servo, double duration = 6.0, double dt = 1e
     const Uh60aHarness scheduled = aircraft(c, std::numeric_limits<double>::quiet_NaN(), servo);
     const TrimResult first = trim(scheduled, nullptr, x);
     run.stabilator_deg =
-        ballin::revolution_average(scheduled, x, first.controls, env).stabilator / kDeg;
+        ballin::revolution_average(scheduled, x, first.controls, env, first.period).stabilator /
+        kDeg;
     const Uh60aHarness ac = aircraft(c, run.stabilator_deg, servo);
     run.trim = trim(ac, &first, x);
     run.trim_converged = first.converged && run.trim.converged;

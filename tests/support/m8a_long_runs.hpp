@@ -49,7 +49,7 @@ inline HeldOrbitDrift held_orbit_drift(double kt, int revolutions, int steps = 2
     HeldOrbitDrift d;
     d.converged = r.converged;
     d.periodic_residual = r.periodic_residual;
-    d.period = trim_period(ex);
+    d.period = trim_period(ex, r);  // the rotor's revolution, droop included (D-053)
     if (!r.converged) {
         return d;
     }
@@ -64,11 +64,20 @@ inline HeldOrbitDrift held_orbit_drift(double kt, int revolutions, int steps = 2
             held.step(s, r.controls, x, integral);
         }
         double dev = 0.0;
-        // The component states; a shaft's ψ advances 2π a revolution, a
-        // phase, not a state that repeats (D-052).
+        // The component states and a free shaft's speed; a shaft's ψ advances
+        // 2π a revolution, a phase, not a state that repeats (D-052).
+        // A rotor's own azimuth is a phase too (D-053 amendment 3).
         for (std::size_t i = body_layout::kSize; i < body_layout::kSize + ex.num_component_states();
              ++i) {
-            dev = std::max(dev, std::abs(x[i] - x0[i]));
+            if (ex.steady_kinds()[i] != SteadyKind::phase) {
+                dev = std::max(dev, std::abs(x[i] - x0[i]));
+            }
+        }
+        for (std::size_t k = 0; k < ex.shafts().size(); ++k) {
+            if (ex.shafts()[k].drive == ShaftDrive::free) {
+                const std::size_t i = ex.shaft_offset(k) + 1;
+                dev = std::max(dev, std::abs(x[i] - x0[i]));
+            }
         }
         d.deviation.push_back(dev);
     }

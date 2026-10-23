@@ -38,6 +38,9 @@ public:
 
     const Environment& env() const noexcept { return env_; }
     double period() const noexcept { return period_; }
+    // A new period [s] for the steps that follow (a trim whose rotor speed is
+    // an unknown, D-053).
+    void set_period(double period) noexcept { period_ = period; }
     int steps() const noexcept { return steps_; }
     // Evaluations in which some component's bounded iteration did not
     // converge (D-023), since construction or the last clear.
@@ -72,7 +75,7 @@ std::vector<double> held_orbit_start(const Executive& ex, const TrimCondition& c
                                      const TrimResult& r);
 
 // The held orbit sampled at `samples` evenly spaced times t_j = jT/samples,
-// j = 0…samples−1, over one revolution T = trim_period(ex), integrated with
+// j = 0…samples−1, over one revolution T = trim_period(ex, r), integrated with
 // `steps` RK4 steps per revolution (`samples` must divide `steps`, else
 // InitError).
 struct HeldOrbit {

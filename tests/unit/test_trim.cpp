@@ -22,6 +22,7 @@
 #include "core/attitude.hpp"
 #include "core/component.hpp"
 #include "core/rigid_body.hpp"
+#include "engine/genhel_t700.hpp"
 #include "eyas/model.hpp"
 #include "sim/build.hpp"
 #include "support/alloc_counter.hpp"
@@ -124,7 +125,9 @@ TEST(Trim, Uh60aTrimsFromHoverTo150Knots) {
                      << c.airspeed / kKnot << " kt, γ " << c.flight_path_angle / kDeg << "°, β "
                      << c.sideslip / kDeg << "°");
         ASSERT_TRUE(r.converged);
-        EXPECT_LE(r.iterations, 10);
+        // From a cold start the rotor on its engines takes two stages (D-053
+        // amendment 2): measured 10 in hover, 11 at 150 kt, the most here.
+        EXPECT_LE(r.iterations, 15);
         EXPECT_LT(r.force_residual, 1e-7 * weight);
         EXPECT_LT(r.periodic_residual, 1e-8);
         // The mean body state (without the vibration start, D-035) has the
@@ -179,6 +182,72 @@ TEST(Trim, Uh60aTrimsFromHoverTo150Knots) {
     EXPECT_NEAR(cold.controls.collective, sweep.back().controls.collective, 1e-6);
     EXPECT_NEAR(cold.controls.lon_cyclic, sweep.back().controls.lon_cyclic, 1e-6);
     EXPECT_NEAR(cold.pitch, sweep.back().pitch, 1e-6);
+}
+
+// ---- The rotor on engines (D-053) ----------------------------------------------------
+
+// The UH-60A's rotor turns on a free shaft driven by GenHel's T700s. At 5250 ft
+// the load-demand spindle schedules more gas-generator speed than the hover
+// needs and the ECU trims it down, holding the governed 27 rad/s exactly
+// (isochronous). At sea level it schedules 0.17 % less than needed; the ECU
+// can only trim down (A_U = 0), so it saturates and the rotor droops (D-053
+// amendment). Either way the trim's revolution is one turn of the rotor at
+// the speed it trims to: Ω T = 2π to the 4/rev ripple in Ω, the shaft's
+// azimuth closes, and the switch integrator rests at a limit.
+TEST(Trim, Uh60aRotorOnEnginesClosesItsRevolution) {
+    const Executive ex = uh60a_executive();
+    const GenHelT700* engine = nullptr;
+    std::size_t first = 0;
+    for (std::size_t i = 0; i < ex.num_components(); ++i) {
+        if (const auto* e = dynamic_cast<const GenHelT700*>(&ex.component(i))) {
+            engine = e;
+            first = ex.component_offset(i) - body_layout::kSize;
+        }
+    }
+    ASSERT_NE(engine, nullptr);
+    ASSERT_EQ(ex.shafts().size(), 1U);
+    ASSERT_EQ(ex.shafts()[0].drive, ShaftDrive::free);
+    const std::size_t omega_at = ex.shaft_offset(0) + 1 - body_layout::kSize;
+    const double governed = ex.shafts()[0].speed;
+    std::vector<double> x;
+    for (const double feet : {0.0, 5250.0}) {
+        SCOPED_TRACE(feet);
+        TrimCondition c = level(0);
+        c.altitude = feet * units::kFoot;
+        const TrimResult r = solve_trim(ex, c, nullptr, x);
+        ASSERT_TRUE(r.converged);
+        EXPECT_LT(r.periodic_residual, 1e-8);
+        const double omega = r.component_states[omega_at];
+        EXPECT_NEAR(omega * r.period, 2.0 * std::numbers::pi, 1e-5);
+        EXPECT_NEAR(trim_period(ex, r), r.period, 0.0);
+        const double q_int = r.component_states[first + GenHelT700::kQint];
+        EXPECT_TRUE(q_int == 0.0 || q_int == engine->config().qint_limit) << q_int;
+        const double v_ss = r.component_states[first + GenHelT700::kVss];
+        if (feet == 0.0) {
+            // Measured: Ω = 26.944 rad/s, the ECU at A_U (a limiter past its
+            // limit returns to it, D-053 amendment 2).
+            EXPECT_NEAR(v_ss, engine->config().upper, 1e-9);
+            EXPECT_LT(omega, governed * (1.0 - 1e-3));
+            EXPECT_GT(omega, governed * (1.0 - 5e-3));
+        } else {
+            EXPECT_LT(v_ss, engine->config().upper - 1e-3);
+            EXPECT_NEAR(omega, governed, 1e-6 * governed);
+        }
+    }
+}
+
+// Code review of #69: the two stages of a cold start (D-053 amendment 2) each
+// have the iteration budget, so a first stage that uses much of it can't
+// leave the second none. The cold hover takes 4 then 6 (measured); with a
+// budget of 6 a counter shared by both stages stopped it short.
+TEST(Trim, ColdStartStagesHaveTheirOwnIterationBudget) {
+    const Executive ex = uh60a_executive();
+    TrimOptions o;
+    o.max_iterations = 6;
+    std::vector<double> x;
+    const TrimResult r = solve_trim(ex, level(0), nullptr, x, o);
+    EXPECT_TRUE(r.converged);
+    EXPECT_GT(r.iterations, 6);  // both stages, counted together
 }
 
 // ---- Independence of step, heading and steady wind ---------------------------------
@@ -452,7 +521,12 @@ TEST(Trim, SasAndPbaMoveOnlyTheStick) {
 // terms) the bare aircraft's Dutch roll is better damped at 90 and 120 kt
 // (ζ 0.37 and 0.31; it falls 6.5× and 11.8×), so the check that the gate
 // would catch a missing SAS is made at 150 kt only (ζ 0.06, 1.9×), with the
-// same 4× threshold.
+// same 4× threshold. Since D-053 the rotor turns on the engines' free shaft,
+// no longer locked to the airframe in yaw, and the bare aircraft's swing at
+// 150 kt falls 4.5× (2.2× with the shaft held ideal; the SAS on: 63× and
+// 65×). The absolute 4× no longer tells a missing SAS apart there, so at
+// 150 kt the SAS must also damp the swing four times as much as the bare
+// aircraft does (measured 14×).
 TEST(Trim, SasDampsTheDutchRoll) {
     const Executive ex = uh60a_executive();
     TrimResult prev;
@@ -500,7 +574,7 @@ TEST(Trim, SasDampsTheDutchRoll) {
                     ratio[0], ratio[1]);
         EXPECT_GT(ratio[1], 4.0);
         if (kt == 150) {
-            EXPECT_LT(ratio[0], 4.0);  // the gate would catch the SAS missing
+            EXPECT_GT(ratio[1], 4.0 * ratio[0]);  // the gate would catch the SAS missing
         }
     }
 }

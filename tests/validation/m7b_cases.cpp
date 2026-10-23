@@ -100,7 +100,7 @@ double scaled_gap(const LinearModel& m, double s) {
 LinearModel around_free(const Executive& ex, const std::vector<std::vector<double>>& traj,
                         int first, int J, int every, double dt, const Controls& u,
                         const Environment& env, const LinearModel& like) {
-    const ReducedCoordinates rc(ex, like.body_size == 10);
+    const ReducedCoordinates rc(ex, like.body_size == 10, like.period);
     LinearModel m = like;
     m.unconverged = 0;
     m.A.setZero();

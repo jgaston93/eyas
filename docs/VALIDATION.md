@@ -737,7 +737,7 @@ Every M7c difference that isn't explained by the data's accuracy, with where it 
 | Slow on-axis response below 1.5 rad/s | Hover pitch +3.7 dB; 80 kt phase lead 27° (roll), 43° (pitch) | At 80 kt, M_u < 0 from the held stabilator in the rotor downwash, as simple wake theory gives | Parked |
 | 80 kt phugoid-type divergence | +0.289 1/s | Same cause as the line above | Parked |
 | Off-axis angular rates | Phase off by 140–160° (hover) | Known limitation of Pitt–Peters without wake distortion | M9 wake distortion (D-041) |
-| Yaw rate to collective, hover | −3.8 dB mean, +43° | Rotor speed and engine dynamics (Fletcher) | M9 drivetrain |
+| Yaw rate to collective, hover | −3.8 dB mean, +43°; on GenHel's engines (M9 Stage B) −2.5 dB, +96° | Rotor speed and engine dynamics (Fletcher); GenHel's engine model's rotor-speed response to collective (Ballin TM-88360 p. 12) | M9: NASA T700 model (TM-100991) next |
 | Yaw rate to collective, 80 kt | −8 dB | Unexplained; Fletcher's BE model misses it too | Parked |
 | Tail-rotor torque | Not modelled | DATA_GAPS.md | M9 |
 | Steady turns (B5) | Not compared | Needs an interface change | M8 or later (D-035) |
@@ -885,8 +885,8 @@ Cruise main-rotor power is in D-039 (mean −45 hp against GenHel); with GenHel'
   | hover | −3.8 / 6.6 | +42.8 / 59.2 |
   | 80 kt | −8.1 / 8.4 | +24.3 / 25.5 |
 
-  - *Hover:* Eyas matches near 0.5–1 rad/s, then falls off faster than the flight data (about 10 dB low by 5–8 rad/s), and the flight lags up to about 110° more. Fletcher (p. VII-4-4) puts the UH-60's yaw/heave coupling in hover down to rotor speed and engine/governor dynamics, which his identified model and BE model B include and Eyas doesn't (M9). This is the baseline the M9 drivetrain must improve.
-  - *80 kt:* Eyas is 8 dB low across the band. Fletcher finds the blade-element model he compares at 80 kt also mismatched, "greater than in hover", and his identified model fits without drivetrain dynamics, so the drivetrain "is not the source of the problem" (p. VII-4-11). Parked (D-041). Eyas's tail rotor has no torque yet (DATA_GAPS.md, M9), but that is a power term, not this response's.
+  - *Hover:* Eyas matches near 0.5–1 rad/s, then falls off faster than the flight data (about 10 dB low by 5–8 rad/s), and the flight lags up to about 110° more. Fletcher (p. VII-4-4) puts the UH-60's yaw/heave coupling in hover down to rotor speed and engine/governor dynamics, which his identified model and BE model B include and Eyas doesn't (M9). This is the baseline the M9 drivetrain must improve. *Since M9 Stage B* (GenHel's T700s, D-053) the plot shows the aircraft on its engines: the magnitude comes closer (−2.5 / 4.6 dB) and the phase goes further off (+96 / 122°); see the M9 Stage B entry.
+  - *80 kt:* Eyas is 8 dB low across the band (on the engines since M9 Stage B: −10.0 / 10.1 dB, phase −103 / 104°). Fletcher finds the blade-element model he compares at 80 kt also mismatched, "greater than in hover", and his identified model fits without drivetrain dynamics, so the drivetrain "is not the source of the problem" (p. VII-4-11). Parked (D-041). Eyas's tail rotor has no torque yet (DATA_GAPS.md, M9), but that is a power term, not this response's.
 - *Not compared:* the heave responses to pedal (Figs. 8 and 14), which V2 doesn't list.
 
 ### V2: rotor parameters against Fletcher's Table 1 (reported)
@@ -1615,3 +1615,44 @@ The rotor speed becomes a degree of freedom (D-052). Shafts are executive states
 | Trim and linearization | ✅ (ideal) | Each shaft starts at ψ = 0 at its governed speed; ψ is a phase, not a trim unknown or linear-model state. Free shafts are refused until the engines (Stage B) give them an equilibrium. |
 
 No plots in Stage A: with the ideal drive nothing a plot would show moves. Stage B (engines, governor, clutch) brings the rotor-speed responses and their checks against GenHel and flight test.
+
+## M9 — Rotor speed, Stage B1: GenHel's T700 engines, governor and clutch (2026-10-23; issue #39)
+
+The UH-60A's rotors turn on a `free` shaft driven by GenHel's T700s (CR-166309 §5.6; D-053 and its amendments 2–4): the gas generator, the hydromechanical fuel control and the electronic control unit (ECU) with its high/low-gain switch, re-anchored on GenHel's steady-state maps (Tables 6.5.1–6.5.6, transcribed from the page images); a clutch with a slip state; losses; the spools' momentum. Trim solves the rotor speed and the revolution's period; the linear models carry the shaft's azimuth and speed.
+
+| Check | Status | Evidence |
+|---|---|---|
+| GenHel's equations as printed | ✅ | `GenHelT700.EcuMatchesGenHelAsPrinted`: driven by the same rotor speed through low gain, high gain and V_SS on its limits, the ECU's states equal an independent transcription of GenHel's incremental equations (`tests/support/genhel_t700_reference.hpp`) to one integration step's overshoot past a limit (2.1e-6 at h = 1e-4 s, 1.2e-6 at h/2). `GasGeneratorMatchesGenHelToSecondOrder`: where GenHel's partials agree with its maps' slopes, the re-anchored gas generator is GenHel's to second order in the departure from trim. |
+| Closed forms | ✅ | `SteadyStatesLieOnTheMaps`; `GovernorIsIsochronous` (rotor speed back to 27 rad/s within 1e-7 after a 50 % load step); `ClutchLetsGoAndTakesUp`; `ConservesAngularMomentum` (engine, clutch disengaged, spools on a tumbling airframe); `SwitchIntegratorTurnsAt339FootPounds`. |
+| Uniform gravity changes nothing on the shaft | ✅ | `Linearize.GravityAndKinematicEntriesAreExact` (M7b's L1 gate) caught the engine's losses and clutch demand using the rotor's torque without its body-acceleration terms; with them (`LossesAndDemandFollowTheRotorsAccelerationTerms`) it passes at 1e-7 as before. |
+| Trim | ✅ | `Trim.Uh60aRotorOnEnginesClosesItsRevolution`: the sea-level hover droops 0.21 % (Ω = 26.944 rad/s, the ECU at A_U) and its revolution closes, Ω T = 2π; at 5250 ft the governor holds 27 rad/s to 1e-6. Every level trim 0–150 kt, sea level and 5250 ft, converges (below); the vortex-ring descents converge with the two-stage cold start. |
+| Linearization | ✅ | `Linearize.RotorSpeedIsAStateOnAFreeShaft`: a rotor-speed perturbation at the 5250 ft hover is followed by the periodic linear model with an error falling with the amplitude (1.4e-4, 6.5e-5, 2.7e-5); without the shaft's azimuth as a state it was 1.7 % at every amplitude. `PinnedEngineStatesAreHeld`: the engaged clutch's slip and the limited integrators are held, in the linear model and the flow map (differenced across the switch they gave entries of 2.8e7 and Floquet exponents of 40 and 11). |
+| Real-time | ✅ | `GenHelT700.AllocatesNothing`; `eyas_bench` against Stage A on the same machine: step() 6–9 % slower (hover 15.3 to 16.3 µs, 120 kt 15.1 to 16.5 µs), every advance() within budget. |
+
+**Trims.** `eyas_m9_engine_cases` trims the UH-60A in level flight at sea level and 5250 ft (`tools/plot_m9_engines.py`). The load-demand spindle schedules more gas-generator speed than the torque needs at 5250 ft (by 0.9–2.3 %) and the ECU trims it down, holding 27 rad/s; at sea level it schedules 0.17 % too little in hover and at 10 kt, the ECU sits at its upper limit (A_U = 0 V: it can only trim down) and the rotor droops 0.21 %. That droop is within the resolution of GenHel's tables (Table 6.5.1 gives N_GG to 0.1 % at 6000 ft·lbf spacing), so it is reported as a consequence of GenHel's data, not a prediction. Every trim runs in the governor's low gain (140–306 ft·lbf per engine, below the switch at 339).
+
+![Engine trims](validation/m9/m9_engine_trims.png)
+
+**A collective step.** From each hover trim, 0.05 collective (half an inch) held for 10 s, no stability augmentation, against the same step with the rotor speed held (Stage A). The engines' torque jumps within about 0.1 s, faster than the rotor's demand grows, so the rotor speed first rises (0.08 % at sea level, 0.3 % at 5250 ft) before settling slightly low. That is the behaviour Ballin (NASA TM-88360 p. 12, PDF p. 14) reports for GenHel's engine model: its rotor speed "varies adversely in response to a collective input because of an insufficient level of sophistication of the partial-derivative engine model and fuel control system (detailed in ref. 2) [CR-166309]. Its response is also too fast and is of the wrong magnitude. These rotor speed errors manifest themselves in yaw-acceleration, rate-, and heading-time histories". The yaw rate barely differs from the held rotor's.
+
+![Engine collective step](validation/m9/m9_engine_step.png)
+
+**Against flight data.**
+- *Fletcher's yaw rate to collective (M7c V2; the plot there now shows the aircraft on its engines).* Mean / RMS, Eyas minus flight:
+
+  | | rotor speed held (Stage A) | on GenHel's engines |
+  |---|---|---|
+  | hover, magnitude [dB] | −3.4 / 6.3 | −2.5 / 4.6 |
+  | hover, phase [deg] | +45 / 61 | +96 / 122 |
+  | 80 kt, magnitude [dB] | −8.7 / 9.0 | −10.0 / 10.1 |
+  | 80 kt, phase [deg] | +28 / 29 | −103 / 104 |
+
+  The engines bring the hover magnitude closer and take the phase further off in both conditions, as Ballin's account of GenHel's engine model leads one to expect. The engine is GenHel's as printed (the checks above), so the remaining difference is GenHel's engine model's, not the implementation's. Roll and pitch to cyclic are unchanged to within 0.6 dB and 6° (the largest changes at 80 kt below 1.5 rad/s), computed the same way before and after.
+- *The FPS's collective-to-yaw path at 20 kt (D-045 M8c3).* After a 0.05 collective step the SAS-only aircraft turns 3.4° in 10 s (3.9° with the rotor speed held), with the FPS 1.12° (1.13°), and with the FPS's collective-to-yaw gain KSXCYO zeroed 0.70° (0.76°): the path still overcorrects, its first-second yaw rate swinging from +0.40 to −1.12 deg/s. The engines don't explain it. Open.
+
+**Found and corrected in this validation (D-053 amendment 4).** The remainder of GenHel's J_REST (868 slug·ft²) had been put at rotor speed about the rotor axis, an upper bound on its angular momentum. It moved hover pitch from lateral cyclic by 15 dB and made the 80 kt phugoid unstable (ζ 0.137 to −0.041). GenHel takes its gyroscopics from its p. 5.10-19 list alone, using J_REST only in the rotor-speed equation; Eyas now does the same, and those responses are back to Stage A's. Also corrected while building (D-053 amendments 2 and 3): limiters past their limit return to it; the tail rotor keeps its own azimuth, so its Tier 4 output no longer jumps at each shaft revolution (`Outputs.TailRotorAzimuthIsContinuous`).
+
+**Decisions with the spec owner (D-053 amendment 2).** Ballin's climb and descent comparison holds the rotor speed: at 60 kt from −2000 ft/min and at 100 kt at −3000 ft/min the rotor needs no power at 100 % and would autorotate, which comes with engine-off flight (Stage B2). The M7a sweep's iteration limit is 15 (the two-stage cold start; measured 12). The Dutch-roll gate at 150 kt is relative (the SAS damps at least 4× the bare aircraft, measured 14×): the free rotor, no longer locked to the airframe in yaw, doubles the bare aircraft's damping there.
+
+**Next (agreed 2026-10-23).** Ballin's component-level T700 model and UH-60A fuel control (NASA TM-100991, 1988; public), validated in GenHel against USAAEFA flight test, with the Ames drive train (TM-88360 App. A): a second engine type, then Stage B2's limits, idle and engine failure on it. It also depends on altitude and temperature, which GenHel's maps don't, and gives fuel flow for a check against USAAEFA's level-flight data (ADA180181 Figs. 32–59; not yet made).
+

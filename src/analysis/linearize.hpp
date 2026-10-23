@@ -41,7 +41,12 @@ public:
     static constexpr std::size_t kPsi = 8;
     static constexpr std::size_t kHeight = 9;  // if with_height
 
-    ReducedCoordinates(const Executive& ex, bool with_height);
+    // The multiblade coordinates turn at 2π/period, one rotor revolution
+    // (a trim's TrimResult::period); 0 for each rotor's configured speed.
+    // Each free shaft's azimuth ψ and speed Ω (D-053) follow the component
+    // states, named "<shaft>.psi" and "<shaft>.omega"; ψ is taken within ±π
+    // of the reference's, as ψ_h.
+    ReducedCoordinates(const Executive& ex, bool with_height, double period = 0.0);
 
     std::size_t size() const noexcept { return names_.size(); }
     std::size_t body_size() const noexcept { return with_height_ ? 10 : 9; }
@@ -51,6 +56,13 @@ public:
     // their rates q̇, or neither.
     enum class FlapKind : std::uint8_t { none, coordinate, rate };
     FlapKind flap_kind(std::size_t i) const noexcept;
+    // The reduced index of full-state index `full` if it is copied as is
+    // (a component state other than the blades' flap, a shaft's Ω), else
+    // size().
+    std::size_t reduced_of(std::size_t full) const noexcept;
+    // The reduced indices of the free shafts' azimuths ("<shaft>.psi") and
+    // of the component states labelled phase (a rotor's own azimuth).
+    std::vector<std::size_t> azimuth_states() const;
 
     // Full state for reduced coordinates xr at time t [s]: the quaternion
     // from (φ, θ, ψ_h), z_n = z_ref − h, blade states from the multiblade
@@ -62,10 +74,12 @@ public:
     Eigen::VectorXd to_reduced(double t, std::span<const double> x,
                                std::span<const double> ref) const;
     // ẋr at (t, x) given the full ẋ: Euler rates (Padfield 3rd ed.
-    // Eq. 4.37), ḣ = −ż_n and the multiblade rates q̈ = a − 2Ω D q̇ − Ω² D² q,
-    // a the multiblade transform of the blade accelerations and D the
-    // azimuth derivative of the basis (Johnson 2013 Eq. 15.80 for the flap
-    // equation).
+    // Eq. 4.37), ḣ = −ż_n and the multiblade rates
+    // q̈ = a − 2ψ̇ D q̇ − ψ̇² D² q − ψ̈ D q, a the multiblade transform of the
+    // blade accelerations and D the azimuth derivative of the basis (Johnson
+    // 2013 Eq. 15.80 for the flap equation, there with ψ̇ = Ω constant). The
+    // basis turns at the rotor's own azimuth on a free shaft (ψ̇ = gear × Ω),
+    // else at the uniform rate.
     Eigen::VectorXd rates(double t, std::span<const double> x, std::span<const double> xdot) const;
 
 private:
@@ -74,10 +88,22 @@ private:
         std::size_t full = 0;                      // first flap state in the full state
         std::size_t reduced = 0;                   // first multiblade coordinate
         int blades = 0;
-        double omega = 0.0;  // [rad/s]
+        double omega = 0.0;  // [rad/s] uniform rotation, without a free shaft
+        // On a free shaft (D-053): the shaft's ψ in the full state (Ω after
+        // it), and the rotor's gear; the basis turns with the rotor.
+        std::size_t shaft = 0;
+        bool on_free_shaft = false;
+        double gear = 1.0;
     };
-    // Basis value φ_i and its azimuth derivative for blade k of rotor r at t.
-    static void basis(const Rotor& r, double t, int k, std::span<double> phi,
+    // The rotor's azimuth ψ [rad], its rate ψ̇ [rad/s] in full state x at t.
+    struct Phase {
+        double psi = 0.0;
+        double rate = 0.0;
+    };
+    static Phase phase(const Rotor& r, double t, std::span<const double> x);
+    // Basis value φ_i and its azimuth derivative for blade k of rotor r at
+    // rotor azimuth psi.
+    static void basis(const Rotor& r, double psi, int k, std::span<double> phi,
                       std::span<double> dphi);
     // (D q)_i: the coefficients of Σ_j q_j φ_j′ (cos nψ → −n sin nψ).
     static void derivative(int blades, std::span<const double> q, std::span<double> out);
@@ -88,6 +114,11 @@ private:
     // Full index of every other reduced coordinate after the body block,
     // with its reduced index.
     std::vector<std::pair<std::size_t, std::size_t>> copied_;
+    // The reduced index of each full-state index copied as is, else size().
+    std::vector<std::size_t> reduced_of_;
+    // The free shafts' azimuths and the phase states: full index, reduced
+    // index.
+    std::vector<std::pair<std::size_t, std::size_t>> azimuths_;
 };
 
 struct LinearizeOptions {

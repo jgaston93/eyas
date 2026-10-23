@@ -111,7 +111,7 @@ HeldOrbit held_orbit(const Executive& ex, const TrimCondition& c, const TrimResu
         throw InitError("held orbit: the samples must divide the steps per revolution");
     }
     std::vector<double> x = held_orbit_start(ex, c, r);
-    HeldIntegrator held(ex, trim_environment(c), trim_period(ex), steps);
+    HeldIntegrator held(ex, trim_environment(c), trim_period(ex, r), steps);
     HeldOrbit orbit;
     orbit.states.reserve(static_cast<std::size_t>(samples));
     const int every = steps / samples;

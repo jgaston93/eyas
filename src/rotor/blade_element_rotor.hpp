@@ -14,6 +14,7 @@
 #include "rotor/airfoil.hpp"
 #include "rotor/controls.hpp"
 #include "rotor/ground_effect.hpp"
+#include "rotor/shaft_link.hpp"
 #include "util/table.hpp"
 
 namespace eyas {
@@ -151,10 +152,7 @@ struct BladeElementRotorConfig {
     // The shaft the rotor turns on (D-052): its speed and azimuth are the
     // shaft's times `gear`; rotor_speed must equal gear × the shaft's governed
     // speed. None: a constant rotor_speed and ψ = Ω t.
-    struct ShaftLink {
-        std::string name;
-        double gear = 1.0;  // rotor speed / shaft speed [-], positive
-    };
+    using ShaftLink = eyas::ShaftLink;  // rotor/shaft_link.hpp
     std::optional<ShaftLink> shaft;
     // Yawed-flow drag (Johnson 2013 §6.22–6.23; D-039): the section drag acts
     // along the full local flow, spanwise component u_R included, with
@@ -366,6 +364,9 @@ private:
         CouplingSlot mu_z;
         CouplingSlot beta_1c;
         CouplingSlot tip_speed;
+        CouplingSlot shaft_torque;  // produced on a shaft (D-053)
+        // ∂(shaft_torque)/∂a, a = [v̇_b; ω̇_b], produced with it
+        std::array<CouplingSlot, 6> shaft_torque_a;
         CouplingSlot theta0;  // consumed, with pitch_input
         CouplingSlot theta1s;
         CouplingSlot theta1c;

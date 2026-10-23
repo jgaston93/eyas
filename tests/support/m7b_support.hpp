@@ -61,7 +61,7 @@ inline L3Errors l3_errors(const Executive& ex, const TrimCondition& c, const Tri
                           const std::vector<double>& start, const LinearModel& m, const L3Case& k,
                           double seconds) {
     using VecX = Eigen::VectorXd;
-    const ReducedCoordinates rc(ex, true);
+    const ReducedCoordinates rc(ex, true, m.period);
     if (m.body_size != rc.body_size() || m.states.size() != rc.size()) {
         throw InitError("l3_errors: the linear model needs h in its states");
     }

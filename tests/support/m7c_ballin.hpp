@@ -94,12 +94,13 @@ struct Averages {
 
 // Loads averaged over the trimmed revolution with the body held (the trim's
 // own orbit, at its own step), as m7_cases.cpp, on the day `env` (the one
-// the trim was solved on).
+// the trim was solved on). `period` is the trim's (TrimResult::period: a
+// drooped rotor's revolution, D-053); 0 for the governed one.
 inline Averages revolution_average(const Uh60aHarness& ac, std::vector<double> x, const Controls& c,
-                                   const Environment& env = {}) {
+                                   const Environment& env = {}, double period = 0.0) {
     const auto& mr = ac.get<BladeElementRotor>("main_rotor");
     const auto& af = ac.get<AirframeAero>("airframe");
-    const double T = trim_period(ac.executive());
+    const double T = period > 0.0 ? period : trim_period(ac.executive());
     const int N = 256;
     Averages a;
     double t = 0.0;
@@ -143,11 +144,31 @@ inline std::string held_stabilator_text(double incidence_deg, const std::filesys
     return std::regex_replace(text, input, inc.str());
 }
 
+// Config text with its rotor shaft held at the governed speed (an `ideal`
+// drive, D-052) instead of driven by the engines through a `free` one
+// (D-053): for checks at constant rotor speed.
+inline std::string ideal_shaft_text(const std::string& text) {
+    const std::regex drive(R"(drive: free)");
+    if (std::distance(std::sregex_iterator(text.begin(), text.end(), drive),
+                      std::sregex_iterator()) != 1) {
+        throw std::runtime_error("expected exactly one free drive");
+    }
+    return std::regex_replace(text, drive, "drive: ideal");
+}
+
+// The config at `path` with its rotor shaft held (ideal_shaft_text).
+inline Config ideal_shaft_config(const std::filesystem::path& path = uh60a_config_path()) {
+    return Config::from_string(ideal_shaft_text(config_text(path)),
+                               path.string() + " (ideal shaft)");
+}
+
 // The Ballin aircraft (or the config at `path`) with the stabilator held at
-// `incidence_deg`.
+// `incidence_deg`, and its rotor shaft held too if `ideal_shaft`.
 inline Uh60aHarness fixed_stabilator(double incidence_deg,
-                                     const std::filesystem::path& path = config_path()) {
-    return Uh60aHarness(Config::from_string(held_stabilator_text(incidence_deg, path),
+                                     const std::filesystem::path& path = config_path(),
+                                     bool ideal_shaft = false) {
+    const std::string text = held_stabilator_text(incidence_deg, path);
+    return Uh60aHarness(Config::from_string(ideal_shaft ? ideal_shaft_text(text) : text,
                                             path.string() + " (stabilator held)"));
 }
 

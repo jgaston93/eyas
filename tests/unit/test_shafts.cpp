@@ -47,46 +47,98 @@ private:
     double q_;
 };
 
-ShaftConfig free_shaft(double speed, double inertia, const Vec3& axis) {
+ShaftConfig free_shaft(double speed, double inertia, const Vec3& axis, double gear = 1.0) {
     ShaftConfig s;
     s.name = "main";
     s.speed = speed;
-    s.inertia = inertia;
-    s.axis_b = axis.normalized();
+    s.parts = {ShaftPart{inertia, gear, axis.normalized()}};
     s.drive = ShaftDrive::free;
     return s;
 }
 
-// Body plus one free shaft with the motor, from rest: angular momentum about
-// the CG, I_b ω + J Ω n (the parts' rigid inertia is in I_b), is conserved,
-// I_b ω̇ + J Ω̇ n = 0, and the shaft's parts obey J(Ω̇ + n·ω̇) = Q. So
-//   Ω̇ = Q / (J (1 − J nᵀ I_b⁻¹ n)),  ω̇ = −J Ω̇ I_b⁻¹ n,
-// for any axis and inertia tensor; along a principal axis z,
+// Body plus one free shaft with the motor, from rest. A part of inertia J
+// referred to the shaft, geared g about n, has angular momentum (J/g) Ω n
+// relative to the airframe (D-053; its rigid inertia is in I_b). Angular
+// momentum about the CG is conserved, I_b ω̇ + (J/g) Ω̇ n = 0, and the
+// shaft obeys J Ω̇ + (J/g) n·ω̇ = Q. So
+//   Ω̇ = Q / (J − (J/g)² nᵀ I_b⁻¹ n),  ω̇ = −(J/g) Ω̇ I_b⁻¹ n,
+// for any axis, gear and inertia tensor; at g = 1 along a principal axis z,
 // Ω̇ = Q I_zz / (J (I_zz − J)) and ṙ = −Q / (I_zz − J).
 TEST(Shafts, FreeShaftWithInternalMotorMatchesClosedForm) {
     const double Q = 2500.0;
     const double J = 40.0;
-    for (const Vec3& axis : {Vec3(0.0, 0.0, -1.0), Vec3(0.3, -0.2, -1.0)}) {
-        ExecutiveConfig ec;
-        ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
-        ec.shafts = {free_shaft(27.0, J, axis)};
-        std::vector<std::unique_ptr<DynamicComponent>> comps;
-        comps.push_back(std::make_unique<Motor>(Q));
-        const Executive ex(ec, std::move(comps));
-        std::vector<double> xd(ex.num_states(), 0.0);
-        ASSERT_TRUE(ex.derivatives(0.0, ex.state(), {}, {}, xd));
-        const Vec3 n = axis.normalized();
-        const Mat3& I = ec.mass.inertia_b;
-        const Vec3 In = I.inverse() * n;
-        const double omega_dot = Q / (J * (1.0 - J * n.dot(In)));
-        const Vec3 w_dot = -J * omega_dot * In;
-        EXPECT_NEAR(xd[ex.shaft_offset(0) + 1], omega_dot, 1e-12 * std::abs(omega_dot));
-        EXPECT_EQ(xd[ex.shaft_offset(0)], 27.0);  // ψ̇ = Ω
-        for (int k = 0; k < 3; ++k) {
-            EXPECT_NEAR(xd[body_layout::kOmega + static_cast<std::size_t>(k)], w_dot(k),
-                        1e-12 * w_dot.norm());
+    for (const double g : {1.0, 22.5, -1.0}) {
+        for (const Vec3& axis : {Vec3(0.0, 0.0, -1.0), Vec3(0.3, -0.2, -1.0)}) {
+            ExecutiveConfig ec;
+            ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
+            ec.shafts = {free_shaft(27.0, J, axis, g)};
+            std::vector<std::unique_ptr<DynamicComponent>> comps;
+            comps.push_back(std::make_unique<Motor>(Q));
+            const Executive ex(ec, std::move(comps));
+            std::vector<double> xd(ex.num_states(), 0.0);
+            ASSERT_TRUE(ex.derivatives(0.0, ex.state(), {}, {}, xd));
+            const Vec3 n = axis.normalized();
+            const Mat3& I = ec.mass.inertia_b;
+            const Vec3 In = I.inverse() * n;
+            const double h = J / g;
+            const double omega_dot = Q / (J - h * h * n.dot(In));
+            const Vec3 w_dot = -h * omega_dot * In;
+            EXPECT_NEAR(xd[ex.shaft_offset(0) + 1], omega_dot, 1e-12 * std::abs(omega_dot));
+            EXPECT_EQ(xd[ex.shaft_offset(0)], 27.0);  // ψ̇ = Ω
+            for (int k = 0; k < 3; ++k) {
+                EXPECT_NEAR(xd[body_layout::kOmega + static_cast<std::size_t>(k)], w_dot(k),
+                            1e-12 * w_dot.norm());
+            }
         }
     }
+    // A part with no axis is inertia on the shaft with no angular momentum
+    // relative to the airframe (n = 0; D-053 amendment 4): Ω̇ = Q/J and the
+    // airframe doesn't turn.
+    ExecutiveConfig ec;
+    ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
+    ShaftConfig s = free_shaft(27.0, J, Vec3(0.0, 0.0, -1.0));
+    s.parts[0].axis_b = Vec3::Zero();
+    ec.shafts = {s};
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(std::make_unique<Motor>(Q));
+    const Executive ex(ec, std::move(comps));
+    std::vector<double> xd(ex.num_states(), 0.0);
+    ASSERT_TRUE(ex.derivatives(0.0, ex.state(), {}, {}, xd));
+    EXPECT_NEAR(xd[ex.shaft_offset(0) + 1], Q / J, 1e-12 * Q / J);
+    for (std::size_t k = 0; k < 3; ++k) {
+        EXPECT_EQ(xd[body_layout::kOmega + k], 0.0);
+    }
+}
+
+// Spinning parts on an ideal shaft are D-048's spinning parts (D-053): the
+// gyroscopic moment −ω × Σ (J/g) Ω n, nothing else; a part's own inertia I
+// at speed w gives J = I (w/Ω)², g = w/Ω, so (J/g) Ω = I w.
+TEST(Shafts, PartsOnAnIdealShaftAreSpinningParts) {
+    ExecutiveConfig ec;
+    ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
+    ShaftConfig s;
+    s.name = "main";
+    s.speed = 27.0;
+    s.drive = ShaftDrive::ideal;
+    const double w1 = 609.0;
+    const double w2 = -27.0;
+    s.parts = {ShaftPart{0.11 * (w1 / 27.0) * (w1 / 27.0), w1 / 27.0, Vec3(1.0, 0.0, 0.0)},
+               ShaftPart{24.4, w2 / 27.0, Vec3(0.0, 0.0, 1.0)}};
+    ec.shafts = {s};
+    Executive ex(ec);
+    BodyState b;
+    b.omega_b = Vec3(0.2, -0.3, 0.4);
+    ex.set_body_state(b);
+    std::vector<double> xd(ex.num_states(), 0.0);
+    ASSERT_TRUE(ex.derivatives(0.0, ex.state(), {}, {}, xd));
+    const Vec3 h = 0.11 * w1 * Vec3(1.0, 0.0, 0.0) + 24.4 * w2 * Vec3(0.0, 0.0, 1.0);
+    const Mat3& I = ec.mass.inertia_b;
+    const Vec3 w_dot = I.inverse() * (-b.omega_b.cross(I * b.omega_b) - b.omega_b.cross(h));
+    for (int k = 0; k < 3; ++k) {
+        EXPECT_NEAR(xd[body_layout::kOmega + static_cast<std::size_t>(k)], w_dot(k),
+                    1e-12 * w_dot.norm());
+    }
+    EXPECT_EQ(xd[ex.shaft_offset(0) + 1], 0.0);
 }
 
 // Airframe tumbling with flapping blades on a free shaft with lumped parts, in
@@ -114,7 +166,7 @@ TEST(Shafts, RotorOnFreeShaftConservesMomentum) {
         ec.mass = mp;
         ec.step_ns = step_ns;
         ec.max_substeps = 100000;
-        ec.shafts = {free_shaft(c.rotor_speed, 25.0, Vec3(0.1, 0.05, -1.0))};
+        ec.shafts = {free_shaft(c.rotor_speed, 25.0, Vec3(0.1, 0.05, -1.0), 3.0)};
         std::vector<std::unique_ptr<DynamicComponent>> comps;
         comps.push_back(std::make_unique<BladeElementRotor>(c));
         const auto* rotor = dynamic_cast<const BladeElementRotor*>(comps.back().get());
@@ -175,7 +227,7 @@ TEST(Shafts, RotorShaftTermsAreConsistent) {
         BladeElementRotorConfig c = test::flap_rotor(airfoil, {12 * kDeg, 0.0, 0.0}, beads, e, 20);
         c.hub_position_b = Vec3(0.3, 0.1, -2.0);
         c.hub_pitch = -4 * kDeg;
-        const double gear = 1.5;
+        const double gear = 2.0;  // whole: the blades' azimuth is gear × the shaft's
         c.shaft = BladeElementRotorConfig::ShaftLink{"main", gear};
         BladeElementRotor rotor(c);
         const std::vector<ShaftInfo> info = {{"main", c.rotor_speed / gear}};
@@ -312,6 +364,37 @@ TEST(Shafts, InflowStatesFollowTheTipSpeed) {
     }
     // The rotor turns at the shaft's speed: its thrust coefficient uses it.
     EXPECT_DOUBLE_EQ(rotor.rotor_speed(ctx), 0.9 * c.rotor_speed);
+
+    // The VRS thrust deficit D (D-049) is a thrust coefficient: with the
+    // thrust deficit itself held, as the inflow's velocities are, Ḋ gains
+    // −2 D Ω̇/Ω (D-053 amendment 5).
+    c.vortex_ring = VortexRingModel::johnson_2005;
+    BladeElementRotor vrs(c);
+    vrs.bind_shafts(std::vector<ShaftInfo>{{"other", 3.0}, {"main", c.rotor_speed}});
+    ASSERT_EQ(vrs.num_states(), 4U);
+    const std::vector<double> xv = {0.05, 0.01, -0.02, 0.004};
+    std::vector<double> xdv(4, 0.0);
+    std::vector<double> Gv(24, 0.0);
+    std::vector<double> Gsv(4 * kMaxShafts, 0.0);
+    ComponentDerivs dv{xdv, Gv, Wrench{}, Mat66::Zero()};
+    dv.Gs = Gsv;
+    vrs.derivatives(ctx, xv, dv);
+    EXPECT_DOUBLE_EQ(Gsv[3 * kMaxShafts + 1], -2.0 * xv[3] / (0.9 * c.rotor_speed));
+}
+
+// A rotor bound to a shaft, evaluated with a context that doesn't carry it
+// (a hand-built SimContext, as tests and analyses build them), turns at its
+// configured speed rather than at zero (code review of #68).
+TEST(Shafts, RotorWithoutItsShaftInTheContextTurnsAtItsConfiguredSpeed) {
+    BladeElementRotorConfig c = test::test_rotor(
+        test::airfoil_from(test::linear_airfoil_csv(5.7, 0.01)), {10 * kDeg, 0.0, 0.0}, 20);
+    c.shaft = BladeElementRotorConfig::ShaftLink{"main", 1.0};
+    BladeElementRotor rotor(c);
+    rotor.bind_shafts(std::vector<ShaftInfo>{{"other", 3.0}, {"main", c.rotor_speed}});
+    const SimContext ctx = test::sea_level_context(0.0);  // no shafts
+    EXPECT_EQ(rotor.rotor_speed(ctx), c.rotor_speed);
+    std::vector<double> x(rotor.num_states(), 0.0);
+    EXPECT_TRUE(std::isfinite(rotor.evaluate(ctx, x).thrust));
 }
 
 // Config: the shafts list and the components' shaft keys (D-052).
@@ -352,10 +435,23 @@ airframe:
                "components:" + r;
     };
     const std::string one = R"(shafts:
-  - {name: main, speed: "13.5 rad/s", inertia: "120 kg*m^2", drive: ideal}
+  - name: main
+    speed: "13.5 rad/s"
+    parts: [{inertia: "30 kg*m^2", speed: "27 rad/s", axis: {x: 0, y: 0, z: -1}}]
+    drive: ideal
 )";
     const Model m = Model::from_string(yaml(one, "shaft: {name: main, gear: 2}"), "a.yaml");
     EXPECT_EQ(m.state().size(), 13U + 2U);
+    // A part given by its inertia alone: referred to the shaft, no momentum
+    // (D-053 amendment 4). Speed and axis come together or not at all.
+    std::string bare = one;
+    bare.replace(bare.find("]\n    drive"), 1, ", {inertia: \"500 kg*m^2\"}]");
+    (void)Model::from_string(yaml(bare, "shaft: {name: main, gear: 2}"), "a.yaml");
+    std::string half_part = one;
+    half_part.replace(half_part.find("]\n    drive"), 1,
+                      ", {inertia: \"5 kg*m^2\", speed: \"9 rad/s\"}]");
+    EXPECT_THROW((void)Model::from_string(yaml(half_part, "shaft: {name: main, gear: 2}"), "a"),
+                 InitError);
     // Errors: no such shaft, speed mismatch, bad drive, no drive, duplicate.
     EXPECT_THROW((void)Model::from_string(yaml(one, "shaft: {name: tail, gear: 2}"), "a"),
                  InitError);
@@ -366,8 +462,14 @@ airframe:
     EXPECT_THROW((void)Model::from_string(yaml(bad, "shaft: {name: main, gear: 2}"), "a"),
                  InitError);
     bad = one;
-    bad.replace(bad.find(", drive: ideal"), 14, "");
+    bad.replace(bad.find("    drive: ideal\n"), 17, "");
     EXPECT_THROW((void)Model::from_string(yaml(bad, "shaft: {name: main, gear: 2}"), "a"),
+                 InitError);
+    // A blade-element rotor's azimuth is gear × the shaft's, which wraps at
+    // 2π, so its gear must be whole (D-053 amendment 3).
+    std::string half = one;
+    half.replace(half.find("13.5 rad/s"), 10, "10.8 rad/s");
+    EXPECT_THROW((void)Model::from_string(yaml(half, "shaft: {name: main, gear: 2.5}"), "a"),
                  InitError);
     const std::string twice = one + "  - {name: main, speed: \"1 rad/s\", drive: ideal}\n";
     EXPECT_THROW((void)Model::from_string(yaml(twice, "shaft: {name: main, gear: 2}"), "a"),

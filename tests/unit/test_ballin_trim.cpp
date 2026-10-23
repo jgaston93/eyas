@@ -175,7 +175,7 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
     for (int kt = 0; kt <= 160; kt += 10) {
         Point p = genhel_trim(ac.executive(), kt, 0.0, have ? &last : nullptr);
         ASSERT_TRUE(p.converged) << kt << " kt";
-        const Averages a = revolution_average(ac, p.x, p.trim.controls);
+        const Averages a = revolution_average(ac, p.x, p.trim.controls, {}, p.trim.period);
         for (const Quantity& q : b1_quantities()) {
             const Curve& c = genhel.at(q.panel);
             const double g = c(kt);
@@ -231,9 +231,15 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
 // Climb and descent (Figs. B2-B4), the stabilator held at Eyas's level-flight
 // incidence as Sikorsky's runs held theirs (Ballin p. 10): changes from level
 // flight. The conditions of B2-B4 are missing (DATA_GAPS.md), so only these
-// trends are compared, and only the open ones are recorded here.
+// trends are compared, and only the open ones are recorded here. The rotor
+// is held at its governed speed (an ideal drive), as these trims were made
+// before the engines (D-053): at 60 kt from −2000 ft/min and at 100 kt at
+// −3000 ft/min the rotor needs no power at 100 % rotor speed, so it would
+// autorotate, the clutch letting go of the engines, and no powered trim
+// exists. Trims in autorotation come with engine-off flight (D-053 item 7,
+// Stage B2); until then the comparison holds the rotor speed, as before.
 TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
-    const test::Uh60aHarness ac(config_path());
+    const test::Uh60aHarness ac(ideal_shaft_config(config_path()));
     struct Record {
         const char* figure;
         double kt;
@@ -261,8 +267,9 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
     for (const Record& r : records) {
         Point level = genhel_trim(ac.executive(), r.kt, 0.0, nullptr);
         ASSERT_TRUE(level.converged) << r.kt << " kt";
-        const double stab = revolution_average(ac, level.x, level.trim.controls).stabilator;
-        const test::Uh60aHarness held = fixed_stabilator(stab / kDeg);
+        const double stab =
+            revolution_average(ac, level.x, level.trim.controls, {}, level.trim.period).stabilator;
+        const test::Uh60aHarness held = fixed_stabilator(stab / kDeg, config_path(), true);
         std::map<int, Point> pts;
         std::map<int, double> power;
         pts[0] = genhel_trim(held.executive(), r.kt, 0.0, &level);
@@ -275,7 +282,10 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
             }
         }
         for (int fpm = -2000; fpm <= 2000; fpm += 1000) {
-            power[fpm] = revolution_average(held, pts[fpm].x, pts[fpm].trim.controls).power / kHp;
+            power[fpm] = revolution_average(held, pts[fpm].x, pts[fpm].trim.controls, {},
+                                            pts[fpm].trim.period)
+                             .power /
+                         kHp;
         }
         const Curve coll(r.figure, "collective", "sikorsky_genhel");
         const Curve lat(r.figure, "lateral", "sikorsky_genhel");

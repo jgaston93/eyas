@@ -86,6 +86,12 @@ enum class SteadyKind : unsigned char {
     free,   // not set by steady_states(); trim solves it as an unknown
     orbit,  // set by steady_states(), then started on its free-flight orbit
     held,   // set by steady_states() and kept there (integrators, synchronizers)
+    // A rotor's own azimuth, ψ̇ its speed (D-053 amendment 3): set by
+    // steady_states() (zero at a trim's start, as the shafts' azimuths are)
+    // and wrapped into [0, 2π) by the executive after every step. A geared
+    // rotor needn't turn a whole number of times in a trim's revolution, so
+    // trim leaves it out of its periodicity and drift.
+    phase,
 };
 
 // A model with states: blades, inflow, gear, ... (spec §6; D-004).
@@ -126,10 +132,33 @@ public:
     // on every state it builds, so these states drop out of its unknowns. The
     // default sets nothing.
     // Contract: write exactly the states steady_kinds() labels orbit or held,
-    // and don't depend on the values x arrives with (reading back what was
-    // just written is fine). The executive checks the first part when it is
-    // built (InitError).
+    // and don't depend on the values those states arrive with (reading back
+    // what was just written is fine); the free states may be read, as trim
+    // solves for them (a limited integrator's limit follows the torque the
+    // free states give, D-053). The executive checks the first part when it
+    // is built (InitError).
     virtual void steady_states(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
+
+    // Trim (D-053 amendments 2 and 5): a component whose states have an
+    // algebraic equilibrium given what another component puts in the
+    // coupling store (an engine at the torque its rotor demands) says so,
+    // and trim_seed() sets them there. Trim starts from it, and in the first
+    // stage of a cold start the states follow it on every evaluation, with
+    // the free shafts at their governed speeds. `ctx.coupling` holds the
+    // outputs of a derivative evaluation at the state being seeded. The
+    // default seeds nothing.
+    virtual bool has_trim_seed() const noexcept { return false; }
+    virtual void trim_seed(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
+
+    // Marks (1) the states pinned at x on a limit or a switch, whose rates
+    // aren't differentiable there: a limited integrator at the limit its
+    // input pushes against, an engaged clutch's slip. Linearization holds
+    // them (D-053 amendment 2): small perturbations leave them where they
+    // are. pinned.size() == num_states(); the default marks none (0).
+    virtual void pinned_states(const SimContext& /*ctx*/, std::span<const double> /*x*/,
+                               std::span<unsigned char> pinned) const {
+        std::fill(pinned.begin(), pinned.end(), static_cast<unsigned char>(0));
+    }
 
     // Labels every state (kinds.size() == num_states()) for trim: free,
     // orbit or held (SteadyKind). Fixed for a configured component. The
