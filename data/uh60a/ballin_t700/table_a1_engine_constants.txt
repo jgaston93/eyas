@@ -1,0 +1,41 @@
+# Transcribed by eye from the rendered page image (170 dpi) of Ballin, NASA TM-100991 (1988),
+# "A High Fidelity Real-Time Simulation of a Small Turboshaft Engine", Appendix A,
+# Table A.1 "T700 Engine Constants", p. 41 (PDF p. 55). Typeset; values read with high
+# confidence. TC_T41's unit: the scan's small fractional exponents read lbm^(4/5) and sec^(9/5);
+# eq. (51), Mc_pm/hA_m [s] = TC_T41 sqrt(T41) / W41^(4/5), needs lbm^(4/5) s^(1/5) / degR^(1/2),
+# so the time exponent is 1/5 (DATA_GAPS.md).
+#
+# constant   value       units (as printed; "sec" written s, "ft*lbf*s^2" an inertia)
+HVF          18300.0     Btu/lbm
+J_GT         0.0445      ft*lbf*s^2
+J_PT         0.062       ft*lbf*s^2
+K_bl         0.7826      nondimensional
+K_b3         0.0025      nondimensional
+K_damp       0.06854     ft*lbf*s/rad
+K_dpb        0.03045     lbf^2*s^2/(lbm^2*in^4*degR)
+K_H2         0.239       Btu/(lbm*degR)
+K_H3_1       0.2496      Btu/(lbm*degR)
+K_H3_2       -8.4        Btu/lbm
+K_H41_1      0.3010      Btu/(lbm*degR)
+K_H41_2      -86.905     Btu/lbm
+K_H45        0.9623      nondimensional
+K_Ps3        0.956       nondimensional
+K_QC_1       0.71        nondimensional
+K_QC_2       0.29        nondimensional
+K_T41_1      3.322       lbm*degR/Btu
+K_T41_2      288.7       degR
+K_T45_1      3.519       lbm*degR/Btu
+K_T45_2      179.1       degR
+K_T49_1      3.516       lbm*degR/Btu
+K_T49_2      172.3       degR
+K_TH41_1     0.0018326   1/degR
+K_TH41_2     0.0856      nondimensional
+K_TH45_1     0.0018326   1/degR
+K_TH45_2     0.0856      nondimensional
+K_V3         0.97        lbf/(in^2*lbm*degR)
+K_V41        6.17        lbf/(in^2*lbm*degR)
+K_V45        13.63       lbf/(in^2*lbm*degR)
+K_WGT        0.0876      lbm*in^2/(lbf*s)
+NG_des       44700.0     rpm
+NP_des       20900.0     rpm
+TC_T41       0.29        lbm^0.8*s^0.2/degR^0.5

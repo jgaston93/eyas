@@ -27,6 +27,7 @@ add_executable(eyas_unit_tests
     unit/test_genhel_fcs.cpp
     unit/test_genhel_sas.cpp
     unit/test_genhel_fps.cpp
+    unit/test_ballin_t700.cpp
     unit/test_genhel_t700.cpp
     unit/test_uh60a_fps.cpp
     unit/test_geodesy.cpp

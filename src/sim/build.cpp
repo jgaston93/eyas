@@ -11,6 +11,7 @@
 #include "airframe/landing_gear.hpp"
 #include "control/genhel_fcs.hpp"
 #include "core/spinning_parts.hpp"
+#include "engine/ballin_t700.hpp"
 #include "engine/genhel_t700.hpp"
 #include "rotor/bailey_rotor.hpp"
 #include "rotor/blade_element_rotor.hpp"
@@ -107,6 +108,8 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
             components.push_back(GenHelFcs::from_config(c));
         } else if (type == "genhel_t700") {
             components.push_back(GenHelT700::from_config(c));
+        } else if (type == "ballin_t700") {
+            components.push_back(BallinT700::from_config(c));
         } else {
             c.fail("type", "unknown component '" + type + "'");
         }

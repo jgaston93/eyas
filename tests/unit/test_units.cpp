@@ -1,5 +1,6 @@
 #include "util/units.hpp"
 
+#include <cmath>
 #include <numbers>
 
 #include <gtest/gtest.h>
@@ -186,6 +187,67 @@ TEST(Units, EngineUnits) {
           Dimension::mass_flow_per_pressure, Dimension::per_moment_time, Dimension::voltage,
           Dimension::voltage_per_moment, Dimension::current_per_voltage,
           Dimension::length_per_current, Dimension::voltage_per_length}) {
+        EXPECT_NE(dimension_name(d), "unknown");
+    }
+}
+
+// Ballin's T700 (TM-100991, D-054): each factor derived again from the base
+// definitions (the IT Btu is 1055.05585262 J, NIST SP 811 App. B.9; °R = 5/9 K).
+TEST(Units, BallinT700Units) {
+    const auto dim = [](std::string_view u) { return find_unit(u)->dimension; };
+    const auto si = [](std::string_view u) { return *si_scale(u); };
+    const double btu = 1055.05585262;  // [J]
+    const double lbm = 0.45359237;     // [kg]
+    const double rankine = 5.0 / 9.0;  // [K]
+    const double psi = 6894.757293168361;
+    EXPECT_NEAR(kBtu, btu, 1e-8);
+    EXPECT_EQ(dim("degR"), Dimension::temperature);
+    EXPECT_NEAR(si("degR") * 518.67, 288.15, 1e-12);  // the standard day's T
+    EXPECT_EQ(dim("1/degR"), Dimension::per_temperature);
+    EXPECT_NEAR(si("1/degR") * si("degR"), 1.0, 1e-15);
+    EXPECT_EQ(dim("Btu/lbm"), Dimension::specific_energy);
+    EXPECT_NEAR(si("Btu/lbm"), 2326.0, 1e-9);
+    EXPECT_NEAR(si("Btu/lbm"), btu / lbm, 1e-6);
+    EXPECT_EQ(dim("Btu/(lbm*degR)"), Dimension::specific_heat);
+    EXPECT_NEAR(si("Btu/(lbm*degR)"), 4186.8, 1e-9);
+    EXPECT_EQ(dim("lbm*degR/Btu"), Dimension::temperature_per_specific_energy);
+    EXPECT_NEAR(si("lbm*degR/Btu") * si("Btu/lbm"), rankine, 1e-15);
+    EXPECT_EQ(dim("lbm*in^2/(lbf*hr)"), Dimension::mass_flow_per_pressure);
+    EXPECT_EQ(si("lbm*in^2/(lbf*hr)"), si("lbm/(hr*psi)"));
+    EXPECT_EQ(dim("lbm*in^2/(lbf*hr*%)"), Dimension::mass_flow_per_pressure);
+    EXPECT_EQ(si("lbm*in^2/(lbf*hr*%)"), si("lbm/(hr*psi*%)"));
+    EXPECT_EQ(dim("lbm*in^2/(lbf*s)"), Dimension::mass_flow_per_pressure);
+    EXPECT_NEAR(si("lbm*in^2/(lbf*s)"), lbm / psi, 1e-15);
+    EXPECT_EQ(dim("lbm*in^2/(lbf*hr*in)"), Dimension::mass_flow_per_pressure_length);
+    EXPECT_NEAR(si("lbm*in^2/(lbf*hr*in)") * si("in"), si("lbm/(hr*psi)"), 1e-18);
+    EXPECT_EQ(dim("lbm/s"), Dimension::mass_flow);
+    EXPECT_EQ(si("lbm/s"), lbm);
+    EXPECT_EQ(dim("lbf^2*s^2/(lbm^2*in^4*degR)"), Dimension::burner_resistance);
+    EXPECT_NEAR(si("lbf^2*s^2/(lbm^2*in^4*degR)") / (psi * psi / (lbm * lbm * rankine)), 1.0,
+                1e-12);
+    EXPECT_EQ(dim("lbm^0.8*s^0.2/degR^0.5"), Dimension::heat_sink_constant);
+    EXPECT_NEAR(si("lbm^0.8*s^0.2/degR^0.5"), std::pow(lbm, 0.8) / std::sqrt(rankine), 1e-15);
+    EXPECT_EQ(dim("ft*lbf*s^2"), Dimension::inertia);
+    EXPECT_EQ(si("ft*lbf*s^2"), si("slug*ft^2"));
+    EXPECT_EQ(dim("mA"), Dimension::current);
+    EXPECT_EQ(si("mA"), 0.001);
+    EXPECT_EQ(dim("lbm*degR^0.5/(s*psi)"), Dimension::flow_parameter);
+    EXPECT_NEAR(si("lbm*degR^0.5/(s*psi)") / (lbm * std::sqrt(rankine) / psi), 1.0, 1e-14);
+    EXPECT_EQ(dim("ft*lbf*s"), Dimension::moment_time);
+    EXPECT_EQ(si("ft*lbf*s"), si("ft*lbf"));
+    EXPECT_EQ(dim("V/degR"), Dimension::voltage_per_temperature);
+    EXPECT_NEAR(si("V/degR") * si("degR"), 1.0, 1e-15);
+    EXPECT_EQ(dim("hp"), Dimension::power);
+    EXPECT_NEAR(si("hp"), 745.69987158227022, 1e-10);  // NIST SP 811 App. B.9
+    EXPECT_EQ(dim("in/(mA*s)"), Dimension::length_per_current_time);
+    EXPECT_NEAR(si("in/(mA*s)") * si("mA"), si("in"), 1e-15);
+    for (const Dimension d :
+         {Dimension::temperature, Dimension::per_temperature, Dimension::specific_energy,
+          Dimension::specific_heat, Dimension::temperature_per_specific_energy,
+          Dimension::burner_resistance, Dimension::heat_sink_constant, Dimension::current,
+          Dimension::length_per_current_time, Dimension::mass_flow_per_pressure_length,
+          Dimension::flow_parameter, Dimension::moment_time, Dimension::power,
+          Dimension::voltage_per_temperature}) {
         EXPECT_NE(dimension_name(d), "unknown");
     }
 }

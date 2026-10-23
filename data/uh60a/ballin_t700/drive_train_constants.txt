@@ -1,0 +1,17 @@
+# Transcribed by eye from the rendered page images (110 dpi) of Ballin, NASA TM-88360 (1987),
+# App. A, "Drive Train Constants", p. 23 (PDF p. 25), with their definitions pp. 17-21 (PDF
+# pp. 19-23): the drive-train constants used for the UH-60A in the Ames simulation. Typeset;
+# read with high confidence. D-054 item 3.
+#
+# constant  value     units (from the definitions)  meaning
+DAMPBX      50.0      ft*lbf*s       # gearbox viscous damping (oil drag), at the ring-gear (rotor) speed; HPDBX = DAMPBX*OMGBX^2/550 (eq. A5)
+JGBX        208.4     slug*ft^2      # gearbox components, referred to the ring-gear speed OMGBX
+JSHMR       41.85     slug*ft^2      # main-rotor shafting and hub
+JSHTR       19.69     slug*ft^2      # tail rotor and its shafts and gears, at the tail-rotor hub
+OMEGTR      124.62    rad/s          # nominal tail-rotor speed; n_TR = OMEGTR/OMGTMR (eq. A10)
+ACCHP       40.0      hp             # nominal accessory load in trim; QQTACC = ACCHP*550/OMGBX (eq. A11), QQACC = QQTACC (1 + 0.1 (OMRBX - 1)) (eq. A12)
+J_ACC       0.004     slug*ft^2      # accessories, at the accessory-drive speed
+n_ACC       51.4      -              # accessory-drive speed over the gearbox output speed
+n_E         81.042    -              # engine output speed over the gearbox output speed
+JE          0.124     slug*ft^2      # each engine's output side (at the engine's speed)
+ENCOMP      2         -              # number of engines
