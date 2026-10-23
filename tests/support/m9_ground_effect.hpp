@@ -63,11 +63,12 @@ struct Point {
 // trimmed revolution, the body held (the trim's own orbit and step).
 inline void revolution(const Uh60aHarness& ac, std::vector<double> x, const Controls& c,
                        const Environment& env, Point& p) {
+    // The trim's own revolution: a drooped rotor's is longer (D-053).
     const auto& mr = ac.get<BladeElementRotor>("main_rotor");
     const auto& gear = ac.get<LandingGear>("gear");
     const std::size_t im = ac.index("main_rotor");
     const std::size_t ig = ac.index("gear");
-    const double T = trim_period(ac.executive());
+    const double T = trim_period(ac.executive(), p.trim);
     const int N = 256;
     double t = 0.0;
     for (int k = 0; k < N; ++k) {

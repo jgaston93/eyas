@@ -53,13 +53,13 @@ struct Averages {
 
 // Loads averaged over the trimmed revolution, the body held (the trim's own
 // orbit, at its own step).
-Averages revolution_average(const test::Uh60aHarness& ac, std::vector<double> x,
-                            const Controls& c) {
+Averages revolution_average(const test::Uh60aHarness& ac, std::vector<double> x, const Controls& c,
+                            double period) {
     const auto& mr = ac.get<BladeElementRotor>("main_rotor");
     const auto& tr = ac.get<BaileyRotor>("tail_rotor");
     const auto& af = ac.get<AirframeAero>("airframe");
     const auto& fcs = ac.get<GenHelFcs>("fcs");
-    const double T = trim_period(ac.executive());
+    const double T = period;  // the trim's own revolution (D-053)
     const int N = 256;
     Averages a;
     double t = 0.0;
@@ -83,7 +83,6 @@ Averages revolution_average(const test::Uh60aHarness& ac, std::vector<double> x,
 void write(const std::filesystem::path& dir) {
     const test::Uh60aHarness ac;
     const Executive& ex = ac.executive();
-    const double T = trim_period(ex);
 
     std::ofstream trim(dir / "m7_trim.csv");
     trim << "# UH-60A level-flight trim, ISA sea level, 16638 lbm (M7a, D-035)\n"
@@ -103,7 +102,8 @@ void write(const std::filesystem::path& dir) {
         std::vector<double> x;
         const TrimResult r = solve_trim(ex, c, sweep.empty() ? nullptr : &sweep.back(), x);
         sweep.push_back(r);
-        const Averages a = revolution_average(ac, x, r.controls);
+        const double T = trim_period(ex, r);  // the trim's own revolution (D-053)
+        const Averages a = revolution_average(ac, x, r.controls, T);
         const SwashplatePitch& p = a.mr_pitch;
         const double tr_cmd = a.tr_pitch;
         using tv = test::Travels;

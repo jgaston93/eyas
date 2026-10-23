@@ -68,9 +68,13 @@ struct TrimResult {
     // retrim after release, e.g. an FPS integrating a lateral acceleration
     // that the trim's sideslip leaves.
     double held_drift_rate = 0.0;
-    // Every component state at the start of the held revolution, in the
-    // Model's state order after the body states. Engineering data: pass the
-    // result back to Model::trim as a starting point for a nearby condition.
+    // Every state after the body's at the start of the held revolution, in
+    // the Model's state order: each component's, then each rotor shaft's
+    // azimuth and speed (ψ = 0 [rad], Ω [rad/s]; D-052). Engineering data:
+    // pass the result back to Model::trim as a starting point for a nearby
+    // condition; there a shaft held at its governed speed (an ideal drive)
+    // starts at that speed and ψ = 0 whatever these say, and a free one at
+    // the Ω given here.
     // The state Model::trim installs differs in the flight control system's
     // sensors and servos: there they start on their response to the free
     // body's 4/rev vibration, as v and ω do (D-045 amendment).

@@ -126,7 +126,7 @@ TEST(Trim, Uh60aTrimsFromHoverTo150Knots) {
                      << c.sideslip / kDeg << "°");
         ASSERT_TRUE(r.converged);
         // From a cold start the rotor on its engines takes two stages (D-053
-        // amendment 2): measured 12 in hover, the most here.
+        // amendment 2): measured 10 in hover, 11 at 150 kt, the most here.
         EXPECT_LE(r.iterations, 15);
         EXPECT_LT(r.force_residual, 1e-7 * weight);
         EXPECT_LT(r.periodic_residual, 1e-8);
@@ -234,6 +234,20 @@ TEST(Trim, Uh60aRotorOnEnginesClosesItsRevolution) {
             EXPECT_NEAR(omega, governed, 1e-6 * governed);
         }
     }
+}
+
+// Code review of #69: the two stages of a cold start (D-053 amendment 2) each
+// have the iteration budget, so a first stage that uses much of it can't
+// leave the second none. The cold hover takes 4 then 6 (measured); with a
+// budget of 6 a counter shared by both stages stopped it short.
+TEST(Trim, ColdStartStagesHaveTheirOwnIterationBudget) {
+    const Executive ex = uh60a_executive();
+    TrimOptions o;
+    o.max_iterations = 6;
+    std::vector<double> x;
+    const TrimResult r = solve_trim(ex, level(0), nullptr, x, o);
+    EXPECT_TRUE(r.converged);
+    EXPECT_GT(r.iterations, 6);  // both stages, counted together
 }
 
 // ---- Independence of step, heading and steady wind ---------------------------------

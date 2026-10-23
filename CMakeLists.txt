@@ -39,6 +39,7 @@ add_library(eyas STATIC
     src/env/geodesy.cpp
     src/rotor/airfoil.cpp
     src/rotor/bailey_rotor.cpp
+    src/rotor/shaft_link.cpp
     src/rotor/blade_element_rotor.cpp
     src/rotor/controls.cpp
     src/rotor/ideal_thrust.cpp

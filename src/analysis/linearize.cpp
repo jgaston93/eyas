@@ -98,6 +98,10 @@ ReducedCoordinates::ReducedCoordinates(const Executive& ex, bool with_height, do
             names_.push_back(ex.shafts()[k].name + ".omega");
         }
     }
+    reduced_of_.assign(ex.num_states(), names_.size());
+    for (const auto& [full, red] : copied_) {
+        reduced_of_[full] = red;
+    }
 }
 
 ReducedCoordinates::Phase ReducedCoordinates::phase(const Rotor& r, double t,
@@ -112,10 +116,7 @@ ReducedCoordinates::Phase ReducedCoordinates::phase(const Rotor& r, double t,
         p.psi = r.omega * t;
         p.rate = r.omega;
     }
-    p.psi = std::fmod(p.psi, 2.0 * kPi);
-    if (p.psi < 0.0) {
-        p.psi += 2.0 * kPi;
-    }
+    p.psi = wrap_2pi(p.psi);
     return p;
 }
 
@@ -157,12 +158,7 @@ ReducedCoordinates::FlapKind ReducedCoordinates::flap_kind(std::size_t i) const 
 }
 
 std::size_t ReducedCoordinates::reduced_of(std::size_t full) const noexcept {
-    for (const auto& [f, red] : copied_) {
-        if (f == full) {
-            return red;
-        }
-    }
-    return size();
+    return full < reduced_of_.size() ? reduced_of_[full] : size();
 }
 
 std::vector<std::size_t> ReducedCoordinates::azimuth_states() const {
@@ -549,21 +545,34 @@ Monodromy monodromy(const Executive& ex, const TrimCondition& c, const TrimResul
     Rk4 rk4(x.size());
     Monodromy out;
     const auto controls = [&](double) { return r.controls; };
-    const auto flow = [&](const VecX& xr0) {
+    // The unperturbed flow's end: the angles at T (heading, the azimuths)
+    // are taken within ±π of it, not of the start, so a phase that turns a
+    // fraction of a revolution near a half can't put the ± perturbations on
+    // either side of the wrap; the reference's offset cancels in each
+    // central difference (code review of #69).
+    std::vector<double> end = start;
+    const auto run = [&](const VecX& xr0) {
         rc.to_full(0.0, xr0, start, x);
         for (int s = 0; s < steps; ++s) {
             const double t = T * static_cast<double>(s) / steps;
             out.unconverged +=
                 static_cast<std::size_t>(free_step(ex, rk4, controls, env, t, dt, x));
         }
-        return rc.to_reduced(T, x, start);
     };
     const VecX x0 = rc.to_reduced(0.0, start, start);
+    run(x0);
+    end = x;
+    const auto flow = [&](const VecX& xr0) {
+        run(xr0);
+        return rc.to_reduced(T, x, end);
+    };
     const std::vector<double> h = perturbation_steps(rc, o);
     const auto n = static_cast<Eigen::Index>(rc.size());
     // States pinned on a limit or a switch stay where they are and move
     // nothing (D-053 amendment 2): their rows and columns are the identity's.
-    const std::vector<bool> frozen = pinned_reduced(ex, rc, {start}, T, r.controls, env);
+    // Found around the held orbit, as linearize() finds them.
+    const HeldOrbit held = held_orbit(ex, c, r, o.azimuths, o.steps_per_period);
+    const std::vector<bool> frozen = pinned_reduced(ex, rc, held.states, T, r.controls, env);
     out.matrix.resize(n, n);
     for (Eigen::Index k = 0; k < n; ++k) {
         if (frozen[static_cast<std::size_t>(k)]) {

@@ -13,7 +13,6 @@
 #include "analysis/held_orbit.hpp"
 #include "core/attitude.hpp"
 #include "core/rigid_body.hpp"
-#include "engine/genhel_t700.hpp"
 #include "env/atmosphere.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "util/error.hpp"
@@ -127,8 +126,8 @@ public:
             }
         }
         for (std::size_t i = 0; i < ex.num_components(); ++i) {
-            if (dynamic_cast<const GenHelT700*>(&ex.component(i)) != nullptr) {
-                engines_.push_back(i);
+            if (ex.component(i).has_trim_seed()) {
+                seeders_.push_back(i);
             }
         }
         const RotorInfo rotor = rotor_info(ex);
@@ -142,11 +141,13 @@ public:
     std::size_t unknowns() const { return kHead + nc_ + free_.size() + (free_period() ? 1 : 0); }
     // The period is an unknown, z's last entry.
     bool free_period() const { return period_shaft_ >= 0; }
-    bool has_engines() const { return !engines_.empty(); }
-    // Stage 1 of a cold start (D-053 amendment 2): every evaluation puts the
-    // engines at their equilibrium for the rotor's demand and the free shafts
-    // at their governed speeds, with the governed period, so the shafts
-    // barely move, as on ideal drives; their unknowns and residuals drop out.
+    // Components with a trim seed (DynamicComponent::trim_seed): the engines.
+    bool has_seeders() const { return !seeders_.empty(); }
+    // Stage 1 of a cold start (D-053 amendment 2): every evaluation seeds the
+    // seeders' states (the engines at their equilibrium for the rotor's
+    // demand) and puts the free shafts at their governed speeds, with the
+    // governed period, so the shafts barely move, as on ideal drives; their
+    // unknowns and residuals drop out.
     void set_seeded(bool on) { seeded_ = on; }
     // The period [s] for z.
     double period(const VecX& z) const { return free_period() ? z(z.size() - 1) : held_.period(); }
@@ -196,16 +197,15 @@ public:
                 seeded_ ? ex_.shafts()[free_[r]].speed
                         : z(static_cast<Eigen::Index>(kHead + nc_ + r));
         }
-        if (seeded_) {
-            seed_engines(controls(z));
-        }
         // States with an algebraic equilibrium on the held body take it
         // (GenHel's IC mode, D-045); their unknowns in z then have no effect,
-        // and the minimum-norm step leaves them alone.
-        const SimContext ctx = ex_.context(0.0, x_, controls(z), held_.env());
-        for (std::size_t i = 0; i < ex_.num_components(); ++i) {
-            ex_.component(i).steady_states(
-                ctx, std::span<double>(x_).subspan(ex_.component_offset(i), ex_.component_size(i)));
+        // and the minimum-norm step leaves them alone. In stage 1 the seeders
+        // follow, from the rotor torque at those settled states, and the
+        // steady states are set again for any that read the seeded ones.
+        apply_steady_states(controls(z));
+        if (seeded_) {
+            seed(controls(z));
+            apply_steady_states(controls(z));
         }
         start_ = x_;
         return true;
@@ -429,7 +429,7 @@ public:
                 seeded_ ? 0.0 : std::remainder(x_[i] - start_[i] - turn_, 2.0 * std::numbers::pi);
         }
         if (seeded_) {
-            for (const std::size_t e : engines_) {
+            for (const std::size_t e : seeders_) {
                 const std::size_t first = ex_.component_offset(e) - body_layout::kSize;
                 for (std::size_t j = 0; j < ex_.component_size(e); ++j) {
                     r(static_cast<Eigen::Index>(kHead + first + j)) = 0.0;
@@ -443,26 +443,33 @@ public:
     // residual() [its units per second].
     double held_drift_rate() const { return held_drift_; }
 
-    // Every GenHel T700 engine's states in x_ at their equilibrium for the
-    // main rotor's demand at x_ (D-053 item 6).
-    void seed_engines(const Controls& u) {
-        if (engines_.empty()) {
+    // Every seeder's states in x_ at their trim seed for the coupling
+    // store's values at x_ (D-053 item 6 and amendment 5).
+    void seed(const Controls& u) {
+        if (seeders_.empty()) {
             return;
         }
         std::vector<double>& xd = scratch_;
         xd.assign(x_.size(), 0.0);
         (void)ex_.derivatives(0.0, x_, u, held_.env(), xd);  // fills the coupling store
         const SimContext ctx = ex_.context(0.0, x_, u, held_.env());
-        for (const std::size_t i : engines_) {
-            const auto& e = static_cast<const GenHelT700&>(ex_.component(i));
-            const double demand = e.rotor_demand(ctx);
-            e.equilibrium(
-                (1.0 + e.config().loss_factor) * demand, demand, u.collective,
-                std::span<double>(x_).subspan(ex_.component_offset(i), ex_.component_size(i)));
+        for (const std::size_t i : seeders_) {
+            ex_.component(i).trim_seed(
+                ctx, std::span<double>(x_).subspan(ex_.component_offset(i), ex_.component_size(i)));
+        }
+    }
+    const std::vector<std::size_t>& seeders() const { return seeders_; }
+
+private:
+    // Every component's steady_states() at x_ (D-045).
+    void apply_steady_states(const Controls& u) {
+        const SimContext ctx = ex_.context(0.0, x_, u, held_.env());
+        for (std::size_t i = 0; i < ex_.num_components(); ++i) {
+            ex_.component(i).steady_states(
+                ctx, std::span<double>(x_).subspan(ex_.component_offset(i), ex_.component_size(i)));
         }
     }
 
-private:
     const Executive& ex_;
     TrimCondition c_;
     std::size_t n_;
@@ -474,25 +481,22 @@ private:
     std::vector<double> start_;  // x_ as packed, before the revolution
     double held_drift_ = 0.0;
     std::vector<std::size_t> free_;     // the free shafts (D-053)
-    std::vector<std::size_t> engines_;  // GenHel T700 components
+    std::vector<std::size_t> seeders_;  // GenHel T700 components
     bool seeded_ = false;               // stage 1 of a cold start
     std::vector<double> scratch_;
     int period_shaft_ = -1;  // the free shaft the rotor turns on, or −1
     double turn_ = 0.0;      // its turn in one rotor revolution, 2π/g [rad]
 };
 
-// The engines' states in z at their equilibrium for the main rotor's demand
-// at the state the problem packs for z (D-053 item 6): a start for Newton's
-// method, the engines delivering the rotor's demand with losses.
-void engine_start(const Executive& ex, Problem& p, VecX& z, std::size_t nc) {
-    if (!p.has_engines() || !p.pack(z)) {
+// The seeders' states in z at their trim seed for the state the problem
+// packs for z (D-053 item 6 and amendment 5): a start for Newton's method,
+// the engines delivering the rotor's demand with losses.
+void seed_start(const Executive& ex, Problem& p, VecX& z, std::size_t nc) {
+    if (!p.has_seeders() || !p.pack(z)) {
         return;
     }
-    p.seed_engines(p.controls(z));
-    for (std::size_t i = 0; i < ex.num_components(); ++i) {
-        if (dynamic_cast<const GenHelT700*>(&ex.component(i)) == nullptr) {
-            continue;
-        }
+    p.seed(p.controls(z));
+    for (const std::size_t i : p.seeders()) {
         const std::size_t first = ex.component_offset(i) - body_layout::kSize;
         for (std::size_t j = 0; j < ex.component_size(i) && first + j < nc; ++j) {
             z(static_cast<Eigen::Index>(kHead + first + j)) = p.state()[ex.component_offset(i) + j];
@@ -639,8 +643,8 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         // ECU integrator past its limit has no effect, so Newton couldn't
         // move it back inside.
         VecX r_kept;
-        if (!(p.residual(z, r_kept) && converged(norms(r_kept), o))) {
-            engine_start(ex, p, z, nc);
+        if (p.has_seeders() && !(p.residual(z, r_kept) && converged(norms(r_kept), o))) {
+            seed_start(ex, p, z, nc);
         }
     } else {
         // Cold start: mid collective, level, every component at its initial
@@ -662,7 +666,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         }
         // The engines at their equilibrium for the rotor's demand, before and
         // after settling, so the free shafts hold their speed meanwhile.
-        engine_start(ex, p, z, nc);
+        seed_start(ex, p, z, nc);
         if (p.pack(z)) {
             Vec6 ignored;
             p.hold(o.settle_periods, p.controls(z), ignored);
@@ -670,7 +674,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
                 z(static_cast<Eigen::Index>(kHead + j)) = p.state()[body_layout::kSize + j];
             }
         }
-        engine_start(ex, p, z, nc);
+        seed_start(ex, p, z, nc);
     }
 
     TrimResult result;
@@ -708,7 +712,9 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         fresh = false;
         ok = p.residual(z, r);
         m = ok ? norms(r) : invalid;
-        while (ok && !converged(m, to) && it < o.max_iterations) {
+        int stage = 0;  // each stage has the budget (spec §7 rule 3); `it` counts all
+        while (ok && !converged(m, to) && stage < o.max_iterations) {
+            ++stage;
             ++it;
             if (J.size() == 0 && !jacobian()) {
                 ok = false;
@@ -747,7 +753,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
             }
         }
     };
-    if (start == nullptr && p.has_engines()) {
+    if (start == nullptr && p.has_seeders()) {
         // A cold start solves first with the engines at their equilibrium and
         // the shafts governed, as on ideal drives, then frees them from there
         // (D-053 amendment 2): from the cold start's mid collective the full
@@ -761,7 +767,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         p.set_seeded(true);
         newton(loose);
         p.set_seeded(false);
-        engine_start(ex, p, z, nc);
+        seed_start(ex, p, z, nc);
     }
     newton(o);
 

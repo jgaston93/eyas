@@ -572,6 +572,26 @@ TEST(GenHelT700, LossesAndDemandFollowTheRotorsAccelerationTerms) {
     }
 }
 
+// Code review of #69: an integration step that carries the slip below zero
+// as the clutch re-engages leaves it there unless something returns it;
+// engaged, it returns to zero within 0.05 s, as the limiters do, so a later
+// disengagement isn't delayed by a negative slip to integrate away.
+TEST(GenHelT700, ClutchSlipOvershootReturnsToZero) {
+    const t700::Data d;
+    const Harness h(make_config(d));
+    const double q = 40000.0 * kFtLbf;
+    std::vector<double> x(Engine::kNumStates);
+    h.engine().equilibrium(q, q / 1.1, 0.6, x);
+    x[Engine::kSlip] = -0.01;
+    std::vector<double> xd;
+    h.evaluate(x, kGovernor, 0.6, q / 1.1, xd);
+    EXPECT_TRUE(h.engine().signals(x, kGovernor, 0.6, q / 1.1).engaged);
+    EXPECT_DOUBLE_EQ(xd[Engine::kSlip], 0.01 / 0.05);
+    x[Engine::kSlip] = 0.0;
+    h.evaluate(x, kGovernor, 0.6, q / 1.1, xd);
+    EXPECT_EQ(xd[Engine::kSlip], 0.0);
+}
+
 // D-053 amendment 2: the states sitting on a switch or a limit, whose rates
 // aren't differentiable there, are reported pinned so that linearization
 // holds them: the slip of an engaged clutch, and a limited integrator (Q_INT,

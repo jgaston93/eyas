@@ -175,7 +175,7 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
     for (int kt = 0; kt <= 160; kt += 10) {
         Point p = genhel_trim(ac.executive(), kt, 0.0, have ? &last : nullptr);
         ASSERT_TRUE(p.converged) << kt << " kt";
-        const Averages a = revolution_average(ac, p.x, p.trim.controls);
+        const Averages a = revolution_average(ac, p.x, p.trim.controls, {}, p.trim.period);
         for (const Quantity& q : b1_quantities()) {
             const Curve& c = genhel.at(q.panel);
             const double g = c(kt);
@@ -267,7 +267,8 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
     for (const Record& r : records) {
         Point level = genhel_trim(ac.executive(), r.kt, 0.0, nullptr);
         ASSERT_TRUE(level.converged) << r.kt << " kt";
-        const double stab = revolution_average(ac, level.x, level.trim.controls).stabilator;
+        const double stab =
+            revolution_average(ac, level.x, level.trim.controls, {}, level.trim.period).stabilator;
         const test::Uh60aHarness held = fixed_stabilator(stab / kDeg, config_path(), true);
         std::map<int, Point> pts;
         std::map<int, double> power;
@@ -281,7 +282,10 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
             }
         }
         for (int fpm = -2000; fpm <= 2000; fpm += 1000) {
-            power[fpm] = revolution_average(held, pts[fpm].x, pts[fpm].trim.controls).power / kHp;
+            power[fpm] = revolution_average(held, pts[fpm].x, pts[fpm].trim.controls, {},
+                                            pts[fpm].trim.period)
+                             .power /
+                         kHp;
         }
         const Curve coll(r.figure, "collective", "sikorsky_genhel");
         const Curve lat(r.figure, "lateral", "sikorsky_genhel");

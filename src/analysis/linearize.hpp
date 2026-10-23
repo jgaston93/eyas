@@ -114,6 +114,8 @@ private:
     // Full index of every other reduced coordinate after the body block,
     // with its reduced index.
     std::vector<std::pair<std::size_t, std::size_t>> copied_;
+    // The reduced index of each full-state index copied as is, else size().
+    std::vector<std::size_t> reduced_of_;
     // The free shafts' azimuths and the phase states: full index, reduced
     // index.
     std::vector<std::pair<std::size_t, std::size_t>> azimuths_;

@@ -40,7 +40,7 @@ const char* kHeader =
 void row(std::ofstream& out, const test::Uh60aHarness& ac, double kt, double fpm,
          const char* constraint, const Point& p) {
     const Controls& u = p.trim.controls;
-    const Averages a = revolution_average(ac, p.x, u);
+    const Averages a = revolution_average(ac, p.x, u, {}, p.trim.period);
     out << kt << "," << fpm << "," << constraint << "," << p.converged << "," << collective_pct(u)
         << "," << lat_pct(u) << "," << lon_pct(u) << "," << pedal_pct(u) << ","
         << p.trim.pitch / kDeg << "," << p.trim.roll / kDeg << "," << p.sideslip / kDeg << ","
@@ -85,7 +85,9 @@ void write(const std::filesystem::path& dir) {
         // Start from the level trim nearest in speed, then step outwards in rate.
         const auto near = static_cast<std::size_t>(std::lround(kt / 10.0));
         Point level0 = trim_at(ex, condition(kt, 0.0), true, &genhel[near].trim);
-        const double level_stab = revolution_average(ac, level0.x, level0.trim.controls).stabilator;
+        const double level_stab =
+            revolution_average(ac, level0.x, level0.trim.controls, {}, level0.trim.period)
+                .stabilator;
         const test::Uh60aHarness held = fixed_stabilator(level_stab / kDeg);
         for (const auto& [name, h] :
              {std::pair<const char*, const test::Uh60aHarness*>{"genhel", &ac},

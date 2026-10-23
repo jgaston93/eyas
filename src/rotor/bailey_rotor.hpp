@@ -9,6 +9,7 @@
 #include "core/component.hpp"
 #include "rotor/controls.hpp"
 #include "rotor/rotor_wash.hpp"
+#include "rotor/shaft_link.hpp"
 
 namespace eyas {
 class Config;
@@ -98,10 +99,7 @@ struct BaileyRotorConfig {
     std::optional<FuselageWake> fuselage_wake;  // airframe wake at the hub (M6b)
     // The shaft it turns on (D-052): speed = gear × the shaft's; rotor_speed
     // must equal gear × the shaft's governed speed. None: constant rotor_speed.
-    struct ShaftLink {
-        std::string name;
-        double gear = 1.0;  // rotor speed / shaft speed [-], positive
-    };
+    using ShaftLink = eyas::ShaftLink;  // rotor/shaft_link.hpp
     std::optional<ShaftLink> shaft;
 };
 

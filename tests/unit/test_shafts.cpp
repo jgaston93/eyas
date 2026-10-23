@@ -364,6 +364,37 @@ TEST(Shafts, InflowStatesFollowTheTipSpeed) {
     }
     // The rotor turns at the shaft's speed: its thrust coefficient uses it.
     EXPECT_DOUBLE_EQ(rotor.rotor_speed(ctx), 0.9 * c.rotor_speed);
+
+    // The VRS thrust deficit D (D-049) is a thrust coefficient: with the
+    // thrust deficit itself held, as the inflow's velocities are, Ḋ gains
+    // −2 D Ω̇/Ω (D-053 amendment 5).
+    c.vortex_ring = VortexRingModel::johnson_2005;
+    BladeElementRotor vrs(c);
+    vrs.bind_shafts(std::vector<ShaftInfo>{{"other", 3.0}, {"main", c.rotor_speed}});
+    ASSERT_EQ(vrs.num_states(), 4U);
+    const std::vector<double> xv = {0.05, 0.01, -0.02, 0.004};
+    std::vector<double> xdv(4, 0.0);
+    std::vector<double> Gv(24, 0.0);
+    std::vector<double> Gsv(4 * kMaxShafts, 0.0);
+    ComponentDerivs dv{xdv, Gv, Wrench{}, Mat66::Zero()};
+    dv.Gs = Gsv;
+    vrs.derivatives(ctx, xv, dv);
+    EXPECT_DOUBLE_EQ(Gsv[3 * kMaxShafts + 1], -2.0 * xv[3] / (0.9 * c.rotor_speed));
+}
+
+// A rotor bound to a shaft, evaluated with a context that doesn't carry it
+// (a hand-built SimContext, as tests and analyses build them), turns at its
+// configured speed rather than at zero (code review of #68).
+TEST(Shafts, RotorWithoutItsShaftInTheContextTurnsAtItsConfiguredSpeed) {
+    BladeElementRotorConfig c = test::test_rotor(
+        test::airfoil_from(test::linear_airfoil_csv(5.7, 0.01)), {10 * kDeg, 0.0, 0.0}, 20);
+    c.shaft = BladeElementRotorConfig::ShaftLink{"main", 1.0};
+    BladeElementRotor rotor(c);
+    rotor.bind_shafts(std::vector<ShaftInfo>{{"other", 3.0}, {"main", c.rotor_speed}});
+    const SimContext ctx = test::sea_level_context(0.0);  // no shafts
+    EXPECT_EQ(rotor.rotor_speed(ctx), c.rotor_speed);
+    std::vector<double> x(rotor.num_states(), 0.0);
+    EXPECT_TRUE(std::isfinite(rotor.evaluate(ctx, x).thrust));
 }
 
 // Config: the shafts list and the components' shaft keys (D-052).

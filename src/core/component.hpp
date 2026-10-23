@@ -139,6 +139,17 @@ public:
     // is built (InitError).
     virtual void steady_states(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
 
+    // Trim (D-053 amendments 2 and 5): a component whose states have an
+    // algebraic equilibrium given what another component puts in the
+    // coupling store (an engine at the torque its rotor demands) says so,
+    // and trim_seed() sets them there. Trim starts from it, and in the first
+    // stage of a cold start the states follow it on every evaluation, with
+    // the free shafts at their governed speeds. `ctx.coupling` holds the
+    // outputs of a derivative evaluation at the state being seeded. The
+    // default seeds nothing.
+    virtual bool has_trim_seed() const noexcept { return false; }
+    virtual void trim_seed(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
+
     // Marks (1) the states pinned at x on a limit or a switch, whose rates
     // aren't differentiable there: a limited integrator at the limit its
     // input pushes against, an engaged clutch's slip. Linearization holds

@@ -94,12 +94,13 @@ struct Averages {
 
 // Loads averaged over the trimmed revolution with the body held (the trim's
 // own orbit, at its own step), as m7_cases.cpp, on the day `env` (the one
-// the trim was solved on).
+// the trim was solved on). `period` is the trim's (TrimResult::period: a
+// drooped rotor's revolution, D-053); 0 for the governed one.
 inline Averages revolution_average(const Uh60aHarness& ac, std::vector<double> x, const Controls& c,
-                                   const Environment& env = {}) {
+                                   const Environment& env = {}, double period = 0.0) {
     const auto& mr = ac.get<BladeElementRotor>("main_rotor");
     const auto& af = ac.get<AirframeAero>("airframe");
-    const double T = trim_period(ac.executive());
+    const double T = period > 0.0 ? period : trim_period(ac.executive());
     const int N = 256;
     Averages a;
     double t = 0.0;

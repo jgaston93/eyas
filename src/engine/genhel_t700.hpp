@@ -48,7 +48,7 @@ class Config;
 //   I_DB1 = K_1 N_PTD / (K_10 s² + K_11 s + 1);  V_HG = deadband(I_DB1; a, b)
 //   V_LG  = K_3 N_PTD
 //   V_G   = V_HG if A ≥ 20 or B ≥ 20 (switch open, high gain), else V_LG
-//   A     = 40 outside −4 % ≤ N_PTD ≤ 1 %, else 0
+//   A     = 40 (Q_INT's limit) outside −4 % ≤ N_PTD ≤ 1 %, else 0
 //   B     = Q_INT, dQ_INT/dt = 0.7 (K_4 Q_PT − 20), limited to [0, 40] (D-053)
 //   V_S   = (1 + t_1 s)/(1 + t_2 s) V_G;  dV_SS/dt = K_9 V_S, limited to [A_L, A_U]
 //   V_DMD = (1 + t_3 s)/(1 + t_4 s) (V_SS + K_6 V_S)
@@ -200,6 +200,10 @@ public:
     // other state free.
     void steady_states(const SimContext& ctx, std::span<double> x) const override;
     void steady_kinds(std::span<SteadyKind> kinds) const override;
+    // Trim: the equilibrium for the main rotor's demand in ctx's coupling
+    // store, the engines delivering it with losses (D-053 item 6).
+    bool has_trim_seed() const noexcept override { return true; }
+    void trim_seed(const SimContext& ctx, std::span<double> x) const override;
     // Linearization (D-053 amendment 2): the slip while engaged, and Q_INT
     // and V_SS at a limit their inputs push against.
     void pinned_states(const SimContext& ctx, std::span<const double> x,

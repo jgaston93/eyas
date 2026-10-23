@@ -356,9 +356,10 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
     A.topLeftCorner<6, 6>() = mass_matrix_;
     rhs.head<6>() = rigid_body_bias(mass_, ctx.body);
     // The shafts' parts spin relative to the airframe with angular momentum
-    // (J/g) Ω n, which turns with it: the gyroscopic moment −ω × ((J/g) Ω n)
-    // (D-052, D-053). None without parts, so models without them are
-    // unchanged.
+    // (J/g) Ω n, which turns with it: the gyroscopic moment −ω × ((J/g) Ω n),
+    // as GenHel's spinning parts give it (CR-166309 p. 5.10-19, J_XGY ω_XGY
+    // and the like; D-048), here following the shaft's speed (D-052, D-053).
+    // None without parts, so models without them are unchanged.
     for (std::size_t k = 0; k < shafts_.size(); ++k) {
         for (const ShaftPart& p : shafts_[k].parts) {
             rhs.segment<3>(3) -=
@@ -393,7 +394,10 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
         rhs.segment<3>(3) += d.load0_b.M;
         A.topLeftCorner<6, 6>() -= d.H;
         // Free shafts (D-052): the loads' Ω̇ terms in the body rows, and each
-        // shaft's row  Σ Q_c − J(Ω̇ + n·ω̇) = 0, Q_c = Q0 + K_a a + K_s Ω̇.
+        // shaft's row  Σ Q_c − J(Ω̇ + n·ω̇) = 0, Q_c = Q0 + K_a a + K_s Ω̇:
+        // GenHel's rotor-speed degree of freedom, Ω̇ = (Q_E − Q_REQ)/(J_TOTE
+        // + J_REST) (CR-166309 p. 5.6-17), with the blades' inertia and every
+        // torque's dependence on the accelerations kept in the coupled solve.
         for (Eigen::Index r = 0; r < nf; ++r) {
             const int k = free_shafts_[static_cast<std::size_t>(r)];
             A.block<6, 1>(0, 6 + r) -= d.Hs.col(k);

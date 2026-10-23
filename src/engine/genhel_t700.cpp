@@ -129,6 +129,11 @@ void GenHelT700::steady_kinds(std::span<SteadyKind> kinds) const {
     kinds[kSlip] = SteadyKind::held;
 }
 
+void GenHelT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
+    const double demand = rotor_demand(ctx);
+    equilibrium((1.0 + config_.loss_factor) * demand, demand, ctx.controls.collective, x);
+}
+
 void GenHelT700::pinned_states(const SimContext& ctx, std::span<const double> x,
                                std::span<unsigned char> pinned) const {
     const GenHelT700Config& c = config_;
@@ -197,7 +202,8 @@ GenHelT700Signals GenHelT700::signals(std::span<const double> x, double omega, d
     s.n_ptd = c.gear * (governed_ - s.engine_speed) / c.power_turbine_100;
     const double v_hg = dead_band(x[kIdb], c.dead_band_a, c.dead_band_b);
     const double v_lg = c.k3 * s.n_ptd;
-    const double a = (s.n_ptd < c.band_low || s.n_ptd > c.band_high) ? 40.0 : 0.0;
+    // A and B on the same scale: GenHel prints both as 40 V (p. 5.6-12).
+    const double a = (s.n_ptd < c.band_low || s.n_ptd > c.band_high) ? c.qint_limit : 0.0;
     const double b = std::clamp(x[kQint], 0.0, c.qint_limit);
     s.high_gain = a >= c.threshold || b >= c.threshold;
     s.v_g = s.high_gain ? v_hg : v_lg;
@@ -289,7 +295,10 @@ void GenHelT700::derivatives(const SimContext& ctx, std::span<const double> x,
         out.Ks(k, k) -= c.engine_inertia;
         out.Ka.block<1, 3>(k, 3) -= h_pt * c.pt_axis_b.transpose();
         out.Hs.block<3, 1>(3, k) -= h_pt * c.pt_axis_b;
-        out.xdot0[kSlip] = 0.0;
+        // Engaged the slip is zero; a step's overshoot below it as the
+        // clutch takes up returns within kLimitReturn, as a limiter's does,
+        // so a later disengagement doesn't first integrate it away.
+        out.xdot0[kSlip] = x[kSlip] < 0.0 ? -x[kSlip] / kLimitReturn : 0.0;
     } else {
         // J_TOTE (Ω̇_e + n·ω̇/G_E) = Q_E; ṡ = Ω̇ − Ω̇_e.
         out.xdot0[kSlip] = -s.q_engine / c.engine_inertia;

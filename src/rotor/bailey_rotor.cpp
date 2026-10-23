@@ -10,6 +10,7 @@
 #include "rotor/pitt_peters.hpp"
 #include "util/config.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 
 namespace eyas {
 namespace {
@@ -133,20 +134,16 @@ void BaileyRotor::bind(const CouplingRegistry& registry) {
 }
 
 double BaileyRotor::rotor_speed(const SimContext& ctx) const noexcept {
-    if (shaft_index_ < 0) {
+    // Off a shaft, or evaluated with a context that doesn't carry it (one
+    // built by hand), the configured speed.
+    if (shaft_index_ < 0 || shaft_index_ >= ctx.num_shafts) {
         return config_.rotor_speed;
     }
     return gear_ * ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
 }
 
 double BaileyRotor::azimuth(const SimContext& ctx, std::span<const double> x) const noexcept {
-    constexpr double kTwoPi = 2.0 * std::numbers::pi;
-    const double turned = config_.shaft ? x[num_states() - 1] : config_.rotor_speed * ctx.t;
-    double psi = std::fmod(turned, kTwoPi);
-    if (psi < 0.0) {
-        psi += kTwoPi;
-    }
-    return psi;
+    return wrap_2pi(config_.shaft ? x[num_states() - 1] : config_.rotor_speed * ctx.t);
 }
 
 void BaileyRotor::bind_shafts(std::span<const ShaftInfo> shafts) {
@@ -155,19 +152,8 @@ void BaileyRotor::bind_shafts(std::span<const ShaftInfo> shafts) {
     }
     const std::string who = "bailey_rotor '" + config_.name + "'";
     const auto& link = config_.shaft.value();
-    for (std::size_t k = 0; k < shafts.size(); ++k) {
-        if (shafts[k].name == link.name) {
-            const double want = link.gear * shafts[k].speed;
-            if (std::abs(config_.rotor_speed - want) > 1e-9 * want) {
-                throw InitError(who + ": rotor_speed must be gear × shaft '" + shafts[k].name +
-                                "' speed (D-052)");
-            }
-            shaft_index_ = static_cast<int>(k);
-            gear_ = link.gear;
-            return;
-        }
-    }
-    throw InitError(who + ": no shaft named '" + link.name + "' (D-052)");
+    shaft_index_ = bind_shaft_link(link, shafts, config_.rotor_speed, who);
+    gear_ = link.gear;
 }
 
 BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx,
@@ -323,18 +309,7 @@ std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
     c.radius = node.quantity("radius", Dimension::length);
     c.rotor_speed = node.quantity("rotor_speed", Dimension::angular_rate);
     if (node.contains("shaft")) {  // optional (D-052)
-        const Config sh = node.child("shaft");
-        sh.allow_keys({"name", "gear"});
-        BaileyRotorConfig::ShaftLink link;
-        link.name = sh.string("name");
-        link.gear = sh.contains("gear") ? sh.number("gear") : 1.0;
-        if (link.name.empty()) {
-            sh.fail("name", "must not be empty");
-        }
-        if (!(link.gear > 0.0) || !std::isfinite(link.gear)) {
-            sh.fail("gear", "must be positive and finite");
-        }
-        c.shaft = link;
+        c.shaft = read_shaft_link(node.child("shaft"));
     }
     c.chord = node.quantity("chord", Dimension::length);
     c.lift_slope = node.quantity("lift_slope", Dimension::per_angle);

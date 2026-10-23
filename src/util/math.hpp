@@ -25,6 +25,17 @@ inline double wrap_pi(double a) noexcept {
     return a == -std::numbers::pi ? std::numbers::pi : a;
 }
 
+// An angle wrapped into [0, 2π) [rad], e.g. a rotor azimuth; exactly 0, not
+// 2π, where the fix-up of a tiny negative angle would round up to 2π.
+inline double wrap_2pi(double a) noexcept {
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    double w = std::fmod(a, kTwoPi);
+    if (w < 0.0) {
+        w += kTwoPi;
+    }
+    return w >= kTwoPi ? 0.0 : w;
+}
+
 // The three points Brent's method keeps: a (the previous b), b (the best
 // estimate) and c (with b, the bracket).
 enum class BrentPoint : unsigned char { a, b, c };
