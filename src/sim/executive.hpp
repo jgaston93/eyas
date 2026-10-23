@@ -30,9 +30,13 @@ enum class ShaftDrive : unsigned char {
 // momentum is (J/gear) Ω n with J its inertia referred to the shaft (its own
 // inertia about the axis × gear²). Its rigid inertia is the airframe's (D-002).
 struct ShaftPart {
-    double inertia = 0.0;                // J [kg·m²], referred to the shaft
-    double gear = 1.0;                   // its speed over the shaft's (sign: sense about axis_b)
-    Vec3 axis_b = Vec3(0.0, 0.0, -1.0);  // spin axis, body axes (unit)
+    double inertia = 0.0;  // J [kg·m²], referred to the shaft
+    double gear = 1.0;     // its speed over the shaft's (sign: sense about axis_b)
+    // Spin axis, body axes: unit, or zero for inertia on the shaft with no
+    // angular momentum relative to the airframe (gear trains whose momenta
+    // cancel or are negligible: GenHel's J_REST beyond its gyroscopic list,
+    // D-053 amendment 4).
+    Vec3 axis_b = Vec3(0.0, 0.0, -1.0);
 };
 
 // A rotor-speed degree of freedom (D-052): the rotating parts geared together,

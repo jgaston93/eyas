@@ -911,6 +911,20 @@ TEST(Linearize, PinnedEngineStatesAreHeld) {
         EXPECT_EQ(m.A.col(i).cwiseAbs().maxCoeff(), 0.0) << name;
     }
     EXPECT_LT(m.A.cwiseAbs().maxCoeff(), 1e6);
+    // The flow map holds them too: their rows and columns of Φ(T) are the
+    // identity's, multiplier 1, exponent 0, as the averaged model's root.
+    // Differenced across the switch they gave exponents of 40 and 11.
+    const Monodromy f = monodromy(ex, c, r, o);
+    for (const std::string name : {"engines[6]", "engines[13]"}) {
+        const auto i = static_cast<Eigen::Index>(std::find(m.states.begin(), m.states.end(), name) -
+                                                 m.states.begin());
+        VecX unit = VecX::Zero(f.matrix.rows());
+        unit(i) = 1.0;
+        EXPECT_EQ((f.matrix.col(i) - unit).cwiseAbs().maxCoeff(), 0.0) << name;
+        EXPECT_EQ((f.matrix.row(i).transpose() - unit).cwiseAbs().maxCoeff(), 0.0) << name;
+    }
+    const Eigen::VectorXcd mult = f.matrix.eigenvalues();
+    EXPECT_LT(mult.cwiseAbs().maxCoeff(), 2.0);  // the slowest growth is far below 2 a revolution
 }
 
 TEST(Linearize, PeriodicModelMatchesTheNonlinearResponse) {

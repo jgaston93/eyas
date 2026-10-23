@@ -376,6 +376,37 @@ std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const Linea
     return h;
 }
 
+namespace {
+
+// The reduced coordinates pinned on a limit or a switch at any of `states`
+// (sampled evenly over the period T): DynamicComponent::pinned_states().
+std::vector<bool> pinned_reduced(const Executive& ex, const ReducedCoordinates& rc,
+                                 const std::vector<std::vector<double>>& states, double T,
+                                 const Controls& u, const Environment& env) {
+    std::vector<unsigned char> pinned;
+    std::vector<bool> frozen(rc.size(), false);
+    for (std::size_t j = 0; j < states.size(); ++j) {
+        const double t = T * static_cast<double>(j) / static_cast<double>(states.size());
+        const SimContext ctx = ex.context(t, states[j], u, env);
+        for (std::size_t i = 0; i < ex.num_components(); ++i) {
+            pinned.assign(ex.component_size(i), 0);
+            ex.component(i).pinned_states(ctx,
+                                          std::span<const double>(states[j]).subspan(
+                                              ex.component_offset(i), ex.component_size(i)),
+                                          pinned);
+            for (std::size_t k = 0; k < pinned.size(); ++k) {
+                const std::size_t red = rc.reduced_of(ex.component_offset(i) + k);
+                if (pinned[k] != 0 && red < rc.size()) {
+                    frozen[red] = true;
+                }
+            }
+        }
+    }
+    return frozen;
+}
+
+}  // namespace
+
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& o) {
     if (!o.height && !std::isnan(c.ground_height)) {
@@ -443,25 +474,7 @@ LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimRes
     // States pinned on a limit or a switch anywhere on the orbit are held
     // (D-053 amendment 2): a central difference across the switch is no
     // derivative, and small perturbations leave them where they are.
-    std::vector<unsigned char> pinned;
-    std::vector<bool> frozen(rc.size(), false);
-    for (std::size_t j = 0; j < orbit.size(); ++j) {
-        const double t = T * static_cast<double>(j) / static_cast<double>(orbit.size());
-        const SimContext ctx = ex.context(t, orbit[j], r.controls, env);
-        for (std::size_t i = 0; i < ex.num_components(); ++i) {
-            pinned.assign(ex.component_size(i), 0);
-            ex.component(i).pinned_states(ctx,
-                                          std::span<const double>(orbit[j]).subspan(
-                                              ex.component_offset(i), ex.component_size(i)),
-                                          pinned);
-            for (std::size_t k = 0; k < pinned.size(); ++k) {
-                const std::size_t red = rc.reduced_of(ex.component_offset(i) + k);
-                if (pinned[k] != 0 && red < rc.size()) {
-                    frozen[red] = true;
-                }
-            }
-        }
-    }
+    const std::vector<bool> frozen = pinned_reduced(ex, rc, orbit, T, r.controls, env);
     for (std::size_t i = 0; i < frozen.size(); ++i) {
         if (!frozen[i]) {
             continue;
@@ -548,14 +561,27 @@ Monodromy monodromy(const Executive& ex, const TrimCondition& c, const TrimResul
     const VecX x0 = rc.to_reduced(0.0, start, start);
     const std::vector<double> h = perturbation_steps(rc, o);
     const auto n = static_cast<Eigen::Index>(rc.size());
+    // States pinned on a limit or a switch stay where they are and move
+    // nothing (D-053 amendment 2): their rows and columns are the identity's.
+    const std::vector<bool> frozen = pinned_reduced(ex, rc, {start}, T, r.controls, env);
     out.matrix.resize(n, n);
     for (Eigen::Index k = 0; k < n; ++k) {
+        if (frozen[static_cast<std::size_t>(k)]) {
+            out.matrix.col(k).setZero();
+            continue;
+        }
         const double hk = h[static_cast<std::size_t>(k)];
         VecX xp = x0;
         VecX xm = x0;
         xp(k) += hk;
         xm(k) -= hk;
         out.matrix.col(k) = (flow(xp) - flow(xm)) / (2.0 * hk);
+    }
+    for (Eigen::Index k = 0; k < n; ++k) {
+        if (frozen[static_cast<std::size_t>(k)]) {
+            out.matrix.row(k).setZero();
+            out.matrix(k, k) = 1.0;
+        }
     }
     return out;
 }

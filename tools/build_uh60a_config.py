@@ -648,9 +648,10 @@ airframe:
 
 # Rotor speed (D-052, D-053): main and tail rotors geared on one shaft, driven by
 # GenHel's T700 engines through their clutch (free drive). Its parts: GenHel's
-# spinning parts geared to the drive (p. 5.10-19, D-048), turning with it, and the
-# rest of J_REST ("downstream of clutch less blades", p. 5.6-23) at rotor speed
-# about the main rotor's axis, as each part's own inertia at its speed.
+# spinning parts geared to the drive (p. 5.10-19, D-048), turning with it, each
+# as its own inertia at its speed; and the rest of J_REST ("downstream of clutch
+# less blades", p. 5.6-23), referred to rotor speed, with no angular momentum:
+# GenHel's gyroscopics are the p. 5.10-19 list alone (D-053 amendment 4).
 shafts:
   - name: rotor_drive
     speed: "{fmt(mr["OMEGA"])} rad/s"
@@ -788,8 +789,9 @@ ENGINE_PARTS = {"JXGY1", "JXGY2"}
 
 def shaft_parts(mo, mr, en):
     """The drive shaft's parts (D-053 item 5) as config rows: GenHel's spinning parts geared to
-    the drive at their speed, and the rest of J_REST at rotor speed about the main rotor's axis.
-    J_REST is referred to rotor speed, so each geared part takes J (W/Omega)^2 of it."""
+    the drive at their speed, and the rest of J_REST as inertia on the shaft with no angular
+    momentum, as GenHel takes its gyroscopics from the p. 5.10-19 list alone (D-053 amendment
+    4). J_REST is referred to rotor speed, so each geared part takes J (W/Omega)^2 of it."""
     rows = []
     taken = 0.0
     for axis, j_name, w_name in SPINNING:
@@ -804,15 +806,9 @@ def shaft_parts(mo, mr, en):
                             f'axis: {vec}}}  # {name}, p. 5.10-19\n')
                 taken += j * (w / mr["OMEGA"]) ** 2
             i += 1
-    # The main rotor turns counterclockwise from above about -z_h (hub pitch I_THETA, roll 0).
-    if mr["I_PHI"] != 0.0:
-        raise ValueError("the remainder's axis assumes zero hub roll")
-    th = math.radians(mr["I_THETA"])
     rest = en["J_REST"] - taken
-    rows.append(f'      - {{inertia: "{fmt(round(rest, 6))} slug*ft^2", speed: "{fmt(mr["OMEGA"])} '
-                f'rad/s", axis: {{x: {fmt(round(-math.sin(th), 12))}, y: 0, '
-                f'z: {fmt(round(-math.cos(th), 12))}}}}}  # J_REST less the parts above '
-                f'({fmt(en["J_REST"])} - {fmt(round(taken, 4))})\n')
+    rows.append(f'      - {{inertia: "{fmt(round(rest, 6))} slug*ft^2"}}  # J_REST less the parts '
+                f'above ({fmt(en["J_REST"])} - {fmt(round(taken, 4))}), no momentum\n')
     return "".join(rows).rstrip("\n")
 
 

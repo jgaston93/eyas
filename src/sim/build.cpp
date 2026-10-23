@@ -132,12 +132,21 @@ std::vector<ShaftConfig> read_shafts(const Config& config) {
         }
         // Each part: its own inertia about its axis and its speed at the
         // shaft's governed speed (D-053), as the spinning parts (D-048); the
-        // executive takes gear = speed / shaft speed, J = inertia × gear².
+        // executive takes gear = speed / shaft speed, J = inertia × gear². A
+        // part given by its inertia alone is that inertia referred to the
+        // shaft, with no angular momentum (D-053 amendment 4).
         if (s.contains("parts")) {
             const Config parts = s.child("parts");
             for (std::size_t k = 0; k < parts.size(); ++k) {
                 const Config p = parts[k];
                 p.allow_keys({"inertia", "speed", "axis"});
+                if (!p.contains("speed") && !p.contains("axis")) {
+                    ShaftPart part;
+                    part.inertia = p.quantity("inertia", Dimension::inertia);
+                    part.axis_b = Vec3::Zero();
+                    sh.parts.push_back(part);
+                    continue;
+                }
                 const Config a = p.child("axis");
                 a.allow_keys({"x", "y", "z"});
                 const Vec3 v(a.number("x"), a.number("y"), a.number("z"));

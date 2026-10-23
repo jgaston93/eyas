@@ -91,6 +91,23 @@ TEST(Shafts, FreeShaftWithInternalMotorMatchesClosedForm) {
             }
         }
     }
+    // A part with no axis is inertia on the shaft with no angular momentum
+    // relative to the airframe (n = 0; D-053 amendment 4): Ω̇ = Q/J and the
+    // airframe doesn't turn.
+    ExecutiveConfig ec;
+    ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
+    ShaftConfig s = free_shaft(27.0, J, Vec3(0.0, 0.0, -1.0));
+    s.parts[0].axis_b = Vec3::Zero();
+    ec.shafts = {s};
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(std::make_unique<Motor>(Q));
+    const Executive ex(ec, std::move(comps));
+    std::vector<double> xd(ex.num_states(), 0.0);
+    ASSERT_TRUE(ex.derivatives(0.0, ex.state(), {}, {}, xd));
+    EXPECT_NEAR(xd[ex.shaft_offset(0) + 1], Q / J, 1e-12 * Q / J);
+    for (std::size_t k = 0; k < 3; ++k) {
+        EXPECT_EQ(xd[body_layout::kOmega + k], 0.0);
+    }
 }
 
 // Spinning parts on an ideal shaft are D-048's spinning parts (D-053): the
@@ -394,6 +411,16 @@ airframe:
 )";
     const Model m = Model::from_string(yaml(one, "shaft: {name: main, gear: 2}"), "a.yaml");
     EXPECT_EQ(m.state().size(), 13U + 2U);
+    // A part given by its inertia alone: referred to the shaft, no momentum
+    // (D-053 amendment 4). Speed and axis come together or not at all.
+    std::string bare = one;
+    bare.replace(bare.find("]\n    drive"), 1, ", {inertia: \"500 kg*m^2\"}]");
+    (void)Model::from_string(yaml(bare, "shaft: {name: main, gear: 2}"), "a.yaml");
+    std::string half_part = one;
+    half_part.replace(half_part.find("]\n    drive"), 1,
+                      ", {inertia: \"5 kg*m^2\", speed: \"9 rad/s\"}]");
+    EXPECT_THROW((void)Model::from_string(yaml(half_part, "shaft: {name: main, gear: 2}"), "a"),
+                 InitError);
     // Errors: no such shaft, speed mismatch, bad drive, no drive, duplicate.
     EXPECT_THROW((void)Model::from_string(yaml(one, "shaft: {name: tail, gear: 2}"), "a"),
                  InitError);

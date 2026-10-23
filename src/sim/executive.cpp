@@ -60,8 +60,9 @@ void validate(const ExecutiveConfig& c) {
             if (!(p.gear != 0.0) || !std::isfinite(p.gear)) {
                 throw InitError(who + ": a part's gear must be nonzero and finite");
             }
-            if (!p.axis_b.allFinite() || std::abs(p.axis_b.norm() - 1.0) > 1e-9) {
-                throw InitError(who + ": a part's axis must be a unit vector");
+            if (!p.axis_b.allFinite() ||
+                (p.axis_b.norm() != 0.0 && std::abs(p.axis_b.norm() - 1.0) > 1e-9)) {
+                throw InitError(who + ": a part's axis must be a unit vector, or zero");
             }
         }
     }
