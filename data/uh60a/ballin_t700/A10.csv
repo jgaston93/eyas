@@ -1,0 +1,23 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A10: f10, exhaust pressure loss, PDF p. 65, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (65.0, 100.0), (1.01, 1.14)), corrected by the scan's stretch measured on 34 and 60 ticks (up to 1.9e-03 of an axis); the plotted ticks sit +3.4e-04 and -3.5e-04 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: corrected_gas_generator_speed [%], y: exhaust_pressure_ratio_ps9_p49 [-]
+curve,corrected_gas_generator_speed,exhaust_pressure_ratio_ps9_p49
+f10,64.977,1.1239
+f10,69.978,1.1181
+f10,70.972,1.1162
+f10,75.968,1.0902
+f10,78.476,1.079
+f10,81.502,1.06
+f10,85.465,1.0369
+f10,86.467,1.0304
+f10,87.47,1.0266
+f10,88.471,1.0239
+f10,89.959,1.0212
+f10,90.959,1.0209
+f10,91.938,1.0219
+f10,93.972,1.028
+f10,95.98,1.0338
+f10,97.478,1.044
+f10,99.484,1.064
+f10,99.994,1.0661

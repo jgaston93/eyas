@@ -1,0 +1,11 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A7: f7, gas-generator turbine energy, PDF p. 62, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (0.2, 0.35), (20.0, 52.5)), corrected by the scan's stretch measured on 75 and 120 ticks (up to 1.9e-03 of an axis); the plotted ticks sit -9.9e-05 and +1.2e-04 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: pressure_ratio_p45_p41 [-], y: enthalpy_drop_parameter [Btu/lbm]
+curve,pressure_ratio_p45_p41,enthalpy_drop_parameter
+f7,0.2001,48.199
+f7,0.21513,40.39
+f7,0.22002,39.134
+f7,0.225,38.356
+f7,0.22999,37.569
+f7,0.34989,24.631

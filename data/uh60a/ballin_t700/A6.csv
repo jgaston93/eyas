@@ -1,0 +1,7 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A6: f6, combustor efficiency, PDF p. 61, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (0.01, 0.02), (0.88, 1.1)), corrected by the scan's stretch measured on 50 and 100 ticks (up to 2.3e-03 of an axis); the plotted ticks sit +2.4e-04 and +1.5e-03 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: fuel_air_ratio [-], y: combustor_efficiency [-]
+curve,fuel_air_ratio,combustor_efficiency
+f6,0.0099908,0.98467
+f6,0.019994,0.98456

@@ -1,0 +1,16 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. C25: F_HM2, HMU power-available input schedule, PDF p. 96, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (20.0, 120.0), (-2.0, 12.0)), corrected by the scan's stretch measured on 48 and 132 ticks (up to 1.7e-03 of an axis); the plotted ticks sit -1.1e-03 and +5.6e-04 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: power_available_spindle_angle [deg], y: power_available_parameter_wfprf [-]
+curve,power_available_spindle_angle,power_available_parameter_wfprf
+wfprf,28.524,10.399
+wfprf,30.117,9.8407
+wfprf,40.123,7.0039
+wfprf,50.114,5.7331
+wfprf,60.003,4.8308
+wfprf,70.004,3.8179
+wfprf,79.901,2.8097
+wfprf,89.903,1.8941
+wfprf,99.891,1.1896
+wfprf,109.88,0.77858
+wfprf,119.92,-0.016566
