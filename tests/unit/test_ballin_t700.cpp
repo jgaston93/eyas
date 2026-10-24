@@ -9,6 +9,7 @@
 #include <cmath>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <numbers>
@@ -20,6 +21,7 @@
 
 #include <Eigen/Dense>
 
+#include "analysis/held_orbit.hpp"
 #include "analysis/trim.hpp"
 #include "core/coupling.hpp"
 #include "core/rigid_body.hpp"
@@ -231,6 +233,8 @@ public:
     }
     static constexpr double kGoverned = 27.0;  // [rad/s]
     const BallinT700& engine() const { return *engine_; }
+    // Each engine's fuel shutoff in every context from here on (D-056).
+    void set_fuel(std::array<bool, 2> on) { fuel_ = on; }
     std::size_t size() const { return engine_->num_states(); }
     // Engine 0's signals at x.
     BallinT700Signals signals(const std::vector<double>& x, const SimContext& ctx) const {
@@ -246,6 +250,8 @@ public:
         ctx.controls.collective = collective;
         ctx.controls.engines[0].power_lever = levers[0];
         ctx.controls.engines[1].power_lever = levers[1];
+        ctx.controls.engines[0].fuel_on = fuel_[0];
+        ctx.controls.engines[1].fuel_on = fuel_[1];
         ctx.air = isa_atmosphere(0.0, 0.0);
         store_.begin_evaluation();
         store_.set(slot_, demand);
@@ -324,6 +330,7 @@ private:
     mutable CouplingOutputs store_;
     mutable std::vector<double> g_;
     mutable std::vector<double> gs_;
+    std::array<bool, 2> fuel_{true, true};
 };
 
 // The trim seed (D-054): for the rotor's demand the engines deliver it plus
@@ -877,6 +884,210 @@ TEST(BallinT700, ConfigLimitsTheEngines) {
     EXPECT_THROW(BallinT700::from_config(Config::from_string(text)), InitError);
 }
 
+// ---- Stage B2b (D-056) ----------------------------------------------------------
+
+// The maps' floor (D-056 item 3): the highest first corrected speed of the
+// maps read by NGC (f1, f3, f10, f_hs), so every one has data above it, as a
+// fraction of NG_des at the inlet's temperature (NGC = NG/(NG_des √θ2)).
+TEST(BallinT700, MapsFloorIsTheHighestFirstSpeed) {
+    const auto engine = load_engine();
+    const BallinT700Config& c = engine->config();
+    const double floor =
+        std::max({c.f1->params().front(), c.f3->x_axis().breakpoints().front(),
+                  c.f10->x_axis().breakpoints().front(), c.f_hs->x_axis().breakpoints().front()});
+    EXPECT_DOUBLE_EQ(engine->maps_floor(), floor);
+    EXPECT_NEAR(floor, 0.65048, 1e-5);  // f3's (data/uh60a/engine_ballin/f3_seal_bleed.csv)
+    const double t2 = 250.0;
+    EXPECT_DOUBLE_EQ(engine->ng_floor(t2), floor * std::sqrt(t2 / BallinT700::kTstd));
+}
+
+// The shutoff (D-056 item 2): with the fuel off the metering valve's command
+// is zero, below the valve's minimum flow WFMIN; with it on, at least WFMIN.
+TEST(BallinT700, FuelShutoffClosesTheValve) {
+    Harness h;
+    const BallinT700Config& c = h.engine().config();
+    const std::vector<double> x = h.seeded(0.45, c.engines * c.gear * 138.9 * kFtLbf);
+    const BallinT700Signals on = h.signals_at(x, 1, 0.0, {0.0, 0.0});
+    EXPECT_GE(on.fuel_command, c.wfmin);
+    h.set_fuel({true, false});
+    const BallinT700Signals off = h.signals_at(x, 1, 0.0, {0.0, 0.0});
+    EXPECT_EQ(off.fuel_command, 0.0);
+    EXPECT_GT(off.fuel, 0.0);  // the valve and the line still deliver, for now
+    EXPECT_EQ(h.signals_at(x, 0, 0.0, {0.0, 0.0}).fuel_command, on.fuel_command);
+}
+
+// A shutdown at 80 kt power (D-056 items 2, 3), the shaft held at its speed:
+// the delivered fuel follows the valve's lag and the line's delay down (the
+// delay's Padé approximant lifts it by 2.5e-7 of NG in the first 5 ms, its
+// inverse response; D-054 item 7); Ballin's gas path then runs the gas
+// generator down through the maps, steadily, its power turbine's torque
+// falling to zero within 2 s, and the clutch lets go once it drags. At the
+// maps' floor the engine is out: the gas generator held there, no torque.
+// The other engine is untouched.
+TEST(BallinT700, ShutdownRunsDownToTheMapsFloor) {
+    Harness h;
+    const BallinT700Config& c = h.engine().config();
+    std::vector<double> x = h.seeded(0.45, c.engines * c.gear * 138.9 * kFtLbf);
+    const std::vector<double> start = x;
+    const double t2 = isa_atmosphere(0.0, 0.0).temperature;
+    const double floor = h.engine().ng_floor(t2);
+    const double q_start = h.signals_at(x, 1, 0.45, {1.0, 1.0}).q_engine;
+    const double fuel_start = h.signals_at(x, 1, 0.45, {1.0, 1.0}).fuel;
+    h.set_fuel({true, false});
+    double t_fuel = -1.0;    // when the delivered fuel fell below 1 % of its start [s]
+    double t_torque = -1.0;  // when the torque fell below 2 % of its start [s]
+    double t_floor = -1.0;   // when NG reached the floor [s]
+    double ng_prev = x[BallinT700::kEngineStates + BallinT700::kNg];
+    bool monotonic = true;
+    for (int n = 1; n <= 20000; ++n) {
+        h.step(x, 0.001, 0.45, {1.0, 1.0}, 0.0, true);
+        const double t = n * 0.001;
+        const BallinT700Signals s = h.signals_at(x, 1, 0.45, {1.0, 1.0});
+        const double ng = x[BallinT700::kEngineStates + BallinT700::kNg];
+        if (t_fuel < 0.0 && s.fuel < 0.01 * fuel_start) {
+            t_fuel = t;
+        }
+        if (t_torque < 0.0 && std::abs(s.q_engine) < 0.02 * q_start) {
+            t_torque = t;
+        }
+        if (t_floor < 0.0 && ng <= floor + 1e-6) {
+            t_floor = t;  // a step's overshoot below it returns (the limiter)
+        }
+        if (t > 0.1 && t_floor < 0.0 && ng > ng_prev + 1e-12 && monotonic) {
+            monotonic = false;
+            ADD_FAILURE() << "NG rose at t = " << t << " by " << ng - ng_prev << " at " << ng
+                          << " (floor " << floor << ")";
+        }
+        ng_prev = ng;
+        for (const double v : x) {
+            ASSERT_TRUE(std::isfinite(v)) << t;
+        }
+    }
+    EXPECT_GT(t_fuel, 0.0);
+    EXPECT_LT(t_fuel, 0.2);
+    EXPECT_GT(t_torque, 0.0);
+    EXPECT_LT(t_torque, 2.0);
+    EXPECT_GT(t_floor, t_torque);
+    std::cout << "fuel below 1 % at " << t_fuel << " s, torque below 2 % at " << t_torque
+              << " s, NG on the floor at " << t_floor << " s\n";
+    const BallinT700Signals s = h.signals_at(x, 1, 0.45, {1.0, 1.0});
+    EXPECT_TRUE(s.out);
+    EXPECT_EQ(s.q_engine, 0.0);
+    EXPECT_NEAR(x[BallinT700::kEngineStates + BallinT700::kNg], floor, 1e-6);
+    EXPECT_GT(x[BallinT700::kEngineStates + BallinT700::kSlip], 0.0);
+    // Engine 0 runs on as it was (the shaft held, its sensed torque only through
+    // the load share's limited, lagged trim).
+    EXPECT_NEAR(x[BallinT700::kNg], start[BallinT700::kNg], 0.02);
+    EXPECT_FALSE(h.signals_at(x, 0, 0.45, {1.0, 1.0}).out);
+}
+
+// An out engine (D-056 item 3) has no gas path: no flow, no torque, inlet
+// pressure and temperature throughout, the solve not run (converged). Every
+// state but the clutch's slip is held (the fuel control has nothing to
+// control), and the clutch is open even at zero slip: the engine's output
+// inertia stays off the shaft, its slip follows the shaft (ṡ = Ω̇). Just
+// above the floor, or with the fuel on at the floor, it isn't out.
+TEST(BallinT700, OutEngineHasNoGasPath) {
+    Harness h;
+    const BallinT700Config& c = h.engine().config();
+    std::vector<double> x = h.seeded(0.45, c.engines * c.gear * 138.9 * kFtLbf);
+    const std::size_t o = BallinT700::kEngineStates;
+    const double t2 = isa_atmosphere(0.0, 0.0).temperature;
+    x[o + BallinT700::kNg] = h.engine().ng_floor(t2);
+    h.set_fuel({true, false});
+    const SimContext ctx = h.context(Harness::kGoverned, 0.45, 0.0);
+    const BallinT700Signals s = h.signals_at(x, 1, 0.45, {1.0, 1.0});
+    EXPECT_TRUE(s.out);
+    EXPECT_TRUE(s.gas.converged);
+    EXPECT_EQ(s.gas.w41, 0.0);
+    EXPECT_EQ(s.gas.w45, 0.0);
+    EXPECT_EQ(s.gas.q_pt, 0.0);
+    EXPECT_EQ(s.q_engine, 0.0);
+    EXPECT_EQ(s.gas.p3, ctx.air.pressure);
+    EXPECT_EQ(s.gas.t45, t2);
+    x[o + BallinT700::kSlip] = 0.0;
+    // The drive decelerating (the rotor's demand three times engine 0's torque),
+    // where the ordinary rule would engage a zero-torque engine at zero slip.
+    const SimContext slowing =
+        h.context(Harness::kGoverned, 0.45, 3.0 * h.signals(x, ctx).q_engine);
+    std::vector<double> xdot(h.size(), 0.0);
+    std::vector<double> g(6 * h.size(), 0.0);
+    std::vector<double> gs(h.size() * kMaxShafts, 0.0);
+    ComponentDerivs d{xdot, g, Wrench{}, Mat66::Zero()};
+    d.Gs = gs;
+    {
+        const test::AllocationCounter counter;  // the out path allocates nothing either (§7)
+        h.engine().derivatives(slowing, std::span<const double>(x.data(), h.size()), d);
+        EXPECT_EQ(counter.count(), 0U);
+    }
+    for (std::size_t i = 0; i < BallinT700::kEngineStates; ++i) {
+        if (i != BallinT700::kSlip) {
+            EXPECT_EQ(xdot[o + i], 0.0) << "state " << i;
+        }
+    }
+    EXPECT_EQ(xdot[o + BallinT700::kSlip], 0.0);  // no torque: ṡ = Ω̇ only
+    EXPECT_EQ(gs[(o + BallinT700::kSlip) * kMaxShafts], 1.0);
+    const double je = c.output_inertia * c.gear * c.gear;
+    EXPECT_NEAR(d.Ks(0, 0), -je, 1e-9 * je);  // engine 0's inertia alone
+    for (const double v : xdot) {
+        EXPECT_TRUE(std::isfinite(v));
+    }
+    // Just above the floor: Ballin's gas path, running down.
+    std::vector<double> above = x;
+    above[o + BallinT700::kNg] += 1e-4;
+    EXPECT_FALSE(h.signals_at(above, 1, 0.45, {1.0, 1.0}).out);
+    // At the floor with the fuel on: lit.
+    h.set_fuel({true, true});
+    EXPECT_FALSE(h.signals_at(x, 1, 0.45, {1.0, 1.0}).out);
+}
+
+// The fuel back on at the floor relights at once (D-056 item 4; no starter):
+// the idle schedule and the acceleration limit take the gas generator back
+// through idle to flight power within 10 s, the shaft held at its speed.
+TEST(BallinT700, FuelBackOnRelights) {
+    Harness h;
+    const BallinT700Config& c = h.engine().config();
+    std::vector<double> x = h.seeded(0.45, c.engines * c.gear * 138.9 * kFtLbf);
+    const double ng_flight = x[BallinT700::kEngineStates + BallinT700::kNg];
+    h.set_fuel({true, false});
+    for (int n = 0; n < 10000; ++n) {
+        h.step(x, 0.001, 0.45, {1.0, 1.0}, 0.0, true);
+    }
+    ASSERT_TRUE(h.signals_at(x, 1, 0.45, {1.0, 1.0}).out);
+    h.set_fuel({true, true});
+    for (int n = 0; n < 10000; ++n) {
+        h.step(x, 0.001, 0.45, {1.0, 1.0}, 0.0, true);
+    }
+    const BallinT700Signals s = h.signals_at(x, 1, 0.45, {1.0, 1.0});
+    EXPECT_FALSE(s.out);
+    EXPECT_GT(x[BallinT700::kEngineStates + BallinT700::kNg], 0.9 * ng_flight);
+    EXPECT_GT(s.gas.q_pt, 0.0);
+}
+
+// One engine shut down at 80 kt power on the UH-60A's drive (D-056): the rotor
+// droops, the live engine takes the whole load and its governor brings the
+// rotor back to the reference (isochronous), the dead engine disengaged.
+TEST(BallinT700, OneEngineCarriesTheLoad) {
+    Harness h;
+    const BallinT700Config& c = h.engine().config();
+    const double demand =
+        c.engines * c.gear * 138.9 * kFtLbf - h.engine().drive_train_load(Harness::kGoverned);
+    std::vector<double> x = h.seeded(0.45, demand);
+    h.set_fuel({true, false});
+    double low = Harness::kGoverned;
+    for (int n = 0; n < 40000; ++n) {
+        h.step(x, 0.001, 0.45, {1.0, 1.0}, demand, false);
+        low = std::min(low, x.back());
+    }
+    EXPECT_LT(low, 0.995 * Harness::kGoverned);
+    EXPECT_GT(low, 0.95 * Harness::kGoverned);
+    EXPECT_NEAR(x.back(), Harness::kGoverned, 1e-3 * Harness::kGoverned);
+    const BallinT700Signals live = h.signals_at(x, 0, 0.45, {1.0, 1.0});
+    EXPECT_NEAR(live.q_engine, demand + h.engine().drive_train_load(x.back()), 0.01 * demand);
+    EXPECT_TRUE(h.signals_at(x, 1, 0.45, {1.0, 1.0}).out);
+    EXPECT_GT(x[BallinT700::kEngineStates + BallinT700::kSlip], 0.0);
+}
+
 // The clutches' drive inertia J_d (config, D-055 item 5) is the shaft the
 // executive integrates: the parts no component models and every component's
 // own inertia on it (the blades; K_s at the initial state, blades unflapped),
@@ -1002,6 +1213,129 @@ TEST(BallinT700Aircraft, TrimsAtTheSpeedReference) {
         EXPECT_NEAR(omega, ref * governed, 2e-5 * governed);
         EXPECT_NEAR(omega * r.period / (2.0 * std::numbers::pi), 1.0, 2e-5);
     }
+}
+
+// The UH-60A on Ballin's engines at Table B.1's loading, with what a test
+// reads off a trim: each engine's signals at the trimmed state (D-056).
+class Uh60aOnBallinEngines {
+public:
+    Uh60aOnBallinEngines() : ex_(build_executive(cfg(), read_origin(cfg()).origin().altitude)) {
+        for (std::size_t i = 0; i < ex_.num_components(); ++i) {
+            if (const auto* e = dynamic_cast<const BallinT700*>(&ex_.component(i))) {
+                engine_ = e;
+                offset_ = ex_.component_offset(i);
+            }
+        }
+    }
+    const Executive& ex() const { return ex_; }
+    const BallinT700& engine() const { return *engine_; }
+    double governed() const { return ex_.shafts()[0].speed; }
+    double omega(const TrimResult& r) const {
+        return r.component_states[ex_.shaft_offset(0) + 1 - body_layout::kSize];
+    }
+    // Engine e's state in the trim's state x and its signals there.
+    std::span<const double> states(const std::vector<double>& x, std::size_t e) const {
+        return std::span<const double>(x).subspan(offset_ + e * BallinT700::kEngineStates,
+                                                  BallinT700::kEngineStates);
+    }
+    BallinT700Signals signals(const TrimCondition& c, const TrimResult& r,
+                              const std::vector<double>& x, std::size_t e) const {
+        const SimContext ctx = ex_.context(0.0, x, r.controls, trim_environment(c));
+        return engine_->signals(states(x, e), engine_->inputs(ctx, static_cast<int>(e)));
+    }
+    TrimResult trim(const TrimCondition& c, const TrimResult* start, std::vector<double>& x) const {
+        return solve_trim(ex_, c, start, x);
+    }
+
+private:
+    static const Config& cfg() {
+        static const Config c = Config::from_file(std::string(EYAS_VEHICLE_DATA_DIR) +
+                                                  "/uh60a/engine_ballin/uh60a_table_b1.yaml");
+        return c;
+    }
+    Executive ex_;
+    const BallinT700* engine_ = nullptr;
+    std::size_t offset_ = 0;
+};
+
+// One engine out at 80 kt (D-056): the trim converges with the dead engine
+// out on the maps' floor, its clutch open, and the live engine alone
+// delivers what the two did, since the rotor's demand is the same: its
+// torque at the shaft equals the pair's sum, to the trims' tolerance. The
+// governor holds the reference.
+TEST(BallinT700Aircraft, TrimsWithOneEngineOut) {
+    const Uh60aOnBallinEngines a;
+    std::vector<double> x;
+    TrimCondition c;
+    c.airspeed = 80.0 * units::kKnot;
+    const TrimResult both = a.trim(c, nullptr, x);
+    ASSERT_TRUE(both.converged);
+    const double pair = a.signals(c, both, x, 0).q_engine + a.signals(c, both, x, 1).q_engine;
+    const double ng_both = a.states(x, 0)[BallinT700::kNg];
+    c.engines[1].fuel_on = false;
+    const TrimResult one = a.trim(c, nullptr, x);
+    ASSERT_TRUE(one.converged);
+    EXPECT_LE(one.iterations, 15);
+    EXPECT_EQ(one.controls.engines[1].fuel_on, false);
+    const BallinT700Signals live = a.signals(c, one, x, 0);
+    const BallinT700Signals dead = a.signals(c, one, x, 1);
+    EXPECT_FALSE(live.out);
+    EXPECT_TRUE(dead.out);
+    EXPECT_EQ(dead.q_engine, 0.0);
+    EXPECT_NEAR(a.states(x, 1)[BallinT700::kNg],
+                a.engine().ng_floor(isa_atmosphere(0.0, 0.0).temperature), 1e-9);
+    EXPECT_NEAR(live.q_engine, pair, 1e-4 * pair);
+    EXPECT_GT(a.states(x, 0)[BallinT700::kNg], ng_both + 0.02);  // the live engine works harder
+    EXPECT_NEAR(a.omega(one), a.governed(), 1e-6 * a.governed());
+}
+
+// A descent the rotor autorotates in with the engines lit (D-056 item 5): at
+// 100 kt, continued from level flight, the clutches let go between −2750
+// and −3000 ft/min, and the rotor turns faster than the governed speed,
+// while the engines run free at no load, governed at the reference
+// (isochronous: their NP sensors at it). The rotor and airframe then trim
+// exactly as with both engines out, since free-running lit engines and dead
+// ones put nothing on the shaft: the collective, attitude and rotor speed
+// agree to the trims' tolerance.
+TEST(BallinT700Aircraft, OverrunsInASteepDescentAsInAutorotation) {
+    const Uh60aOnBallinEngines a;
+    std::vector<double> x;
+    TrimCondition c;
+    c.airspeed = 100.0 * units::kKnot;
+    TrimResult r = a.trim(c, nullptr, x);
+    ASSERT_TRUE(r.converged);
+    for (const double fpm : {-1500.0, -2500.0, -2750.0, -3000.0, -3250.0}) {
+        SCOPED_TRACE(fpm);
+        c.flight_path_angle = std::asin(fpm * units::kFoot / 60.0 / c.airspeed);
+        const TrimResult next = a.trim(c, &r, x);
+        ASSERT_TRUE(next.converged);
+        r = next;
+        const double slip = a.states(x, 0)[BallinT700::kSlip];
+        if (fpm >= -2750.0) {
+            EXPECT_EQ(slip, 0.0);
+            // The start of the revolution is on the shaft's 4/rev ripple, about
+            // 1e-5 of the speed (TrimsAtTheSpeedReference).
+            EXPECT_NEAR(a.omega(r), a.governed(), 2e-5 * a.governed());
+        } else {
+            EXPECT_GT(slip, 0.0);
+            EXPECT_GT(a.omega(r), 1.01 * a.governed());
+        }
+    }
+    for (std::size_t e = 0; e < 2; ++e) {
+        const BallinT700Signals s = a.signals(c, r, x, e);
+        EXPECT_FALSE(s.out);
+        EXPECT_NEAR(s.q_engine, 0.0, 1e-6 * 1000.0);
+        EXPECT_NEAR(a.states(x, e)[BallinT700::kNpSensor], a.engine().np_reference(), 1e-5);
+    }
+    TrimCondition off = c;
+    off.engines[0].fuel_on = off.engines[1].fuel_on = false;
+    std::vector<double> y;
+    const TrimResult dead = a.trim(off, &r, y);
+    ASSERT_TRUE(dead.converged);
+    EXPECT_NEAR(dead.controls.collective, r.controls.collective, 1e-6);
+    EXPECT_NEAR(dead.pitch, r.pitch, 1e-6);
+    EXPECT_NEAR(dead.roll, r.roll, 1e-6);
+    EXPECT_NEAR(a.omega(dead), a.omega(r), 1e-6 * a.governed());
 }
 
 }  // namespace

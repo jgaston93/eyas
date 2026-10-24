@@ -394,6 +394,7 @@ int run(const Options& opt) {
             applied.afcs = map.afcs();
             for (int e = 0; e < station::kStationEngines; ++e) {
                 applied.engines[static_cast<std::size_t>(e)].power_lever = map.power_lever(e);
+                applied.engines[static_cast<std::size_t>(e)].fuel_on = map.fuel_on(e);
             }
             applied.rotor_speed_reference = map.rotor_speed_reference();
         }

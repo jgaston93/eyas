@@ -377,6 +377,26 @@ TEST(GenHelT700, GovernsAtTheSpeedReference) {
     }
 }
 
+// GenHel's engine has no fuel shutoff (D-056 item 1): the fuel off changes
+// nothing, bit for bit, as the power lever doesn't (D-055 item 1).
+TEST(GenHelT700, IgnoresTheFuelShutoff) {
+    const t700::Data d;
+    Rig on = make_rig(d, 20000.0, 20000.0, 1.0, 0.6);
+    Rig off = make_rig(d, 20000.0, 20000.0, 1.0, 0.6);
+    Controls u;
+    u.collective = 0.6;
+    Controls v = u;
+    v.engines[0].fuel_on = false;
+    (void)on.ex->advance(u, {}, 2'000'000'000);
+    (void)off.ex->advance(v, {}, 2'000'000'000);
+    const auto a = on.ex->state();
+    const auto b = off.ex->state();
+    ASSERT_EQ(a.size(), b.size());
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        EXPECT_EQ(a[i], b[i]) << i;
+    }
+}
+
 // The clutch (D-053 item 3). When the rotor drives the shaft (its demand
 // negative, as in autorotation) the lagged demand FLQREQ turns negative and
 // the clutch lets go: then the drive alone carries the load,

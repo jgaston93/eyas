@@ -397,6 +397,7 @@ TEST(StationMapping, WrittenMapReadsBack) {
         m.engine_select_button = 7;
         m.rpm_up_button = 8;
         m.rpm_down_button = 9;
+        m.fuel_button = 10;
         m.rpm_rate = 0.02;
         m.rpm_low = 0.95;
         m.rpm_high = 1.02;
@@ -428,6 +429,7 @@ TEST(StationMapping, WrittenMapReadsBack) {
         EXPECT_EQ(m.engine_select_button, r.engine_select_button);
         EXPECT_EQ(m.rpm_up_button, r.rpm_up_button);
         EXPECT_EQ(m.rpm_down_button, r.rpm_down_button);
+        EXPECT_EQ(m.fuel_button, r.fuel_button);
         EXPECT_EQ(m.rpm_rate, r.rpm_rate);
         EXPECT_EQ(m.rpm_low, r.rpm_low);
         EXPECT_EQ(m.rpm_high, r.rpm_high);
@@ -858,8 +860,8 @@ TEST(StationRecorder, EngineControlChangeIsMarked) {
     EXPECT_EQ(count(text, "# NOT REPLAYABLE"), 1);
 }
 
-// The state history ends with the engine controls (D-055), so a piloted
-// run shows what the levers and the speed trim did.
+// The state history ends with the engine controls (D-055, D-056), so a
+// piloted run shows what the levers, the speed trim and the shutoffs did.
 TEST(StationRecorder, StateHistoryCarriesTheEngineControls) {
     Station& st = uh60a();
     ASSERT_TRUE(st.start(1));
@@ -871,6 +873,7 @@ TEST(StationRecorder, StateHistoryCarriesTheEngineControls) {
         eyas::Controls c = st.starts()[1].controls;
         c.engines[0].power_lever = 0.25;
         c.engines[1].power_lever = 0.0;
+        c.engines[1].fuel_on = false;
         c.rotor_speed_reference = 1.01;
         rec.frame(0.5, {}, c, st.outputs());
         rec.end();
@@ -882,9 +885,10 @@ TEST(StationRecorder, StateHistoryCarriesTheEngineControls) {
     ASSERT_TRUE(std::getline(lines, header) && std::getline(lines, start) &&
                 std::getline(lines, row));
     EXPECT_TRUE(header.ends_with(
-        ",afcs,power_lever_1,power_lever_2,power_lever_3,power_lever_4,rotor_speed_reference"));
-    EXPECT_TRUE(start.ends_with(",sas+pba,1,1,1,1,1"));
-    EXPECT_TRUE(row.ends_with(",sas+pba,0.25,0,1,1,1.01"));
+        ",afcs,power_lever_1,power_lever_2,power_lever_3,power_lever_4,rotor_speed_reference,"
+        "fuel_on_1,fuel_on_2,fuel_on_3,fuel_on_4"));
+    EXPECT_TRUE(start.ends_with(",sas+pba,1,1,1,1,1,1,1,1,1"));
+    EXPECT_TRUE(row.ends_with(",sas+pba,0.25,0,1,1,1.01,1,0,1,1"));
 }
 
 // The start's AFCS switches go into the replay command (M8c2), and every
@@ -1073,6 +1077,43 @@ TEST(StationControls, EngineSelectMovesOneLever) {
     EXPECT_TRUE(m.power_lever_held(1));
     EXPECT_EQ(c.engines[1].power_lever, 1.0);
     EXPECT_EQ(c.engines[0].power_lever, 0.0);  // engine 1 holds where it was left
+}
+
+// The fuel button toggles the shutoff of the engines the lever moves (D-056):
+// both, then with engine 2 selected, engine 2 alone; the start's shutoffs
+// are where they begin, and a restart puts them back.
+TEST(StationControls, FuelButtonTogglesTheSelectedEngines) {
+    ControlsMapConfig cfg;
+    cfg.power_lever = absolute(1);
+    cfg.engine_select_button = 2;
+    cfg.fuel_button = 3;
+    ControlsMap m(cfg, start_controls());
+    RawInput in = axes(0.0, 1.0);
+    eyas::Controls c = m.update(in, 0.1);
+    EXPECT_TRUE(c.engines[0].fuel_on && c.engines[1].fuel_on);
+    in.buttons[3] = true;
+    c = m.update(in, 0.1);
+    EXPECT_FALSE(c.engines[0].fuel_on || c.engines[1].fuel_on);  // both off
+    c = m.update(in, 0.1);
+    EXPECT_FALSE(c.engines[0].fuel_on || c.engines[1].fuel_on);  // held: no toggle
+    in.buttons[3] = false;
+    (void)m.update(in, 0.1);
+    in.buttons[2] = true;  // engine 1, then engine 2
+    (void)m.update(in, 0.1);
+    in.buttons[2] = false;
+    (void)m.update(in, 0.1);
+    in.buttons[2] = true;
+    (void)m.update(in, 0.1);
+    in.buttons[2] = false;
+    (void)m.update(in, 0.1);
+    ASSERT_EQ(m.engine_selection(), 2);
+    in.buttons[3] = true;
+    c = m.update(in, 0.1);
+    EXPECT_FALSE(c.engines[0].fuel_on);
+    EXPECT_TRUE(c.engines[1].fuel_on);  // engine 2 relit
+    EXPECT_TRUE(m.fuel_on(1));
+    m.restart(start_controls());
+    EXPECT_TRUE(m.fuel_on(0) && m.fuel_on(1));
 }
 
 // The engine-speed trim buttons move the reference at rpm_rate within its
