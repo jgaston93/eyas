@@ -392,6 +392,10 @@ int run(const Options& opt) {
             applied = station::apply(map.start(), map.deltas());
             applied.brake_left = applied.brake_right = map.brakes_set() ? 1.0 : 0.0;
             applied.afcs = map.afcs();
+            for (int e = 0; e < station::kStationEngines; ++e) {
+                applied.engines[static_cast<std::size_t>(e)].power_lever = map.power_lever(e);
+            }
+            applied.rotor_speed_reference = map.rotor_speed_reference();
         }
         fg.send(st.outputs());
 
@@ -414,6 +418,11 @@ int run(const Options& opt) {
             hud.collective_held = map_driven && map.collective_held();
             hud.collective_lever_known = map.collective_lever_known();
             hud.collective_lever = map.collective_lever();
+            hud.engine_selection = map.engine_selection();
+            for (int e = 0; e < station::kStationEngines; ++e) {
+                hud.power_lever_held[static_cast<std::size_t>(e)] =
+                    map_driven && map.power_lever_held(e);
+            }
             hud.ground_height = st.ground_height();
             hud.source = station::source_name(opt.input);
             hud.start = st.starts()[current].name;

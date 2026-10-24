@@ -117,7 +117,8 @@ public:
           n_(ex.num_states()),
           nc_(ex.num_component_states()),
           held_(ex, trim_environment(c), trim_period(ex), o.steps_per_period),
-          x_(n_, 0.0) {
+          x_(n_, 0.0),
+          reference_(speed_reference(c.rotor_speed_reference)) {
         weight_ = ex.airframe_mass().mass * units::kStandardGravity;
         length_ = rotor_info(ex).radius;
         for (std::size_t k = 0; k < ex.shafts().size(); ++k) {
@@ -145,10 +146,19 @@ public:
     bool has_seeders() const { return !seeders_.empty(); }
     // Stage 1 of a cold start (D-053 amendment 2): every evaluation seeds the
     // seeders' states (the engines at their equilibrium for the rotor's
-    // demand) and puts the free shafts at their governed speeds, with the
-    // governed period, so the shafts barely move, as on ideal drives; their
-    // unknowns and residuals drop out.
+    // demand) and puts the free shafts at their reference speeds, with that
+    // period, so the shafts barely move, as on ideal drives; their unknowns
+    // and residuals drop out.
     void set_seeded(bool on) { seeded_ = on; }
+    // A free shaft's reference speed [rad/s]: its governed speed times the
+    // engines' speed reference (D-055 item 1), where its governor holds it.
+    double reference_speed(std::size_t shaft) const {
+        return ex_.shafts()[shaft].speed * reference_;
+    }
+    // The revolution's period at the reference speeds [s].
+    double reference_period() const {
+        return free_period() ? trim_period(ex_) / reference_ : trim_period(ex_);
+    }
     // The period [s] for z.
     double period(const VecX& z) const { return free_period() ? z(z.size() - 1) : held_.period(); }
     const Environment& env() const { return held_.env(); }
@@ -163,6 +173,8 @@ public:
     Controls controls(const VecX& z) const {
         Controls u;
         u.afcs = c_.afcs;
+        u.engines = c_.engines;
+        u.rotor_speed_reference = c_.rotor_speed_reference;
         u.collective = z(0);
         u.lat_cyclic = z(1);
         u.lon_cyclic = z(2);
@@ -174,7 +186,7 @@ public:
     // track with the condition's sideslip.
     bool pack(const VecX& z) {
         if (free_period()) {
-            const double T = seeded_ ? trim_period(ex_) : z(z.size() - 1);
+            const double T = seeded_ ? reference_period() : z(z.size() - 1);
             if (!(T > 0.0) || !std::isfinite(T)) {
                 return false;
             }
@@ -190,12 +202,11 @@ public:
         }
         // The shafts start at ψ = 0 at their governed speeds; with ideal drives
         // the speeds hold and ψ advances 2π a revolution (D-052). A free one
-        // starts at its unknown speed (D-053).
+        // starts at its unknown speed (D-053), in stage 1 its reference.
         ex_.initial_shaft_states(x_);
         for (std::size_t r = 0; r < free_.size(); ++r) {
             x_[ex_.shaft_offset(free_[r]) + 1] =
-                seeded_ ? ex_.shafts()[free_[r]].speed
-                        : z(static_cast<Eigen::Index>(kHead + nc_ + r));
+                seeded_ ? reference_speed(free_[r]) : z(static_cast<Eigen::Index>(kHead + nc_ + r));
         }
         // States with an algebraic equilibrium on the held body take it
         // (GenHel's IC mode, D-045); their unknowns in z then have no effect,
@@ -478,10 +489,11 @@ private:
     double length_ = 1.0;
     HeldIntegrator held_;
     std::vector<double> x_;
+    double reference_ = 1.0;     // the engines' speed reference (D-055)
     std::vector<double> start_;  // x_ as packed, before the revolution
     double held_drift_ = 0.0;
     std::vector<std::size_t> free_;     // the free shafts (D-053)
-    std::vector<std::size_t> seeders_;  // GenHel T700 components
+    std::vector<std::size_t> seeders_;  // components with a trim seed (the engines)
     bool seeded_ = false;               // stage 1 of a cold start
     std::vector<double> scratch_;
     int period_shaft_ = -1;  // the free shaft the rotor turns on, or −1
@@ -659,10 +671,10 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
             z(static_cast<Eigen::Index>(kHead + j)) = x0[body_layout::kSize + j];
         }
         for (std::size_t r = 0; r < p.free_shafts().size(); ++r) {
-            z(static_cast<Eigen::Index>(kHead + nc + r)) = ex.shafts()[p.free_shafts()[r]].speed;
+            z(static_cast<Eigen::Index>(kHead + nc + r)) = p.reference_speed(p.free_shafts()[r]);
         }
         if (p.free_period()) {
-            z(n_unknowns - 1) = trim_period(ex);
+            z(n_unknowns - 1) = p.reference_period();
         }
         // The engines at their equilibrium for the rotor's demand, before and
         // after settling, so the free shafts hold their speed meanwhile.

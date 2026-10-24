@@ -14,8 +14,9 @@
 // command that replays it. A reposition starts a new segment file (<base>,
 // <base>.2.csv, ...), since eyas_drive flies from one trim. Each row carries
 // the AFCS switches (the afcs column), which eyas_drive replays (M8c3); it
-// has no brake input, so once the brakes differ from the start's, a comment
-// line marks the rest of the segment as not replayable. Optionally also
+// has no brake or engine input, so once the brakes or the engine controls
+// (D-055) differ from the start's, a comment line marks the rest of the
+// segment as not replayable. Optionally also
 // writes the state history in eyas_drive's --out format, one row per frame.
 //
 // Host code with file I/O through buffered streams; it never touches Eyas's
@@ -59,8 +60,9 @@ private:
     std::ofstream state_;
     ControlDeltas last_;
     bool first_ = true;
-    eyas::Controls start_;       // the segment's start controls
-    bool brakes_noted_ = false;  // the brakes have left the start's
+    eyas::Controls start_;        // the segment's start controls
+    bool brakes_noted_ = false;   // the brakes have left the start's
+    bool engines_noted_ = false;  // the engine controls have left the start's
     eyas::AfcsSwitches last_afcs_;
 };
 

@@ -165,6 +165,8 @@ TEST(Units, EngineUnits) {
     EXPECT_NEAR(si("lbm/(hr*psi*%)") * si("psi") * si("%"), si("lbm/hr"), 1e-18);
     EXPECT_EQ(dim("%/(ft*lbf*s)"), Dimension::per_moment_time);
     EXPECT_NEAR(si("%/(ft*lbf*s)") * si("ft*lbf"), 0.01, 1e-15);
+    EXPECT_EQ(dim("%/(ft*lbf)"), Dimension::per_moment);
+    EXPECT_NEAR(si("%/(ft*lbf)") * si("ft*lbf"), 0.01, 1e-15);
     EXPECT_EQ(dim("V/%"), Dimension::voltage);
     EXPECT_EQ(si("V/%") * si("%"), 1.0);
     EXPECT_EQ(dim("V/(ft*lbf)"), Dimension::voltage_per_moment);
@@ -186,7 +188,7 @@ TEST(Units, EngineUnits) {
          {Dimension::mass_flow, Dimension::pressure_per_mass_flow, Dimension::moment_per_mass_flow,
           Dimension::mass_flow_per_pressure, Dimension::per_moment_time, Dimension::voltage,
           Dimension::voltage_per_moment, Dimension::current_per_voltage,
-          Dimension::length_per_current, Dimension::voltage_per_length}) {
+          Dimension::length_per_current, Dimension::voltage_per_length, Dimension::per_moment}) {
         EXPECT_NE(dimension_name(d), "unknown");
     }
 }

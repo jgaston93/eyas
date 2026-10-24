@@ -33,7 +33,7 @@ gas_path:  # Table A.1
   tc_t41: "0.29 lbm^0.8*s^0.2/degR^0.5"
 output: {inertia: "0.124 slug*ft^2", axis: {x: 1, y: 0, z: 0}}  # JE, TM-88360 p. 23; GenHel's power-turbine axis (D-053)
 gas_generator_spool: {axis: {x: 1, y: 0, z: 0}}
-maps:  # Figs. A1-A11, C23-C29, digitized (D-054 item 9)
+maps:  # Figs. A1-A11, C23-C30, digitized (D-054 item 9, D-055 item 6)
   f1: f1_compressor_flow.csv
   f2: f2_compressor_temperature.csv
   f3: f3_seal_bleed.csv
@@ -52,6 +52,7 @@ maps:  # Figs. A1-A11, C23-C29, digitized (D-054 item 9)
   fhm4: fhm4_load_demand_fuel.csv
   fhm5: fhm5_idle_fuel.csv
   fhm6: fhm6_idle_speed.csv
+  fhm7: fhm7_acceleration_limit.csv
 ecu:  # Figs. C1-C8; speed errors in % NP, so the gains read V/%
   np_sensor_lag: "0.01 s"
   dead_band: "0.75 %"  # CB
@@ -71,6 +72,13 @@ ecu:  # Figs. C1-C8; speed errors in % NP, so the gains read V/%
     zhilim: "3.5 V"
     zlolim: {below: "-1.0 V", above: "-0.3 V", torque: "180 ft*lbf"}  # Fig. C8
     ct16: "1.0 s"
+  load_share:  # Fig. C2 (D-055 item 4): 1.1 %NP per ft*lbf of TRQER, limited to [DBIAS, CE]
+    gain: "1.1 %/(ft*lbf)"
+    ct7: "1.0 s"
+    lower: "3.25 %"
+    upper: "13.21 %"
+    zk8: 0.231
+    t17: "0.01 s"
 hmu:  # Figs. C9-C22
   torque_motor:  # Fig. C10; the stops are positions (D-054 item 6(b))
     bias: "-0.44 V"
@@ -87,8 +95,12 @@ hmu:  # Figs. C9-C22
   load_demand: {rigging_gain: "0.914 deg/%", rigging_bias: "5.34 deg", hysteresis: "2.5 deg", fuel_bias: "3.26 lbm*in^2/(lbf*hr)", lag: "0.2 s"}  # Figs. C12, C13, C17
   droop: {slope: "0.25 lbm*in^2/(lbf*hr*%)", reference: "101.0 %"}
   ng_sensor: {hysteresis: "0.05 %", lag: "0.025 s"}
-  power_available: "120.0 deg"  # D-054 item 2
+  # The power lever's rigging to the spindle, linear between its stops (D-055 item 2): fly at
+  # the end of Fig. C25's schedule (D-054 item 2); idle at its start, a placeholder (DATA_GAPS.md).
+  power_available: {idle: !placeholder "28.524 deg", fly: "120.0 deg"}
   deceleration: {gain: "0.05909 lbm*in^2/(lbf*hr*%)", bias: "-3.927 lbm*in^2/(lbf*hr)", lower: "1.45 lbm*in^2/(lbf*hr)", upper: "2.1 lbm*in^2/(lbf*hr)"}
   valve: {min: "65.0 lbm/hr", max: "785.0 lbm/hr", lag: "0.03 s", delay: "0.015 s"}  # Fig. C19
   hysteresis_lag: "0.005 s"  # D-054 item 7
 drive_train: {gearbox_damping: "50.0 ft*lbf*s/rad", accessory_power: "40.0 hp"}  # TM-88360 pp. 17-23
+clutch:  # D-055 item 5: the drive's inertia at rotor speed, blades 4 (I_B + 2 E M_B + m E^2) (GenHel) and TM-88360 App. A's drive train
+  drive_inertia: "7647.585213 slug*ft^2"

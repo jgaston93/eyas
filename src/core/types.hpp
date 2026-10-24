@@ -1,5 +1,7 @@
 #pragma once
 
+#include <limits>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
@@ -18,6 +20,13 @@ using Mat66 = Eigen::Matrix<double, 6, 6>;
 // coupled solve and every component's shaft terms have fixed sizes and
 // advance() allocates nothing (spec §7). Raising it costs only stack space.
 inline constexpr int kMaxShafts = 4;
+
+// The engines' speed reference as a fraction of a drive's governed speed:
+// Controls::rotor_speed_reference `r`, or 1 where it isn't positive and
+// finite (D-055 item 1).
+inline double speed_reference(double r) noexcept {
+    return r > 0.0 && r < std::numeric_limits<double>::infinity() ? r : 1.0;
+}
 using VecS = Eigen::Matrix<double, kMaxShafts, 1>;
 using Mat6S = Eigen::Matrix<double, 6, kMaxShafts>;
 using MatS6 = Eigen::Matrix<double, kMaxShafts, 6>;

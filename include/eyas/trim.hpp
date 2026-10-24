@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <limits>
 #include <vector>
 
@@ -24,6 +25,10 @@ struct TrimCondition {
     // The flight control system's switches during the trim; copied into
     // TrimResult::controls (D-045).
     AfcsSwitches afcs;
+    // The engine controls during the trim (D-055), as Controls'; copied into
+    // TrimResult::controls. A free shaft trims at the reference's speed.
+    std::array<EngineControls, kMaxEngines> engines{};
+    double rotor_speed_reference = 1.0;  // [-]
     // [m] MSL height of the ground plane, as Environment::ground_height; NaN:
     // no ground. Near it the main rotor is in ground effect (D-050). Finite
     // or NaN; with a ground the flight must be at constant height (no climb,

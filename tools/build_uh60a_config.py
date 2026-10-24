@@ -367,8 +367,8 @@ def digitized(fig):
 
 
 def ballin_engine_tables():
-    """Ballin's T700 maps and fuel-control schedules (NASA TM-100991, Figs. A1-A11, C23-C29;
-    D-054) as CSV files for the ballin_t700 component: the digitized readings as read, in the
+    """Ballin's T700 maps and fuel-control schedules (NASA TM-100991, Figs. A1-A11, C23-C30;
+    D-054, D-055) as CSV files for the ballin_t700 component: the digitized readings as read, in the
     units printed on the figures. path -> text."""
     def src(fig, title, page, note=""):
         return (f"# source: Ballin, NASA TM-100991 (1988), Fig. {fig}, {title}, {page}; "
@@ -383,8 +383,9 @@ def ballin_engine_tables():
         return src(fig, title, page, note) + header + "\n" + \
             "".join(f"{fmt(x)},{fmt(y)}\n" for x, y in curve(fig))
 
-    def family(fig, header, title, page, note=""):
-        rows = [(float(c), x, y) for c, pts in digitized(fig).items() for x, y in pts]
+    def family(fig, header, title, page, note="", x_from=None):
+        rows = [(float(c), x, y) for c, pts in digitized(fig).items() for x, y in pts
+                if x_from is None or x >= x_from]
         return src(fig, title, page, note) + header + "\n" + \
             "".join(f"{fmt(c)},{fmt(x)},{fmt(y)}\n" for c, x, y in rows)
 
@@ -443,6 +444,12 @@ def ballin_engine_tables():
         "fhm6_idle_speed.csv": one(
             "C29", "t2[degR],pcngi[%]", "F_HM6, HMU idle-schedule function 2",
             "p. 86 (PDF p. 100)"),
+        "fhm7_acceleration_limit.csv": family(
+            "C30", "t2[degR],pcnghl[%],wfpac[lbm*in^2/(lbf*hr)]",
+            "F_HM7, HMU maximum fuel-parameter limit during acceleration", "p. 87 (PDF p. 101)",
+            " One curve per T2 (the legend's symbols 1-7). From 60 % up: the 54 % column, below "
+            "ground idle and its curves' order unreadable, is left out (D-055 item 6).",
+            x_from=57.0),
     }
     return {BALLIN / name: text for name, text in out.items()}
 
@@ -464,6 +471,13 @@ def ballin_engine_block():
     a = transcription("table_a1_engine_constants.txt")
     c = transcription("table_c1_fuel_control_constants.txt")
     d = transcription("drive_train_constants.txt")
+    pas_idle = min(x for x, _ in digitized("C25")["wfprf"])
+    mr = constants("main_rotor_constants_5_1_5.txt")
+    m_slug = mr["W_B"] / SLUG_LBM
+    blades = mr["NB"] * (mr["I_B"] + 2.0 * mr["E"] * mr["M_B"] + m_slug * mr["E"] ** 2)
+    n_tr = d["OMEGTR"][0] / mr["OMEGA"]
+    j_d = blades + (d["JGBX"][0] + d["JSHMR"][0] + d["JSHTR"][0] * n_tr ** 2 +
+                    d["J_ACC"][0] * d["n_ACC"][0] ** 2)
 
     def v(t, key, unit=None):
         value, printed = t[key]
@@ -507,7 +521,7 @@ gas_path:  # Table A.1
   tc_t41: {v(a, 'TC_T41')}
 output: {{inertia: {v(d, 'JE')}, axis: {{x: 1, y: 0, z: 0}}}}  # JE, TM-88360 p. 23; GenHel's power-turbine axis (D-053)
 gas_generator_spool: {{axis: {{x: 1, y: 0, z: 0}}}}
-maps:  # Figs. A1-A11, C23-C29, digitized (D-054 item 9)
+maps:  # Figs. A1-A11, C23-C30, digitized (D-054 item 9, D-055 item 6)
   f1: f1_compressor_flow.csv
   f2: f2_compressor_temperature.csv
   f3: f3_seal_bleed.csv
@@ -526,6 +540,7 @@ maps:  # Figs. A1-A11, C23-C29, digitized (D-054 item 9)
   fhm4: fhm4_load_demand_fuel.csv
   fhm5: fhm5_idle_fuel.csv
   fhm6: fhm6_idle_speed.csv
+  fhm7: fhm7_acceleration_limit.csv
 ecu:  # Figs. C1-C8; speed errors in % NP, so the gains read V/%
   np_sensor_lag: {v(c, 'CTPL', 's')}
   dead_band: {v(c, 'CB', '%')}  # CB
@@ -545,6 +560,13 @@ ecu:  # Figs. C1-C8; speed errors in % NP, so the gains read V/%
     zhilim: {v(c, 'ZHILIM', 'V')}
     zlolim: {{below: {v(c, 'ZLOLIM', 'V')}, above: "-0.3 V", torque: "180 ft*lbf"}}  # Fig. C8
     ct16: {v(c, 'CT16', 's')}
+  load_share:  # Fig. C2 (D-055 item 4): 1.1 %NP per ft*lbf of TRQER, limited to [DBIAS, CE]
+    gain: "1.1 %/(ft*lbf)"
+    ct7: {v(c, 'CT7', 's')}
+    lower: {v(c, 'DBIAS', '%')}
+    upper: {v(c, 'CE', '%')}
+    zk8: {n(c, 'ZK8')}
+    t17: {v(c, 'T17', 's')}
 hmu:  # Figs. C9-C22
   torque_motor:  # Fig. C10; the stops are positions (D-054 item 6(b))
     bias: "-0.44 V"
@@ -561,11 +583,15 @@ hmu:  # Figs. C9-C22
   load_demand: {{rigging_gain: "0.914 deg/%", rigging_bias: "5.34 deg", hysteresis: {v(c, 'XLDHYS', 'deg')}, fuel_bias: "3.26 lbm*in^2/(lbf*hr)", lag: {v(c, 'CLLDS', 's')}}}  # Figs. C12, C13, C17
   droop: {{slope: {v(c, 'KNDRP', 'lbm*in^2/(lbf*hr*%)')}, reference: {v(c, 'NGREF', '%')}}}
   ng_sensor: {{hysteresis: {v(c, 'CH', '%')}, lag: {v(c, 'CNTL', 's')}}}
-  power_available: "120.0 deg"  # D-054 item 2
+  # The power lever's rigging to the spindle, linear between its stops (D-055 item 2): fly at
+  # the end of Fig. C25's schedule (D-054 item 2); idle at its start, a placeholder (DATA_GAPS.md).
+  power_available: {{idle: !placeholder "{fmt(pas_idle)} deg", fly: "120.0 deg"}}
   deceleration: {{gain: {v(c, 'AWFP', 'lbm*in^2/(lbf*hr*%)')}, bias: {v(c, 'BWFP', 'lbm*in^2/(lbf*hr)')}, lower: {v(c, 'WFPDCL', 'lbm*in^2/(lbf*hr)')}, upper: {v(c, 'WFPDCH', 'lbm*in^2/(lbf*hr)')}}}
   valve: {{min: {v(c, 'WFMIN', 'lbm/hr')}, max: {v(c, 'WFMAX', 'lbm/hr')}, lag: {v(c, 'CLMV', 's')}, delay: "0.015 s"}}  # Fig. C19
   hysteresis_lag: "0.005 s"  # D-054 item 7
 drive_train: {{gearbox_damping: {v(d, 'DAMPBX', 'ft*lbf*s/rad')}, accessory_power: {v(d, 'ACCHP', 'hp')}}}  # TM-88360 pp. 17-23
+clutch:  # D-055 item 5: the drive's inertia at rotor speed, blades 4 (I_B + 2 E M_B + m E^2) (GenHel) and TM-88360 App. A's drive train
+  drive_inertia: "{fmt(round(j_d, 6))} slug*ft^2"
 """
 
 

@@ -595,7 +595,7 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     text(20, 50, 1.6, b.data());
 
     // Rotor and gear, right.
-    panel(w - 350, 40, 340, 225);
+    panel(w - 350, 40, 340, 250);
     const eyas::AfcsSwitches& af = hud.applied.afcs;
     const char* sas = "OFF";
     if (af.sas_digital && af.sas_analog) {
@@ -609,12 +609,18 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
         b.data(), b.size(),
         "NR     %6.1f %%\nTHRUST %6.1f kN\nTORQUE %6.1f kN.m\nPOWER  %6.0f kW\n"
         "B0 %5.2f B1C %5.2f B1S %5.2f deg\nTR THR %6.2f kN\nWOW %s  BRAKES %s\n"
-        "SAS %s  PBA %s  FPS %s%s",
+        "SAS %s  PBA %s  FPS %s%s\nPCL %s%3.0f%s %s%3.0f%s  REF %5.1f %%",
         s.rotor_speed_percent, s.main_rotor_thrust * 1e-3, s.main_rotor_torque * 1e-3,
         s.main_rotor_power * 1e-3, s.coning * kDeg, s.flap_1c * kDeg, s.flap_1s * kDeg,
         s.tail_rotor_thrust * 1e-3, s.weight_on_wheels ? "yes" : "no",
         hud.applied.brake_left > 0.5 ? "set" : "off", sas, af.pitch_bias ? "on" : "OFF",
-        af.fps ? "on" : "OFF", af.fps_turn ? "  TURN" : "");
+        af.fps ? "on" : "OFF", af.fps_turn ? "  TURN" : "",
+        // Power levers, 0 idle stop to 100 fly; ">" the lever moves it, "*"
+        // it waits for the lever (pickup).
+        hud.engine_selection != 2 ? ">" : " ", 100.0 * hud.applied.engines[0].power_lever,
+        hud.power_lever_held[0] ? "*" : " ", hud.engine_selection != 1 ? ">" : " ",
+        100.0 * hud.applied.engines[1].power_lever, hud.power_lever_held[1] ? "*" : " ",
+        100.0 * hud.applied.rotor_speed_reference);
     text(w - 340, 50, 1.6, b.data());
 
     // Status, top.

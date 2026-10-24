@@ -82,7 +82,29 @@ struct ControlsMapConfig {
     // of the held value (or when it passes it in a small step): pickup, so
     // that a start doesn't jump the collective to the lever. [0, 0.5].
     double pickup = 0.02;
+    // Engine controls (D-055). The power lever: an absolute lever (mode
+    // absolute only), full travel from the idle stop (−1) to fly (+1) at
+    // gain 1, the gain scaling it about the middle as the collective's; it
+    // picks up as the collective does (`pickup`), starting at the start's
+    // lever positions.
+    // Unmapped, the engines stay at the start's (fly).
+    AxisMap power_lever;
+    // Pressed: cycles which engines the lever moves: all, engine 1, engine 2,
+    // all (the others hold where they are). < 0: all, always.
+    int engine_select_button = -1;
+    // Held: the engine-speed trim (Controls::rotor_speed_reference) moves at
+    // rpm_rate [1/s] within [rpm_low, rpm_high], a station assumption around
+    // the 94.6-102.7 % of rotor speed USAAEFA flew the UH-60A at (ADA180181
+    // Table 1). < 0: none.
+    int rpm_up_button = -1;
+    int rpm_down_button = -1;
+    double rpm_rate = 0.01;
+    double rpm_low = 0.94;
+    double rpm_high = 1.03;
 };
+
+// How many engines the station's power lever reaches (Controls::engines).
+inline constexpr int kStationEngines = 2;  // ControlsMap::levers_ starts each at fly
 
 // Increments from the start controls (start + delta = applied).
 struct ControlDeltas {
@@ -139,6 +161,15 @@ public:
     static constexpr double kPickupStep = 0.05;
     bool brakes_set() const noexcept { return brakes_; }
     const eyas::AfcsSwitches& afcs() const noexcept { return afcs_; }
+    // Engine controls (D-055): each engine's lever, which engines the lever
+    // moves (0 all, else engine k), whether engine e's lever is held until
+    // the lever is brought to it, and the engine-speed trim.
+    double power_lever(int e) const noexcept { return levers_[static_cast<std::size_t>(e)]; }
+    int engine_selection() const noexcept { return selection_; }
+    bool power_lever_held(int e) const noexcept {
+        return config_.power_lever.axis >= 0 && levers_held_[static_cast<std::size_t>(e)];
+    }
+    double rotor_speed_reference() const noexcept { return speed_reference_; }
 
 private:
     // A trimmable control (cyclic, pedal) or a rate collective.
@@ -154,6 +185,9 @@ private:
                         bool released) noexcept;
     // An absolute collective: a lever, with pickup.
     void update_lever(const AxisMap& m, const RawInput& in) noexcept;
+    // The power lever, the engine selection and the speed trim (D-055).
+    void update_engines(const RawInput& in, double dt) noexcept;
+    void hold_levers() noexcept;
 
     ControlsMapConfig config_;
     eyas::Controls start_;
@@ -172,12 +206,19 @@ private:
     double lever_prev_ = std::numeric_limits<double>::quiet_NaN();
     double lever_target_ = 0.0;
     bool lever_seen_ = false;
+    std::array<double, kStationEngines> levers_{1.0, 1.0};  // fly, as EngineControls
+    std::array<bool, kStationEngines> levers_held_{};
+    double levers_prev_ = std::numeric_limits<double>::quiet_NaN();
+    int selection_ = 0;
+    bool select_was_pressed_ = false;
+    double speed_reference_ = 1.0;
 };
 
 // The applied controls for a delta: start + delta, the sum eyas_drive makes,
 // so both programs compute the same doubles. ControlsMap keeps each delta
 // at clamp(start + d) − start, which puts the sum within its range to an
-// ulp. The brakes and the flight control system's switches are the start's.
+// ulp. The brakes, the flight control system's switches and the engine
+// controls are the start's.
 eyas::Controls apply(const eyas::Controls& start, const ControlDeltas& d) noexcept;
 
 }  // namespace station
