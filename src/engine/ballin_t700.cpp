@@ -19,15 +19,9 @@ using engine::lead_lag;
 using engine::limited_rate;
 using engine::pushes_on_limit;
 
-// Symmetric dead band (Figs. C3, C10): zero within ±w, else u ∓ w.
+// Ballin's dead bands are symmetric (Figs. C3, C10).
 double dead_band(double u, double w) noexcept {
-    if (u > w) {
-        return u - w;
-    }
-    if (u < -w) {
-        return u + w;
-    }
-    return 0.0;
+    return engine::dead_band(u, w, w);
 }
 
 // A play operator of full width w (Figs. C11, C13, C15; D-054 item 7): the
@@ -111,9 +105,7 @@ constexpr int kMaxIter = 40;
 constexpr double kTol = 1e-11;
 
 void require_positive(double v, const char* what) {
-    if (!(v > 0.0) || !std::isfinite(v)) {
-        throw InitError(std::string("ballin_t700: ") + what + " must be positive and finite");
-    }
+    engine::require_positive(v, "ballin_t700", what);
 }
 
 }  // namespace
@@ -380,13 +372,20 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     require_positive(c.np_des, "NP_des");
     require_positive(c.j_gt, "J_GT");
     require_positive(c.output_inertia, "JE");
+    require_positive(c.k_dpb, "K_DPB");
+    require_positive(c.k_wgt, "K_WGT");
+    require_positive(c.tc_t41, "TC_T41");
+    require_positive(c.tm_gain, "the torque motor's gain");
+    require_positive(c.tmlvg, "the torque motor's feedback");
+    require_positive(c.tmlg, "the torque motor's linkage");
     for (const double t :
          {c.ctpl, c.ct13, c.ct14, c.torque_lag1, c.torque_lag2, c.ct2, c.ct12, c.tlge, c.ct9, c.t10,
           c.ct16, c.tm_lag, c.ctps3, c.clld, c.cntl, c.clmv, c.delay, c.hysteresis_lag}) {
         require_positive(t, "a lag");
     }
     if (!(c.xlolim < c.xhilim) || !(c.ylolim < c.yhilim) || !(c.zlolim_low < c.zhilim) ||
-        !(c.zlolim_high < c.zhilim) || !(c.wfmin < c.wfmax) || !(c.wfpdcl < c.wfpdch)) {
+        !(c.zlolim_high < c.zhilim) || !(c.wfmin >= 0.0) || !(c.wfmin < c.wfmax) ||
+        !(c.wfpdcl < c.wfpdch)) {
         throw InitError("ballin_t700: limits out of order");
     }
     cursors_.f1 = c.f1->make_cursor();
@@ -458,12 +457,21 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     start_p3_ = std::make_shared<const Table1D>(Axis(ngc), std::move(p3));
     start_p41_ = std::make_shared<const Table1D>(Axis(ngc), std::move(p41));
     start_p45_ = std::make_shared<const Table1D>(Axis(ngc), std::move(p45));
-    // The rest point: zero torque at the shaft, the design speed, sea level.
-    const double omega = c.np_des / c.gear;
+    // The rest point at the design speed until a shaft is bound.
+    find_rest(c.np_des / c.gear);
+}
+
+void BallinT700::find_rest(double omega) {
+    // The rest point: zero torque at the shaft at speed omega, sea level.
     if (!steady_for_torque(drive_train_load(omega), omega, kPstd, kTstd, rest_fuel_, rest_ng_,
                            rest_gas_)) {
         throw InitError("ballin_t700: no steady state at zero shaft torque from the maps");
     }
+    rest_omega_ = omega;
+}
+
+double BallinT700::rest_fuel_at(double p2) const noexcept {
+    return rest_fuel_ * p2 / kPstd;
 }
 
 double BallinT700::drive_train_load(double omega) const noexcept {
@@ -495,6 +503,7 @@ void BallinT700::bind_shafts(std::span<const ShaftInfo> shafts) {
             governed_ = shafts[k].speed;
             // The NP reference is the shaft's governed speed (D-054 item 2).
             np_reference_ = config_.gear * governed_ / config_.np_des;
+            find_rest(governed_);  // the initial state at rest on this shaft
             return;
         }
     }
@@ -517,11 +526,13 @@ double BallinT700::xldsa(double collective) const noexcept {
 }
 
 double BallinT700::gain_switch(double spder, double torque_int) const noexcept {
-    // B4 (Fig. C3): on outside the speed band, or once the torque integrator
-    // passes CORR.
+    // B4 (Fig. C3): the relay's output (outside the speed band) plus the
+    // torque integrator, against CORR. With the relay's gain far above CORR
+    // it is on outside the band, or once the integrator passes CORR.
     const BallinT700Config& c = config_;
     const bool relay = spder < c.band_low || spder > c.band_high;
-    return c.relay_gain * c.b6 * (relay ? 1.0 : 0.0) + torque_int > c.corr ? 1.0 : 0.0;
+    const double input = c.relay_gain * c.b6 * (relay ? 1.0 : 0.0) + torque_int;
+    return input > c.corr ? 1.0 : 0.0;
 }
 
 double BallinT700::zlolim(double trql) const noexcept {
@@ -680,10 +691,16 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     double ng = 0.0;
     BallinT700Gas g;
     if (!steady_gas(fuel, c.gear * omega, p2, t2, ng, g)) {
-        // No steady gas path for this fuel: the rest point, which trim moves on from.
-        fuel = rest_fuel_;
-        ng = rest_ng_;
-        g = rest_gas_;
+        // No steady gas path for this fuel: the rest point's fuel scaled to the
+        // inlet's pressure, at the inlet; failing that, the sea-level rest
+        // point itself, its sensors then off the inlet's values. Trim moves on
+        // from either.
+        fuel = rest_fuel_at(p2);
+        if (!steady_gas(fuel, c.gear * omega, p2, t2, ng, g)) {
+            fuel = rest_fuel_;
+            ng = rest_ng_;
+            g = rest_gas_;
+        }
     }
     x[kNg] = ng / c.ng_des;
     x[kMetal] = g.t41ns / kTstd;
@@ -734,10 +751,10 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
 }
 
 void BallinT700::initial_states(std::span<double> x) const {
-    // The rest point (sea level, zero torque at the shaft, the power turbine at
-    // its design speed) with the collective down. It runs before the shafts are
-    // bound, so the NP reference is still the design speed.
-    equilibrium(rest_fuel_, config_.np_des / config_.gear, 0.0, kPstd, kTstd, x);
+    // The rest point (sea level, zero torque at the shaft) with the collective
+    // down: at the bound shaft's governed speed, no speed error, or before
+    // binding at the design speed.
+    equilibrium(rest_fuel_, rest_omega_, 0.0, kPstd, kTstd, x);
 }
 
 void BallinT700::steady_states(const SimContext& ctx, std::span<double> x) const {
@@ -768,7 +785,7 @@ void BallinT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
     if (!steady_for_torque(load, omega, ctx.air.pressure, ctx.air.temperature, fuel, ng, g)) {
         // Past the maps (a demand no steady state delivers): seed from the rest
         // point's fuel, scaled to the inlet's pressure; trim moves on from it.
-        fuel = rest_fuel_ * ctx.air.pressure / kPstd;
+        fuel = rest_fuel_at(ctx.air.pressure);
     }
     equilibrium(fuel, omega, ctx.controls.collective, ctx.air.pressure, ctx.air.temperature, x);
 }
