@@ -77,6 +77,14 @@ private:
 // cockpit's engine-speed trim the NP reference. Each drives the shaft through
 // an overrunning clutch (TM-88360 App. A; D-055 item 5).
 //
+// Engine failure is a fuel shutoff (D-056): with the fuel off the metering
+// valve's command is zero and Ballin's gas path runs the gas generator down
+// through the maps. Below the maps' floor (their lowest corrected speed,
+// about idle; Ballin models no starts or sub-idle running, p. 24) the model has
+// no data: there NG stops at the floor, and with the fuel off the engine is
+// out, with no gas path, flow or torque. The fuel back on relights it at
+// once.
+//
 // Drive train (TM-88360 App. A, eqs. A2, A5, A11, A12; D-054 item 3): the
 // gearbox's oil drag DAMPBX Ω and the accessories, ACCHP at the governed speed
 // falling 10 % per 100 % of speed, load the shaft.
@@ -249,6 +257,7 @@ struct BallinT700Signals {
     double dwfp = 0.0;          // the load-demand spindle's command [kg/(s·Pa)]
     double fuel_command = 0.0;  // WFMV, limited [kg/s]
     double q_engine = 0.0;      // the engine's torque referred to the shaft [N·m]
+    bool out = false;           // flamed out at the maps' floor: no gas path (D-056)
 };
 
 // What one engine's fuel control reads besides its states (D-055).
@@ -259,6 +268,7 @@ struct BallinT700Inputs {
     double np_reference = 1.0;  // PCPRF [fraction of NP_des]
     double p2 = 0.0;            // [Pa]
     double t2 = 0.0;            // [K]
+    bool fuel_on = true;        // the shutoff open (D-056)
 };
 
 class BallinT700 : public DynamicComponent {
@@ -344,17 +354,26 @@ public:
     bool steady_gas(double fuel, double np, double p2, double t2, double& ng,
                     BallinT700Gas& out) const noexcept;
 
-    // The steady fuel flow per engine [kg/s] for which the engines deliver
-    // `shaft_torque` [N·m] to the shaft at speed `omega` [rad/s], with the
-    // gas path at steady state. Trim time. Returns converged.
+    // The steady fuel flow per engine [kg/s] for which `engines` engines (0:
+    // all) deliver `shaft_torque` [N·m] to the shaft at speed `omega` [rad/s],
+    // with the gas path at steady state. Trim time. Returns converged.
     bool steady_for_torque(double shaft_torque, double omega, double p2, double t2, double& fuel,
-                           double& ng, BallinT700Gas& out) const noexcept;
+                           double& ng, BallinT700Gas& out, int engines = 0) const noexcept;
 
     // Engine `e`'s inputs in ctx (D-055 item 1).
     BallinT700Inputs inputs(const SimContext& ctx, int e) const noexcept;
 
     // One engine's signals at its states `x` (kEngineStates) and inputs. Pure.
     BallinT700Signals signals(std::span<const double> x, const BallinT700Inputs& in) const noexcept;
+
+    // The lowest corrected gas-generator speed every map read by it covers
+    // [fraction of NG_des] (D-056 item 3).
+    double maps_floor() const noexcept { return maps_floor_; }
+    // NG at the maps' floor at inlet temperature `t2` [K] [fraction of NG_des].
+    double ng_floor(double t2) const noexcept;
+    // Out (D-056 item 3): the fuel off and NG [fraction of NG_des] at or below
+    // the floor.
+    bool is_out(double ng, const BallinT700Inputs& in) const noexcept;
 
     // The drive train's torque on the shaft at speed `omega` [rad/s] [N·m, a load].
     double drive_train_load(double omega) const noexcept;
@@ -363,6 +382,15 @@ public:
     // inputs, its gas path at fuel flow `fuel` [kg/s], the other engine's
     // torque sensed at its own (no load share).
     void equilibrium(double fuel, const BallinT700Inputs& in, std::span<double> x) const noexcept;
+
+    // A lit engine's clutch slip in a steady state at its states `x`
+    // (kEngineStates; its own slip ignored) and inputs [rad/s, ≥ 0] (D-056
+    // item 5): zero where it drives, else where its power turbine's torque is
+    // zero. Trim time.
+    double steady_slip(const SimContext& ctx, std::span<const double> x,
+                       const BallinT700Inputs& in) const noexcept;
+    // An out engine's states `x` (kEngineStates) at rest (D-056 item 3).
+    void out_rest(const BallinT700Inputs& in, std::span<double> x) const noexcept;
 
     // The power-available spindle's angle for a power lever at `lever` (D-055
     // item 2) [rad]; clamped to the stops, NaN reads as fly.
@@ -410,6 +438,7 @@ private:
     CouplingSlot demand_;
     // A steady state known at init (sea level, zero shaft torque, the design
     // speed), where a trim-time solve that fails falls back.
+    double maps_floor_ = 0.0;
     double rest_fuel_ = 0.0;
     double rest_ng_ = 0.0;
     BallinT700Gas rest_gas_;

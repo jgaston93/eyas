@@ -18,6 +18,23 @@
 //   NG, the fuel ratio selected (HMUSEL) with the acceleration limit (WFPAC),
 //   the idle and deceleration floors (WFIDM, WFPDC) and the demand (WFPDM), and
 //   the clutch's slip, every 0.05 s.
+// - m9_ballin_failure.csv (Stage B2b, D-056): from the same trim, engine 2's
+//   fuel off at 2 s (case one_out); and both off at 2 s with the collective
+//   lowered from 3.5 s to 4.5 s to the 80 kt autorotation trim's (case
+//   both_out), the cyclic and pedal held: rotor speed, rate of climb,
+//   airspeed, and per engine the turbine's torque, NG, the slip and whether
+//   it is out, every 0.05 s;
+// - m9_ballin_autorotation.csv (Stage B2b): the UH-60A at Table B.1's loading,
+//   sea level, bare, at 60-120 kt: the level-flight power, and the descent
+//   rate at which the rotor needs no engine power at the governed speed (the
+//   clutches' transition in the powered descent, by bisection; there the
+//   aircraft trims with both engines out too), beside Johnson's
+//   V_d = P_level/W (2013 Eq. 5.19, §7.2.3), with the powered descent's power
+//   on the way;
+// - m9_ballin_climbs.csv (Stage B2b): Ballin's climbs and descents (TM-88360
+//   Figs. B2-B4, 60, 100 and 137.5 kt, -3000 to +3000 ft/min, each from the
+//   previous trim) on Ballin's engines and with the rotor speed held:
+//   collective, rotor speed and the clutches' slip.
 //
 // Usage: eyas_m9_ballin_engine_cases <output-dir>
 
@@ -255,6 +272,291 @@ void write_lever(const std::filesystem::path& dir, const Executive& ex) {
     std::cout << "lever cut: lowest rotor speed " << 100.0 * low / governed << " %\n";
 }
 
+// A trim continued from the first of `starts` (the nearest) that converges:
+// a small step can fail where a bigger one, from further back, doesn't. Then
+// a cold start, kept only if its attitude continues the sweep's (within 3
+// degrees: a cold start can land on another branch of the trim equations).
+TrimResult continued_trim(const Executive& ex, const TrimCondition& c,
+                          const std::vector<const TrimResult*>& starts, std::vector<double>& x) {
+    TrimResult first;
+    for (std::size_t k = 0; k < starts.size(); ++k) {
+        const TrimResult r = solve_trim(ex, c, starts[k], x);
+        if (r.converged) {
+            return r;
+        }
+        if (k == 0) {
+            first = r;
+        }
+    }
+    std::vector<double> y;
+    const TrimResult cold = solve_trim(ex, c, nullptr, y);
+    const double tol = 3.0 * units::kDegree;
+    if (cold.converged && std::abs(cold.pitch - starts[0]->pitch) < tol &&
+        std::abs(cold.roll - starts[0]->roll) < tol) {
+        x = y;
+        return cold;
+    }
+    return first;
+}
+
+TrimResult continued_trim(const Executive& ex, const TrimCondition& c, const TrimResult& start,
+                          std::vector<double>& x) {
+    return continued_trim(ex, c, std::vector<const TrimResult*>{&start}, x);
+}
+
+// The signals of engine e at state x (the trim's or a free flight's).
+BallinT700Signals engine_signals(const Executive& ex, const BallinT700& engine, std::size_t at,
+                                 const std::vector<double>& x, const Controls& u,
+                                 const Environment& env, int e) {
+    const SimContext ctx = ex.context(0.0, x, u, env);
+    const std::span<const double> xe(
+        x.data() + at + static_cast<std::size_t>(e) * BallinT700::kEngineStates,
+        BallinT700::kEngineStates);
+    return engine.signals(xe, engine.inputs(ctx, e));
+}
+
+void write_failure(const std::filesystem::path& dir, const Executive& ex) {
+    TrimCondition c;
+    c.airspeed = 80.0 * units::kKnot;
+    c.afcs.sas_digital = true;
+    c.afcs.sas_analog = true;
+    c.afcs.fps = true;
+    std::vector<double> x0;
+    const TrimResult r = solve_trim(ex, c, nullptr, x0);
+    if (!r.converged) {
+        throw std::runtime_error("80 kt trim did not converge");
+    }
+    // The autorotation collective at 80 kt (the rate the powered descent's
+    // clutches let go at; write_autorotation), from the powered descents.
+    double collective_auto = r.controls.collective;
+    {
+        TrimCondition d = c;
+        TrimResult prev = r;
+        std::vector<double> y;
+        for (double fpm = -500.0; fpm >= -4000.0; fpm -= 250.0) {
+            d.flight_path_angle = std::asin(fpm * units::kFoot / 60.0 / d.airspeed);
+            const TrimResult next = continued_trim(ex, d, prev, y);
+            if (!next.converged) {
+                break;
+            }
+            prev = next;
+            collective_auto = next.controls.collective;
+            if (y[find<BallinT700>(ex).second + BallinT700::kSlip] > 0.0) {
+                break;
+            }
+        }
+    }
+    const auto [engine, at] = find<BallinT700>(ex);
+    const Environment env = trim_environment(c);
+    const double dt = trim_period(ex, r) / 64.0;
+    const double governed = ex.shafts()[0].speed;
+    std::ofstream f(dir / "m9_ballin_failure.csv");
+    f.precision(8);
+    f << "# UH-60A on Ballin's T700s, 80 kt, sea level, SAS and FPS on: engine 2's fuel off at 2 s "
+         "(one_out); both off at 2 s, the collective lowered 3.5-4.5 s to "
+      << collective_auto << " (both_out) (D-056)\n";
+    f << "case,time_s,rotor_speed_pct,climb_rate_m_s,airspeed_kt,collective,engine,torque_ftlbf,"
+         "n_g_pct,slip_rad_s,out\n";
+    for (const bool both : {false, true}) {
+        std::vector<double> x = x0;
+        Rk4 rk4(x.size());
+        const auto controls = [&](double t) {
+            Controls u = r.controls;
+            if (t >= 2.0) {
+                u.engines[1].fuel_on = false;
+                u.engines[0].fuel_on = !both;
+            }
+            if (both) {
+                const double k = std::clamp(t - 3.5, 0.0, 1.0);
+                u.collective =
+                    r.controls.collective + k * (collective_auto - r.controls.collective);
+            }
+            return u;
+        };
+        const int every = static_cast<int>(std::lround(0.05 / dt));
+        const int steps = static_cast<int>(std::lround(60.0 / dt));
+        double low = governed;
+        double decay = 0.0;  // the rotor's deceleration just before the collective moves [1/s]
+        for (int n = 0; n <= steps; ++n) {
+            const double t = n * dt;
+            const double omega = x[ex.shaft_offset(0) + 1];
+            low = std::min(low, omega);
+            const Controls u = controls(t);
+            if (n % every == 0) {
+                const BodyState b = unpack_body(x);
+                const Vec3 v_n = b.q_nb.toRotationMatrix() * b.vel_b;
+                for (int e = 0; e < engine->config().engines; ++e) {
+                    const BallinT700Signals s = engine_signals(ex, *engine, at, x, u, env, e);
+                    const std::size_t o =
+                        at + static_cast<std::size_t>(e) * BallinT700::kEngineStates;
+                    f << (both ? "both_out" : "one_out") << ',' << t << ','
+                      << 100.0 * omega / governed << ',' << -v_n.z() << ','
+                      << b.vel_b.norm() / units::kKnot << ',' << u.collective << ',' << e + 1 << ','
+                      << s.gas.q_pt / kFtLbf << ',' << 100.0 * x[o + BallinT700::kNg] << ','
+                      << x[o + BallinT700::kSlip] << ',' << (s.out ? 1 : 0) << '\n';
+                }
+            }
+            if (both && n > 0 && std::abs(t - 3.45) < 0.5 * dt) {
+                std::vector<double> xd(x.size());
+                (void)ex.derivatives(t, x, u, env, xd);
+                decay = xd[ex.shaft_offset(0) + 1] / governed;
+            }
+            if (n < steps) {
+                (void)free_step(ex, rk4, controls, env, t, dt, x);
+            }
+        }
+        std::cout << (both ? "both" : "one") << " out: lowest rotor speed "
+                  << 100.0 * low / governed << " %, end "
+                  << 100.0 * x[ex.shaft_offset(0) + 1] / governed << " %";
+        if (both) {
+            std::cout << ", decaying " << 100.0 * decay << " %/s at 3.45 s";
+        }
+        std::cout << '\n';
+    }
+}
+
+void write_autorotation(const std::filesystem::path& dir) {
+    const Executive ex = build(Config::from_file(ballin_config("uh60a_table_b1.yaml")));
+    const auto [engine, at] = find<BallinT700>(ex);
+    // Table B.1's aircraft weight (TM-100991 p. 53), the gross weight the
+    // config splits between the airframe, the blades and the gear (D-002).
+    const double weight = 16825.0 * units::kPoundMass * units::kStandardGravity;
+    const double governed = ex.shafts()[0].speed;
+    const std::size_t omega_at = ex.shaft_offset(0) + 1;
+    std::ofstream f(dir / "m9_ballin_autorotation.csv");
+    f.precision(8);
+    f << "# UH-60A on Ballin's T700s, Table B.1's loading (16 825 lbm), sea level, bare: powered "
+         "descents to the rate where the rotor needs no engine power at the governed speed, "
+         "against Johnson's V_d = P_level/W (D-056)\n";
+    f << "airspeed_kt,kind,descent_ft_min,engine_power_kw,collective,rotor_speed_pct,slip_rad_s,"
+         "converged\n";
+    for (const double kt : {60.0, 80.0, 100.0, 120.0}) {
+        TrimCondition c;
+        c.airspeed = kt * units::kKnot;
+        std::vector<double> x;
+        const auto power = [&](const TrimResult& r) {
+            const Environment env = trim_environment(c);
+            double p = 0.0;
+            for (int e = 0; e < engine->config().engines; ++e) {
+                p += engine_signals(ex, *engine, at, x, r.controls, env, e).q_engine * x[omega_at];
+            }
+            return p;
+        };
+        const auto row = [&](const char* kind, double fpm, const TrimResult& r) {
+            f << kt << ',' << kind << ',' << -fpm << ',' << power(r) / 1e3 << ','
+              << r.controls.collective << ',' << 100.0 * x[omega_at] / governed << ','
+              << x[at + BallinT700::kSlip] << ',' << (r.converged ? 1 : 0) << '\n';
+        };
+        const auto trim = [&](double fpm, const std::vector<const TrimResult*>& starts) {
+            c.flight_path_angle = std::asin(fpm * units::kFoot / 60.0 / c.airspeed);
+            return starts.empty() ? solve_trim(ex, c, nullptr, x)
+                                  : continued_trim(ex, c, starts, x);
+        };
+        TrimResult engaged = trim(0.0, {});
+        if (!engaged.converged) {
+            throw std::runtime_error("level trim did not converge");
+        }
+        const double p_level = power(engaged);
+        row("powered", 0.0, engaged);
+        // Down in 250 ft/min steps until the clutches let go.
+        double fpm_engaged = 0.0;
+        double fpm_free = 0.0;
+        TrimResult free;
+        std::vector<TrimResult> history{engaged};  // the engaged trims so far, nearest last
+        for (double fpm = -250.0; fpm >= -6000.0; fpm -= 250.0) {
+            std::vector<const TrimResult*> starts;
+            for (std::size_t k = 0; k < history.size() && k < 4; ++k) {
+                starts.push_back(&history[history.size() - 1 - k]);
+            }
+            const TrimResult r = trim(fpm, starts);
+            if (!r.converged) {
+                break;
+            }
+            row("powered", fpm, r);
+            if (x[at + BallinT700::kSlip] > 0.0) {
+                fpm_free = fpm;
+                free = r;
+                break;
+            }
+            engaged = r;
+            history.push_back(r);
+            fpm_engaged = fpm;
+        }
+        if (fpm_free == 0.0) {
+            std::cout << kt << " kt: no overrun found\n";
+            continue;
+        }
+        // Bisection on the transition, each trim from the engaged side.
+        for (int k = 0; k < 9; ++k) {
+            const double mid = 0.5 * (fpm_engaged + fpm_free);
+            const TrimResult r = trim(mid, {&engaged, &free});
+            if (!r.converged) {
+                break;
+            }
+            if (x[at + BallinT700::kSlip] > 0.0) {
+                fpm_free = mid;
+                free = r;
+            } else {
+                fpm_engaged = mid;
+                engaged = r;
+            }
+        }
+        const double fpm_d = 0.5 * (fpm_engaged + fpm_free);
+        const TrimResult at_d = trim(fpm_free, {&free});
+        row("transition", fpm_free, at_d);
+        // With both engines out there (the same rotor state, D-056 item 5).
+        c.engines[0].fuel_on = c.engines[1].fuel_on = false;
+        const TrimResult dead = trim(fpm_free, {&at_d});
+        row("both_out", fpm_free, dead);
+        c.engines[0].fuel_on = c.engines[1].fuel_on = true;
+        const double vd = -fpm_d * units::kFoot / 60.0;
+        std::cout << kt << " kt: P_level " << p_level / 1e3 << " kW, P/W "
+                  << p_level / weight / units::kFoot * 60.0 << " ft/min; no power at " << -fpm_d
+                  << " ft/min (" << vd / (p_level / weight) << " of P/W); both out there: "
+                  << (dead.converged ? "converged" : "NOT converged") << ", collective "
+                  << dead.controls.collective << " vs " << at_d.controls.collective << '\n';
+    }
+}
+
+void write_climbs(const std::filesystem::path& dir) {
+    namespace bt = test::ballin;
+    const Executive engines = build(Config::from_file(ballin_config("uh60a_ballin.yaml")));
+    const Executive held = build(bt::ideal_shaft_config(ballin_config("uh60a_ballin.yaml")));
+    const auto [engine, at] = find<BallinT700>(engines);
+    std::ofstream f(dir / "m9_ballin_climbs.csv");
+    f.precision(8);
+    f << "# UH-60A, Ballin's B1-B4 loading, 5250 ft ISA, Figs. B2-B4 conditions, each trim from "
+         "the previous one: on Ballin's T700s and with the rotor speed held (D-056)\n";
+    f << "airspeed_kt,climb_ft_min,drive,converged,collective_pct,rotor_speed_pct,slip_rad_s\n";
+    for (const double kt : {60.0, 100.0, 137.5}) {
+        for (const bool real : {true, false}) {
+            const Executive& ex = real ? engines : held;
+            const double governed = ex.shafts()[0].speed;
+            // From level flight up, then down, each from its neighbour.
+            for (const double sign : {1.0, -1.0}) {
+                bt::Point prev = bt::genhel_trim(ex, kt, 0.0, nullptr);
+                for (int k = sign > 0.0 ? 0 : 1; k <= 6; ++k) {
+                    const double fpm = sign * 500.0 * k;
+                    const bt::Point p = k == 0 ? prev : bt::genhel_trim(ex, kt, fpm, &prev);
+                    const double omega =
+                        p.trim.component_states.empty()
+                            ? 0.0
+                            : p.trim.component_states[ex.shaft_offset(0) + 1 - body_layout::kSize];
+                    const double slip = real && !p.x.empty() ? p.x[at + BallinT700::kSlip] : 0.0;
+                    f << kt << ',' << fpm << ',' << (real ? "engines" : "held") << ','
+                      << (p.converged ? 1 : 0) << ',' << bt::collective_pct(p.trim.controls) << ','
+                      << 100.0 * omega / governed << ',' << slip << '\n';
+                    if (!p.converged) {
+                        break;
+                    }
+                    prev = p;
+                }
+            }
+            std::cout << kt << " kt on " << (real ? "the engines" : "a held shaft") << " done\n";
+        }
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -282,6 +584,9 @@ int main(int argc, char** argv) {
             std::cout << "collective step at " << feet << " ft done\n";
         }
         write_lever(dir, ballin);
+        write_failure(dir, ballin);
+        write_autorotation(dir);
+        write_climbs(dir);
     } catch (const std::exception& err) {
         std::cerr << "eyas_m9_ballin_engine_cases: " << err.what() << '\n';
         return 1;

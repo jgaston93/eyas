@@ -605,21 +605,29 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     } else if (af.sas_analog) {
         sas = "analog";
     }
+    // Power levers, 0 idle stop to 100 fly, or OFF with the fuel shut off
+    // (D-056); ">" the lever moves it, "*" it waits for the lever (pickup).
+    std::array<std::array<char, 8>, 2> lever{};
+    for (std::size_t e = 0; e < lever.size(); ++e) {
+        const eyas::EngineControls& ec = hud.applied.engines[e];
+        if (ec.fuel_on) {
+            (void)std::snprintf(lever[e].data(), lever[e].size(), "%3.0f", 100.0 * ec.power_lever);
+        } else {
+            (void)std::snprintf(lever[e].data(), lever[e].size(), "OFF");
+        }
+    }
     (void)std::snprintf(
         b.data(), b.size(),
         "NR     %6.1f %%\nTHRUST %6.1f kN\nTORQUE %6.1f kN.m\nPOWER  %6.0f kW\n"
         "B0 %5.2f B1C %5.2f B1S %5.2f deg\nTR THR %6.2f kN\nWOW %s  BRAKES %s\n"
-        "SAS %s  PBA %s  FPS %s%s\nPCL %s%3.0f%s %s%3.0f%s  REF %5.1f %%",
+        "SAS %s  PBA %s  FPS %s%s\nPCL %s%s%s %s%s%s  REF %5.1f %%",
         s.rotor_speed_percent, s.main_rotor_thrust * 1e-3, s.main_rotor_torque * 1e-3,
         s.main_rotor_power * 1e-3, s.coning * kDeg, s.flap_1c * kDeg, s.flap_1s * kDeg,
         s.tail_rotor_thrust * 1e-3, s.weight_on_wheels ? "yes" : "no",
         hud.applied.brake_left > 0.5 ? "set" : "off", sas, af.pitch_bias ? "on" : "OFF",
-        af.fps ? "on" : "OFF", af.fps_turn ? "  TURN" : "",
-        // Power levers, 0 idle stop to 100 fly; ">" the lever moves it, "*"
-        // it waits for the lever (pickup).
-        hud.engine_selection != 2 ? ">" : " ", 100.0 * hud.applied.engines[0].power_lever,
-        hud.power_lever_held[0] ? "*" : " ", hud.engine_selection != 1 ? ">" : " ",
-        100.0 * hud.applied.engines[1].power_lever, hud.power_lever_held[1] ? "*" : " ",
+        af.fps ? "on" : "OFF", af.fps_turn ? "  TURN" : "", hud.engine_selection != 2 ? ">" : " ",
+        lever[0].data(), hud.power_lever_held[0] ? "*" : " ", hud.engine_selection != 1 ? ">" : " ",
+        lever[1].data(), hud.power_lever_held[1] ? "*" : " ",
         100.0 * hud.applied.rotor_speed_reference);
     text(w - 340, 50, 1.6, b.data());
 

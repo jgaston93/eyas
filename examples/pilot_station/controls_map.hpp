@@ -96,6 +96,9 @@ struct ControlsMapConfig {
     // Table 1). < 0: none.
     int rpm_up_button = -1;
     int rpm_down_button = -1;
+    // Pressed: toggles the fuel shutoff of the engines the lever moves (the
+    // engine selection; D-056), so an engine can be failed and relit. < 0: none.
+    int fuel_button = -1;
     double rpm_rate = 0.01;
     double rpm_low = 0.94;
     double rpm_high = 1.03;
@@ -159,15 +162,17 @@ public:
     static constexpr double kPickupStep = 0.05;
     bool brakes_set() const noexcept { return brakes_; }
     const eyas::AfcsSwitches& afcs() const noexcept { return afcs_; }
-    // Engine controls (D-055): each engine's lever, which engines the lever
-    // moves (0 all, else engine k), whether engine e's lever is held until
-    // the lever is brought to it, and the engine-speed trim.
+    // Engine controls (D-055, D-056): each engine's lever, which engines the
+    // lever moves (0 all, else engine k), whether engine e's lever is held
+    // until the lever is brought to it, the engine-speed trim and each
+    // engine's fuel shutoff.
     double power_lever(int e) const noexcept { return levers_[static_cast<std::size_t>(e)]; }
     int engine_selection() const noexcept { return selection_; }
     bool power_lever_held(int e) const noexcept {
         return config_.power_lever.axis >= 0 && levers_held_[static_cast<std::size_t>(e)];
     }
     double rotor_speed_reference() const noexcept { return speed_reference_; }
+    bool fuel_on(int e) const noexcept { return fuel_[static_cast<std::size_t>(e)]; }
 
 private:
     // A trimmable control (cyclic, pedal) or a rate collective.
@@ -210,6 +215,8 @@ private:
     int selection_ = 0;
     bool select_was_pressed_ = false;
     double speed_reference_ = 1.0;
+    std::array<bool, kStationEngines> fuel_{};
+    bool fuel_was_pressed_ = false;
 };
 
 // The applied controls for a delta: start + delta, the sum eyas_drive makes,

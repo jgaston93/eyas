@@ -125,6 +125,96 @@ def plot_lever(data, outdir):
     plt.close(fig)
 
 
+def plot_failure(data, outdir):
+    """Engine failures at 80 kt (D-056): one engine, then both with the collective lowered."""
+    fig, ax = plt.subplots(4, 2, figsize=(13.0, 11.0), sharex=True)
+    for col, (case, title) in enumerate((("one_out", "engine 2's fuel off at 2 s"),
+                                         ("both_out", "both off at 2 s, collective down 3.5-4.5 s"))):
+        for e, color in (("1", "C0"), ("2", "C3")):
+            r = [x for x in data if x["case"] == case and x["engine"] == e]
+            t = [float(x["time_s"]) for x in r]
+            if e == "1":
+                ax[0][col].plot(t, [float(x["rotor_speed_pct"]) for x in r], color="black")
+                ax[3][col].plot(t, [float(x["climb_rate_m_s"]) for x in r], color="black")
+            ax[1][col].plot(t, [float(x["torque_ftlbf"]) for x in r], color=color,
+                            label=f"engine {e}")
+            ax[2][col].plot(t, [float(x["n_g_pct"]) for x in r], color=color, label=f"engine {e}")
+        ax[0][col].set_title(f"UH-60A on Ballin's T700s, 80 kt, SAS and FPS on: {title}",
+                             fontsize=9)
+        ax[0][col].set_ylabel("rotor speed [%]")
+        ax[1][col].set_ylabel("power-turbine torque [ft·lbf]")
+        ax[2][col].set_ylabel("gas-generator speed [%]")
+        ax[3][col].set_ylabel("rate of climb [m/s]")
+        ax[-1][col].set_xlabel("time [s]")
+        for a in ax[:, col]:
+            a.grid(True, alpha=0.3)
+            a.axvline(2.0, color="0.6", lw=0.8)
+        ax[1][col].legend(fontsize=8)
+        ax[2][col].legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(outdir / "m9_ballin_failure.png", dpi=110)
+    plt.close(fig)
+
+
+def plot_autorotation(data, outdir):
+    """Engine power in descent to the no-power point, against Johnson's V_d = P_level/W."""
+    weight = 16825.0 * 0.45359237 * 9.80665  # Table B.1's aircraft weight [N]
+    fig, ax = plt.subplots(1, 2, figsize=(13.0, 5.0))
+    speeds = sorted({float(x["airspeed_kt"]) for x in data})
+    vd_eyas = []
+    vd_johnson = []
+    for k, kt in enumerate(speeds):
+        r = [x for x in data if float(x["airspeed_kt"]) == kt and x["kind"] == "powered"]
+        d = [float(x["descent_ft_min"]) for x in r]
+        p = [float(x["engine_power_kw"]) for x in r]
+        ax[0].plot(d, p, "o-", color=f"C{k}", ms=3, label=f"{kt:g} kt")
+        level = p[d.index(0.0)]
+        t = [x for x in data if float(x["airspeed_kt"]) == kt and x["kind"] == "transition"]
+        if t:
+            vd_eyas.append(float(t[0]["descent_ft_min"]))
+            vd_johnson.append(level * 1e3 / weight / 0.3048 * 60.0)
+            ax[0].plot([vd_johnson[-1]], [0.0], "x", color=f"C{k}", ms=9)
+    ax[0].set_xlabel("rate of descent [ft/min]")
+    ax[0].set_ylabel("engines' power [kW]")
+    ax[0].set_title("Powered descent, Table B.1's loading, sea level (x: P_level/W, Johnson Eq. 5.19)",
+                    fontsize=9)
+    ax[0].legend(fontsize=8)
+    ax[0].grid(True, alpha=0.3)
+    s = speeds[:len(vd_eyas)]
+    ax[1].plot(s, vd_eyas, "o-", label="Eyas: no engine power at 100 % rotor speed")
+    ax[1].plot(s, vd_johnson, "s--", label="Johnson: V_d = P_level/W")
+    ax[1].set_xlabel("airspeed [kt]")
+    ax[1].set_ylabel("autorotative rate of descent [ft/min]")
+    ax[1].legend(fontsize=8)
+    ax[1].grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(outdir / "m9_ballin_autorotation.png", dpi=110)
+    plt.close(fig)
+
+
+def plot_climbs(data, outdir):
+    """Ballin's B2-B4 conditions on the engines and with the rotor speed held."""
+    fig, ax = plt.subplots(2, 3, figsize=(14.0, 8.0), sharex=True)
+    for k, kt in enumerate((60.0, 100.0, 137.5)):
+        for drive, style, name in (("engines", "o-", "Ballin's T700s"),
+                                   ("held", "s--", "rotor speed held")):
+            r = sorted((x for x in data if float(x["airspeed_kt"]) == kt and x["drive"] == drive
+                        and x["converged"] == "1"), key=lambda x: float(x["climb_ft_min"]))
+            c = [float(x["climb_ft_min"]) for x in r]
+            ax[0][k].plot(c, [float(x["collective_pct"]) for x in r], style, ms=3, label=name)
+            ax[1][k].plot(c, [float(x["rotor_speed_pct"]) for x in r], style, ms=3, label=name)
+        ax[0][k].set_title(f"{kt:g} kt, Figs. B2-B4 loading, 5250 ft", fontsize=9)
+        ax[0][k].set_ylabel("collective [%]")
+        ax[1][k].set_ylabel("rotor speed [%]")
+        ax[1][k].set_xlabel("rate of climb [ft/min]")
+        for a in ax[:, k]:
+            a.grid(True, alpha=0.3)
+            a.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(outdir / "m9_ballin_climbs.png", dpi=110)
+    plt.close(fig)
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit("usage: plot_m9_ballin.py <data-dir> <output-dir>")
@@ -134,6 +224,9 @@ def main():
     plot_table_b1(table, out)
     plot_step(rows(data / "m9_ballin_step.csv"), out)
     plot_lever(rows(data / "m9_ballin_lever.csv"), out)
+    plot_failure(rows(data / "m9_ballin_failure.csv"), out)
+    plot_autorotation(rows(data / "m9_ballin_autorotation.csv"), out)
+    plot_climbs(rows(data / "m9_ballin_climbs.csv"), out)
     for case, _ in CASES:
         for q, label in QUANTITIES:
             (r,) = [x for x in table if x["case"] == case and x["quantity"] == q]

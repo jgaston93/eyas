@@ -251,6 +251,8 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
             m.rpm_up_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "rpm_down_button") {
             m.rpm_down_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "fuel_button") {
+            m.fuel_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "rpm_rate") {
             m.rpm_rate = to_double(value, origin, n);
             if (!(m.rpm_rate >= 0.0) || !std::isfinite(m.rpm_rate)) {
@@ -345,6 +347,7 @@ void write_map(std::ostream& out, const ControlsMapConfig& map) {
         << '\n'
         << "rpm_up_button = " << index_text(map.rpm_up_button, kButtonsPerDevice) << '\n'
         << "rpm_down_button = " << index_text(map.rpm_down_button, kButtonsPerDevice) << '\n'
+        << "fuel_button = " << index_text(map.fuel_button, kButtonsPerDevice) << '\n'
         << "rpm_rate = " << map.rpm_rate << '\n'
         << "rpm_low = " << map.rpm_low << '\n'
         << "rpm_high = " << map.rpm_high << '\n';

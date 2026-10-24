@@ -53,6 +53,10 @@ struct EngineControls {
     // Power control lever: 0 = the idle stop, 1 = the fly stop. Clamped to
     // [0, 1]; NaN reads as fly. Engines without levers (GenHel's) ignore it.
     double power_lever = 1.0;  // [0, 1]
+    // The fuel shutoff (D-056): false closes it, and the engine runs down and
+    // flames out; true again relights it at once (no starter is modeled).
+    // Engines without a shutoff (GenHel's) ignore it.
+    bool fuel_on = true;
 
     friend bool operator==(const EngineControls&, const EngineControls&) = default;
 };

@@ -24,7 +24,11 @@ void write_state_header(std::ostream& out) {
     for (std::size_t k = 0; k < eyas::kMaxEngines; ++k) {
         out << ",power_lever_" << k + 1;
     }
-    out << ",rotor_speed_reference\n";
+    out << ",rotor_speed_reference";
+    for (std::size_t k = 0; k < eyas::kMaxEngines; ++k) {
+        out << ",fuel_on_" << k + 1;
+    }
+    out << '\n';
 }
 
 void write_state_row(std::ostream& out, const eyas::Controls& c, const eyas::AircraftState& o) {
@@ -53,7 +57,11 @@ void write_state_row(std::ostream& out, const eyas::Controls& c, const eyas::Air
     for (const eyas::EngineControls& e : c.engines) {
         out << ',' << e.power_lever;
     }
-    out << ',' << c.rotor_speed_reference << '\n';
+    out << ',' << c.rotor_speed_reference;
+    for (const eyas::EngineControls& e : c.engines) {
+        out << ',' << (e.fuel_on ? 1 : 0);
+    }
+    out << '\n';
 }
 
 }  // namespace examples
