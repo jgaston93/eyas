@@ -143,9 +143,18 @@ void ControlsMap::update_engines(const RawInput& in, double dt) noexcept {
     select_was_pressed_ = select_now;
     const bool fuel_now = pressed(in, config_.fuel_button);
     if (fuel_now && !fuel_was_pressed_) {
+        // The selected engines all together: relit if any is off, else shut
+        // off, never swapped (code review of PR #77).
+        const auto selected = [&](std::size_t e) {
+            return selection_ == 0 || static_cast<int>(e) + 1 == selection_;
+        };
+        bool any_off = false;
         for (std::size_t e = 0; e < fuel_.size(); ++e) {
-            if (selection_ == 0 || static_cast<int>(e) + 1 == selection_) {
-                fuel_[e] = !fuel_[e];
+            any_off = any_off || (selected(e) && !fuel_[e]);
+        }
+        for (std::size_t e = 0; e < fuel_.size(); ++e) {
+            if (selected(e)) {
+                fuel_[e] = any_off;
             }
         }
     }

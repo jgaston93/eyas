@@ -1020,10 +1020,38 @@ TEST(BallinT700, OutEngineHasNoGasPath) {
         h.engine().derivatives(slowing, std::span<const double>(x.data(), h.size()), d);
         EXPECT_EQ(counter.count(), 0U);
     }
+    // Held: every state but the slip and the torque sensor, which reads the
+    // engine's zero torque through its lags (the other engine's load share
+    // reads it); the gas generator doesn't follow the airframe's rotation
+    // either, so no airframe motion lifts it off the floor (code review of
+    // PR #77).
     for (std::size_t i = 0; i < BallinT700::kEngineStates; ++i) {
-        if (i != BallinT700::kSlip) {
+        if (i != BallinT700::kSlip && i != BallinT700::kTorqueLag &&
+            i != BallinT700::kTorqueSensed) {
             EXPECT_EQ(xdot[o + i], 0.0) << "state " << i;
         }
+        for (std::size_t j = 0; j < 6; ++j) {
+            if (i != BallinT700::kSlip) {
+                EXPECT_EQ(g[(o + i) * 6 + j], 0.0) << "state " << i << ", a" << j;
+            }
+        }
+    }
+    EXPECT_DOUBLE_EQ(xdot[o + BallinT700::kTorqueLag],
+                     -x[o + BallinT700::kTorqueLag] / c.torque_lag1);
+    EXPECT_DOUBLE_EQ(
+        xdot[o + BallinT700::kTorqueSensed],
+        (x[o + BallinT700::kTorqueLag] - x[o + BallinT700::kTorqueSensed]) / c.torque_lag2);
+    EXPECT_NE(x[o + BallinT700::kTorqueLag], 0.0);  // the 80 kt torque, decaying
+    // Free of the airframe's rotation: the live gas generator, and the out
+    // engine's power turbine behind its open clutch; not the out gas generator.
+    EXPECT_DOUBLE_EQ(d.H(3, 3), c.j_gt * c.gg_axis_b.x() * c.gg_axis_b.x() +
+                                    c.output_inertia * c.pt_axis_b.x() * c.pt_axis_b.x());
+    // Linearization holds the out engine but its torque sensor.
+    std::vector<unsigned char> pinned(h.size());
+    h.engine().pinned_states(slowing, std::span<const double>(x.data(), h.size()), pinned);
+    for (std::size_t i = 0; i < BallinT700::kEngineStates; ++i) {
+        const bool sensor = i == BallinT700::kTorqueLag || i == BallinT700::kTorqueSensed;
+        EXPECT_EQ(pinned[o + i], sensor ? 0 : 1) << "state " << i;
     }
     EXPECT_EQ(xdot[o + BallinT700::kSlip], 0.0);  // no torque: ṡ = Ω̇ only
     EXPECT_EQ(gs[(o + BallinT700::kSlip) * kMaxShafts], 1.0);
@@ -1039,6 +1067,49 @@ TEST(BallinT700, OutEngineHasNoGasPath) {
     // At the floor with the fuel on: lit.
     h.set_fuel({true, true});
     EXPECT_FALSE(h.signals_at(x, 1, 0.45, {1.0, 1.0}).out);
+}
+
+// Trim leaves an out engine as it is (D-056 item 3): steady_states writes
+// only a lit engine's held states, so a trim's collective doesn't move an
+// out engine's load-demand spindle or torque motor (code review of PR #77).
+TEST(BallinT700, SteadyStatesLeaveAnOutEngine) {
+    Harness h;
+    const BallinT700Config& c = h.engine().config();
+    h.set_fuel({true, false});
+    std::vector<double> x = h.seeded(0.45, c.engines * c.gear * 138.9 * kFtLbf);
+    x.pop_back();
+    const std::vector<double> before = x;
+    h.engine().steady_states(h.context(Harness::kGoverned, 0.7, 0.0), x);
+    for (std::size_t i = 0; i < BallinT700::kEngineStates; ++i) {
+        EXPECT_EQ(x[BallinT700::kEngineStates + i], before[BallinT700::kEngineStates + i])
+            << "state " << i;
+    }
+    EXPECT_NE(x[BallinT700::kLdsHys], before[BallinT700::kLdsHys]);  // the lit engine's moves
+}
+
+// The trim seed in a descent the rotor drives (D-056 item 5): the lit engines
+// run free at the reference speed only when the shaft turns faster than it;
+// at a slower shaft they are seeded engaged, at the shaft's speed, with no
+// speed error between their state and the speed they turn at (code review
+// of PR #77).
+TEST(BallinT700, OverrunSeedTurnsAtTheShaftBelowTheReference) {
+    const Harness h;
+    const BallinT700Config& c = h.engine().config();
+    const double load = -0.5 * c.engines * c.gear * 138.9 * kFtLbf;
+    for (const double ratio : {0.97, 1.03}) {
+        SCOPED_TRACE(ratio);
+        const double omega = ratio * Harness::kGoverned;
+        const SimContext ctx = h.context(omega, 0.2, load);
+        std::vector<double> x(h.size());
+        h.engine().trim_seed(ctx, x);
+        const double free = h.engine().np_reference() * c.np_des / c.gear;
+        for (std::size_t e = 0; e < 2; ++e) {
+            const std::size_t o = e * BallinT700::kEngineStates;
+            const double turns = omega - x[o + BallinT700::kSlip];
+            EXPECT_NEAR(turns, omega > free ? free : omega, 1e-12 * omega);
+            EXPECT_NEAR(x[o + BallinT700::kNpSensor], c.gear * turns / c.np_des, 1e-12);
+        }
+    }
 }
 
 // The fuel back on at the floor relights at once (D-056 item 4; no starter):

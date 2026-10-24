@@ -1116,6 +1116,36 @@ TEST(StationControls, FuelButtonTogglesTheSelectedEngines) {
     EXPECT_TRUE(m.fuel_on(0) && m.fuel_on(1));
 }
 
+// With engines in mixed states selected, the fuel button relights them all
+// (any off: all on), else shuts them all off: it never swaps them (code
+// review of PR #77).
+TEST(StationControls, FuelButtonRelightsMixedEnginesTogether) {
+    ControlsMapConfig cfg;
+    cfg.engine_select_button = 2;
+    cfg.fuel_button = 3;
+    ControlsMap m(cfg, start_controls());
+    RawInput in;
+    const auto press = [&](int button) {
+        in.buttons[static_cast<std::size_t>(button)] = true;
+        (void)m.update(in, 0.1);
+        in.buttons[static_cast<std::size_t>(button)] = false;
+        return m.update(in, 0.1);
+    };
+    (void)press(2);
+    (void)press(2);  // engine 2
+    eyas::Controls c = press(3);
+    ASSERT_TRUE(c.engines[0].fuel_on);
+    ASSERT_FALSE(c.engines[1].fuel_on);
+    (void)press(2);  // both
+    ASSERT_EQ(m.engine_selection(), 0);
+    c = press(3);
+    EXPECT_TRUE(c.engines[0].fuel_on);
+    EXPECT_TRUE(c.engines[1].fuel_on);
+    c = press(3);
+    EXPECT_FALSE(c.engines[0].fuel_on);
+    EXPECT_FALSE(c.engines[1].fuel_on);
+}
+
 // The engine-speed trim buttons move the reference at rpm_rate within its
 // range; the start's reference is where it begins.
 TEST(StationControls, SpeedTrimButtonsBeepTheReference) {

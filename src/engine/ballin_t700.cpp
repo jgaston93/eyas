@@ -749,6 +749,7 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
     Vec3 m_gg = Vec3::Zero();    // the gas generators' spin-up reaction
     Vec3 m_free = Vec3::Zero();  // the disengaged power turbines' spin-up reaction
     double h_free = 0.0;
+    int live_spools = 0;  // gas generators free of the airframe's rotation
     for (std::size_t e = 0; e < n_e; ++e) {
         const std::size_t o = e * kEngineStates;
         const std::span<const double> xe = x.subspan(o, kEngineStates);
@@ -772,7 +773,9 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
             limited_rate(xe[kNg], (g.q_gt - g.q_c) / (c.j_gt * c.ng_des),
                          ng_floor(ctx.air.temperature), std::numeric_limits<double>::infinity());
         d[kNg] = ng_rate;
-        set_g(kNg, -c.gg_axis_b / c.ng_des);
+        if (live) {
+            set_g(kNg, -c.gg_axis_b / c.ng_des);  // out, it stays on the floor (D-056 item 3)
+        }
         d[kMetal] = s.out ? 0.0 : (g.t41ns / kTstd - xe[kMetal]) / g.metal_lag;
         // ECU.
         d[kNpSensor] = (c.gear * s.engine_speed / c.np_des - xe[kNpSensor]) / c.ctpl;
@@ -813,8 +816,14 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
         d[kDelay2] =
             (xe[kValve] - xe[kDelay1] - 0.5 * c.delay * xe[kDelay2]) / (c.delay * c.delay / 12.0);
         if (!live) {
+            // The torque sensor still reads the engine's (zero) torque, for
+            // the other engine's load share (code review of PR #77).
+            const double lag = d[kTorqueLag];
+            const double sensed = d[kTorqueSensed];
             std::fill(d + kMetal, d + kSlip, 0.0);
             std::fill(d + kShareLag, d + kEngineStates, 0.0);
+            d[kTorqueLag] = lag;
+            d[kTorqueSensed] = sensed;
         }
 
         // The clutch (D-055 item 5).
@@ -838,6 +847,7 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
         }
         h += h_e * s.engine_speed * c.pt_axis_b + c.j_gt * xe[kNg] * c.ng_des * c.gg_axis_b;
         m_gg += c.j_gt * c.ng_des * ng_rate * c.gg_axis_b;
+        live_spools += live ? 1 : 0;
     }
 
     // The shaft: the drive train's load, and the engaged engines' torque and
@@ -854,7 +864,7 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
     out.load0_b.M -= ctx.body.omega_b.cross(h);
     out.load0_b.M -= m_gg;
     out.load0_b.M -= m_free;
-    out.H.block<3, 3>(3, 3) += (c.engines * c.j_gt) * c.gg_axis_b * c.gg_axis_b.transpose();
+    out.H.block<3, 3>(3, 3) += (live_spools * c.j_gt) * c.gg_axis_b * c.gg_axis_b.transpose();
     if (h_free != 0.0) {
         out.H.block<3, 3>(3, 3) += h_free * c.pt_axis_b * c.pt_axis_b.transpose();
     }
@@ -953,16 +963,20 @@ void BallinT700::steady_states(const SimContext& ctx, std::span<double> x) const
     // Held in trim (D-054 item 7): the torque integrator at the limit its input
     // drives it to; the play operators at their inputs; the flapper at rest
     // for SPDG (no current), within its stops; the clutch's slip where it is
-    // steady (D-056 item 5).
+    // steady (D-056 item 5). An out engine is left as it is.
     const BallinT700Config& c = config_;
     for (std::size_t e = 0; e < static_cast<std::size_t>(c.engines); ++e) {
         const std::span<double> xe = x.subspan(e * kEngineStates, kEngineStates);
+        const BallinT700Inputs in = inputs(ctx, static_cast<int>(e));
+        if (is_out(xe[kNg], in)) {
+            continue;  // held where it is, its clutch at zero slip (D-056 item 3)
+        }
         xe[kTorqueInt] = xe[kTorqueSensed] > c.cr ? c.yhilim : c.ylolim;
         xe[kPs3Hys] = xe[kPs3Lag];
         xe[kLdsHys] = xldsa(ctx.controls.collective);
         xe[kNgHys] = xe[kNg];
         xe[kTmPos] = flapper_at_rest(xe[kSpdg]);
-        xe[kSlip] = steady_slip(ctx, xe, inputs(ctx, static_cast<int>(e)));
+        xe[kSlip] = steady_slip(ctx, xe, in);
     }
 }
 
@@ -1015,15 +1029,18 @@ void BallinT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
     // A rotor that drives the drive (the load negative: a descent it
     // autorotates in) overruns the clutches: the lit engines then run free,
     // governed at their reference speed with no load (D-056 item 5).
-    const bool overrun = !(load > 0.0);
+    // Only a shaft faster than the reference runs ahead of them; at a slower
+    // one they are engaged with no load (code review of PR #77).
+    const double reference = inputs(ctx, 0).np_reference * config_.np_des / config_.gear;
+    const bool overrun = !(load > 0.0) && omega > reference;
     double free_speed = omega;  // the engine side's speed at the shaft [rad/s]
     if (overrun && lit > 0) {
-        free_speed = inputs(ctx, 0).np_reference * config_.np_des / config_.gear;
+        free_speed = reference;
     }
     double fuel = 0.0;
     double ng = 0.0;
     BallinT700Gas g;
-    if (lit > 0 && !steady_for_torque(overrun ? 0.0 : load, free_speed, ctx.air.pressure,
+    if (lit > 0 && !steady_for_torque(load > 0.0 ? load : 0.0, free_speed, ctx.air.pressure,
                                       ctx.air.temperature, fuel, ng, g, lit)) {
         // Past the maps (a demand no steady state delivers): seed from the rest
         // point's fuel, scaled to the inlet's pressure; trim moves on from it.
@@ -1048,7 +1065,7 @@ void BallinT700::out_rest(const BallinT700Inputs& in, std::span<double> x) const
     // its metal at the inlet's temperature, no fuel in the valve or the line,
     // no torque sensed, the clutch at zero slip.
     const BallinT700Config& c = config_;
-    equilibrium(rest_fuel_ * in.p2 / kPstd, in, x);
+    equilibrium(rest_fuel_at(in.p2), in, x);
     x[kNg] = ng_floor(in.t2);
     x[kMetal] = in.t2 / kTstd;
     x[kTorqueLag] = 0.0;
@@ -1093,7 +1110,10 @@ void BallinT700::pinned_states(const SimContext& ctx, std::span<const double> x,
         // The gas generator on the maps' floor, and an out engine's metal (D-056).
         const double ng_rate = (s.gas.q_gt - s.gas.q_c) / (c.j_gt * c.ng_des);
         const double floor = ng_floor(ctx.air.temperature);
-        pe[kNg] = s.out || pushes_on_limit(xe[kNg], ng_rate, floor, floor + 1.0) ? 1 : 0;
+        pe[kNg] = s.out || pushes_on_limit(xe[kNg], ng_rate, floor,
+                                           std::numeric_limits<double>::infinity())
+                      ? 1
+                      : 0;
         pe[kMetal] = s.out ? 1 : 0;
     }
     const unsigned mask =
@@ -1102,12 +1122,15 @@ void BallinT700::pinned_states(const SimContext& ctx, std::span<const double> x,
     for (std::size_t e = 0; e < n_e; ++e) {
         pinned[e * kEngineStates + kSlip] = (mask & (1U << e)) != 0U ? 1 : 0;
     }
-    // An out engine is held whole (D-056 item 3): its fuel control and gas
-    // generator don't move, and its open clutch's slip only follows the shaft.
+    // An out engine is held but its torque sensor (D-056 item 3): its fuel
+    // control and gas generator don't move, and its open clutch's slip only
+    // follows the shaft; the sensor's lags decay to its zero torque.
     for (std::size_t e = 0; e < n_e; ++e) {
         if (outs[e]) {
             std::fill_n(pinned.begin() + static_cast<std::ptrdiff_t>(e * kEngineStates),
                         kEngineStates, static_cast<unsigned char>(1));
+            pinned[e * kEngineStates + kTorqueLag] = 0;
+            pinned[e * kEngineStates + kTorqueSensed] = 0;
         }
     }
 }

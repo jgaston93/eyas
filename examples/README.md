@@ -153,8 +153,8 @@ afloat.
   stop, forward fly; it holds fly until brought to it, PCL on the HUD; it
   moves the engines on Ballin's T700s, `data/uh60a/engine_ballin/uh60a.yaml`,
   D-055); the engine-select, speed-trim and fuel-shutoff buttons are left
-  to assign (the fuel button fails or relights the selected engines, OFF on
-  the HUD; D-056);
+  to assign (the fuel button fails the selected engines, or relights them
+  all if any is off, OFF on the HUD; D-056);
 - the stick trigger to trim release;
 - throttle E to the brakes and throttle G to trim reset.
 

@@ -98,8 +98,9 @@ struct ControlsMapConfig {
     // Table 1). < 0: none.
     int rpm_up_button = -1;
     int rpm_down_button = -1;
-    // Pressed: toggles the fuel shutoff of the engines the lever moves (the
-    // engine selection; D-056), so an engine can be failed and relit. < 0: none.
+    // Pressed: the fuel shutoff of the engines the lever moves (the engine
+    // selection; D-056), so an engine can be failed and relit: all of them
+    // relit if any is off, else all shut off. < 0: none.
     int fuel_button = -1;
     double rpm_rate = 0.01;
     double rpm_low = 0.94;
