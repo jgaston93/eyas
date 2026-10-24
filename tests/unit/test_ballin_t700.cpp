@@ -504,6 +504,40 @@ TEST(BallinT700, InitialStatesBeforeBindingAreAtRest) {
     EXPECT_NEAR(x[BallinT700::kSpdsf], 0.0, 1e-12);  // no speed error
 }
 
+// Bound to a shaft governed off the engine's design speed (27 rad/s against
+// NP_des/gear = 27.006 rad/s), the initial state is the rest point at the
+// shaft's speed: every rate zero, no torque at the shaft, no speed error
+// (code review of PR #71).
+TEST(BallinT700, InitialStatesOnTheBoundShaftAreAtRest) {
+    const Harness h;
+    std::vector<double> x(h.size());
+    h.engine().initial_states(x);
+    std::vector<double> xdot;
+    double q0 = 0.0;
+    h.evaluate(x, h.context(Harness::kGoverned, 0.0, 0.0), xdot, q0);
+    for (std::size_t i = 0; i < xdot.size(); ++i) {
+        EXPECT_NEAR(xdot[i], 0.0, 1e-6) << "state " << i;
+    }
+    EXPECT_NEAR(q0, 0.0, 1e-6);
+    EXPECT_NEAR(x[BallinT700::kSpdsf], 0.0, 1e-12);
+}
+
+// The constants the engine divides by or takes a root of are checked at
+// init, as its lags are (code review of PR #71).
+TEST(BallinT700, RejectsNonPositiveDivisors) {
+    const BallinT700Config base = load_engine()->config();
+    for (double BallinT700Config::*field :
+         {&BallinT700Config::tm_gain, &BallinT700Config::tmlvg, &BallinT700Config::tmlg,
+          &BallinT700Config::k_dpb, &BallinT700Config::tc_t41, &BallinT700Config::k_wgt}) {
+        BallinT700Config c = base;
+        c.*field = 0.0;
+        EXPECT_THROW(BallinT700{std::move(c)}, InitError);
+    }
+    BallinT700Config c = base;
+    c.wfmin = -1e-3;
+    EXPECT_THROW(BallinT700{std::move(c)}, InitError);
+}
+
 // A state where the gas path has no solution (here NaN) is reported:
 // derivatives() clears the convergence flag (§7), as the rotors do.
 TEST(BallinT700, ReportsAnUnconvergedGasPath) {
@@ -542,6 +576,29 @@ TEST(BallinT700, TrimSeedPastTheMapsIsFinite) {
     }
     EXPECT_GT(x[BallinT700::kValve] * BallinT700::kFuelScale, 100.0 * kLbmHr);
     EXPECT_GT(x[BallinT700::kNg], 0.65);
+}
+
+// Past the maps at altitude the seed is still a steady gas path at the
+// inlet's pressure and temperature, not sea level's: the gas generator and
+// the PS3 sensor at rest (code review of PR #71).
+TEST(BallinT700, TrimSeedPastTheMapsIsAtTheInlet) {
+    const Harness h;
+    const BallinT700Config& c = h.engine().config();
+    for (const double feet : {0.0, 10000.0, 20000.0}) {
+        SCOPED_TRACE(feet);
+        SimContext ctx =
+            h.context(Harness::kGoverned, 0.9, 10.0 * c.engines * c.gear * 229.0 * kFtLbf);
+        ctx.air = isa_atmosphere(feet * kFoot, 0.0);
+        std::vector<double> x(h.size());
+        h.engine().trim_seed(ctx, x);
+        std::vector<double> xdot(h.size());
+        std::vector<double> g(6 * h.size());
+        ComponentDerivs d{xdot, g, Wrench{}, Mat66::Zero()};
+        h.engine().derivatives(ctx, x, d);
+        EXPECT_TRUE(d.converged);
+        EXPECT_NEAR(xdot[BallinT700::kNg], 0.0, 1e-6);
+        EXPECT_NEAR(xdot[BallinT700::kPs3Lag], 0.0, 1e-6);
+    }
 }
 
 // Linearization holds the flapper only where it doesn't move: at rest in the
@@ -1029,6 +1086,19 @@ TEST(BallinT700, OneEngineCarriesTheLoad) {
     EXPECT_NEAR(live.q_engine, demand + h.engine().drive_train_load(x.back()), 0.01 * demand);
     EXPECT_TRUE(h.signals_at(x, 1, 0.45, {1.0, 1.0}).out);
     EXPECT_GT(x[BallinT700::kEngineStates + BallinT700::kSlip], 0.0);
+}
+
+// A reset starts the aircraft where init does, the engines at rest on the
+// bound shaft both times (code review of PR #71).
+TEST(BallinT700Aircraft, ResetStartsWhereInitDoes) {
+    const Config cfg =
+        Config::from_file(std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a.yaml");
+    Executive ex = build_executive(cfg, read_origin(cfg).origin().altitude);
+    const std::vector<double> at_init(ex.state().begin(), ex.state().end());
+    ASSERT_TRUE(ex.reset(BodyState{}));
+    for (std::size_t i = 0; i < at_init.size(); ++i) {
+        EXPECT_EQ(ex.state()[i], at_init[i]) << "state " << i;
+    }
 }
 
 // The UH-60A on Ballin's engines (data/uh60a/engine_ballin/uh60a_table_b1.yaml,
