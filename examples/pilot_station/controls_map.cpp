@@ -89,6 +89,23 @@ void ControlsMap::update_channel(const AxisMap& m, const Channel& ch, const RawI
     *ch.delta = std::clamp(d, dlo, dhi);
 }
 
+namespace {
+
+// A held lever is taken once it reaches the held value (within `pickup`), or
+// passes it in a small step between two samples (`prev` NaN before the
+// first), so a start never jumps the control to wherever the lever happens
+// to be. A big step isn't a pass: through FlightGear an untouched axis reads
+// 0 (mid travel) until it moves, then jumps to the real value (code review).
+bool picks_up(double target, double held, double prev, double pickup) noexcept {
+    const double gap = target - held;
+    const double prev_gap = prev - held;
+    const bool crossed =
+        prev_gap * gap < 0.0 && std::abs(target - prev) <= ControlsMap::kPickupStep;
+    return std::abs(gap) <= pickup || crossed;
+}
+
+}  // namespace
+
 void ControlsMap::update_lever(const AxisMap& m, const RawInput& in) noexcept {
     if (m.axis < 0) {
         return;
@@ -101,17 +118,8 @@ void ControlsMap::update_lever(const AxisMap& m, const RawInput& in) noexcept {
     lever_target_ = target;
     lever_seen_ = true;
     if (lever_held_) {
-        // Pickup: hold the collective until the lever reaches it, or passes
-        // it in a small step between two samples, so a start never jumps
-        // the collective to wherever the lever happens to be. A big step
-        // isn't a pass: through FlightGear an untouched axis reads 0 (mid
-        // travel) until it moves, then jumps to the real value (code review).
-        const double d = delta_.collective;
-        const double gap = target - d;
-        const double prev_gap = lever_prev_ - d;  // NaN before the first sample
-        const bool near = std::abs(gap) <= config_.pickup;
-        const bool crossed = prev_gap * gap < 0.0 && std::abs(target - lever_prev_) <= kPickupStep;
-        if (near || crossed) {
+        // Pickup: hold the collective until the lever reaches it.
+        if (picks_up(target, delta_.collective, lever_prev_, config_.pickup)) {
             lever_held_ = false;
         }
     }
@@ -145,22 +153,15 @@ void ControlsMap::update_engines(const RawInput& in, double dt) noexcept {
 
     const AxisMap& m = config_.power_lever;
     if (m.axis >= 0) {
-        // Full travel: −1 the idle stop, +1 fly.
+        // Full travel at gain 1: −1 the idle stop, +1 fly.
         const double u =
-            std::clamp(0.5 + 0.5 * shape(axis_value(in, m), m.deadband, m.expo), 0.0, 1.0);
+            std::clamp(0.5 + m.gain * 0.5 * shape(axis_value(in, m), m.deadband, m.expo), 0.0, 1.0);
         for (std::size_t e = 0; e < levers_.size(); ++e) {
             if (selection_ != 0 && static_cast<int>(e) + 1 != selection_) {
                 continue;
             }
-            if (levers_held_[e]) {
-                // Pickup, as the collective's (update_lever).
-                const double gap = u - levers_[e];
-                const double prev_gap = levers_prev_ - levers_[e];  // NaN before a sample
-                const bool crossed =
-                    prev_gap * gap < 0.0 && std::abs(u - levers_prev_) <= kPickupStep;
-                if (std::abs(gap) <= config_.pickup || crossed) {
-                    levers_held_[e] = false;
-                }
+            if (levers_held_[e] && picks_up(u, levers_[e], levers_prev_, config_.pickup)) {
+                levers_held_[e] = false;  // pickup, as the collective's
             }
             if (!levers_held_[e]) {
                 levers_[e] = u;

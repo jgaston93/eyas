@@ -437,6 +437,9 @@ TEST(StationMapping, WrittenMapReadsBack) {
     EXPECT_THROW((void)parse_map("rpm_low = 1.2\n", ControlsMapConfig{}, "t"), std::runtime_error);
     EXPECT_THROW((void)parse_map("feet_on_pedals = 1.5\n", ControlsMapConfig{}, "t"),
                  std::runtime_error);
+    // The power lever is a lever: absolute only (code review of PR #73).
+    EXPECT_THROW((void)parse_map("power_lever.mode = rate\n", ControlsMapConfig{}, "t"),
+                 std::runtime_error);
 }
 
 TEST(StationMapping, BadLinesNameFileAndLine) {
@@ -1012,6 +1015,40 @@ TEST(StationControls, PowerLeverPicksUpThenMovesBothEngines) {
     // Unmapped: the start's levers.
     ControlsMap u(ControlsMapConfig{}, start_controls());
     EXPECT_EQ(u.update(axes(0.0, -1.0), 0.1).engines[1].power_lever, 1.0);
+}
+
+// The power lever's gain scales its travel about the middle, as the
+// collective's does: at gain 0.5 the axis's stops are a quarter and three
+// quarters of the lever's travel (code review of PR #73).
+TEST(StationControls, PowerLeverAppliesItsGain) {
+    ControlsMapConfig cfg;
+    cfg.power_lever = absolute(1, 0.5);
+    ControlsMap m(cfg, start_controls());
+    (void)m.update(axes(0.0, 0.0), 0.1);
+    (void)m.update(axes(0.0, 1.0), 0.1);  // 0.75: still held at fly
+    EXPECT_TRUE(m.power_lever_held(0));
+    eyas::Controls start = start_controls();
+    start.engines[0].power_lever = 0.75;
+    start.engines[1].power_lever = 0.75;
+    m.restart(start);
+    eyas::Controls c = m.update(axes(0.0, 1.0), 0.1);  // at 0.75: taken
+    EXPECT_FALSE(m.power_lever_held(0));
+    EXPECT_DOUBLE_EQ(c.engines[0].power_lever, 0.75);
+    c = m.update(axes(0.0, -1.0), 0.1);
+    EXPECT_DOUBLE_EQ(c.engines[1].power_lever, 0.25);
+}
+
+// A map built without a start holds the levers at fly, as every other
+// default does (EngineControls, the starts), never at the idle stop (code
+// review of PR #73).
+TEST(StationControls, DefaultMapHoldsTheLeversAtFly) {
+    const ControlsMap m;
+    EXPECT_EQ(m.power_lever(0), 1.0);
+    EXPECT_EQ(m.power_lever(1), 1.0);
+    ControlsMapConfig cfg;
+    cfg.power_lever = absolute(1);
+    ControlsMap n(cfg, eyas::Controls{});
+    EXPECT_EQ(n.update(axes(0.0, -1.0), 0.1).engines[0].power_lever, 1.0);  // held at fly
 }
 
 // The engine-select button cycles which engines the lever moves (all,
