@@ -295,6 +295,9 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
                 if (value == "absolute") {
                     a->mode = AxisMode::absolute;
                 } else if (value == "rate") {
+                    if (a == &m.power_lever) {
+                        fail(origin, n, "power_lever.mode must be absolute (a lever)");
+                    }
                     a->mode = AxisMode::rate;
                 } else {
                     fail(origin, n, "mode must be absolute or rate");

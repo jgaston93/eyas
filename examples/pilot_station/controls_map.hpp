@@ -82,9 +82,11 @@ struct ControlsMapConfig {
     // of the held value (or when it passes it in a small step): pickup, so
     // that a start doesn't jump the collective to the lever. [0, 0.5].
     double pickup = 0.02;
-    // Engine controls (D-055). The power lever: an absolute lever, full
-    // travel from the idle stop (−1) to fly (+1); it picks up as the
-    // collective does (`pickup`), starting at the start's lever positions.
+    // Engine controls (D-055). The power lever: an absolute lever (mode
+    // absolute only), full travel from the idle stop (−1) to fly (+1) at
+    // gain 1, the gain scaling it about the middle as the collective's; it
+    // picks up as the collective does (`pickup`), starting at the start's
+    // lever positions.
     // Unmapped, the engines stay at the start's (fly).
     AxisMap power_lever;
     // Pressed: cycles which engines the lever moves: all, engine 1, engine 2,
@@ -102,7 +104,7 @@ struct ControlsMapConfig {
 };
 
 // How many engines the station's power lever reaches (Controls::engines).
-inline constexpr int kStationEngines = 2;
+inline constexpr int kStationEngines = 2;  // ControlsMap::levers_ starts each at fly
 
 // Increments from the start controls (start + delta = applied).
 struct ControlDeltas {
@@ -204,7 +206,7 @@ private:
     double lever_prev_ = std::numeric_limits<double>::quiet_NaN();
     double lever_target_ = 0.0;
     bool lever_seen_ = false;
-    std::array<double, kStationEngines> levers_{};
+    std::array<double, kStationEngines> levers_{1.0, 1.0};  // fly, as EngineControls
     std::array<bool, kStationEngines> levers_held_{};
     double levers_prev_ = std::numeric_limits<double>::quiet_NaN();
     int selection_ = 0;

@@ -877,6 +877,48 @@ TEST(BallinT700, ConfigLimitsTheEngines) {
     EXPECT_THROW(BallinT700::from_config(Config::from_string(text)), InitError);
 }
 
+// The clutches' drive inertia J_d (config, D-055 item 5) is the shaft the
+// executive integrates: the parts no component models and every component's
+// own inertia on it (the blades; K_s at the initial state, blades unflapped),
+// the engines' excepted. Each of the UH-60A's Ballin's-engine configs (code
+// review of PR #73: two copies of one quantity, held equal here).
+TEST(BallinT700Aircraft, DriveInertiaIsTheShafts) {
+    for (const char* file :
+         {"uh60a.yaml", "uh60a_table_b1.yaml", "uh60a_ballin.yaml", "uh60a_fletcher.yaml"}) {
+        SCOPED_TRACE(file);
+        const Config cfg =
+            Config::from_file(std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/" + file);
+        const Executive ex = build_executive(cfg, read_origin(cfg).origin().altitude);
+        ASSERT_EQ(ex.shafts().size(), 1U);
+        double j = 0.0;
+        for (const ShaftPart& p : ex.shafts()[0].parts) {
+            j += p.inertia;
+        }
+        // The coupling store at this state first (Executive::context).
+        std::vector<double> rates(ex.num_states());
+        (void)ex.derivatives(0.0, ex.state(), Controls{}, Environment{}, rates);
+        const SimContext ctx = ex.context(0.0, ex.state(), Controls{}, Environment{});
+        const BallinT700* engine = nullptr;
+        for (const std::size_t i : ex.evaluation_order()) {  // producers first (D-003)
+            const DynamicComponent& c = ex.component(i);
+            if (const auto* e = dynamic_cast<const BallinT700*>(&c)) {
+                engine = e;
+                continue;
+            }
+            const std::size_t n = ex.component_size(i);
+            std::vector<double> xdot(n);
+            std::vector<double> g(6 * n);
+            std::vector<double> gs(n * kMaxShafts);
+            ComponentDerivs d{xdot, g, Wrench{}, Mat66::Zero()};
+            d.Gs = gs;
+            c.derivatives(ctx, ex.state().subspan(ex.component_offset(i), n), d);
+            j -= d.Ks(0, 0);
+        }
+        ASSERT_NE(engine, nullptr);
+        EXPECT_NEAR(engine->config().drive_inertia, j, 1e-6 * j);
+    }
+}
+
 // A reset starts the aircraft where init does, the engines at rest on the
 // bound shaft both times (code review of PR #71).
 TEST(BallinT700Aircraft, ResetStartsWhereInitDoes) {
