@@ -403,13 +403,20 @@ private:
 
     double residuals(const double* y, double ng, double np, double metal, double fuel, double p2,
                      double t2, double* r, BallinT700Gas* out) const noexcept;
+    // Init-time: the rest point at shaft speed omega [rad/s]; throws InitError
+    // if the maps give none.
+    void find_rest(double omega);
+    // The rest point's fuel scaled to inlet pressure p2 [Pa]: trim's fallback [kg/s].
+    double rest_fuel_at(double p2) const noexcept;
 
     BallinT700Config config_;
     std::shared_ptr<const Table1D> start_p3_, start_p41_, start_p45_;  // the steady line by NGC
     mutable Cursors cursors_;
     CouplingSlot demand_;
-    // A steady state known at init (sea level, zero shaft torque, the design
-    // speed), where a trim-time solve that fails falls back.
+    // A steady state known at init (sea level, zero shaft torque, at the bound
+    // shaft's governed speed or before binding the design speed): the initial
+    // state, and where a trim-time solve that fails falls back.
+    double rest_omega_ = 0.0;  // [rad/s]
     double rest_fuel_ = 0.0;
     double rest_ng_ = 0.0;
     BallinT700Gas rest_gas_;

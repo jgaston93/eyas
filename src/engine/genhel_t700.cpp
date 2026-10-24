@@ -13,26 +13,14 @@
 namespace eyas {
 namespace {
 
+using engine::dead_band;
 using engine::kLimitReturn;
 using engine::lead_lag;
 using engine::limited_rate;
 using engine::pushes_on_limit;
 
-// GenHel's dead band (p. 5.6-11): zero for −a < u < b, else u + a or u − b.
-double dead_band(double u, double a, double b) noexcept {
-    if (u <= -a) {
-        return u + a;
-    }
-    if (u >= b) {
-        return u - b;
-    }
-    return 0.0;
-}
-
 void require_positive(double v, const char* what) {
-    if (!(v > 0.0) || !std::isfinite(v)) {
-        throw InitError(std::string("genhel_t700: ") + what + " must be positive and finite");
-    }
+    engine::require_positive(v, "genhel_t700", what);
 }
 
 }  // namespace
