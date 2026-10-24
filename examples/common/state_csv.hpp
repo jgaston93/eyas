@@ -8,8 +8,9 @@
 // The time-history CSV that eyas_drive and the pilot station write: the
 // controls applied and every AircraftState field, SI units, frames as
 // documented in include/eyas/aircraft_state.hpp, then the flight control
-// system's switches ('+'-separated, common/afcs.hpp; M8c3). Set the stream's
-// precision (eyas_drive uses 17) before writing.
+// system's switches ('+'-separated, common/afcs.hpp; M8c3), then the engine
+// controls (each engine's power lever, the rotor speed reference; D-055).
+// Set the stream's precision (eyas_drive uses 17) before writing.
 namespace examples {
 
 void write_state_header(std::ostream& out);

@@ -83,7 +83,8 @@ in its own window (GLFW and OpenGL 2.1; built when both are found, otherwise
   the start point, whose header gives the exact `eyas_drive` command that
   replays the flight from an airborne start (bit for bit). `eyas_drive` has
   no brake input, so if the brakes change the file says from when it no
-  longer replays. `--out` writes the state history.
+  longer replays. `--out` writes the state history; its last columns are the
+  power levers and the rotor speed reference (D-055).
 - **Input loss:** with a gamepad, joystick or FlightGear's sticks, the
   flight pauses (INPUT LOST) when no sample arrives for 250 ms
   (`--input-timeout`) or the device disconnects, and resumes when input

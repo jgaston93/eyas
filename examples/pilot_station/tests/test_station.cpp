@@ -855,6 +855,35 @@ TEST(StationRecorder, EngineControlChangeIsMarked) {
     EXPECT_EQ(count(text, "# NOT REPLAYABLE"), 1);
 }
 
+// The state history ends with the engine controls (D-055), so a piloted
+// run shows what the levers and the speed trim did.
+TEST(StationRecorder, StateHistoryCarriesTheEngineControls) {
+    Station& st = uh60a();
+    ASSERT_TRUE(st.start(1));
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "eyas_station_engine_state.csv").string();
+    {
+        Recorder rec("", path, "cfg.yaml", "", 60);
+        rec.begin(st, st.outputs());
+        eyas::Controls c = st.starts()[1].controls;
+        c.engines[0].power_lever = 0.25;
+        c.engines[1].power_lever = 0.0;
+        c.rotor_speed_reference = 1.01;
+        rec.frame(0.5, {}, c, st.outputs());
+        rec.end();
+    }
+    std::istringstream lines(read_file(path));
+    std::string header;
+    std::string start;
+    std::string row;
+    ASSERT_TRUE(std::getline(lines, header) && std::getline(lines, start) &&
+                std::getline(lines, row));
+    EXPECT_TRUE(header.ends_with(
+        ",afcs,power_lever_1,power_lever_2,power_lever_3,power_lever_4,rotor_speed_reference"));
+    EXPECT_TRUE(start.ends_with(",sas+pba,1,1,1,1,1"));
+    EXPECT_TRUE(row.ends_with(",sas+pba,0.25,0,1,1,1.01"));
+}
+
 // The start's AFCS switches go into the replay command (M8c2), and every
 // row carries the switches, a new row where they change, so eyas_drive
 // replays them (M8c3): no NOT REPLAYABLE mark.
