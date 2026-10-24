@@ -1656,3 +1656,40 @@ The UH-60A's rotors turn on a `free` shaft driven by GenHel's T700s (CR-166309 �
 
 **Next (agreed 2026-10-23).** Ballin's component-level T700 model and UH-60A fuel control (NASA TM-100991, 1988; public), validated in GenHel against USAAEFA flight test, with the Ames drive train (TM-88360 App. A): a second engine type, then Stage B2's limits, idle and engine failure on it. It also depends on altitude and temperature, which GenHel's maps don't, and gives fuel flow for a check against USAAEFA's level-flight data (ADA180181 Figs. 32–59; not yet made).
 
+
+## M9 — Rotor speed, Stage B1′: Ballin's component-level T700 (2026-10-23; issue #39)
+
+A second engine model, `ballin_t700` (D-054): Ballin's real-time T700 (NASA TM-100991, 1988), a gas generator and free power turbine on the engine's maps f1–f11 with quasi-steady mixing volumes and a station 4.1 heat sink, and the T700-GE-700's fuel control (the HMU's droop line, load-demand spindle and torque motor; the ECU's governor, rate compensation, T4.5 limiter and P+I compensation), with the Ames drive train (TM-88360 App. A). The maps and schedules are digitized from the scans (`tools/digitize_ballin_t700.py`; D-054 item 9), the constants transcribed from the typeset tables. The UH-60A flies on it from `data/uh60a/engine_ballin/` (GenHel's engines stay the default).
+
+| Check | Status | Evidence |
+|---|---|---|
+| Ballin's steady states | ✅ | `BallinT700.ReproducesTableB1SteadyStates`: open loop at Table B.1's fuel flow and power-turbine speed, the gas path reproduces the printed hover, 80 kt and 80 kt descent states: NG within 0.11 %, P_s3, P41, P45 within 0.7 %, T41, T45 within 0.35 %, the turbine's torque and power within 1.6 %. With eq. (43) as printed (− W_f) the pressures miss by 7–9 % and the power by 13–23 % (the test fails, checked by mutation), which settles the misprint (D-054 item 5). |
+| Ballin's linear models | ✅ | `LinearizedGasGeneratorAgreesWithAppendixB`, by Ballin's ±2 % extraction (p. 14): ∂ṄG/∂W_f within 0.5–4.1 % of Figs. B1, B3, B5 at all three trims; ∂ṄG/∂NG +10.5, −3.9 and +0.7 %, A₂₁/b₂ +11.9, +2.6 and +2.1 %, the gas generator's mode with the heat sink +10.5, −8.9, −2.2 %. On the maps' broken lines the step itself moves ∂ṄG/∂NG by 27 % at trim 1 (−2.34 tangent, −2.98/s at ±2 %), so those are gated at 25 %. The heat sink's mode is 10–16 % faster than Figs. B7–B11's at every step, a systematic difference (Ballin's extraction held T41 fixed, p. 17; here the metal temperature is the state). The 5-state models' eigenvalues reproduce Table 1, which checks their transcription; the printed 6-state models are inconsistent within the report and aren't used (DATA_GAPS.md). |
+| Closed forms and limits | ✅ | `TrimSeedIsAtRest` (every rate zero at the seeded equilibrium, the ECU and the torque motor inside their range at Table B.1's powers); `TrimSeedHoldsTheEcuAtItsLimitOutsideItsAuthority`; `GovernsTheShaftIsochronously` (after a hover-power step the rotor returns to the reference; settled, the torque motor's ±2 mA dead band and the ECU's integrator hunt by ±0.035 % NP, period about 4 s, mean on the reference within ±0.006 %); `QuasiSteadyGasPathConverges` (from the state-only start, ±60 % fuel, ±8 % NG, ±300 K of metal temperature: converged in at most 12 iterations). |
+| Trim | ✅ | `BallinT700Aircraft.TrimsAtTableB1Conditions`: the UH-60A at Table B.1's loading trims in hover (6 iterations), at 80 kt (9) and at 80 kt, −1000 ft/min (11), the governor holding 27 rad/s to 1e-6. |
+| Real-time | ✅ | `DerivativesArePureAndAllocateNothing` (no allocation; bit for bit the same after another state is evaluated: the quasi-steady solve starts from the state alone); `eyas_bench`: step() 22.5 µs against 16.6 µs on GenHel's engine (+36 %), every advance() within budget (worst 2250 µs of 8333). |
+
+**Against Table B.1 on the aircraft.** `eyas_m9_ballin_engine_cases` trims the UH-60A on Ballin's engines at Table B.1's loading and conditions (`tools/plot_m9_ballin.py`). The rotor's torque at the hub is 1.3 % below Table B.1's in hover, 6.4 % at 80 kt and 11.8 % in the descent (Eyas's rotor and airframe against GenHel's). The engines deliver 4–7 % less torque than Table B.1, and burn 1.2–4.2 % less fuel. Of the engine's shortfall, the larger part is upstream of it: in Table B.1 the engines deliver 209 hp more than the hub takes in hover (tail rotor and losses), in Eyas 106 hp (the drive train's 66 + 40 hp), because Eyas's tail rotor takes no torque from the shaft yet (#40). At its own power the engine's state follows Ballin's: NG within 0.7 %, the temperatures within 1.2 %.
+
+![Table B.1 comparison](validation/m9/m9_ballin_table_b1.png)
+
+**A collective step.** The Stage B1 step (0.05 collective from hover, 10 s, no stability augmentation), on both engines and with the rotor speed held. On Ballin's engines the rotor first droops (0.34 % at 0.5 s at sea level, 0.32 % at 5250 ft) while the gas generator spools up over about a second, overshoots by 0.1–0.2 % and returns to the reference. On GenHel's the engines' torque jumps within 0.1 s and the rotor speed first rises, the "adverse" response Ballin (TM-88360 p. 12, PDF p. 14) describes for GenHel's partial-derivative model.
+
+![Collective step on both engines](validation/m9/m9_ballin_step.png)
+
+**Against flight data: Fletcher's yaw rate to collective** (M7c V2; `eyas_m7c_fletcher` with `data/uh60a/engine_ballin/uh60a_fletcher.yaml`). Mean / RMS, Eyas minus flight, where Fletcher drew the response up to 12 rad/s:
+
+| | rotor speed held (Stage A) | on GenHel's engines (B1) | on Ballin's engines (B1′) |
+|---|---|---|---|
+| hover, magnitude [dB] | −3.4 / 6.3 | −2.5 / 4.6 | −2.3 / 4.6 |
+| hover, phase [deg] | +45 / 61 | +96 / 122 | −78 / 85 |
+| 80 kt, magnitude [dB] | −8.7 / 9.0 | −10.0 / 10.1 | **−1.3 / 1.5** |
+| 80 kt, phase [deg] | +28 / 29 | −103 / 104 | **−9 / 11** |
+
+At 80 kt Ballin's engine brings the yaw response to within about 1.3 dB and 10° of the flight data over Fletcher's band (3–10 rad/s), from 10 dB and 100° on GenHel's: it is the rotor-speed and torque dynamics that couple collective into yaw. In hover the magnitude is as on GenHel's engines and the phase difference smaller but of the other sign: below about 3 rad/s Eyas's phase falls much faster than the flight's and its magnitude more steeply, which is the hover yaw dynamics' (open). Roll and pitch to cyclic are unchanged in hover and within 0.8 dB and 5° at 80 kt.
+
+![Fletcher's yaw rate to collective, on Ballin's engines](validation/m9/m9_ballin_fletcher_yaw.png)
+
+**Found and corrected while building (D-054).** Hart & Wenzel's ECU equations (TM-83579 B59–B74) show which of Ballin's C3 gains turn the speed error into volts (ZK9, ZK10 and ZK5, the last through a washout, so V·s/%) and which scale the sum (ZK7 + ZK1 = 2.0); with all five read as V/% the loop gain was 100 times too high and the governor couldn't hold the rotor. H&W's selector clamps the temperature signal at zero, which would leave the ECU unable to answer an underspeed; Ballin's drawn "maximum error selector" is used (D-054 item 6(a)). Fig. A9's corrected flow, printed in lbm/s, is in lbm/(s·psia) by eq. (34).
+
+**Open.** The hover yaw-to-collective phase; the tail rotor's torque on the shaft (#40); Stage B2 (limits, idle, the acceleration schedule of Fig. C30, the clutch and engine failure); the USAAEFA fuel-flow check (ADA180181 Figs. 32–59).

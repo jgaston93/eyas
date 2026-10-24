@@ -1,0 +1,18 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A3: f3, seal-pressurization bleed fraction, PDF p. 58, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (65.0, 100.0), (-0.02, 0.12)), corrected by the scan's stretch measured on 34 and 109 ticks (up to 1.8e-03 of an axis); the plotted ticks sit +2.0e-03 and +3.3e-04 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: corrected_gas_generator_speed [%], y: bleed_fraction_b1 [-]
+curve,corrected_gas_generator_speed,bleed_fraction_b1
+f3,65.048,0.10868
+f3,78.021,0.10872
+f3,79.029,0.10823
+f3,80.047,0.10594
+f3,81.036,0.10222
+f3,82.047,0.097625
+f3,83.03,0.089398
+f3,84.012,0.073999
+f3,84.998,0.050057
+f3,87.038,0.013232
+f3,88.018,0.0025232
+f3,89.035,0.00014921
+f3,99.993,0.00023632

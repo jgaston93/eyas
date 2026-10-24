@@ -1,0 +1,8 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A4: f4, power-turbine-balance bleed fraction, PDF p. 59, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (3.0, 12.0), (0.0088, 0.0108)), corrected by the scan's stretch measured on 89 and 97 ticks (up to 2.1e-03 of an axis); the plotted ticks sit +2.4e-03 and -6.9e-04 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: corrected_airflow_wa2c [lbm/s], y: bleed_fraction_b2 [-]
+curve,corrected_airflow_wa2c,bleed_fraction_b2
+f4,3.0051,0.01057
+f4,4.99,0.0090026
+f4,11.981,0.009002

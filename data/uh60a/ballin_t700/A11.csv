@@ -1,0 +1,11 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A11: f_hs, station 4.1 heat-sink constant, PDF p. 66, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (65.0, 100.0), (3.5, 8.0)), corrected by the scan's stretch measured on 34 and 84 ticks (up to 1.9e-03 of an axis); the plotted ticks sit -9.1e-04 and -6.4e-04 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: corrected_gas_generator_speed [%], y: heat_sink_constant_t41sgn [lbm/s]
+curve,corrected_gas_generator_speed,heat_sink_constant_t41sgn
+f_hs,65.024,3.9976
+f_hs,70.002,3.9987
+f_hs,75.034,5.753
+f_hs,80.001,6.2056
+f_hs,84.999,7.506
+f_hs,99.991,7.5059

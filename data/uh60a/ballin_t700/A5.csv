@@ -1,0 +1,8 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A5: f5, impeller tip leakage and turbine cooling-bleed fraction, PDF p. 60, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (3.0, 12.0), (0.077, 0.086)), corrected by the scan's stretch measured on 89 and 140 ticks (up to 1.5e-03 of an axis); the plotted ticks sit +1.2e-03 and -1.1e-03 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: corrected_airflow_wa2c [lbm/s], y: bleed_fraction_b3 [-]
+curve,corrected_airflow_wa2c,bleed_fraction_b3
+f5,3.0128,0.085105
+f5,8.2917,0.084602
+f5,11.991,0.077914

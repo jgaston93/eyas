@@ -1,0 +1,28 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A9: f9, power turbine mass flow, PDF p. 64, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (0.3, 0.85), (0.25, 0.39)), corrected by the scan's stretch measured on 55 and 65 ticks (up to 3.5e-03 of an axis); the plotted ticks sit +7.6e-04 and +2.0e-03 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: pressure_ratio_ps9_p45 [-], y: corrected_flow_w45c [lbm/s]
+curve,pressure_ratio_ps9_p45,corrected_flow_w45c
+f9,0.30017,0.37172
+f9,0.32533,0.37179
+f9,0.35027,0.3715
+f9,0.37524,0.3709
+f9,0.40041,0.36995
+f9,0.42534,0.36859
+f9,0.45067,0.36692
+f9,0.47578,0.36487
+f9,0.50024,0.36246
+f9,0.5253,0.35976
+f9,0.55051,0.35679
+f9,0.575,0.35444
+f9,0.59982,0.35076
+f9,0.62484,0.34589
+f9,0.64974,0.33981
+f9,0.67454,0.33277
+f9,0.69963,0.3247
+f9,0.72466,0.31578
+f9,0.74971,0.30617
+f9,0.77455,0.29657
+f9,0.79954,0.28502
+f9,0.82508,0.27321
+f9,0.84963,0.26123
