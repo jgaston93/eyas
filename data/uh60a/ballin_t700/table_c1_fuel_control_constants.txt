@@ -1,0 +1,65 @@
+# Transcribed by eye from the rendered page image (170 dpi) of Ballin, NASA TM-100991 (1988),
+# "A High Fidelity Real-Time Simulation of a Small Turboshaft Engine", Appendix C,
+# Table C.1 "T700 Fuel Control System Constants", p. 69 (PDF p. 83) and its continuation
+# p. 70 (PDF p. 84). Typeset; read with high confidence.
+#
+# constant  value     units (as printed; XHILIM/XLOLIM are positions in inches, not the list's
+#                     in/sec: D-054 item 6(b))
+AWFP        0.05909   lbm*in^2/(lbf*hr*%)
+B6          1.0       nondimensional
+BWFP        -3.927    lbm*in^2/(lbf*hr)
+CB          0.75      %NP
+CE          13.21     %NP
+CH          0.05      %NG
+CLMV        0.03      sec
+CLLDS       0.2       sec
+CNTL        0.025     sec
+CORR        20.0      nondimensional
+CR          20.0      nondimensional
+CT2         0.088     sec
+CT7         1.0       sec
+CT9         0.010     sec
+CT12        0.088     sec
+CT13        1.0       sec
+CT14        0.10      sec
+CT16        1.0       sec
+CTPL        0.010     sec
+CTPS3       0.010     sec
+DBIAS       3.25      %NP
+KNDRP       0.25      lbm*in^2/(lbf*hr*%)
+NGREF       101.0     %NG
+PS3HYS      0.375     lbf/in^2
+T8          0.40      sec
+T10         0.060     sec
+T11         0.87      sec
+T17         0.010     sec
+# Table C.1 Concluded, p. 70 (PDF p. 84)
+T45COR      11.0      degR
+T45REF      2004.0    degR
+TL1         0.010     sec
+TL2         0.010     sec
+TLGE        0.077     sec
+TMDB        2.0       ma
+TMGN        0.0159    in/(ma*sec)
+TMLG        84.0      lbm*in^2/(lbf*hr*in)
+TMLVG       55.0      volts/in
+WFMAX       785.0     lbm/hr
+WFMIN       65.0      lbm/hr
+WFPDCH      2.10      lbm*in^2/(lbf*hr)
+WFPDCL      1.45      lbm*in^2/(lbf*hr)
+XHILIM      0.0787    in/sec
+XKINTG      0.18      nondimensional
+XKPROP      0.20      nondimensional
+XLDHYS      2.5       deg
+XLOLIM      -0.0427   in/sec
+YHILIM      40.0      nondimensional
+YLOLIM      0.0       nondimensional
+ZHILIM      3.5       nondimensional
+ZK1         1.7       nondimensional
+ZK3         0.045     nondimensional
+ZK5         0.40      nondimensional
+ZK7         0.30      nondimensional
+ZK8         0.231     nondimensional
+ZK9         0.625     nondimensional
+ZK10        0.375     nondimensional
+ZLOLIM      -1.0      nondimensional

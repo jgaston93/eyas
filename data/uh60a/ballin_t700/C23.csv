@@ -1,0 +1,25 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. C23: F_EC1, ECU thermocouple sensor time constant (one curve per T45L), PDF p. 94, by tools/digitize_ballin_t700.py at 300 dpi:
+# the polylines' breakpoints from lines fitted to each segment's ink (read_glyph_polylines); located: meet (two segments' lines meet), on-line, end (a person's reading projected onto the end segment's line). Values on the frame's scale (its edges (0.0, 16.0), (1.0, 6.0)), corrected by the scan's stretch measured on 77 and 49 ticks (up to 3.7e-03 of an axis); the plotted ticks sit -2.8e-03 and +1.6e-03 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: power_turbine_flow_parameter_w45r [-], y: sensor_time_constant_tau45 [s]
+curve,power_turbine_flow_parameter_w45r,sensor_time_constant_tau45,located
+1260,1.0207,5.0017,end
+1260,2.5388,3.9367,meet
+1260,6.4952,2.5294,meet
+1260,9.9793,2.1969,meet
+1260,15.01,1.9834,end
+1660,1.0108,4.201,end
+1660,2.5114,3.2419,meet
+1660,6.4846,2.3484,meet
+1660,10.048,1.9915,meet
+1660,15.003,1.804,end
+2060,1.0178,3.6522,end
+2060,2.5208,2.958,meet
+2060,6.4943,2.1642,meet
+2060,10.042,1.9218,meet
+2060,15.002,1.7228,end
+2460,0.98461,3.4179,end
+2460,2.5102,2.7691,meet
+2460,6.5065,2.0736,meet
+2460,9.9833,1.8662,meet
+2460,15.006,1.712,end

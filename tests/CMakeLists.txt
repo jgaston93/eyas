@@ -27,6 +27,7 @@ add_executable(eyas_unit_tests
     unit/test_genhel_fcs.cpp
     unit/test_genhel_sas.cpp
     unit/test_genhel_fps.cpp
+    unit/test_ballin_t700.cpp
     unit/test_genhel_t700.cpp
     unit/test_uh60a_fps.cpp
     unit/test_geodesy.cpp
@@ -151,6 +152,13 @@ target_include_directories(eyas_m9_ground_effect_cases PRIVATE ${CMAKE_CURRENT_S
 target_link_libraries(eyas_m9_ground_effect_cases PRIVATE eyas_internal)
 target_compile_definitions(eyas_m9_ground_effect_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
 eyas_target_defaults(eyas_m9_ground_effect_cases)
+
+# Writes the M9 Stage B1′ data, Ballin's T700 (VALIDATION.md; tools/plot_m9_ballin.py; D-054).
+add_executable(eyas_m9_ballin_engine_cases validation/m9_ballin_engine_cases.cpp)
+target_include_directories(eyas_m9_ballin_engine_cases PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(eyas_m9_ballin_engine_cases PRIVATE eyas_internal)
+target_compile_definitions(eyas_m9_ballin_engine_cases PRIVATE EYAS_VEHICLE_DATA_DIR="${PROJECT_SOURCE_DIR}/data")
+eyas_target_defaults(eyas_m9_ballin_engine_cases)
 
 # Writes the M9 Stage B engine data (VALIDATION.md; tools/plot_m9_engines.py; D-053).
 add_executable(eyas_m9_engine_cases validation/m9_engine_cases.cpp)

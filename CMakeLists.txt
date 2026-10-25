@@ -33,6 +33,7 @@ add_library(eyas STATIC
     src/core/coupling.cpp
     src/core/rigid_body.cpp
     src/core/spinning_parts.cpp
+    src/engine/ballin_t700.cpp
     src/engine/genhel_t700.cpp
     src/env/air_data.cpp
     src/env/atmosphere.cpp

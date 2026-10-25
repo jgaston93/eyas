@@ -1,0 +1,16 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. C26: F_HM3, HMU load-demand-compensation schedule function 1, PDF p. 97, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (0.0, 100.0), (75.0, 112.5)), corrected by the scan's stretch measured on 100 and 123 ticks (up to 1.7e-03 of an axis); the plotted ticks sit -2.4e-03 and +1.3e-03 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: load_demand_spindle_angle_xldsa [deg], y: gas_generator_speed_demand_png [%]
+curve,load_demand_spindle_angle_xldsa,gas_generator_speed_demand_png
+png,0.046287,80.037
+png,10.02,83.765
+png,19.889,87.236
+png,29.905,90.572
+png,39.964,93.39
+png,49.965,95.733
+png,59.953,98.752
+png,70.006,102.23
+png,79.946,107.29
+png,89.878,107.3
+png,99.928,107.31

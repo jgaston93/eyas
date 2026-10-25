@@ -4,6 +4,7 @@
 #include <cmath>
 #include <utility>
 
+#include "engine/control_blocks.hpp"
 #include "env/atmosphere.hpp"
 #include "util/config.hpp"
 #include "util/csv_table.hpp"
@@ -12,48 +13,14 @@
 namespace eyas {
 namespace {
 
-// GenHel's dead band (p. 5.6-11): zero for −a < u < b, else u + a or u − b.
-double dead_band(double u, double a, double b) noexcept {
-    if (u <= -a) {
-        return u + a;
-    }
-    if (u >= b) {
-        return u - b;
-    }
-    return 0.0;
-}
-
-// The output of (1 + a s)/(1 + b s) u realized with state z, ż = (u − z)/b.
-double lead_lag(double z, double u, double a, double b) noexcept {
-    return z + (a / b) * (u - z);
-}
-
-// A limited integrator's rate (GenHel's limiters, pp. 5.6-12, 5.6-13): its
-// input inside the range and at a limit it pulls off, zero at a limit it
-// pushes against. Past a limit (an integration step's overshoot) it returns
-// to the limit within kLimitReturn, so that the limit is the only state there
-// that stays: everywhere past it the model reads the limit, and trim would
-// otherwise face a flat run of equivalent values with no derivative to follow
-// (D-053 amendment 2).
-constexpr double kLimitReturn = 0.05;  // [s]
-
-double limited_rate(double x, double rate, double lo, double hi) noexcept {
-    if (x > hi) {
-        return std::min(rate, 0.0) + (hi - x) / kLimitReturn;
-    }
-    if (x < lo) {
-        return std::max(rate, 0.0) + (lo - x) / kLimitReturn;
-    }
-    if ((x == hi && rate > 0.0) || (x == lo && rate < 0.0)) {
-        return 0.0;
-    }
-    return rate;
-}
+using engine::dead_band;
+using engine::kLimitReturn;
+using engine::lead_lag;
+using engine::limited_rate;
+using engine::pushes_on_limit;
 
 void require_positive(double v, const char* what) {
-    if (!(v > 0.0) || !std::isfinite(v)) {
-        throw InitError(std::string("genhel_t700: ") + what + " must be positive and finite");
-    }
+    engine::require_positive(v, "genhel_t700", what);
 }
 
 }  // namespace
@@ -141,12 +108,10 @@ void GenHelT700::pinned_states(const SimContext& ctx, std::span<const double> x,
     const double omega = ctx.shafts[static_cast<std::size_t>(shaft_index_)].omega;
     // The demand only labels the signals; the clutch reads its lagged state.
     const GenHelT700Signals s = signals(x, omega, ctx.controls.collective, 0.0);
-    const auto at_limit = [](double v, double rate, double lo, double hi) {
-        return (v >= hi && rate > 0.0) || (v <= lo && rate < 0.0);
-    };
     pinned[kSlip] = s.engaged ? 1 : 0;
-    pinned[kQint] = at_limit(x[kQint], c.k4 * s.q_pt - c.threshold, 0.0, c.qint_limit) ? 1 : 0;
-    pinned[kVss] = at_limit(x[kVss], c.k9 * s.v_s, c.lower, c.upper) ? 1 : 0;
+    pinned[kQint] =
+        pushes_on_limit(x[kQint], c.k4 * s.q_pt - c.threshold, 0.0, c.qint_limit) ? 1 : 0;
+    pinned[kVss] = pushes_on_limit(x[kVss], c.k9 * s.v_s, c.lower, c.upper) ? 1 : 0;
 }
 
 double GenHelT700::rotor_demand(const SimContext& ctx) const noexcept {

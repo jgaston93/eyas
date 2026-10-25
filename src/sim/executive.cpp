@@ -170,7 +170,6 @@ Executive::Executive(const ExecutiveConfig& config,
         const std::size_t n = c->num_states();
         offsets_.push_back(offset);
         sizes_.push_back(n);
-        c->initial_states(std::span<double>(x_).subspan(offset, n));
         offset += n;
     }
     for (const auto& f : forces_) {
@@ -193,6 +192,11 @@ Executive::Executive(const ExecutiveConfig& config,
     coupling_ = CouplingOutputs(registry.size());
     for (const auto& c : components_) {
         c->bind_shafts(info);
+    }
+    // Initial states once every component is bound, as reset() sets them, so
+    // a reset starts where init does.
+    for (std::size_t i = 0; i < components_.size(); ++i) {
+        components_[i]->initial_states(std::span<double>(x_).subspan(offsets_[i], sizes_[i]));
     }
     pack_body(BodyState{}, x_);
     label_steady_states();

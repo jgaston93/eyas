@@ -17,7 +17,7 @@
 # The longitudinal rows put neutral cyclic in three places 0.812 in apart; neutral is the
 # pinned row's, the end nearest the fit to Ballin's GenHel longitudinal stick (D-035 M7c amendment).
 #
-# Validation variant (kaplita/uh60a_kaplita_fig2_standin.yaml): WEIGHT and CG from Kaplita, NASA CR-177360 (1985), Fig. 2 header (PDF p. 51): gross weight 16170 lb, CG station 350.4 in. STAND-IN: CG waterline 231.8 in, Kaplita Fig. 13's (flight 19), in place of Fig. 2's, which isn't given (DATA_GAPS.md); for comparison only, not a reading.
+# Validation variant (kaplita/uh60a_kaplita_fig2_standin.yaml): WEIGHT and CG from Kaplita, NASA CR-177360 (1985), Fig. 2 header (PDF p. 51): gross weight 16170 lbm, CG station 350.4 in. STAND-IN: CG waterline 231.8 in, Kaplita Fig. 13's (flight 19), in place of Fig. 2's, which isn't given (DATA_GAPS.md); for comparison only, not a reading.
 # Inertias are GenHel's (D-002); not for use as the aircraft's own data.
 
 geodetic_origin: {latitude: "0 deg", longitude: "0 deg", altitude: "0 m"}  # scenario, not aircraft data

@@ -19,6 +19,9 @@ inline constexpr double kKnot = 1852.0 / 3600.0;                      // [m/s] e
 inline constexpr double kDegree = std::numbers::pi / 180.0;           // [rad]
 inline constexpr double kRpm = 2.0 * std::numbers::pi / 60.0;         // [rad/s]
 inline constexpr double kPsi = kPoundForce / (kInch * kInch);         // [Pa] lbf/in²
+inline constexpr double kRankine = 5.0 / 9.0;                         // [K] exact
+// International Table Btu: 1 Btu/lbm = 2326 J/kg exactly, so 1 Btu = 2326 kPoundMass J.
+inline constexpr double kBtu = 2326.0 * kPoundMass;  // [J]
 
 // Physical dimension of a unit. Config quantities are read with the dimension
 // they must have, so a value in a unit of the wrong kind ("1000 s" for a rate)
@@ -71,6 +74,22 @@ enum class Dimension : std::uint8_t {
     current_per_voltage,     // [A/V]
     length_per_current,      // [m/A]
     voltage_per_length,      // [V/m]
+    // Ballin's component-level T700 (NASA TM-100991; D-054).
+    temperature,                      // absolute [K]
+    per_temperature,                  // [1/K]
+    specific_energy,                  // enthalpy [J/kg]
+    specific_heat,                    // [J/(kg·K)]
+    temperature_per_specific_energy,  // [K·kg/J]
+    burner_resistance,                // K_dpb, eq. 18 [Pa²·s²/(kg²·K)]
+    heat_sink_constant,               // TC_T41, eq. 51 [kg^0.8·s^0.2/K^0.5]
+    current,                          // [A]
+    length_per_current_time,          // a torque motor's sensitivity [m/(A·s)]
+    mass_flow_per_pressure_length,    // a linkage gain on a fuel ratio [kg/(s·Pa·m)]
+    flow_parameter,                   // a turbine's W √T / P [kg·K^0.5/(s·Pa)]
+    moment_time,                      // a torque integrated over time [N·m·s]
+    power,                            // [W]
+    voltage_per_temperature,          // [V/K]
+    voltage_time,                     // a rate network's gain [V·s per unit input]
 };
 
 // Name used in error messages, e.g. "length".

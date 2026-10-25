@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 98> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 133> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -112,6 +112,46 @@ constexpr std::array<std::pair<std::string_view, Unit>, 98> kRegistry{{
     {"psi/%",            {kPsi / 0.01, D::pressure}},
     {"ft*lbf/%",         {kFoot * kPoundForce / 0.01, D::moment}},
     {"lbm/(hr*psi)",     {kPoundMass / (3600.0 * kPsi), D::mass_flow_per_pressure}},
+    // Ballin's T700 (TM-100991, D-054), units as printed. A fuel ratio W_f/P_s3 is
+    // printed lbm·in²/(lbf·hr), which is lbm/(hr·psi).
+    {"lbm*in^2/(lbf*hr)",   {kPoundMass / (3600.0 * kPsi), D::mass_flow_per_pressure}},
+    {"lbm*in^2/(lbf*hr*%)", {kPoundMass / (3600.0 * kPsi * 0.01), D::mass_flow_per_pressure}},
+    {"lbm*in^2/(lbf*s)",    {kPoundMass / kPsi, D::mass_flow_per_pressure}},
+    {"lbm*in^2/(lbf*hr*in)", {kPoundMass / (3600.0 * kPsi * kInch), D::mass_flow_per_pressure_length}},
+    {"kg/(s*Pa*m)",         {1.0, D::mass_flow_per_pressure_length}},
+    {"lbm/s",               {kPoundMass, D::mass_flow}},
+    {"K",                   {1.0, D::temperature}},
+    {"degR",                {kRankine, D::temperature}},
+    {"1/K",                 {1.0, D::per_temperature}},
+    {"1/degR",              {1.0 / kRankine, D::per_temperature}},
+    {"J/kg",                {1.0, D::specific_energy}},
+    {"Btu/lbm",             {kBtu / kPoundMass, D::specific_energy}},
+    {"J/(kg*K)",            {1.0, D::specific_heat}},
+    {"Btu/(lbm*degR)",      {kBtu / (kPoundMass * kRankine), D::specific_heat}},
+    {"K*kg/J",              {1.0, D::temperature_per_specific_energy}},
+    {"lbm*degR/Btu",        {kPoundMass * kRankine / kBtu, D::temperature_per_specific_energy}},
+    {"Pa^2*s^2/(kg^2*K)",   {1.0, D::burner_resistance}},
+    {"lbf^2*s^2/(lbm^2*in^4*degR)",
+                            {kPsi * kPsi / (kPoundMass * kPoundMass * kRankine), D::burner_resistance}},
+    {"kg^0.8*s^0.2/K^0.5",  {1.0, D::heat_sink_constant}},
+    // kPoundMass^0.8 / kRankine^0.5 (std::pow isn't constexpr; checked in test_units).
+    {"lbm^0.8*s^0.2/degR^0.5", {0.7128018939965247, D::heat_sink_constant}},
+    {"ft*lbf*s^2",          {kFoot * kPoundForce, D::inertia}},
+    {"A",                   {1.0, D::current}},
+    {"mA",                  {0.001, D::current}},
+    {"m/(A*s)",             {1.0, D::length_per_current_time}},
+    {"in/(mA*s)",           {kInch / 0.001, D::length_per_current_time}},
+    {"kg*K^0.5/(s*Pa)",     {1.0, D::flow_parameter}},
+    // kPoundMass kRankine^0.5 / kPsi (checked in test_units).
+    {"lbm*degR^0.5/(s*psi)", {4.903548837995185e-05, D::flow_parameter}},
+    {"N*m*s",               {1.0, D::moment_time}},
+    {"ft*lbf*s",            {kFoot * kPoundForce, D::moment_time}},
+    {"W",                   {1.0, D::power}},
+    {"hp",                  {550.0 * kFoot * kPoundForce, D::power}},  // 550 ft·lbf/s exactly
+    {"V/K",                 {1.0, D::voltage_per_temperature}},
+    {"V/degR",              {1.0 / kRankine, D::voltage_per_temperature}},
+    {"V*s",                 {1.0, D::voltage_time}},
+    {"V*s/%",               {1.0 / 0.01, D::voltage_time}},
 }};
 // clang-format on
 
@@ -222,6 +262,36 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "length per current";
         case Dimension::voltage_per_length:
             return "voltage per length";
+        case Dimension::temperature:
+            return "temperature";
+        case Dimension::per_temperature:
+            return "per temperature";
+        case Dimension::specific_energy:
+            return "specific energy";
+        case Dimension::specific_heat:
+            return "specific heat";
+        case Dimension::temperature_per_specific_energy:
+            return "temperature per specific energy";
+        case Dimension::burner_resistance:
+            return "burner resistance";
+        case Dimension::heat_sink_constant:
+            return "heat-sink constant";
+        case Dimension::current:
+            return "current";
+        case Dimension::length_per_current_time:
+            return "length per current time";
+        case Dimension::mass_flow_per_pressure_length:
+            return "mass flow per pressure length";
+        case Dimension::flow_parameter:
+            return "flow parameter";
+        case Dimension::moment_time:
+            return "moment time";
+        case Dimension::power:
+            return "power";
+        case Dimension::voltage_per_temperature:
+            return "voltage per temperature";
+        case Dimension::voltage_time:
+            return "voltage time";
     }
     return "unknown";
 }

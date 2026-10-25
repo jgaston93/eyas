@@ -1,0 +1,18 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. C28: F_HM5, HMU idle-schedule function 1, PDF p. 99, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (390.0, 640.0), (2.05, 2.65)), corrected by the scan's stretch measured on 22 and 66 ticks (up to 1.6e-03 of an axis); the plotted ticks sit +7.0e-04 and +2.7e-03 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: inlet_temperature_t2 [degR], y: idle_schedule_limit_parameter_wfirf [-]
+curve,inlet_temperature_t2,idle_schedule_limit_parameter_wfirf
+wfirf,395.03,2.1001
+wfirf,415.03,2.1292
+wfirf,435.03,2.1599
+wfirf,454.92,2.1925
+wfirf,474.86,2.2266
+wfirf,494.8,2.2626
+wfirf,514.72,2.3007
+wfirf,534.93,2.3408
+wfirf,554.82,2.3832
+wfirf,574.75,2.4274
+wfirf,594.88,2.474
+wfirf,614.84,2.5221
+wfirf,633.58,2.5697

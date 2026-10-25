@@ -1,0 +1,17 @@
+# Digitized from Ballin, NASA TM-100991 (1988), Fig. A8: f8, power turbine energy, PDF p. 63, by tools/digitize_ballin_t700.py at 300 dpi:
+# the plotted polyline's marked breakpoints, each snapped to its marker. Values on the frame's scale (its edges (0.3, 0.85), (-5.0, 40.0)), corrected by the scan's stretch measured on 55 and 167 ticks (up to 1.4e-03 of an axis); the plotted ticks sit +7.7e-04 and +2.5e-04 of the axes off that scale.
+# status: UNREVIEWED; the overlay needs a person's check (DATA_GAPS.md)
+# x: pressure_ratio_p49_p45 [-], y: enthalpy_drop_parameter [Btu/lbm]
+curve,pressure_ratio_p49_p45,enthalpy_drop_parameter
+f8,0.30008,33.943
+f8,0.34988,30.28
+f8,0.39998,26.609
+f8,0.45006,23.16
+f8,0.49965,20.153
+f8,0.55003,17.194
+f8,0.59976,14.253
+f8,0.64985,11.307
+f8,0.69986,8.3087
+f8,0.74985,5.2291
+f8,0.79985,2.0422
+f8,0.84961,-1.3075

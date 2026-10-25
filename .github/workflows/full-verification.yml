@@ -135,6 +135,10 @@ jobs:
           done
           run m9_engines ./build/release/tests/eyas_m9_engine_cases tools/plot_m9_engines.py
           run m7c_fletcher ./build/release/tests/eyas_m7c_fletcher tools/plot_m7c_fletcher.py
+          run m9_ballin ./build/release/tests/eyas_m9_ballin_engine_cases tools/plot_m9_ballin.py
+          # Fletcher's yaw-to-collective on Ballin's engines (D-054).
+          fletcher_ballin() { ./build/release/tests/eyas_m7c_fletcher "$1" data/uh60a/engine_ballin/uh60a_fletcher.yaml; }
+          run m7c_fletcher_ballin fletcher_ballin tools/plot_m7c_fletcher.py
           run ballin_app_d ./build/release/tests/eyas_ballin_app_d_cases tools/plot_ballin_app_d.py
           run kaplita ./build/release/tests/eyas_kaplita_cases tools/plot_kaplita.py
           run kaplita_transients ./build/release/tests/eyas_kaplita_transient_cases tools/plot_kaplita_transients.py
@@ -160,7 +164,7 @@ jobs:
         run: cmake --preset debug
       - name: clang-tidy
         run: |
-          out=$(clang-tidy-18 -p build/debug --quiet src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp src/airframe/*.cpp src/analysis/*.cpp src/control/*.cpp bench/*.cpp examples/*/*.cpp 2>&1 | grep -E "warning:|error:" || true)
+          out=$(clang-tidy-18 -p build/debug --quiet src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.cpp src/rotor/*.cpp src/airframe/*.cpp src/analysis/*.cpp src/control/*.cpp src/engine/*.cpp bench/*.cpp examples/*/*.cpp 2>&1 | grep -E "warning:|error:" || true)
           if [ -n "$out" ]; then echo "$out"; exit 1; fi
 
   # A failed scheduled run opens an issue, or comments on the open one, so
