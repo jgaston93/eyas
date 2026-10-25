@@ -9,7 +9,8 @@
 // controls applied and every AircraftState field, SI units, frames as
 // documented in include/eyas/aircraft_state.hpp, then the flight control
 // system's switches ('+'-separated, common/afcs.hpp; M8c3), then the engine
-// controls (each engine's power lever, the rotor speed reference; D-055).
+// controls (each engine's power lever, the rotor speed reference; D-055;
+// each engine's fuel shutoff, 1 open; D-056).
 // Set the stream's precision (eyas_drive uses 17) before writing.
 namespace examples {
 

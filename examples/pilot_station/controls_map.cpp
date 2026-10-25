@@ -35,6 +35,7 @@ void ControlsMap::restart(const eyas::Controls& start) noexcept {
     rearm_pickup();
     for (std::size_t e = 0; e < levers_.size(); ++e) {
         levers_[e] = start.engines[e].power_lever;
+        fuel_[e] = start.engines[e].fuel_on;
     }
     selection_ = 0;
     hold_levers();
@@ -140,6 +141,24 @@ void ControlsMap::update_engines(const RawInput& in, double dt) noexcept {
         hold_levers();  // a newly selected engine waits for the lever
     }
     select_was_pressed_ = select_now;
+    const bool fuel_now = pressed(in, config_.fuel_button);
+    if (fuel_now && !fuel_was_pressed_) {
+        // The selected engines all together: relit if any is off, else shut
+        // off, never swapped (code review of PR #77).
+        const auto selected = [&](std::size_t e) {
+            return selection_ == 0 || static_cast<int>(e) + 1 == selection_;
+        };
+        bool any_off = false;
+        for (std::size_t e = 0; e < fuel_.size(); ++e) {
+            any_off = any_off || (selected(e) && !fuel_[e]);
+        }
+        for (std::size_t e = 0; e < fuel_.size(); ++e) {
+            if (selected(e)) {
+                fuel_[e] = any_off;
+            }
+        }
+    }
+    fuel_was_pressed_ = fuel_now;
 
     const AxisMap& m = config_.power_lever;
     if (m.axis >= 0) {
@@ -250,6 +269,7 @@ eyas::Controls ControlsMap::update(const RawInput& in, double dt,
     c.afcs = afcs_;
     for (std::size_t e = 0; e < levers_.size(); ++e) {
         c.engines[e].power_lever = levers_[e];
+        c.engines[e].fuel_on = fuel_[e];
     }
     c.rotor_speed_reference = speed_reference_;
     return c;

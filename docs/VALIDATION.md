@@ -1714,4 +1714,58 @@ Ballin's T700 (D-054) gains the cockpit's engine controls and the parts of the f
 
 **Found while building.** A trim on Ballin's engines in a 10 m/s vertical descent (the timing benchmark's vortex-ring case, V/v_h ≈ 0.8) doesn't converge: the solver wanders to collective 0.14–0.28 with the engines near zero torque. B1′ does the same (checked on its build), and at 5, 8, 12 and 15.5 m/s both converge; on GenHel's engines the case trims. Open, not B2a's. The benchmark above leaves that case out (issue #72).
 
-**Open.** Stage B2b: engine failure as a fuel shutoff (`fuel_on`), engine-off flight and trims in autorotation, then Ballin's descents (Figs. B2–B4) on the real drive; the power lever's rigging (a placeholder, DATA_GAPS.md); the vortex-ring trim above (#72); the hover yaw-to-collective phase; the tail rotor's torque on the shaft (#40); the USAAEFA fuel-flow check.
+**Open.** The power lever's rigging (a placeholder, DATA_GAPS.md); the vortex-ring trim above (#72); the hover yaw-to-collective phase; the tail rotor's torque on the shaft (#40); the USAAEFA fuel-flow check. Stage B2b follows.
+
+## M9 — Rotor speed, Stage B2b: engine failure, engine-off flight and autorotation (2026-10-24; issue #39)
+
+An engine fails by shutting off its fuel (`EngineControls::fuel_on`, D-056): Ballin's gas path runs it down through the maps to their floor (65.05 % corrected NG, about 4 % below ground idle, where TM-100991's model ends); there it is *out*, with no gas path, its fuel control held and its clutch open. The fuel back on relights it at once. Trims hold each clutch's slip at its steady value, so the aircraft trims with an engine out, with both out (autorotation), and with the engines lit and overrun in a descent the rotor autorotates in.
+
+| Check | Status | Evidence |
+|---|---|---|
+| The shutoff and the run-down | ✅ | `MapsFloorIsTheHighestFirstSpeed` (f3's 65.048 %, at the inlet's temperature through √θ2). `FuelShutoffClosesTheValve` (the valve's command zero, below WFMIN; with it on, at least WFMIN). `ShutdownRunsDownToTheMapsFloor`: at 80 kt power, the shaft held, engine 2's fuel off: the delivered fuel below 1 % in 0.15 s, the turbine's torque below 2 % in 0.82 s, NG on the floor at 2.65 s and falling steadily on the way (after the delay's Padé approximant lifts it by 2.5e-7 in the first 5 ms, its inverse response, D-054 item 7), the clutch open; engine 1 unchanged. |
+| An out engine | ✅ | `OutEngineHasNoGasPath`: no flow, no torque, the stations at the inlet's pressure and temperature, the solve not run (converged); every state's rate zero but the slip's, which follows the shaft; its clutch open with the drive decelerating, where the ordinary rule would engage a zero-torque engine (its output inertia off the shaft); no allocation. Just above the floor, or with the fuel on, it isn't out. `FuelBackOnRelights`: back above 90 % of its flight NG within 10 s, torque positive. |
+| One engine carries the load | ✅ | `OneEngineCarriesTheLoad`: at 80 kt power on the UH-60A's drive, engine 2 shut down: the rotor droops (between 0.5 % and 5 %), the live engine takes the demand and the drive train's load alone (1 %), and the governor brings the rotor back to the reference (0.1 %). |
+| Trims | ✅ | `BallinT700Aircraft.TrimsWithOneEngineOut`: at 80 kt, the dead engine out on the floor, the live engine's torque the two-engine trim's pair to 1e-4, rotor speed governed (1e-6), within 15 iterations. `BallinT700Aircraft.OverrunsInASteepDescentAsInAutorotation`: at 100 kt, continued from level flight, engaged to −2750 ft/min, overrun from −3000 (slip > 0, rotor speed above 101 %), the lit engines at no load (torque below 1e-3 N·m) with their NP sensors at the reference (1e-5); with both engines out at −3250 ft/min the trim agrees with the powered one to 1e-6 in collective, pitch, roll and rotor speed. |
+| GenHel's engine | ✅ | `GenHelT700.IgnoresTheFuelShutoff` (bit for bit). |
+| Mutation checks | ✅ | Each caught: the shutoff ignored, no floor stop, the out engine's states not held, its clutch closing, no steady slip, no overrun seed. The seed's share among the lit engines alone isn't (the trim found is the same; a convergence aid). |
+| Pilot station | ✅ | `StationControls.FuelButtonTogglesTheSelectedEngines` (`fuel_button` toggles the engines the lever moves; a restart restores the start's), `StationRecorder.StateHistoryCarriesTheEngineControls` (the state CSV ends with `fuel_on_1`–`fuel_on_4`); HUD: OFF for an engine with its fuel off. |
+| Unchanged | ✅ | Every earlier test passes: 537 now (522 at B2a), GCC Release; Clang Debug, CI's set without the slow tests. Engaged trims are bit for bit B2a's (checked at 100 kt, level to −2500 ft/min, on a B2a build). |
+| Real-time | ✅ | No allocation on the out path. `eyas_bench` (Ballin's UH-60A, without the vortex-ring case, #72) back to back against B2a: step() 29.4–29.7 µs against 29.0–29.5 µs at 120 kt (the same, within the machine's noise under a background load), worst advance() 1.7 ms of the 8.3 ms budget. |
+
+**Engine failures at 80 kt** (`eyas_m9_ballin_engine_cases`, `m9_ballin_failure.csv`; `tools/plot_m9_ballin.py`). The UH-60A on Ballin's engines, trimmed at 80 kt with SAS and FPS on.
+- *One engine:* engine 2's fuel off at 2 s, every control held. Its torque falls to zero by 3 s, its clutch lets go by 3.5 s and it is out by 5 s. Engine 1 takes the load, 132 to 264 ft·lbf (overshooting to 295), and the rotor droops to 97.6 % at 3.1 s, back above 99.9 % by 6.2 s. Level flight holds: the aircraft sinks at 0.4 m/s at most.
+- *Both engines:* both off at 2 s; the collective, held for 1.5 s (within the 2–3 s a pilot has to react, Johnson 2013 §8.5), comes down over 1 s to the 80 kt autorotation trim's (below). The rotor decays at 5.8 %/s just before the collective moves, to 84.3 % at 6.3 s, then recovers to 100 % by 20 s as the descent builds; the aircraft settles in a descent of about 12 m/s (2400 ft/min) at 83–89 kt with the FPS holding attitude. The engines run down engaged, decelerating with the drive, until they are out (between 4 and 5 s). On the way their torque rises from 5 to 17 ft·lbf as the rotor slows: eq. 41's damping term, −K_damp (NP − NP_des), turns positive below the design speed (Ballin's fit for a running engine, which being out then ends, D-056 item 3); their coasting turbines then fall behind the rotor as it recovers.
+
+![Engine failures at 80 kt](validation/m9/m9_ballin_failure.png)
+
+No UH-60A engine-failure flight data is in the reference library; these check that the pieces work together. A dead engine's NG reads the floor (65 %, rising to 65.6 % in the descent as the floor follows the inlet's temperature, √θ2), not the run-down to rest a T700 would show (DATA_GAPS.md).
+
+**Autorotation against Johnson's V_d = P_level/W** (`m9_ballin_autorotation.csv`). The UH-60A on Ballin's engines at Table B.1's loading (16 825 lbm), sea level, bare. At each speed the powered descent is continued from level flight in 250 ft/min steps to where the clutches let go, then bisected on that transition. There the rotor needs no engine power at the governed speed, which is the autorotative rate of descent at 100 % rotor speed. The trim with both engines out at the same condition agrees exactly: the same collective to all printed digits, at every speed. Johnson (2013 Eq. 5.19, §7.2.3) gives V_d = P_level/W, neglecting the change of induced power with descent:
+
+| Airspeed | P_level | P_level/W | Eyas's V_d | Ratio | Engines' power per unit descent, mean over the descent | 1/mean |
+|---|---|---|---|---|---|---|
+| 60 kt | 785 kW | 2065 ft/min | 2426–2430 ft/min | 1.17 | 0.86 W | 1.16 |
+| 80 kt | 790 kW | 2079 ft/min | 2436–2438 ft/min | 1.17 | 0.87 W | 1.15 |
+| 100 kt | 883 kW | 2321 ft/min | 2895–2898 ft/min | 1.25 | 0.81 W | 1.23 |
+| 120 kt | 1077 kW | 2832 ft/min | 3887–3891 ft/min | 1.37 | 0.74 W | 1.36 |
+
+So Eyas autorotates 17–37 % faster than Johnson's estimate, and the gap is the model's own power-descent slope. In shallow descents the engines' power falls by 0.95 W per unit of descent (close to the W·V_c that Johnson's relation assumes, and to the 0.96–1.07 Eyas showed over ±2000 ft/min in M7c). Approaching the no-power point it falls by only 0.53–0.77 W, most at 120 kt. The inverse of the mean slope reproduces each ratio to 0.02. USAAEFA's flight test showed slopes of 0.76–1.0 W over ±2000 ft/min (M7c, Figs. B2–B4), so a slope below W is not unphysical, but no UH-60A autorotation data is in the reference library to settle the rate itself. Eyas's tail rotor takes no torque from the shaft yet (#40), so its power is missing from both P_level and the autorotation alike.
+
+![Powered descent and autorotation](validation/m9/m9_ballin_autorotation.png)
+
+**Ballin's climbs and descents on the real drive** (`m9_ballin_climbs.csv`; Figs. B2–B4's conditions: Ballin's loading, 5250 ft, zero roll from 50 kt, each trim from its neighbour, every 500 ft/min). On Ballin's engines and with the rotor speed held (the comparison `BallinTrim.ClimbAndDescentTrendsAgainstSikorskyGenHel` gates, D-053 amendment 2):
+- *Engaged* (every converged point but one), the two agree to all printed digits in collective, as they should: the governor holds the rotor at its reference.
+- *100 kt, −3000 ft/min* overruns on the engines: rotor 102.6 %, slip 0.69 rad/s, collective 8.20 % against 9.52 % with the rotor held. This is the point where Eyas's collective already fell less than Sikorsky GenHel's (M7c, parked). On the real drive it falls further, so this point doesn't explain that gap. 60 kt from −2000 ft/min, which D-053 amendment 2 expected to autorotate, stays engaged at −2000.
+- *Not trimmed on the engines:* 60 kt at −2500 ft/min, and 100 kt from +500 ft/min up (the held shaft trims both). These are the trim robustness of zero-roll continuation on Ballin's engines (#76); 137.5 kt from +1500 ft/min is past full collective on both drives (M7c).
+
+So the gated comparison stays on the held shaft: on the real drive it would only add the overrun at one point and lose the 100 kt climbs to the solver.
+
+![Ballin's climbs and descents on the engines and with the rotor held](validation/m9/m9_ballin_climbs.png)
+
+**Found while building.** (1) #74's blow-up isn't the engines'. Scripted (80 kt, 2700 m, full collective) it happens with both engines shut down, as the shaft's speed crosses zero within a step: the rotor models are written per unit ΩR, and every component is finite down to 0.16 % rotor speed. A floor on a free shaft's speed belongs to the executive (D-052) and stays with #74. (2) Trim robustness on Ballin's engines, on B2a too (#76):
+- a cold start at 100 kt and −2500 ft/min converges, with every residual within tolerance, to an unstable branch (pitch 12°, roll 17°, sideslip zero) that departs within 2 s when flown;
+- warm starts can fail on a 250 ft/min step where 500 ft/min converges.
+
+The validation sweeps here continue from nearby trims, retrying from further back and falling back to a cold start only where its attitude continues the sweep. (3) #72's vortex-ring trim still fails; B2b's steady slip changes the path it fails on (the engines near zero torque, at the clutch's transition).
+
+**Open.** Stage C: Tier 4 engine outputs, the station's engine readouts, engine controls that `eyas_drive` replays. A floor on the shaft speed (#74); trim robustness (#76); #72; the X-56 buttons for engine select, speed trim and fuel; the power lever's rigging and the dead engine below the maps (DATA_GAPS.md); #40.

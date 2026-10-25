@@ -84,7 +84,8 @@ in its own window (GLFW and OpenGL 2.1; built when both are found, otherwise
   replays the flight from an airborne start (bit for bit). `eyas_drive` has
   no brake input, so if the brakes change the file says from when it no
   longer replays. `--out` writes the state history; its last columns are the
-  power levers and the rotor speed reference (D-055).
+  power levers, the rotor speed reference (D-055) and the fuel shutoffs
+  (D-056).
 - **Input loss:** with a gamepad, joystick or FlightGear's sticks, the
   flight pauses (INPUT LOST) when no sample arrives for 250 ms
   (`--input-timeout`) or the device disconnects, and resumes when input
@@ -151,7 +152,9 @@ afloat.
 - the throttle's right lever to both engines' power levers (aft the idle
   stop, forward fly; it holds fly until brought to it, PCL on the HUD; it
   moves the engines on Ballin's T700s, `data/uh60a/engine_ballin/uh60a.yaml`,
-  D-055); the engine-select and speed-trim buttons are left to assign;
+  D-055); the engine-select, speed-trim and fuel-shutoff buttons are left
+  to assign (the fuel button fails the selected engines, or relights them
+  all if any is off, OFF on the HUD; D-056);
 - the stick trigger to trim release;
 - throttle E to the brakes and throttle G to trim reset.
 

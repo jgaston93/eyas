@@ -59,3 +59,4 @@ power_lever.expo = 0
 # engine_select_button = 2:<n>   # cycles: both, engine 1, engine 2
 # rpm_up_button = 2:<n>           # held: engine-speed trim up, 1 %/s
 # rpm_down_button = 2:<n>
+# fuel_button = 2:<n>             # fails the selected engines, or relights them if any is off (D-056)
