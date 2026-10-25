@@ -199,12 +199,18 @@ private:
                   std::span<Wrench> component_loads) const noexcept;
     // Solves A z = rhs at state x: with no free shaft through the 6 × 6 path
     // exactly as before D-052 (bit for bit), else through the generalized
-    // one, with the shafts' floors (D-057).
-    VecZ solve(std::span<const double> x, const MatZ& A, const VecZ& rhs) const noexcept;
-    // Solves A z = rhs, the free shafts' rows from `first` on, holding any
-    // shaft at or below its floor that would slow down at Ω̇ = 0 (D-057).
-    VecZ solve_with_floors(std::span<const double> x, const MatZ& A, const VecZ& rhs,
-                           Eigen::Index first) const noexcept;
+    // one, with the shafts' floors (D-057). Returns false if which shafts
+    // are held didn't settle (D-023; z is the last solve's).
+    bool solve(std::span<const double> x, const MatZ& A, const VecZ& rhs, VecZ& z) const noexcept;
+    // Solves A z = rhs, the free shafts' rows from `first` on, holding at
+    // Ω̇ = 0 the shafts on their floors that would slow down (D-057).
+    // Returns false if that didn't settle.
+    bool solve_with_floors(std::span<const double> x, const MatZ& A, const VecZ& rhs,
+                           Eigen::Index first, VecZ& z) const noexcept;
+    // Whether shaft k is at or below its floor in state x (D-057).
+    bool on_floor(std::span<const double> x, std::size_t k) const noexcept {
+        return x[shaft_offset(k) + 1] <= shaft_floor_[k];
+    }
     // Writes ẋ from the solution z: body kinematics, components, shafts.
     void back_substitute(std::span<const double> x, const VecZ& z,
                          std::span<double> xdot) const noexcept;

@@ -105,9 +105,12 @@ struct AdvanceStatus {
     // After some sub-step of this call the CG was outside the tabulated
     // atmosphere, H outside [−5, 20] km' (D-015, D-019); the profile was extended.
     bool atmosphere_out_of_range = false;
-    // After some sub-step of this call a free shaft was at or below its floor,
-    // 5 % of its governed speed, where a shaft that would slow down is held
-    // (D-057): the rotor has all but stopped in flight, a crash.
+    // After some sub-step of this call a free shaft ended at or below its
+    // floor, a small fraction of its governed speed, where a shaft that would
+    // slow down is held (D-057): the rotor has all but stopped in flight, a
+    // crash. It reports the speed, not the hold: it stays set while a shaft
+    // below its floor speeds up, and a sub-step whose stages first reach the
+    // floor can end just above it, the next one then reporting it.
     bool shaft_on_floor = false;
 };
 

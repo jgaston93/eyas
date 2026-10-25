@@ -1777,9 +1777,10 @@ A free shaft that reaches 5 % of its governed speed and would slow further is he
 | Check | Status | Evidence |
 |---|---|---|
 | The rule | ✅ | `Shafts.FloorHoldsAShaftThatWouldSlowDown`: two free shafts, each braked or driven; held exactly (Ω̇ = 0, the airframe unmoved) only at or below its floor and decelerating; the other shaft free; the same in `held_derivatives()`. |
+| Coupled shafts | ✅ | `Shafts.FloorReleasesACoupledShaftThatWouldSpeedUp`: of two coupled shafts on their floors, the braked one held and the driven one released, though the free solve slows both; both ways round. |
 | A run-down | ✅ | `Shafts.BrakedShaftRunsDownToItsFloorAndStays`: −Q/J exactly down to the floor, then on it within one step's fall; `shaft_on_floor` exactly while at or below it. |
 | Issue #74's run | ✅ | `BallinT700Aircraft.RotorRunDownStopsAtTheShaftFloor`: 80 kt, 2700 m, SAS and PBA on, full collective, both engines shut off: finite for 8 s, the rotor on the floor, `shaft_on_floor` reported. |
-| Mutation checks | ✅ | Each caught: no floor; a shaft held that would speed up; `held_derivatives()` without it. |
+| Mutation checks | ✅ | Each caught: no floor; a shaft held that would speed up; a held shaft never released; `held_derivatives()` without it, or without it on the second shaft. |
 
 **The floor's value.** #74's run with floors of 2, 5 and 10 %, for 20 s with the engines shut off and 30 s with them lit at idle. Without a floor both diverge, at 5.7 and 5.9 s. With any of the three the run stays finite, the rotor sits on its floor, and the aircraft falls (95–100 m/s by the end), tumbling at up to 7 rad/s. 5 % leaves a wide margin above 2 %, where the tail rotor's inflow rate is already about 15 /s, growing as 1/Ω². No rotor recovers from that speed in flight, so the value bounds the models' domain, not the aircraft's.
 

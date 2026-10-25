@@ -516,6 +516,9 @@ TEST(Shafts, FloorHoldsAShaftThatWouldSlowDown) {
         if (omega0 <= kShaftFloor * 27.0 && q0 < 0.0) {
             EXPECT_EQ(xh[ex.shaft_offset(0) + 1], 0.0);
         }
+        if (omega1 <= kShaftFloor * 100.0 && q1 < 0.0) {
+            EXPECT_EQ(xh[ex.shaft_offset(1) + 1], 0.0);
+        }
         return std::array<double, 5>{xd[ex.shaft_offset(0) + 1], xd[ex.shaft_offset(1) + 1],
                                      xd[body_layout::kOmega], xd[body_layout::kOmega + 1],
                                      xd[body_layout::kOmega + 2]};
@@ -547,6 +550,78 @@ TEST(Shafts, FloorHoldsAShaftThatWouldSlowDown) {
     d = run(-2500.0, 0.9 * floor0, 0.0, floor1);
     for (const double v : d) {
         EXPECT_EQ(v, 0.0);
+    }
+    d = run(-2500.0, 0.9 * floor0, -300.0, floor1);
+    EXPECT_EQ(d[0], 0.0);
+    EXPECT_EQ(d[1], 0.0);
+}
+
+// Shafts coupled to each other (a K_s between them): with both on their
+// floors, one braked hard and the other driven, the free solve slows both,
+// but once the braked one is held the driven one speeds up, so it must not
+// be held too (D-057; the code review of #84). The shafts' block of A is
+// [[J, c], [c, J]]: free, Ω̇ = [[J, c], [c, J]]⁻¹ Q; the braked one held,
+// the driven one's row gives Ω̇ = Q/J. Both ways round: with shaft 0 the
+// driven one, the least-index rule holds it first, then shaft 1, then has to
+// release shaft 0.
+class ShaftCoupler : public DynamicComponent {
+public:
+    ShaftCoupler(double q0, double q1, double c) : q0_(q0), q1_(q1), c_(c) {}
+    std::size_t num_states() const override { return 0; }
+    void initial_states(std::span<double> /*x*/) const override {}
+    void derivatives(const SimContext& /*ctx*/, std::span<const double> /*x*/,
+                     ComponentDerivs& out) const override {
+        out.Q0(0) = q0_;
+        out.Q0(1) = q1_;
+        out.Ks(0, 1) = -c_;
+        out.Ks(1, 0) = -c_;
+    }
+
+private:
+    double q0_;
+    double q1_;
+    double c_;
+};
+
+TEST(Shafts, FloorReleasesACoupledShaftThatWouldSpeedUp) {
+    const double J = 10.0;
+    const double c = -8.0;
+    for (const std::size_t driven : {std::size_t{1}, std::size_t{0}}) {
+        SCOPED_TRACE(driven);
+        const std::size_t braked = 1 - driven;
+        std::array<double, 2> q{};
+        q[braked] = -100.0;
+        q[driven] = 10.0;
+        ExecutiveConfig ec;
+        ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
+        for (const char* name : {"a", "b"}) {
+            ShaftConfig s = free_shaft(27.0, J, Vec3(0.0, 0.0, -1.0));
+            s.name = name;
+            s.parts[0].axis_b = Vec3::Zero();
+            ec.shafts.push_back(s);
+        }
+        std::vector<std::unique_ptr<DynamicComponent>> comps;
+        comps.push_back(std::make_unique<ShaftCoupler>(q[0], q[1], c));
+        const Executive ex(ec, std::move(comps));
+        std::vector<double> x(ex.state().begin(), ex.state().end());
+        // Above the floors the shafts are free: both slow down.
+        std::vector<double> xd(ex.num_states(), 0.0);
+        ASSERT_TRUE(ex.derivatives(0.0, x, {}, {}, xd));
+        const double det = J * J - c * c;
+        EXPECT_NEAR(xd[ex.shaft_offset(0) + 1], (J * q[0] - c * q[1]) / det, 1e-12);
+        EXPECT_NEAR(xd[ex.shaft_offset(1) + 1], (J * q[1] - c * q[0]) / det, 1e-12);
+        ASSERT_LT(xd[ex.shaft_offset(driven) + 1], 0.0);
+        // Both on their floors.
+        x[ex.shaft_offset(0) + 1] = 0.5 * kShaftFloor * 27.0;
+        x[ex.shaft_offset(1) + 1] = 0.5 * kShaftFloor * 27.0;
+        ASSERT_TRUE(ex.derivatives(0.0, x, {}, {}, xd));
+        EXPECT_EQ(xd[ex.shaft_offset(braked) + 1], 0.0);
+        EXPECT_NEAR(xd[ex.shaft_offset(driven) + 1], 10.0 / J, 1e-12);
+        std::vector<double> xh(ex.num_states(), 0.0);
+        Vec6 net;
+        ASSERT_TRUE(ex.held_derivatives(0.0, x, {}, {}, xh, net));
+        EXPECT_EQ(xh[ex.shaft_offset(braked) + 1], 0.0);
+        EXPECT_NEAR(xh[ex.shaft_offset(driven) + 1], 10.0 / J, 1e-12);
     }
 }
 
