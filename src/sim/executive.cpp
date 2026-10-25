@@ -454,15 +454,19 @@ bool Executive::solve_with_floors(std::span<const double> x, const MatZ& A, cons
     // drive as an engine's is (D-052). Which shafts are held is a linear
     // complementarity problem: a free shaft on its floor has Ω̇ ≥ 0, a held
     // one a holding torque ≥ 0 (driving it forward; one that would have to
-    // pull it back is released, since it would speed up). Murty's
-    // least-index method: flip the first shaft that breaks its condition and
-    // solve again. It terminates within 2ⁿ solves when the shafts' matrix
-    // (the Schur complement of A with the body free) is a P-matrix, as a
-    // symmetric positive definite inertia matrix's is (K. G. Murty, "Note on
-    // a Bard-type scheme for solving the complementarity problem", Opsearch
-    // 11, 1974); the aerodynamic terms make A slightly unsymmetric, so the
-    // bound stops it, reported as not settled. Above every floor nothing
-    // flips, so this is the one solve and the results don't change.
+    // pull it back is released, since it would speed up). Murty's Principal
+    // Pivoting Method I (Murty, Linear Complementarity, Linear and Nonlinear
+    // Programming, 1988, §4.1): flip the first shaft that breaks its
+    // condition and solve again. When the shafts' matrix (the Schur
+    // complement of A with the body free) is a P-matrix it terminates and no
+    // set of held shafts recurs (Theorem 4.1, p. 256), so within 2ⁿ solves;
+    // starting free rather than held and taking the least index rather than
+    // the greatest is the same method on a principal pivot transform,
+    // reordered, a P-matrix again (Theorem 3.5). A symmetric positive
+    // definite inertia matrix's is; the aerodynamic terms make A unsymmetric,
+    // so otherwise the bound stops it, reported as not settled. Above every
+    // floor nothing flips, so this is the one solve and the results don't
+    // change.
     std::array<bool, kMaxShafts> held{};  // by free-shaft row
     const std::size_t nf = free_shafts_.size();
     const std::size_t limit = std::size_t{1} << nf;
