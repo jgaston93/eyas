@@ -1769,3 +1769,20 @@ So the gated comparison stays on the held shaft: on the real drive it would only
 The validation sweeps here continue from nearby trims, retrying from further back and falling back to a cold start only where its attitude continues the sweep. (3) #72's vortex-ring trim still fails; B2b's steady slip changes the path it fails on (the engines near zero torque, at the clutch's transition).
 
 **Open.** Stage C: Tier 4 engine outputs, the station's engine readouts, engine controls that `eyas_drive` replays. A floor on the shaft speed (#74); trim robustness (#76); #72; the X-56 buttons for engine select, speed trim and fuel; the power lever's rigging and the dead engine below the maps (DATA_GAPS.md); #40.
+
+## M9 — Rotor speed: the shaft floor (2026-10-25; issues #74, #39)
+
+A free shaft that reaches 5 % of its governed speed and would slow further is held there (D-057), so the rotor models, written per unit ΩR, never see Ω = 0. Above the floor nothing changes, bit for bit.
+
+| Check | Status | Evidence |
+|---|---|---|
+| The rule | ✅ | `Shafts.FloorHoldsAShaftThatWouldSlowDown`: two free shafts, each braked or driven; held exactly (Ω̇ = 0, the airframe unmoved) only at or below its floor and decelerating; the other shaft free; the same in `held_derivatives()`. |
+| Coupled shafts | ✅ | `Shafts.FloorReleasesACoupledShaftThatWouldSpeedUp`: of two coupled shafts on their floors, the braked one held and the driven one released, though the free solve slows both; both ways round. |
+| A run-down | ✅ | `Shafts.BrakedShaftRunsDownToItsFloorAndStays`: −Q/J exactly down to the floor, then on it within one step's fall; `shaft_on_floor` exactly while at or below it. |
+| Issue #74's run | ✅ | `BallinT700Aircraft.RotorRunDownStopsAtTheShaftFloor`: 80 kt, 2700 m, SAS and PBA on, full collective, both engines shut off: finite for 8 s, the rotor on the floor, `shaft_on_floor` reported. |
+| The solver's hypothesis | ✅ | Murty's method terminates for a P-matrix (D-057; Murty 1988, Theorem 4.1). The UH-60A has one free shaft, so that is the drive's effective inertia with the body free being positive. A scratch probe of A along #74's 8 s runs: it stays positive, 11 077 kg·m² in trim, lowest 1 967 kg·m² with the engines off and full collective on the floor, 4 507 at idle, 8 876 at zero collective; the scaled symmetric part of the whole of A stays positive definite (least eigenvalue 0.57), so A itself is a P-matrix. |
+| Mutation checks | ✅ | Each caught: no floor; a shaft held that would speed up; a held shaft never released; `held_derivatives()` without it, or without it on the second shaft. |
+
+**The floor's value.** #74's run with floors of 2, 5 and 10 %, for 20 s with the engines shut off and 30 s with them lit at idle. Without a floor both diverge, at 5.7 and 5.9 s. With any of the three the run stays finite, the rotor sits on its floor, and the aircraft falls (95–100 m/s by the end), tumbling at up to 7 rad/s. 5 % leaves a wide margin above 2 %, where the tail rotor's inflow rate is already about 15 /s, growing as 1/Ω². No rotor recovers from that speed in flight, so the value bounds the models' domain, not the aircraft's.
+
+`AdvanceStatus::shaft_on_floor` reports it to the host (D-057). The pilot station's readout of it is Stage C's.

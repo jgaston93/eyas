@@ -1409,5 +1409,44 @@ TEST(BallinT700Aircraft, OverrunsInASteepDescentAsInAutorotation) {
     EXPECT_NEAR(a.omega(dead), a.omega(r), 1e-6 * a.governed());
 }
 
+// Issue #74 (D-057): from an 80 kt trim at 2700 m (SAS and PBA on), full
+// collective with both engines shut off runs the rotor down. Without the
+// shaft floor the solution diverged when the shaft speed crossed zero
+// (5.7 s); with it the rotor stops at the floor, AdvanceStatus says so, and
+// the run stays finite.
+TEST(BallinT700Aircraft, RotorRunDownStopsAtTheShaftFloor) {
+    const Config cfg =
+        Config::from_file(std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a.yaml");
+    Executive ex = build_executive(cfg, read_origin(cfg).origin().altitude);
+    TrimCondition c;
+    c.airspeed = 80.0 * units::kKnot;
+    c.altitude = 2700.0;
+    c.afcs.sas_digital = c.afcs.sas_analog = c.afcs.pitch_bias = true;
+    std::vector<double> x;
+    const TrimResult r = solve_trim(ex, c, nullptr, x);
+    ASSERT_TRUE(r.converged);
+    ASSERT_TRUE(ex.restore(x, 0, 0));
+    Controls u = r.controls;
+    u.collective = 1.0;
+    u.engines[0].fuel_on = u.engines[1].fuel_on = false;
+    const Environment env = trim_environment(c);
+    const double governed = ex.shafts()[0].speed;
+    const double floor = kShaftFloor * governed;
+    double lowest = governed;
+    bool reported = false;
+    for (int frame = 0; frame < 8 * 60; ++frame) {
+        const AdvanceStatus st = ex.advance(u, env, 16'666'667);
+        ASSERT_FALSE(st.non_finite) << "t " << ex.sim_time();
+        lowest = std::min(lowest, ex.state()[ex.shaft_offset(0) + 1]);
+        reported = reported || st.shaft_on_floor;
+    }
+    EXPECT_TRUE(reported);
+    EXPECT_LT(lowest, 1.01 * floor);
+    EXPECT_GT(lowest, 0.99 * floor);
+    for (const double v : ex.state()) {
+        ASSERT_TRUE(std::isfinite(v));
+    }
+}
+
 }  // namespace
 }  // namespace eyas

@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -35,16 +36,17 @@ using test::kDeg;
 // load on the airframe.
 class Motor : public DynamicComponent {
 public:
-    explicit Motor(double q) : q_(q) {}
+    explicit Motor(double q, int shaft = 0) : q_(q), shaft_(shaft) {}
     std::size_t num_states() const override { return 0; }
     void initial_states(std::span<double> /*x*/) const override {}
     void derivatives(const SimContext& /*ctx*/, std::span<const double> /*x*/,
                      ComponentDerivs& out) const override {
-        out.Q0(0) = q_;
+        out.Q0(shaft_) = q_;
     }
 
 private:
     double q_;
+    int shaft_;
 };
 
 ShaftConfig free_shaft(double speed, double inertia, const Vec3& axis, double gear = 1.0) {
@@ -474,6 +476,187 @@ airframe:
     const std::string twice = one + "  - {name: main, speed: \"1 rad/s\", drive: ideal}\n";
     EXPECT_THROW((void)Model::from_string(yaml(twice, "shaft: {name: main, gear: 2}"), "a"),
                  InitError);
+}
+
+// The shaft floor (D-057, issue #74): a free shaft at or below
+// kShaftFloor × its speed that would slow down is held, Ω̇ = 0, the holding
+// torque internal to the drive, so the airframe doesn't turn either; above
+// the floor, or speeding up, it is free as before. Two shafts, each with an
+// inertia-only part (Ω̇ = Q/J when free) and its own motor, one held and one
+// not, in derivatives() and in held_derivatives() alike.
+TEST(Shafts, FloorHoldsAShaftThatWouldSlowDown) {
+    const double J0 = 40.0;
+    const double J1 = 10.0;
+    ExecutiveConfig ec;
+    ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
+    ShaftConfig s0 = free_shaft(27.0, J0, Vec3(0.0, 0.0, -1.0));
+    ShaftConfig s1 = free_shaft(100.0, J1, Vec3(0.0, 0.0, -1.0));
+    s1.name = "second";
+    s0.parts[0].axis_b = Vec3::Zero();
+    s1.parts[0].axis_b = Vec3::Zero();
+    ec.shafts = {s0, s1};
+    const auto run = [&](double q0, double omega0, double q1, double omega1) {
+        std::vector<std::unique_ptr<DynamicComponent>> comps;
+        comps.push_back(std::make_unique<Motor>(q0, 0));
+        comps.push_back(std::make_unique<Motor>(q1, 1));
+        const Executive ex(ec, std::move(comps));
+        std::vector<double> x(ex.state().begin(), ex.state().end());
+        x[ex.shaft_offset(0) + 1] = omega0;
+        x[ex.shaft_offset(1) + 1] = omega1;
+        std::vector<double> xd(ex.num_states(), 0.0);
+        EXPECT_TRUE(ex.derivatives(0.0, x, {}, {}, xd));
+        std::vector<double> xh(ex.num_states(), 0.0);
+        Vec6 net;
+        EXPECT_TRUE(ex.held_derivatives(0.0, x, {}, {}, xh, net));
+        // Without angular momentum the airframe doesn't couple to the shafts,
+        // so holding the body changes nothing.
+        for (std::size_t k = 0; k < 2 && ec.shafts[0].parts[0].axis_b.isZero(); ++k) {
+            EXPECT_EQ(xh[ex.shaft_offset(k) + 1], xd[ex.shaft_offset(k) + 1]) << "shaft " << k;
+        }
+        if (omega0 <= kShaftFloor * 27.0 && q0 < 0.0) {
+            EXPECT_EQ(xh[ex.shaft_offset(0) + 1], 0.0);
+        }
+        if (omega1 <= kShaftFloor * 100.0 && q1 < 0.0) {
+            EXPECT_EQ(xh[ex.shaft_offset(1) + 1], 0.0);
+        }
+        return std::array<double, 5>{xd[ex.shaft_offset(0) + 1], xd[ex.shaft_offset(1) + 1],
+                                     xd[body_layout::kOmega], xd[body_layout::kOmega + 1],
+                                     xd[body_layout::kOmega + 2]};
+    };
+    const double floor0 = kShaftFloor * 27.0;
+    const double floor1 = kShaftFloor * 100.0;
+    // Shaft 0 below its floor and braked: held. Shaft 1 above its, braked: free.
+    auto d = run(-2500.0, 0.9 * floor0, -300.0, 1.1 * floor1);
+    EXPECT_EQ(d[0], 0.0);
+    EXPECT_NEAR(d[1], -300.0 / J1, 1e-12 * 300.0 / J1);
+    // Exactly on the floor counts as on it; the other way round.
+    d = run(-2500.0, 1.1 * floor0, -300.0, floor1);
+    EXPECT_NEAR(d[0], -2500.0 / J0, 1e-12 * 2500.0 / J0);
+    EXPECT_EQ(d[1], 0.0);
+    // Both held: nothing moves.
+    d = run(-2500.0, 0.5 * floor0, -300.0, 0.0);
+    for (const double v : d) {
+        EXPECT_EQ(v, 0.0);
+    }
+    // Below the floor and driven: free, it speeds up as before.
+    d = run(2500.0, 0.5 * floor0, 300.0, 0.0);
+    EXPECT_NEAR(d[0], 2500.0 / J0, 1e-12 * 2500.0 / J0);
+    EXPECT_NEAR(d[1], 300.0 / J1, 1e-12 * 300.0 / J1);
+    // With angular momentum about a tilted axis: free, the brake turns the
+    // airframe (FreeShaftWithInternalMotorMatchesClosedForm); held, it doesn't.
+    ec.shafts[0].parts[0].axis_b = Vec3(0.3, -0.2, -1.0).normalized();
+    d = run(-2500.0, 1.1 * floor0, 0.0, floor1);
+    EXPECT_GT(Vec3(d[2], d[3], d[4]).norm(), 1e-3);
+    d = run(-2500.0, 0.9 * floor0, 0.0, floor1);
+    for (const double v : d) {
+        EXPECT_EQ(v, 0.0);
+    }
+    d = run(-2500.0, 0.9 * floor0, -300.0, floor1);
+    EXPECT_EQ(d[0], 0.0);
+    EXPECT_EQ(d[1], 0.0);
+}
+
+// Shafts coupled to each other (a K_s between them): with both on their
+// floors, one braked hard and the other driven, the free solve slows both,
+// but once the braked one is held the driven one speeds up, so it must not
+// be held too (D-057; the code review of #84). The shafts' block of A is
+// [[J, c], [c, J]]: free, Ω̇ = [[J, c], [c, J]]⁻¹ Q; the braked one held,
+// the driven one's row gives Ω̇ = Q/J. Both ways round: with shaft 0 the
+// driven one, the least-index rule holds it first, then shaft 1, then has to
+// release shaft 0.
+class ShaftCoupler : public DynamicComponent {
+public:
+    ShaftCoupler(double q0, double q1, double c) : q0_(q0), q1_(q1), c_(c) {}
+    std::size_t num_states() const override { return 0; }
+    void initial_states(std::span<double> /*x*/) const override {}
+    void derivatives(const SimContext& /*ctx*/, std::span<const double> /*x*/,
+                     ComponentDerivs& out) const override {
+        out.Q0(0) = q0_;
+        out.Q0(1) = q1_;
+        out.Ks(0, 1) = -c_;
+        out.Ks(1, 0) = -c_;
+    }
+
+private:
+    double q0_;
+    double q1_;
+    double c_;
+};
+
+TEST(Shafts, FloorReleasesACoupledShaftThatWouldSpeedUp) {
+    const double J = 10.0;
+    const double c = -8.0;
+    for (const std::size_t driven : {std::size_t{1}, std::size_t{0}}) {
+        SCOPED_TRACE(driven);
+        const std::size_t braked = 1 - driven;
+        std::array<double, 2> q{};
+        q[braked] = -100.0;
+        q[driven] = 10.0;
+        ExecutiveConfig ec;
+        ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
+        for (const char* name : {"a", "b"}) {
+            ShaftConfig s = free_shaft(27.0, J, Vec3(0.0, 0.0, -1.0));
+            s.name = name;
+            s.parts[0].axis_b = Vec3::Zero();
+            ec.shafts.push_back(s);
+        }
+        std::vector<std::unique_ptr<DynamicComponent>> comps;
+        comps.push_back(std::make_unique<ShaftCoupler>(q[0], q[1], c));
+        const Executive ex(ec, std::move(comps));
+        std::vector<double> x(ex.state().begin(), ex.state().end());
+        // Above the floors the shafts are free: both slow down.
+        std::vector<double> xd(ex.num_states(), 0.0);
+        ASSERT_TRUE(ex.derivatives(0.0, x, {}, {}, xd));
+        const double det = J * J - c * c;
+        EXPECT_NEAR(xd[ex.shaft_offset(0) + 1], (J * q[0] - c * q[1]) / det, 1e-12);
+        EXPECT_NEAR(xd[ex.shaft_offset(1) + 1], (J * q[1] - c * q[0]) / det, 1e-12);
+        ASSERT_LT(xd[ex.shaft_offset(driven) + 1], 0.0);
+        // Both on their floors.
+        x[ex.shaft_offset(0) + 1] = 0.5 * kShaftFloor * 27.0;
+        x[ex.shaft_offset(1) + 1] = 0.5 * kShaftFloor * 27.0;
+        ASSERT_TRUE(ex.derivatives(0.0, x, {}, {}, xd));
+        EXPECT_EQ(xd[ex.shaft_offset(braked) + 1], 0.0);
+        EXPECT_NEAR(xd[ex.shaft_offset(driven) + 1], 10.0 / J, 1e-12);
+        std::vector<double> xh(ex.num_states(), 0.0);
+        Vec6 net;
+        ASSERT_TRUE(ex.held_derivatives(0.0, x, {}, {}, xh, net));
+        EXPECT_EQ(xh[ex.shaft_offset(braked) + 1], 0.0);
+        EXPECT_NEAR(xh[ex.shaft_offset(driven) + 1], 10.0 / J, 1e-12);
+    }
+}
+
+// A braked free shaft runs down at −Q/J from its governed speed, then stays at
+// its floor (D-057), within one step's fall of it, and ends just below it,
+// after the brake has acted long enough to take it to −Ω. AdvanceStatus
+// reports it on the floor exactly when it is.
+TEST(Shafts, BrakedShaftRunsDownToItsFloorAndStays) {
+    const double J = 40.0;
+    const double Q = -2000.0;  // −Q/J = 50 rad/s², so 27 rad/s to the floor in 0.51 s
+    ExecutiveConfig ec;
+    ec.mass = make_mass_properties(5000.0, 6000.0, 30000.0, 28000.0, 1500.0);
+    ShaftConfig s = free_shaft(27.0, J, Vec3(0.0, 0.0, -1.0));
+    s.parts[0].axis_b = Vec3::Zero();
+    ec.shafts = {s};
+    std::vector<std::unique_ptr<DynamicComponent>> comps;
+    comps.push_back(std::make_unique<Motor>(Q));
+    Executive ex(ec, std::move(comps));
+    const double floor = kShaftFloor * 27.0;
+    const double h = static_cast<double>(ex.step_ns()) * 1e-9;
+    for (int i = 0; i < 1000; ++i) {
+        const AdvanceStatus st = ex.advance({}, {}, ex.step_ns());
+        ASSERT_FALSE(st.non_finite);
+        const double omega = ex.state()[ex.shaft_offset(0) + 1];
+        EXPECT_EQ(st.shaft_on_floor, omega <= floor) << "t " << ex.sim_time();
+        const double free_run = 27.0 + Q / J * ex.sim_time();
+        // RK4's stages in the step that crosses the floor see it, so that
+        // step lands within one step's fall of the floor, either side.
+        if (free_run > floor - Q / J * h) {
+            EXPECT_NEAR(omega, free_run, 1e-9) << "t " << ex.sim_time();
+        } else {
+            EXPECT_NEAR(omega, floor, -Q / J * h) << "t " << ex.sim_time();
+        }
+    }
+    EXPECT_LT(ex.state()[ex.shaft_offset(0) + 1], floor);
 }
 
 // Real-time (spec §7): advance() with a free shaft allocates nothing.

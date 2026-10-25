@@ -185,6 +185,7 @@ Executive::Executive(const ExecutiveConfig& config,
         if (shafts_[k].drive == ShaftDrive::free) {
             free_shafts_.push_back(static_cast<int>(k));
         }
+        shaft_floor_[k] = kShaftFloor * shafts_[k].speed;
         info.push_back({shafts_[k].name, shafts_[k].speed});
     }
     CouplingRegistry registry;
@@ -432,15 +433,73 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
     return converged;
 }
 
-Executive::VecZ Executive::solve(const MatZ& A, const VecZ& rhs) const noexcept {
+bool Executive::solve(std::span<const double> x, const MatZ& A, const VecZ& rhs,
+                      VecZ& z) const noexcept {
     if (free_shafts_.empty()) {
         // Exactly the pre-D-052 solve, so models without free shafts keep
         // their results to the bit.
         const Mat66 A6 = A.topLeftCorner<6, 6>();
         const Vec6 r6 = rhs.head<6>();
-        return VecZ(A6.partialPivLu().solve(r6));
+        z = VecZ(A6.partialPivLu().solve(r6));
+        return true;
     }
-    return A.partialPivLu().solve(rhs);
+    return solve_with_floors(x, A, rhs, 6, z);
+}
+
+bool Executive::solve_with_floors(std::span<const double> x, const MatZ& A, const VecZ& rhs,
+                                  Eigen::Index first, VecZ& z) const noexcept {
+    z = A.partialPivLu().solve(rhs);
+    // A shaft on its floor that would slow down is held (D-057): its row
+    // becomes Ω̇ = 0, an ideal drive's, the holding torque internal to the
+    // drive as an engine's is (D-052). Which shafts are held is a linear
+    // complementarity problem: a free shaft on its floor has Ω̇ ≥ 0, a held
+    // one a holding torque ≥ 0 (driving it forward; one that would have to
+    // pull it back is released, since it would speed up). Murty's Principal
+    // Pivoting Method I (Murty, Linear Complementarity, Linear and Nonlinear
+    // Programming, 1988, §4.1): flip the first shaft that breaks its
+    // condition and solve again. When the shafts' matrix (the Schur
+    // complement of A with the body free) is a P-matrix it terminates and no
+    // set of held shafts recurs (Theorem 4.1, p. 256), so within 2ⁿ solves;
+    // starting free rather than held and taking the least index rather than
+    // the greatest is the same method on a principal pivot transform,
+    // reordered, a P-matrix again (Theorem 3.5). A symmetric positive
+    // definite inertia matrix's is; the aerodynamic terms make A unsymmetric,
+    // so otherwise the bound stops it, reported as not settled. Above every
+    // floor nothing flips, so this is the one solve and the results don't
+    // change.
+    std::array<bool, kMaxShafts> held{};  // by free-shaft row
+    const std::size_t nf = free_shafts_.size();
+    const std::size_t limit = std::size_t{1} << nf;
+    for (std::size_t it = 0;; ++it) {
+        std::size_t flip = nf;
+        for (std::size_t r = 0; r < nf && flip == nf; ++r) {
+            const Eigen::Index row = first + static_cast<Eigen::Index>(r);
+            const bool violated =
+                held[r] ? A.row(row).dot(z) - rhs(row) < 0.0
+                        : z(row) < 0.0 && on_floor(x, static_cast<std::size_t>(free_shafts_[r]));
+            if (violated) {
+                flip = r;
+            }
+        }
+        if (flip == nf) {
+            return true;
+        }
+        if (it == limit) {
+            return false;  // not settled (D-023): the last solve stands
+        }
+        held[flip] = !held[flip];
+        MatZ Ac = A;
+        VecZ rc = rhs;
+        for (std::size_t r = 0; r < nf; ++r) {
+            if (held[r]) {
+                const Eigen::Index row = first + static_cast<Eigen::Index>(r);
+                Ac.row(row).setZero();
+                Ac(row, row) = 1.0;
+                rc(row) = 0.0;
+            }
+        }
+        z = Ac.partialPivLu().solve(rc);
+    }
 }
 
 void Executive::back_substitute(std::span<const double> x, const VecZ& z,
@@ -476,8 +535,10 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     MatZ A;
     VecZ rhs;
     const bool converged = evaluate(t, x, controls, env, A, rhs, {});
-    back_substitute(x, solve(A, rhs), xdot);
-    return converged;
+    VecZ z;
+    const bool settled = solve(x, A, rhs, z);
+    back_substitute(x, z, xdot);
+    return converged && settled;
 }
 
 bool Executive::body_acceleration(const Controls& controls, const Environment& env,
@@ -485,8 +546,10 @@ bool Executive::body_acceleration(const Controls& controls, const Environment& e
     MatZ A;
     VecZ rhs;
     const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {});
-    a = solve(A, rhs).head<6>();
-    return converged;
+    VecZ z;
+    const bool settled = solve(x_, A, rhs, z);
+    a = z.head<6>();
+    return converged && settled;
 }
 
 bool Executive::held_derivatives(double t, std::span<const double> x, const Controls& controls,
@@ -494,13 +557,17 @@ bool Executive::held_derivatives(double t, std::span<const double> x, const Cont
                                  std::span<Wrench> component_loads) const noexcept {
     MatZ A;
     VecZ rhs;
-    const bool converged = evaluate(t, x, controls, env, A, rhs, component_loads);
+    bool converged = evaluate(t, x, controls, env, A, rhs, component_loads);
     // The body held (a = 0): the free shafts still accelerate, by their own
     // rows; the body feels what is left of its rows (D-052).
     VecZ z = VecZ::Zero(A.rows());
     const auto nf = static_cast<Eigen::Index>(free_shafts_.size());
     if (nf > 0) {
-        z.tail(nf) = A.bottomRightCorner(nf, nf).partialPivLu().solve(rhs.tail(nf));
+        const MatZ As = A.bottomRightCorner(nf, nf);
+        const VecZ rs = rhs.tail(nf);
+        VecZ zs;
+        converged = solve_with_floors(x, As, rs, 0, zs) && converged;
+        z.tail(nf) = zs;
     }
     net = rhs.head<6>();
     if (nf > 0) {
@@ -592,6 +659,10 @@ AdvanceStatus Executive::advance(const Controls& controls, const Environment& en
         const double altitude = origin_altitude_ - x_[body_layout::kPos + 2];
         status.atmosphere_out_of_range =
             status.atmosphere_out_of_range || isa_out_of_range(altitude);
+        for (const int k : free_shafts_) {
+            status.shaft_on_floor =
+                status.shaft_on_floor || on_floor(x_, static_cast<std::size_t>(k));
+        }
     }
     return status;
 }
