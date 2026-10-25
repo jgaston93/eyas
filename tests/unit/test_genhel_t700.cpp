@@ -359,6 +359,24 @@ TEST(GenHelT700, GovernorIsIsochronous) {
     }
 }
 
+// The cockpit's engine-speed trim (D-055 item 1) moves the governor's
+// reference: from a steady 20000 N·m, a reference of 1.02 (and then 0.97) of
+// the governed speed is held, isochronously, once the ECU has taken it up.
+TEST(GenHelT700, GovernsAtTheSpeedReference) {
+    const t700::Data d;
+    Rig r = make_rig(d, 20000.0, 20000.0, 1.0, 0.6);
+    Controls u;
+    u.collective = 0.6;
+    (void)r.ex->advance(u, {}, 1'000'000'000);
+    for (const double ref : {1.02, 0.97}) {
+        u.rotor_speed_reference = ref;
+        for (int i = 0; i < 800; ++i) {  // 80 s
+            ASSERT_FALSE(r.ex->advance(u, {}, 100'000'000).non_finite);
+        }
+        EXPECT_NEAR(shaft_speed(*r.ex), ref * kGovernor, 1e-6 * kGovernor) << ref;
+    }
+}
+
 // The clutch (D-053 item 3). When the rotor drives the shaft (its demand
 // negative, as in autorotation) the lagged demand FLQREQ turns negative and
 // the clutch lets go: then the drive alone carries the load,

@@ -364,8 +364,11 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
             throw InitError("ballin_t700: a map is missing");
         }
     }
-    if (!c.f1 || !c.fec1) {
+    if (!c.f1 || !c.fec1 || !c.fhm7) {
         throw InitError("ballin_t700: a map is missing");
+    }
+    if (c.engines > static_cast<int>(kMaxEnginesPerComponent) || c.first_engine < 0) {
+        throw InitError("ballin_t700: one or two engines (D-055)");
     }
     require_positive(c.gear, "gear");
     require_positive(c.ng_des, "NG_des");
@@ -378,9 +381,15 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     require_positive(c.tm_gain, "the torque motor's gain");
     require_positive(c.tmlvg, "the torque motor's feedback");
     require_positive(c.tmlg, "the torque motor's linkage");
+    require_positive(c.drive_inertia, "the drive's inertia");
+    require_positive(c.share_gain, "the load share's gain");
+    if (!(c.pas_idle < c.pas_fly) || !(c.dbias < c.ce)) {
+        throw InitError("ballin_t700: limits out of order");
+    }
     for (const double t :
-         {c.ctpl, c.ct13, c.ct14, c.torque_lag1, c.torque_lag2, c.ct2, c.ct12, c.tlge, c.ct9, c.t10,
-          c.ct16, c.tm_lag, c.ctps3, c.clld, c.cntl, c.clmv, c.delay, c.hysteresis_lag}) {
+         {c.ctpl, c.ct13, c.ct14,  c.torque_lag1,    c.torque_lag2, c.ct2,   c.ct12,
+          c.tlge, c.ct9,  c.t10,   c.ct16,           c.tm_lag,      c.ctps3, c.clld,
+          c.cntl, c.clmv, c.delay, c.hysteresis_lag, c.ct7,         c.t17}) {
         require_positive(t, "a lag");
     }
     if (!(c.xlolim < c.xhilim) || !(c.ylolim < c.yhilim) || !(c.zlolim_low < c.zhilim) ||
@@ -390,6 +399,7 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     }
     cursors_.f1 = c.f1->make_cursor();
     cursors_.fec1 = c.fec1->make_cursor();
+    cursors_.fhm7 = c.fhm7->make_cursor();
     // The steady line on a standard day, from 65 % to 104 % corrected speed,
     // by continuation from the middle; its pressure ratios start the
     // quasi-steady solve (D-054 item 4). Placeholders until it is built.
@@ -525,6 +535,17 @@ double BallinT700::xldsa(double collective) const noexcept {
     return config_.rig_gain * collective + config_.rig_bias;
 }
 
+double BallinT700::spindle(double lever) const noexcept {
+    // The power lever's rigging to the power-available spindle (D-055 item 2).
+    const double u = std::isnan(lever) ? 1.0 : std::clamp(lever, 0.0, 1.0);
+    return config_.pas_idle + u * (config_.pas_fly - config_.pas_idle);
+}
+
+double BallinT700::load_share(double share_lag) const noexcept {
+    // Fig. C2: the lagged 1.1 TRQER limited to [DBIAS, CE], less DBIAS.
+    return std::clamp(share_lag, config_.dbias, config_.ce) - config_.dbias;
+}
+
 double BallinT700::gain_switch(double spder, double torque_int) const noexcept {
     // B4 (Fig. C3): the relay's output (outside the speed band) plus the
     // torque integrator, against CORR. With the relay's gain far above CORR
@@ -561,20 +582,38 @@ double BallinT700::flapper_at_rest(double spdg) const noexcept {
     return std::clamp((spdg + c.tm_bias + c.tm_offset / c.tm_gain) / c.tmlvg, c.xlolim, c.xhilim);
 }
 
-BallinT700Signals BallinT700::signals(std::span<const double> x, double omega, double collective,
-                                      double p2, double t2) const noexcept {
+BallinT700Inputs BallinT700::inputs(const SimContext& ctx, int e) const noexcept {
+    BallinT700Inputs in;
+    in.omega = shaft_speed(ctx);
+    in.collective = ctx.controls.collective;
+    const auto k = static_cast<std::size_t>(config_.first_engine) + static_cast<std::size_t>(e);
+    in.power_lever = k < ctx.controls.engines.size() ? ctx.controls.engines[k].power_lever : 1.0;
+    // The engine-speed trim scales the reference (D-055 item 1).
+    in.np_reference = np_reference_ * speed_reference(ctx.controls.rotor_speed_reference);
+    in.p2 = ctx.air.pressure;
+    in.t2 = ctx.air.temperature;
+    return in;
+}
+
+BallinT700Signals BallinT700::signals(std::span<const double> x,
+                                      const BallinT700Inputs& in) const noexcept {
     const BallinT700Config& c = config_;
     Cursors& k = cursors_;
     BallinT700Signals s;
+    const double p2 = in.p2;
+    const double t2 = in.t2;
     // The metering valve's delivery: the valve's lag through the delay's Padé
     // approximant, y = u − T q̇ (D-054 item 7).
     s.fuel = std::max((x[kValve] - c.delay * x[kDelay2]) * kFuelScale, 0.0);
     const double ng = x[kNg] * c.ng_des;
-    const double np = c.gear * omega;
+    // The engine side turns at the shaft's speed less the clutch's slip.
+    s.engine_speed = in.omega - std::max(x[kSlip], 0.0);
+    const double np = c.gear * s.engine_speed;
     s.gas = gas(ng, np, x[kMetal] * kTstd, s.fuel, p2, t2);
     const BallinT700Gas& g = s.gas;
-    // ECU (Figs. C1, C3-C8): speed error, rate compensation and gain switch.
-    s.spder = x[kNpSensor] - np_reference_;  // XQLO = 0 for identical engines (D-054 item 8)
+    // ECU (Figs. C1-C8): speed error less the load share's trim, rate
+    // compensation and gain switch.
+    s.spder = x[kNpSensor] - in.np_reference - x[kXqlo];
     s.rate_input = dead_band(s.spder, c.cb);
     const double rate =
         c.zk9 * s.spder + c.zk10 * s.rate_input + c.zk5 / c.ct14 * (x[kRate1] - x[kRate2]);
@@ -592,111 +631,210 @@ BallinT700Signals BallinT700::signals(std::span<const double> x, double omega, d
     s.tm_current = dead_band(
         c.tm_gain * lead_lag(x[kTm1], s.motor_in, c.tm_lead, c.tm_lag) + c.tm_offset, c.tmdb);
     s.tmru = c.tmlg * std::clamp(x[kTmPos], c.xlolim, c.xhilim);
-    // HMU (C9, C13-C22).
+    // HMU (C9, C13-C22, C30).
     s.ps3l = x[kPs3Hys] * kPstd;
-    s.xldsa = xldsa(collective);
+    s.xldsa = xldsa(in.collective);
     s.dwfp = dwfp(x[kLdsHys]);
+    s.pas = spindle(in.power_lever);
     const double pcnghl = x[kNgSensor];
     const double rulds = std::max(x[kDwfpl] * kRatioScale + s.tmru, 0.0);
     s.wfpdm =
-        (*c.fhm1)(t2, k.t[10]) + c.kndrp * (c.ngref - pcnghl) - (*c.fhm2)(c.pas, k.t[11]) - rulds;
+        (*c.fhm1)(t2, k.t[10]) + c.kndrp * (c.ngref - pcnghl) - (*c.fhm2)(s.pas, k.t[11]) - rulds;
     s.wfidm = c.kndrp * ((*c.fhm6)(t2, k.t[12]) - pcnghl) + (*c.fhm5)(t2, k.t[13]);  // + WFIRF
+    s.wfpac = (*c.fhm7)(t2, pcnghl, k.fhm7);
     s.wfpdc = std::clamp(c.awfp * pcnghl + c.bwfp, c.wfpdcl, c.wfpdch);
-    s.hmusel = std::max(std::max(s.wfpdm, s.wfidm), s.wfpdc);  // WFPAC: Stage B2 (D-054 item 8)
+    // Fig. C18: the idle floor, the acceleration ceiling, the deceleration floor.
+    s.hmusel = std::max(std::min(std::max(s.wfpdm, s.wfidm), s.wfpac), s.wfpdc);
     s.fuel_command = std::clamp(s.hmusel * s.ps3l, c.wfmin, c.wfmax);
-    s.q_shaft = c.engines * c.gear * g.q_pt - drive_train_load(omega);
+    s.q_engine = c.gear * g.q_pt;
     return s;
+}
+
+unsigned BallinT700::engaged(std::span<const double> q, std::span<const double> slip,
+                             double load) const noexcept {
+    // The engines at zero slip engage together unless one alone would
+    // accelerate slower than the drive does with the set engaged (D-055 item
+    // 5; TM-88360 App. A p. 21). Removing an engine only raises the drive's
+    // acceleration, so at most N passes.
+    const BallinT700Config& c = config_;
+    const double j_e = c.output_inertia * c.gear * c.gear;  // one engine's, at the shaft
+    unsigned set = 0;
+    for (std::size_t e = 0; e < q.size(); ++e) {
+        if (slip[e] <= 0.0) {
+            set |= 1U << e;
+        }
+    }
+    for (std::size_t pass = 0; pass < q.size(); ++pass) {
+        double torque = -load;
+        double inertia = c.drive_inertia;
+        for (std::size_t e = 0; e < q.size(); ++e) {
+            if ((set & (1U << e)) != 0U) {
+                torque += q[e];
+                inertia += j_e;
+            }
+        }
+        const double common = torque / inertia;
+        unsigned next = set;
+        for (std::size_t e = 0; e < q.size(); ++e) {
+            if ((set & (1U << e)) != 0U && q[e] / j_e < common) {
+                next &= ~(1U << e);
+            }
+        }
+        if (next == set) {
+            break;
+        }
+        set = next;
+    }
+    return set;
 }
 
 void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
                              ComponentDerivs& out) const {
     const BallinT700Config& c = config_;
+    const auto n_e = static_cast<std::size_t>(c.engines);
     const double omega = shaft_speed(ctx);
-    const BallinT700Signals s =
-        signals(x, omega, ctx.controls.collective, ctx.air.pressure, ctx.air.temperature);
-    const BallinT700Gas& g = s.gas;
-    out.converged = out.converged && g.converged;  // the quasi-steady solve (§7, D-054 item 4)
-    const auto set_g = [&](std::size_t row, const Vec3& w) {  // ∂ẋ_row/∂ω̇
-        for (std::size_t j = 0; j < 3; ++j) {
-            out.G[row * 6 + 3 + j] = w(static_cast<Eigen::Index>(j));
+    // Each engine's signals (D-055 item 3).
+    std::array<BallinT700Signals, kMaxEnginesPerComponent> sig;
+    std::array<double, kMaxEnginesPerComponent> q{};
+    std::array<double, kMaxEnginesPerComponent> slip{};
+    for (std::size_t e = 0; e < n_e; ++e) {
+        const std::span<const double> xe = x.subspan(e * kEngineStates, kEngineStates);
+        sig[e] = signals(xe, inputs(ctx, static_cast<int>(e)));
+        out.converged = out.converged && sig[e].gas.converged;  // the quasi-steady solve (§7)
+        q[e] = sig[e].q_engine;
+        slip[e] = xe[kSlip];
+    }
+    const double drive_load = drive_train_load(omega);
+    const unsigned mask =
+        engaged(std::span<const double>(q.data(), n_e), std::span<const double>(slip.data(), n_e),
+                rotor_demand(ctx) + drive_load);
+
+    const double j_e = c.output_inertia * c.gear * c.gear;  // one engine's, at the shaft
+    const double h_e = j_e / c.gear;                        // its momentum per unit Ω_e
+    double q_engaged = 0.0;
+    double j_engaged = 0.0;
+    double h_engaged = 0.0;
+    Vec3 h = Vec3::Zero();       // the spools' momentum relative to the airframe
+    Vec3 m_gg = Vec3::Zero();    // the gas generators' spin-up reaction
+    Vec3 m_free = Vec3::Zero();  // the disengaged power turbines' spin-up reaction
+    double h_free = 0.0;
+    for (std::size_t e = 0; e < n_e; ++e) {
+        const std::size_t o = e * kEngineStates;
+        const std::span<const double> xe = x.subspan(o, kEngineStates);
+        const BallinT700Signals& s = sig[e];
+        const BallinT700Gas& g = s.gas;
+        const auto set_g = [&](std::size_t row, const Vec3& w) {  // ∂ẋ_row/∂ω̇
+            for (std::size_t j = 0; j < 3; ++j) {
+                out.G[(o + row) * 6 + 3 + j] = w(static_cast<Eigen::Index>(j));
+            }
+        };
+        double* d = out.xdot0.data() + o;
+
+        // Gas generator (eq. 45), its speed relative to the airframe (D-053
+        // item 5), and the heat sink's metal (eqs. 48, 51).
+        const double ng_rate = (g.q_gt - g.q_c) / (c.j_gt * c.ng_des);
+        d[kNg] = ng_rate;
+        set_g(kNg, -c.gg_axis_b / c.ng_des);
+        d[kMetal] = (g.t41ns / kTstd - xe[kMetal]) / g.metal_lag;
+        // ECU.
+        d[kNpSensor] = (c.gear * s.engine_speed / c.np_des - xe[kNpSensor]) / c.ctpl;
+        d[kRate1] = (s.rate_input - xe[kRate1]) / c.ct13;
+        d[kRate2] = (xe[kRate1] - xe[kRate2]) / c.ct14;
+        d[kTorqueInt] = limited_rate(xe[kTorqueInt], xe[kTorqueSensed] - c.cr, c.ylolim, c.yhilim);
+        d[kTorqueLag] = (g.q_pt - xe[kTorqueLag]) / c.torque_lag1;
+        d[kTorqueSensed] = (xe[kTorqueLag] - xe[kTorqueSensed]) / c.torque_lag2;
+        d[kGov1] = (s.spds1 - xe[kGov1]) / c.ct2;
+        d[kSpdsf] = (lead_lag(xe[kGov1], s.spds1, c.gov_lead, c.ct2) - xe[kSpdsf]) / c.ct12;
+        d[kT45l] = ((g.t45 + c.t45cor) / kTstd - xe[kT45l]) / c.tlge;
+        const double t45l = xe[kT45l] * kTstd;
+        const double w45r = g.w45 * std::sqrt(t45l) / g.p45;  // Fig. C5
+        const double tau45 = (*c.fec1)(t45l, w45r, cursors_.fec1);
+        d[kT45el] = (xe[kT45l] - xe[kT45el]) / std::max(tau45, 1e-3);
+        d[kTemp1] = (c.zk3 * (xe[kT45el] * kTstd - c.t45ref) - xe[kTemp1]) / c.ct9;
+        d[kTsig] = (xe[kTemp1] - xe[kTsig]) / c.t10;
+        d[kZ] = limited_rate(xe[kZ], c.xkintg * s.spdss, s.zlolim, c.zhilim);
+        d[kSpdg] = (s.spdsp - xe[kSpdg]) / c.ct16;
+        // Load share (Fig. C2): TRQER = TRQL(other) − TRQL(own); one engine,
+        // the switch open.
+        const double trqer =
+            n_e == 2 ? x[(1 - e) * kEngineStates + kTorqueSensed] - xe[kTorqueSensed] : 0.0;
+        d[kShareLag] = (c.share_gain * trqer - xe[kShareLag]) / c.ct7;
+        d[kXqlo] = (c.zk8 * load_share(xe[kShareLag]) - xe[kXqlo]) / c.t17;
+        // HMU.
+        d[kTm1] = (s.motor_in - xe[kTm1]) / c.tm_lag;
+        d[kTmPos] = limited_rate(xe[kTmPos], c.tmgn * s.tm_current, c.xlolim, c.xhilim);
+        d[kPs3Lag] = (g.ps3 / kPstd - xe[kPs3Lag]) / c.ctps3;
+        d[kPs3Hys] = play_rate(xe[kPs3Lag], xe[kPs3Hys], c.ps3hys / kPstd, c.hysteresis_lag);
+        d[kLdsHys] = play_rate(s.xldsa, xe[kLdsHys], c.xldhys, c.hysteresis_lag);
+        d[kDwfpl] = (s.dwfp / kRatioScale - xe[kDwfpl]) / c.clld;
+        d[kNgHys] = play_rate(xe[kNg], xe[kNgHys], c.ch, c.hysteresis_lag);
+        d[kNgSensor] = (xe[kNgHys] - xe[kNgSensor]) / c.cntl;
+        d[kValve] = (s.fuel_command / kFuelScale - xe[kValve]) / c.clmv;
+        // The delay's Padé approximant: (T²/12) q̈ + (T/2) q̇ + q = u.
+        d[kDelay1] = xe[kDelay2];
+        d[kDelay2] =
+            (xe[kValve] - xe[kDelay1] - 0.5 * c.delay * xe[kDelay2]) / (c.delay * c.delay / 12.0);
+
+        // The clutch (D-055 item 5).
+        if ((mask & (1U << e)) != 0U) {
+            q_engaged += s.q_engine;
+            j_engaged += j_e;
+            h_engaged += h_e;
+            // A step's overshoot below zero slip returns within kLimitReturn,
+            // as a limiter's does (D-053 amendment 5).
+            d[kSlip] = xe[kSlip] < 0.0 ? -xe[kSlip] / engine::kLimitReturn : 0.0;
+        } else {
+            // J_e (Ω̇_e + n·ω̇/n_E) = Q_e; ṡ = Ω̇ − Ω̇_e.
+            d[kSlip] = -s.q_engine / j_e;
+            set_g(kSlip, c.pt_axis_b / c.gear);
+            if (on_shaft(ctx) && !out.Gs.empty()) {
+                out.Gs[(o + kSlip) * kMaxShafts + static_cast<std::size_t>(shaft_index_)] = 1.0;
+            }
+            // The airframe: −(J_e/n_E) Ω̇_e n.
+            m_free += (s.q_engine / c.gear) * c.pt_axis_b;
+            h_free += h_e / c.gear;
         }
-    };
+        h += h_e * s.engine_speed * c.pt_axis_b + c.j_gt * xe[kNg] * c.ng_des * c.gg_axis_b;
+        m_gg += c.j_gt * c.ng_des * ng_rate * c.gg_axis_b;
+    }
 
-    // Gas generator (eq. 45), its speed relative to the airframe (D-053 item 5),
-    // and the heat sink's metal (eqs. 48, 51).
-    const double ng_rate = (g.q_gt - g.q_c) / (c.j_gt * c.ng_des);
-    out.xdot0[kNg] = ng_rate;
-    set_g(kNg, -c.gg_axis_b / c.ng_des);
-    out.xdot0[kMetal] = (g.t41ns / kTstd - x[kMetal]) / g.metal_lag;
-    // ECU.
-    out.xdot0[kNpSensor] = (c.gear * omega / c.np_des - x[kNpSensor]) / c.ctpl;
-    out.xdot0[kRate1] = (s.rate_input - x[kRate1]) / c.ct13;
-    out.xdot0[kRate2] = (x[kRate1] - x[kRate2]) / c.ct14;
-    out.xdot0[kTorqueInt] =
-        limited_rate(x[kTorqueInt], x[kTorqueSensed] - c.cr, c.ylolim, c.yhilim);
-    out.xdot0[kTorqueLag] = (g.q_pt - x[kTorqueLag]) / c.torque_lag1;
-    out.xdot0[kTorqueSensed] = (x[kTorqueLag] - x[kTorqueSensed]) / c.torque_lag2;
-    out.xdot0[kGov1] = (s.spds1 - x[kGov1]) / c.ct2;
-    out.xdot0[kSpdsf] = (lead_lag(x[kGov1], s.spds1, c.gov_lead, c.ct2) - x[kSpdsf]) / c.ct12;
-    out.xdot0[kT45l] = ((g.t45 + c.t45cor) / kTstd - x[kT45l]) / c.tlge;
-    const double t45l = x[kT45l] * kTstd;
-    const double w45r = g.w45 * std::sqrt(t45l) / g.p45;  // Fig. C5
-    const double tau45 = (*c.fec1)(t45l, w45r, cursors_.fec1);
-    out.xdot0[kT45el] = (x[kT45l] - x[kT45el]) / std::max(tau45, 1e-3);
-    out.xdot0[kTemp1] = (c.zk3 * (x[kT45el] * kTstd - c.t45ref) - x[kTemp1]) / c.ct9;
-    out.xdot0[kTsig] = (x[kTemp1] - x[kTsig]) / c.t10;
-    out.xdot0[kZ] = limited_rate(x[kZ], c.xkintg * s.spdss, s.zlolim, c.zhilim);
-    out.xdot0[kSpdg] = (s.spdsp - x[kSpdg]) / c.ct16;
-    // HMU.
-    out.xdot0[kTm1] = (s.motor_in - x[kTm1]) / c.tm_lag;
-    out.xdot0[kTmPos] = limited_rate(x[kTmPos], c.tmgn * s.tm_current, c.xlolim, c.xhilim);
-    out.xdot0[kPs3Lag] = (g.ps3 / kPstd - x[kPs3Lag]) / c.ctps3;
-    out.xdot0[kPs3Hys] = play_rate(x[kPs3Lag], x[kPs3Hys], c.ps3hys / kPstd, c.hysteresis_lag);
-    out.xdot0[kLdsHys] = play_rate(s.xldsa, x[kLdsHys], c.xldhys, c.hysteresis_lag);
-    out.xdot0[kDwfpl] = (s.dwfp / kRatioScale - x[kDwfpl]) / c.clld;
-    out.xdot0[kNgHys] = play_rate(x[kNg], x[kNgHys], c.ch, c.hysteresis_lag);
-    out.xdot0[kNgSensor] = (x[kNgHys] - x[kNgSensor]) / c.cntl;
-    out.xdot0[kValve] = (s.fuel_command / kFuelScale - x[kValve]) / c.clmv;
-    // The delay's Padé approximant: (T²/12) q̈ + (T/2) q̇ + q = u.
-    out.xdot0[kDelay1] = x[kDelay2];
-    out.xdot0[kDelay2] =
-        (x[kValve] - x[kDelay1] - 0.5 * c.delay * x[kDelay2]) / (c.delay * c.delay / 12.0);
-
-    // The shaft: the engines' torque and output inertia, the drive train's
-    // load (D-054 item 3); the spools' momentum to the airframe (D-053 item 5).
-    // Not on a shaft in ctx (a context built by hand), the engine runs at its
-    // design speed and drives nothing.
-    const double j_out = c.engines * c.output_inertia * c.gear * c.gear;  // referred to the shaft
-    const double h_pt = j_out / c.gear;                                   // momentum per unit Ω
+    // The shaft: the drive train's load, and the engaged engines' torque and
+    // output inertia (D-054 item 3, D-055 item 5); the spools' momentum to the
+    // airframe (D-053 item 5). Not on a shaft in ctx (a context built by
+    // hand), the engines run at the design speed and drive nothing.
     if (on_shaft(ctx)) {
         const auto k = static_cast<Eigen::Index>(shaft_index_);
-        out.Q0(k) += s.q_shaft;
-        out.Ks(k, k) -= j_out;
-        out.Ka.block<1, 3>(k, 3) -= h_pt * c.pt_axis_b.transpose();
-        out.Hs.block<3, 1>(3, k) -= h_pt * c.pt_axis_b;
+        out.Q0(k) += q_engaged - drive_load;
+        out.Ks(k, k) -= j_engaged;
+        out.Ka.block<1, 3>(k, 3) -= h_engaged * c.pt_axis_b.transpose();
+        out.Hs.block<3, 1>(3, k) -= h_engaged * c.pt_axis_b;
     }
-    const double j_gg = c.engines * c.j_gt;
-    const Vec3 h = h_pt * omega * c.pt_axis_b + j_gg * x[kNg] * c.ng_des * c.gg_axis_b;
     out.load0_b.M -= ctx.body.omega_b.cross(h);
-    out.load0_b.M -= j_gg * c.ng_des * ng_rate * c.gg_axis_b;
-    out.H.block<3, 3>(3, 3) += j_gg * c.gg_axis_b * c.gg_axis_b.transpose();
+    out.load0_b.M -= m_gg;
+    out.load0_b.M -= m_free;
+    out.H.block<3, 3>(3, 3) += (c.engines * c.j_gt) * c.gg_axis_b * c.gg_axis_b.transpose();
+    if (h_free != 0.0) {
+        out.H.block<3, 3>(3, 3) += h_free * c.pt_axis_b * c.pt_axis_b.transpose();
+    }
 }
 
 // ---- Trim ------------------------------------------------------------------------
 
-void BallinT700::equilibrium(double fuel, double omega, double collective, double p2, double t2,
+void BallinT700::equilibrium(double fuel, const BallinT700Inputs& in,
                              std::span<double> x) const noexcept {
     const BallinT700Config& c = config_;
+    const double p2 = in.p2;
+    const double t2 = in.t2;
     std::fill(x.begin(), x.end(), 0.0);
     double ng = 0.0;
     BallinT700Gas g;
-    if (!steady_gas(fuel, c.gear * omega, p2, t2, ng, g)) {
+    if (!steady_gas(fuel, c.gear * in.omega, p2, t2, ng, g)) {
         // No steady gas path for this fuel: the rest point's fuel scaled to the
         // inlet's pressure, at the inlet; failing that, the sea-level rest
         // point itself, its sensors then off the inlet's values. Trim moves on
         // from either.
         fuel = rest_fuel_at(p2);
-        if (!steady_gas(fuel, c.gear * omega, p2, t2, ng, g)) {
+        if (!steady_gas(fuel, c.gear * in.omega, p2, t2, ng, g)) {
             fuel = rest_fuel_;
             ng = rest_ng_;
             g = rest_gas_;
@@ -704,10 +842,11 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     }
     x[kNg] = ng / c.ng_des;
     x[kMetal] = g.t41ns / kTstd;
-    // ECU at rest: sensors at their inputs, lags at their inputs.
-    const double pcnp = c.gear * omega / c.np_des;
+    // ECU at rest: sensors at their inputs, lags at their inputs; engaged,
+    // the load share at rest (the other engine's torque sensed at this one's).
+    const double pcnp = c.gear * in.omega / c.np_des;
     x[kNpSensor] = pcnp;
-    const double spder = pcnp - np_reference_;
+    const double spder = pcnp - in.np_reference;
     const double u1 = dead_band(spder, c.cb);
     x[kRate1] = u1;
     x[kRate2] = u1;
@@ -728,7 +867,7 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     // of their bands (D-054 item 7).
     x[kPs3Lag] = g.ps3 / kPstd;
     x[kPs3Hys] = x[kPs3Lag];
-    x[kLdsHys] = xldsa(collective);
+    x[kLdsHys] = xldsa(in.collective);
     const double command = dwfp(x[kLdsHys]);
     x[kDwfpl] = command / kRatioScale;
     x[kNgHys] = x[kNg];
@@ -737,7 +876,8 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     // where it must be, at rest (the dead band's middle) for its SPDG, and the
     // P+I integrator holding that SPDG, as far as the stops and limits allow.
     const double ratio = fuel / g.ps3;
-    const double before = (*c.fhm1)(t2) + c.kndrp * (c.ngref - x[kNgSensor]) - (*c.fhm2)(c.pas);
+    const double before =
+        (*c.fhm1)(t2) + c.kndrp * (c.ngref - x[kNgSensor]) - (*c.fhm2)(spindle(in.power_lever));
     const double tmru = before - ratio - command;
     const double pos = std::clamp(tmru / c.tmlg, c.xlolim, c.xhilim);
     x[kTmPos] = pos;
@@ -748,35 +888,52 @@ void BallinT700::equilibrium(double fuel, double omega, double collective, doubl
     x[kValve] = fuel / kFuelScale;
     x[kDelay1] = x[kValve];
     x[kDelay2] = 0.0;
+    x[kSlip] = 0.0;
+    x[kShareLag] = 0.0;
+    x[kXqlo] = c.zk8 * load_share(0.0);
 }
 
 void BallinT700::initial_states(std::span<double> x) const {
     // The rest point (sea level, zero torque at the shaft) with the collective
-    // down: at the bound shaft's governed speed, no speed error, or before
-    // binding at the design speed.
-    equilibrium(rest_fuel_, rest_omega_, 0.0, kPstd, kTstd, x);
+    // down and the levers at fly: at the bound shaft's governed speed, no
+    // speed error, or before binding at the design speed.
+    BallinT700Inputs in;
+    in.omega = rest_omega_;
+    in.np_reference = np_reference_;
+    in.p2 = kPstd;
+    in.t2 = kTstd;
+    for (std::size_t e = 0; e < static_cast<std::size_t>(config_.engines); ++e) {
+        equilibrium(rest_fuel_, in, x.subspan(e * kEngineStates, kEngineStates));
+    }
 }
 
 void BallinT700::steady_states(const SimContext& ctx, std::span<double> x) const {
     // Held in trim (D-054 item 7): the torque integrator at the limit its input
     // drives it to; the play operators at their inputs; the flapper at rest
-    // for SPDG (no current), within its stops.
+    // for SPDG (no current), within its stops; the clutch engaged (D-055).
     const BallinT700Config& c = config_;
-    x[kTorqueInt] = x[kTorqueSensed] > c.cr ? c.yhilim : c.ylolim;
-    x[kPs3Hys] = x[kPs3Lag];
-    x[kLdsHys] = xldsa(ctx.controls.collective);
-    x[kNgHys] = x[kNg];
-    x[kTmPos] = flapper_at_rest(x[kSpdg]);
+    for (std::size_t e = 0; e < static_cast<std::size_t>(c.engines); ++e) {
+        const std::span<double> xe = x.subspan(e * kEngineStates, kEngineStates);
+        xe[kTorqueInt] = xe[kTorqueSensed] > c.cr ? c.yhilim : c.ylolim;
+        xe[kPs3Hys] = xe[kPs3Lag];
+        xe[kLdsHys] = xldsa(ctx.controls.collective);
+        xe[kNgHys] = xe[kNg];
+        xe[kTmPos] = flapper_at_rest(xe[kSpdg]);
+        xe[kSlip] = 0.0;
+    }
 }
 
 void BallinT700::steady_kinds(std::span<SteadyKind> kinds) const {
     std::fill(kinds.begin(), kinds.end(), SteadyKind::free);
-    for (const std::size_t i : {kTorqueInt, kPs3Hys, kLdsHys, kNgHys, kTmPos}) {
-        kinds[i] = SteadyKind::held;
+    for (std::size_t e = 0; e < static_cast<std::size_t>(config_.engines); ++e) {
+        for (const std::size_t i : {kTorqueInt, kPs3Hys, kLdsHys, kNgHys, kTmPos, kSlip}) {
+            kinds[e * kEngineStates + i] = SteadyKind::held;
+        }
     }
 }
 
 void BallinT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
+    // The engines share the rotor's demand and the drive train's load equally.
     const double omega = shaft_speed(ctx);
     const double load = rotor_demand(ctx) + drive_train_load(omega);
     double fuel = 0.0;
@@ -787,7 +944,10 @@ void BallinT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
         // point's fuel, scaled to the inlet's pressure; trim moves on from it.
         fuel = rest_fuel_at(ctx.air.pressure);
     }
-    equilibrium(fuel, omega, ctx.controls.collective, ctx.air.pressure, ctx.air.temperature, x);
+    for (std::size_t e = 0; e < static_cast<std::size_t>(config_.engines); ++e) {
+        equilibrium(fuel, inputs(ctx, static_cast<int>(e)),
+                    x.subspan(e * kEngineStates, kEngineStates));
+    }
 }
 
 void BallinT700::pinned_states(const SimContext& ctx, std::span<const double> x,
@@ -795,22 +955,36 @@ void BallinT700::pinned_states(const SimContext& ctx, std::span<const double> x,
     // Held for small perturbations: the play operators inside their bands, the
     // flapper inside its dead band (no current) or pressed on a stop, the
     // torque integrator and the P+I integrator on a limit their inputs push
-    // against.
+    // against, and the slip of an engaged clutch.
     const BallinT700Config& c = config_;
+    const auto n_e = static_cast<std::size_t>(c.engines);
     std::fill(pinned.begin(), pinned.end(), static_cast<unsigned char>(0));
-    const BallinT700Signals s = signals(x, shaft_speed(ctx), ctx.controls.collective,
-                                        ctx.air.pressure, ctx.air.temperature);
+    std::array<double, kMaxEnginesPerComponent> q{};
+    std::array<double, kMaxEnginesPerComponent> slip{};
     const auto in_band = [](double u, double h, double w) { return std::abs(u - h) <= 0.5 * w; };
-    pinned[kPs3Hys] = in_band(x[kPs3Lag], x[kPs3Hys], c.ps3hys / kPstd) ? 1 : 0;
-    pinned[kLdsHys] = in_band(s.xldsa, x[kLdsHys], c.xldhys) ? 1 : 0;
-    pinned[kNgHys] = in_band(x[kNg], x[kNgHys], c.ch) ? 1 : 0;
-    pinned[kTmPos] =
-        s.tm_current == 0.0 || pushes_on_limit(x[kTmPos], c.tmgn * s.tm_current, c.xlolim, c.xhilim)
-            ? 1
-            : 0;
-    pinned[kTorqueInt] =
-        pushes_on_limit(x[kTorqueInt], x[kTorqueSensed] - c.cr, c.ylolim, c.yhilim) ? 1 : 0;
-    pinned[kZ] = pushes_on_limit(x[kZ], c.xkintg * s.spdss, s.zlolim, c.zhilim) ? 1 : 0;
+    for (std::size_t e = 0; e < n_e; ++e) {
+        const std::span<const double> xe = x.subspan(e * kEngineStates, kEngineStates);
+        const std::span<unsigned char> pe = pinned.subspan(e * kEngineStates, kEngineStates);
+        const BallinT700Signals s = signals(xe, inputs(ctx, static_cast<int>(e)));
+        q[e] = s.q_engine;
+        slip[e] = xe[kSlip];
+        pe[kPs3Hys] = in_band(xe[kPs3Lag], xe[kPs3Hys], c.ps3hys / kPstd) ? 1 : 0;
+        pe[kLdsHys] = in_band(s.xldsa, xe[kLdsHys], c.xldhys) ? 1 : 0;
+        pe[kNgHys] = in_band(xe[kNg], xe[kNgHys], c.ch) ? 1 : 0;
+        pe[kTmPos] = s.tm_current == 0.0 ||
+                             pushes_on_limit(xe[kTmPos], c.tmgn * s.tm_current, c.xlolim, c.xhilim)
+                         ? 1
+                         : 0;
+        pe[kTorqueInt] =
+            pushes_on_limit(xe[kTorqueInt], xe[kTorqueSensed] - c.cr, c.ylolim, c.yhilim) ? 1 : 0;
+        pe[kZ] = pushes_on_limit(xe[kZ], c.xkintg * s.spdss, s.zlolim, c.zhilim) ? 1 : 0;
+    }
+    const unsigned mask =
+        engaged(std::span<const double>(q.data(), n_e), std::span<const double>(slip.data(), n_e),
+                rotor_demand(ctx) + drive_train_load(shaft_speed(ctx)));
+    for (std::size_t e = 0; e < n_e; ++e) {
+        pinned[e * kEngineStates + kSlip] = (mask & (1U << e)) != 0U ? 1 : 0;
+    }
 }
 
 }  // namespace eyas
@@ -819,10 +993,10 @@ void BallinT700::pinned_states(const SimContext& ctx, std::span<const double> x,
 
 namespace eyas {
 
-std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
+std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node, int first_engine) {
     using units::Dimension;
     node.allow_keys({"type", "name", "shaft", "rotor", "engines", "gear", "gas_path", "output",
-                     "gas_generator_spool", "maps", "ecu", "hmu", "drive_train"});
+                     "gas_generator_spool", "maps", "ecu", "hmu", "drive_train", "clutch"});
     BallinT700Config c;
     c.name = node.string("name");
     if (c.name.empty()) {
@@ -833,10 +1007,11 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     c.shaft = sh.string("name");
     c.rotor = node.string("rotor");
     const std::int64_t engines = node.integer("engines");
-    if (engines < 1 || engines > 8) {
-        node.fail("engines", "must be between 1 and 8");
+    if (engines < 1 || engines > static_cast<std::int64_t>(kMaxEnginesPerComponent)) {
+        node.fail("engines", "must be 1 or 2 (Fig. C2's load share pairs two; D-055)");
     }
     c.engines = static_cast<int>(engines);
+    c.first_engine = first_engine;
     c.gear = node.number("gear");
 
     const auto affine = [](const Config& n, std::string_view key, Dimension slope, Dimension offset,
@@ -895,7 +1070,7 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
 
     const Config maps = node.child("maps");
     maps.allow_keys({"f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f_hs", "fec1",
-                     "fhm1", "fhm2", "fhm3", "fhm4", "fhm5", "fhm6"});
+                     "fhm1", "fhm2", "fhm3", "fhm4", "fhm5", "fhm6", "fhm7"});
     const auto table = [&](std::string_view key, std::string_view x, Dimension xd,
                            std::string_view v, Dimension vd) {
         return maps.in_context(key, [&] {
@@ -954,12 +1129,15 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     c.fhm5 =
         table("fhm5", "t2", Dimension::temperature, "wfirf", Dimension::mass_flow_per_pressure);
     c.fhm6 = table("fhm6", "t2", Dimension::temperature, "pcngi", Dimension::dimensionless);
+    c.fhm7 = family("fhm7", "t2", Dimension::temperature, "pcnghl", Dimension::dimensionless,
+                    "wfpac", Dimension::mass_flow_per_pressure);
 
     // ECU (Figs. C1-C8, Table C.1). Speed errors are fractions, so a gain
     // printed per % NP reads "V/%".
     const Config e = node.child("ecu");
     e.allow_keys({"np_sensor_lag", "dead_band", "rate_lags", "gains", "relay", "torque_switch",
-                  "torque_sensor_lags", "governor", "harness", "temperature", "integrator"});
+                  "torque_sensor_lags", "governor", "harness", "temperature", "integrator",
+                  "load_share"});
     c.ctpl = e.quantity("np_sensor_lag", Dimension::time);
     c.cb = e.quantity("dead_band", Dimension::dimensionless);
     const Config rl = e.child("rate_lags");
@@ -1016,6 +1194,14 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     c.zlolim_high = zl.quantity("above", Dimension::voltage);
     c.zlolim_torque = zl.quantity("torque", Dimension::moment);
     c.ct16 = pi.quantity("ct16", Dimension::time);
+    const Config ls = e.child("load_share");
+    ls.allow_keys({"gain", "ct7", "lower", "upper", "zk8", "t17"});
+    c.share_gain = ls.quantity("gain", Dimension::per_moment);
+    c.ct7 = ls.quantity("ct7", Dimension::time);
+    c.dbias = ls.quantity("lower", Dimension::dimensionless);
+    c.ce = ls.quantity("upper", Dimension::dimensionless);
+    c.zk8 = ls.number("zk8");
+    c.t17 = ls.quantity("t17", Dimension::time);
 
     // HMU (Figs. C9-C22, Table C.1).
     const Config h = node.child("hmu");
@@ -1056,7 +1242,10 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     ns.allow_keys({"hysteresis", "lag"});
     c.ch = ns.quantity("hysteresis", Dimension::dimensionless);
     c.cntl = ns.quantity("lag", Dimension::time);
-    c.pas = h.quantity("power_available", Dimension::angle);
+    const Config pa = h.child("power_available");
+    pa.allow_keys({"idle", "fly"});
+    c.pas_idle = pa.quantity("idle", Dimension::angle);
+    c.pas_fly = pa.quantity("fly", Dimension::angle);
     const Config de = h.child("deceleration");
     de.allow_keys({"gain", "bias", "lower", "upper"});
     c.awfp = de.quantity("gain", Dimension::mass_flow_per_pressure);
@@ -1075,6 +1264,9 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node) {
     dt.allow_keys({"gearbox_damping", "accessory_power"});
     c.gearbox_damping = dt.quantity("gearbox_damping", Dimension::rotational_damping);
     c.accessory_power = dt.quantity("accessory_power", Dimension::power);
+    const Config cl = node.child("clutch");
+    cl.allow_keys({"drive_inertia"});
+    c.drive_inertia = cl.quantity("drive_inertia", Dimension::inertia);
 
     return node.in_context("", [&] { return std::make_unique<BallinT700>(std::move(c)); });
 }

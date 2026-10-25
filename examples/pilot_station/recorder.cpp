@@ -57,6 +57,7 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
     ++segment_;
     first_ = true;
     brakes_noted_ = false;
+    engines_noted_ = false;
     const StartPoint& sp = station.starts()[station.current_start()];
     start_ = sp.controls;
     if (!controls_path_.empty()) {
@@ -67,7 +68,8 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
         }
         controls_ << "# Eyas pilot station recording (D-044), start '" << sp.name << "'\n";
         if (sp.replayable) {
-            controls_ << "# Replays exactly unless a later comment says the brakes changed.\n";
+            controls_ << "# Replays exactly unless a later comment says the brakes or the "
+                         "engine controls changed.\n";
             controls_ << "# Replay: eyas_drive --config " << shell_quote(config_) << " --controls "
                       << shell_quote(path) << " --out <out.csv> --rate " << rate_
                       << " --trim-speed " << exact(sp.trim_speed_kt) << " --altitude "
@@ -99,6 +101,13 @@ void Recorder::frame(double t, const ControlDeltas& d, const eyas::Controls& c,
         controls_ << "# NOT REPLAYABLE from t = " << exact(t)
                   << " s: the brakes changed, and eyas_drive has no brake input\n";
         brakes_noted_ = true;
+    }
+    if (controls_.is_open() && !engines_noted_ &&
+        (c.engines != start_.engines || c.rotor_speed_reference != start_.rotor_speed_reference)) {
+        controls_ << "# NOT REPLAYABLE from t = " << exact(t)
+                  << " s: the engine controls changed, and eyas_drive has no engine input "
+                     "(D-055)\n";
+        engines_noted_ = true;
     }
     // A row whenever the increments or the AFCS switches change (the
     // switches replay from the afcs column; M8c3).

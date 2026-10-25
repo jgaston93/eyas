@@ -42,9 +42,12 @@ the curve's number), one framed plot per page. How a figure is read:
 - Figs. C23 and C30 (read_glyph_polylines) mark their points with the curves' numbers,
   centred on them: a person's readings give the segments, and each interior point is where
   lines fitted to its two segments' ink meet.
-- Fig. C30's seven curves cross and overlap through most of its range; it is not read yet
-  (its curves are empty and it is skipped): it is the acceleration fuel limit, inactive in a
-  trim and in small perturbations (DATA_GAPS.md).
+- Fig. C30's seven curves cross and overlap through most of its range, so a person's reading
+  is only good to about a glyph: each segment's line is first found by moving the reading's
+  ends along its normal (up to SEARCH px each) to where it runs on ink over most of its middle,
+  then fitted as above. Segments too short to fit between their glyphs (the points 0.8 %
+  apart near 87 %) get no line: a point with one fitted neighbour is projected onto it
+  ('side'), one with none keeps the person's reading ('read').
 """
 
 import argparse
@@ -246,8 +249,37 @@ FIGURES = {
         "x": ("sensed_gas_generator_speed_pcnghl", "%"),
         "y": ("acceleration_limit_parameter_wfpac", "-"),
         "x_axis": (50.0, 110.0, 10.0), "y_axis": (0.0, 5.0, 1.0), "marker": "glyph",
+        "search": True,  # readings to a glyph's size; the fit finds each segment's ink
+        # The speeds the curves share points at, read off the glyphs' columns (on_columns).
+        "columns": (54.0, 60.0, 64.0, 68.0, 72.0, 76.0, 80.0, 84.0, (86.5, "fixed"),
+                    (87.25, "fixed"), 90.3, 92.35, 94.6, 96.7, 101.4, 104.0),
         # The curves' symbols 1-7, from the figure's legend: T2 [degR].
-        "curves": {},
+        "curves": {
+            395.0: [(54.0, 3.638), (60.0, 3.261), (64.0, 3.086), (68.0, 3.010), (72.0, 2.985),
+                    (76.0, 3.092), (80.0, 3.255), (84.0, 3.42), (86.5, 3.405), (90.3, 2.465),
+                    (92.35, 1.964), (94.6, 1.0), (96.7, 1.0)],
+            430.0: [(54.0, 3.73), (60.0, 3.494), (64.0, 3.327), (68.0, 3.199), (72.0, 3.137),
+                    (76.0, 3.137), (80.0, 3.267), (84.0, 3.43), (86.5, 3.53), (87.25, 3.553),
+                    (90.3, 3.553), (92.35, 3.04), (94.6, 2.488), (96.7, 2.004), (101.4, 1.0),
+                    (104.0, 1.0)],
+            460.0: [(54.0, 3.75), (60.0, 3.663), (64.0, 3.517), (68.0, 3.379), (72.0, 3.289),
+                    (76.0, 3.261), (80.0, 3.295), (84.0, 3.435), (86.5, 3.55), (90.3, 3.71),
+                    (92.35, 3.697), (94.6, 3.70), (96.7, 3.18), (101.4, 1.987), (104.0, 1.0)],
+            480.0: [(54.0, 3.77), (60.0, 3.711), (64.0, 3.610), (68.0, 3.498), (72.0, 3.396),
+                    (76.0, 3.331), (80.0, 3.345), (84.0, 3.44), (86.5, 3.56), (90.3, 3.72),
+                    (92.35, 3.787), (94.6, 3.787), (96.7, 3.787), (101.4, 2.612), (104.0, 1.981)],
+            519.0: [(54.0, 3.70), (60.0, 3.830), (64.0, 3.785), (68.0, 3.717), (72.0, 3.633),
+                    (76.0, 3.531), (80.0, 3.469), (84.0, 3.509), (86.5, 3.58), (90.3, 3.72),
+                    (92.35, 3.64), (94.6, 3.62), (96.7, 3.59), (101.4, 3.488), (104.0, 2.865)],
+            555.0: [(54.0, 3.69), (60.0, 3.85), (64.0, 3.897), (68.0, 3.877), (72.0, 3.824),
+                    (76.0, 3.723), (80.0, 3.644), (84.0, 3.604), (86.5, 3.625), (87.25, 3.658),
+                    (90.3, 3.71), (92.35, 3.646), (94.6, 3.595), (96.7, 3.545), (101.4, 3.432),
+                    (104.0, 2.78)],
+            590.0: [(54.0, 3.68), (60.0, 3.864), (64.0, 3.959), (68.0, 4.012), (72.0, 3.993),
+                    (76.0, 3.914), (80.0, 3.824), (84.0, 3.745), (86.5, 3.741), (87.25, 3.741),
+                    (90.3, 3.70), (92.35, 3.612), (94.6, 3.561), (96.7, 3.505), (101.4, 3.398),
+                    (104.0, 2.645)],
+        },
     },
 }
 
@@ -577,6 +609,8 @@ def read_figure(dark, axes, f):
 
 
 GLYPH = 20  # half-size of a number glyph's neighbourhood, kept out of a segment's fit [px]
+SEARCH = 12  # how far a reading's ends are moved to find its segment's ink (C30) [px]
+SHORT = 10   # least length of a segment's middle, between its glyphs, to fit it [px]
 
 
 def read_glyph_polylines(dark, axes, f):
@@ -593,7 +627,36 @@ def read_glyph_polylines(dark, axes, f):
     ys, xs = np.nonzero(dark)
     ink = np.column_stack([xs, ys]).astype(float)
 
+    def inked(p):
+        x, y = int(round(p[0])), int(round(p[1]))
+        return 0 <= y < h and 0 <= x < w and dark[y, x]
+
+    def search(a, b):
+        """The reading's ends moved along its normal (each by up to SEARCH px) to where a line
+        between them runs on ink over most of the segment's middle: Fig. C30's crossing curves
+        need readings closer than a glyph to start the fit."""
+        d = (b - a) / np.linalg.norm(b - a)
+        nrm = np.array([-d[1], d[0]])
+        length = float(np.linalg.norm(b - a))
+        ts = np.arange(GLYPH, length - GLYPH, 1.0)
+        best = (-1.0, a, b)
+        for oa in range(-SEARCH, SEARCH + 1):
+            for ob in range(-SEARCH, SEARCH + 1):
+                a2, b2 = a + oa * nrm, b + ob * nrm
+                dd = (b2 - a2) / np.linalg.norm(b2 - a2)
+                n2 = np.array([-dd[1], dd[0]])
+                hit = sum(any(inked(a2 + t * dd + s * n2) for s in (-1, 0, 1)) for t in ts)
+                score = hit / len(ts)
+                if score > best[0]:
+                    best = (score, a2, b2)
+        if best[0] < 0.8:
+            raise RuntimeError(f"a segment from {to_xy(*a)}: no line on ink "
+                               f"(best {best[0]:.2f} of its length)")
+        return best[1], best[2]
+
     def fit(a, b):
+        if search_ink:
+            a, b = search(a, b)
         d = (b - a) / np.linalg.norm(b - a)
         nrm = np.array([-d[1], d[0]])
         rel = ink - a
@@ -624,13 +687,25 @@ def read_glyph_polylines(dark, axes, f):
         return m + ((p - m) @ d) * d
 
     out = {}
+    search_ink = f.get("search", False)
+    fitted = {}  # curve: (its points' near lines, each point's bend [deg] or None)
     for curve, pts in f["curves"].items():
         px = [np.array(to_pix(x, y)) for x, y in pts]
-        lines = [fit(px[i], px[i + 1]) for i in range(len(px) - 1)]
-        rows = []
+        # Segments too short to fit between their glyphs (C30's) get no line.
+        lines = [fit(px[i], px[i + 1])
+                 if np.linalg.norm(px[i + 1] - px[i]) > 2 * GLYPH + SHORT else None
+                 for i in range(len(px) - 1)]
+        rows, nears, bends = [], [], []
         for i, p in enumerate(px):
-            if i == 0 or i == len(px) - 1:
-                q, how = project(p, lines[0 if i == 0 else -1]), "end"
+            near = [ln for ln in (lines[i - 1] if i > 0 else None,
+                                  lines[i] if i < len(lines) else None) if ln is not None]
+            bend = None
+            if not near:
+                q, how = p, "read"
+            elif i == 0 or i == len(px) - 1:
+                q, how = project(p, near[0]), "end"
+            elif len(near) == 1:
+                q, how = project(p, near[0]), "side"
             else:
                 bend = np.degrees(np.arccos(np.clip(lines[i - 1][1] @ lines[i][1], -1, 1)))
                 if bend > 4:
@@ -645,8 +720,71 @@ def read_glyph_polylines(dark, axes, f):
             x, y = to_xy(*q)
             dx, dy = q - p
             rows.append((x, y, how, float(dx), float(dy), float(q[0]), float(q[1])))
+            nears.append(near)
+            bends.append(bend)
         out[curve] = rows
+        fitted[curve] = (nears, bends, [x for x, _ in pts])
+    if "columns" in f:
+        out = on_columns(out, fitted, f["columns"], to_xy)
     return out
+
+
+COLUMN_NEAR = 0.3  # largest distance [x units] of a person's reading from its column
+
+
+def on_columns(out, fitted, columns, to_xy):
+    """Fig. C30's points share columns (the curves were tabulated at the same speeds), and a
+    meet of two segments bending by a few degrees is poorly placed along them (or, where the
+    curves crowd, on a neighbour's segment). A point's column is the one its person's reading
+    is in; the column's x is the median of the meets in it (the person's x where there are
+    none), robust to a few misplaced ones, or as the person gives it, read off the glyphs'
+    column, where too few meets are well placed (a column given as (x, "fixed")); each
+    interior point in a column then takes that x, and its y where its fitted lines cross it
+    (their mean): 'column'. End points and points without a fitted line keep their place
+    (an end's x is not tabulated beyond it: the curves are clamped there)."""
+    fixed = {c[0]: True for c in columns if isinstance(c, tuple)}
+    columns = [c[0] if isinstance(c, tuple) else c for c in columns]
+
+    def column_of(x):
+        c = min(columns, key=lambda c: abs(c - x))
+        return c if abs(c - x) < COLUMN_NEAR else None
+
+    xs = {}
+    for c in columns:
+        meets = [r[0] for curve, rows in out.items()
+                 for r, x0 in zip(rows, fitted[curve][2]) if r[2] == "meet" and column_of(x0) == c]
+        xs[c] = c if c in fixed or not meets else float(np.median(meets))
+        print(f"  column {c:g}: x = {xs[c]:.5g}"
+              + (" (fixed)" if c in fixed else f" from {len(meets)} meets"))
+
+    def at_x(line, x):
+        m, d = line
+        f0 = lambda t: to_xy(*(m + t * d))[0] - x  # noqa: E731
+        lo, hi = -4000.0, 4000.0
+        if f0(lo) * f0(hi) > 0:
+            raise RuntimeError(f"a line doesn't cross x = {x}")
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            if f0(lo) * f0(mid) <= 0:
+                hi = mid
+            else:
+                lo = mid
+        return m + 0.5 * (lo + hi) * d
+
+    res = {}
+    for curve, rows in out.items():
+        new = []
+        for r, near, x0 in zip(rows, fitted[curve][0], fitted[curve][2]):
+            c = column_of(x0)
+            if not near or c is None or r[2] == "end":
+                new.append(r)
+                continue
+            q = np.mean([at_x(ln, xs[c]) for ln in near], axis=0)
+            x, y = to_xy(*q)
+            new.append((x, y, "column", r[3] + q[0] - r[5], r[4] + q[1] - r[6],
+                        float(q[0]), float(q[1])))
+        res[curve] = new
+    return res
 
 
 def components(mask):
@@ -886,7 +1024,7 @@ def write_csv(name, f, readings, cal_info):
                "segments, about +-0.01 lbm/s), end (half a gap beyond one segment's end, about "
                "+-0.015 lbm/s and +-0.03 in ratio)" if f["marker"] == "dotted" else
                "the polylines' breakpoints from lines fitted to each segment's ink "
-               "(read_glyph_polylines); located: meet (two segments' lines meet), on-line, end "
+               "(read_glyph_polylines); located: meet (two segments' lines meet), on-line, side, read, end "
                "(a person's reading projected onto the end segment's line)"
                if f["marker"] == "glyph" else
                "the plotted polyline's marked breakpoints, each snapped to its marker")

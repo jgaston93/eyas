@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -34,6 +35,10 @@ struct HudInfo {
     bool collective_held = false;
     bool collective_lever_known = false;  // a sample has arrived since the start
     double collective_lever = 0.0;
+    // Engine controls (D-055): which engines the power lever moves (0 all,
+    // else engine k) and which are waiting for it (pickup).
+    int engine_selection = 0;
+    std::array<bool, 2> power_lever_held{};
     double ground_height = 0.0;  // [m] MSL
     std::string_view source;
     std::string_view start;

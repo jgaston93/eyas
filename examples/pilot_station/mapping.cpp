@@ -206,6 +206,9 @@ AxisMap* control(ControlsMapConfig& m, std::string_view name) {
     if (name == "pedal") {
         return &m.pedal;
     }
+    if (name == "power_lever") {
+        return &m.power_lever;
+    }
     return nullptr;
 }
 
@@ -242,6 +245,23 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
             m.pba_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
         } else if (key == "fps_button") {
             m.fps_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "engine_select_button") {
+            m.engine_select_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "rpm_up_button") {
+            m.rpm_up_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "rpm_down_button") {
+            m.rpm_down_button = to_index(value, kButtonsPerDevice, "a button", origin, n);
+        } else if (key == "rpm_rate") {
+            m.rpm_rate = to_double(value, origin, n);
+            if (!(m.rpm_rate >= 0.0) || !std::isfinite(m.rpm_rate)) {
+                fail(origin, n, "rpm_rate must be finite and non-negative [1/s]");
+            }
+        } else if (key == "rpm_low" || key == "rpm_high") {
+            (key == "rpm_low" ? m.rpm_low : m.rpm_high) = to_double(value, origin, n);
+            if (std::isnan(m.rpm_low) || m.rpm_low <= 0.0 || m.rpm_low > 1.0 || m.rpm_high < 1.0 ||
+                !std::isfinite(m.rpm_high)) {
+                fail(origin, n, "rpm_low must be in (0, 1] and rpm_high finite and at least 1");
+            }
         } else if (key == "feet_on_pedals") {
             m.feet_on_pedals = to_double(value, origin, n);
             if (std::isnan(m.feet_on_pedals) || m.feet_on_pedals < 0.0 || m.feet_on_pedals > 1.0) {
@@ -275,6 +295,9 @@ ControlsMapConfig parse_map(std::string_view text, const ControlsMapConfig& base
                 if (value == "absolute") {
                     a->mode = AxisMode::absolute;
                 } else if (value == "rate") {
+                    if (a == &m.power_lever) {
+                        fail(origin, n, "power_lever.mode must be absolute (a lever)");
+                    }
                     a->mode = AxisMode::rate;
                 } else {
                     fail(origin, n, "mode must be absolute or rate");
@@ -311,6 +334,7 @@ void write_map(std::ostream& out, const ControlsMapConfig& map) {
     write_axis("lat_cyclic", map.lat_cyclic);
     write_axis("lon_cyclic", map.lon_cyclic);
     write_axis("pedal", map.pedal);
+    write_axis("power_lever", map.power_lever);
     out << "trim_button = " << index_text(map.trim_button, kButtonsPerDevice) << '\n'
         << "trim_reset_button = " << index_text(map.trim_reset_button, kButtonsPerDevice) << '\n'
         << "brake_button = " << index_text(map.brake_button, kButtonsPerDevice) << '\n'
@@ -319,7 +343,14 @@ void write_map(std::ostream& out, const ControlsMapConfig& map) {
         << "fps_button = " << index_text(map.fps_button, kButtonsPerDevice) << '\n'
         << "recentre = " << map.recentre << '\n'
         << "pickup = " << map.pickup << '\n'
-        << "feet_on_pedals = " << map.feet_on_pedals << '\n';
+        << "feet_on_pedals = " << map.feet_on_pedals << '\n'
+        << "engine_select_button = " << index_text(map.engine_select_button, kButtonsPerDevice)
+        << '\n'
+        << "rpm_up_button = " << index_text(map.rpm_up_button, kButtonsPerDevice) << '\n'
+        << "rpm_down_button = " << index_text(map.rpm_down_button, kButtonsPerDevice) << '\n'
+        << "rpm_rate = " << map.rpm_rate << '\n'
+        << "rpm_low = " << map.rpm_low << '\n'
+        << "rpm_high = " << map.rpm_high << '\n';
 }
 
 }  // namespace station
