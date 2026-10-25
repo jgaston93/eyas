@@ -8,8 +8,8 @@
 namespace eyas::test {
 
 // Whether an advance() call ran its whole frame: not rejected, not capped,
-// and no sub-step discarded as non-finite. atmosphere_out_of_range is
-// information, not a fault.
+// and no sub-step discarded as non-finite. atmosphere_out_of_range and
+// shaft_on_floor are information, not faults.
 inline bool frame_ok(const AdvanceStatus& s) noexcept {
     return !s.rejected_dt && !s.rejected_env && !s.capped && !s.non_finite;
 }

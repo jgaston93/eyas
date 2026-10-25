@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -18,6 +19,12 @@
 // body/component accelerations in every derivative evaluation (spec §5, "Coupling") and advances
 // everything with RK4 in fixed integer-nanosecond steps (D-006).
 namespace eyas {
+
+// A free shaft's floor, a fraction of its governed speed (D-057): a bound on
+// the models' domain, not aircraft data. The rotor models are written per
+// unit ΩR and break down as Ω → 0 (issue #74), so a free shaft that reaches
+// the floor and would slow further is held there.
+inline constexpr double kShaftFloor = 0.05;
 
 // How a shaft's speed is set (D-052).
 enum class ShaftDrive : unsigned char {
@@ -190,9 +197,14 @@ private:
     bool evaluate(double t, std::span<const double> x, const Controls& controls,
                   const Environment& env, MatZ& A, VecZ& rhs,
                   std::span<Wrench> component_loads) const noexcept;
-    // Solves A z = rhs: with no free shaft through the 6 × 6 path exactly as
-    // before D-052 (bit for bit), else through the generalized one.
-    VecZ solve(const MatZ& A, const VecZ& rhs) const noexcept;
+    // Solves A z = rhs at state x: with no free shaft through the 6 × 6 path
+    // exactly as before D-052 (bit for bit), else through the generalized
+    // one, with the shafts' floors (D-057).
+    VecZ solve(std::span<const double> x, const MatZ& A, const VecZ& rhs) const noexcept;
+    // Solves A z = rhs, the free shafts' rows from `first` on, holding any
+    // shaft at or below its floor that would slow down at Ω̇ = 0 (D-057).
+    VecZ solve_with_floors(std::span<const double> x, const MatZ& A, const VecZ& rhs,
+                           Eigen::Index first) const noexcept;
     // Writes ẋ from the solution z: body kinematics, components, shafts.
     void back_substitute(std::span<const double> x, const VecZ& z,
                          std::span<double> xdot) const noexcept;
@@ -217,6 +229,8 @@ private:
     std::vector<ShaftConfig> shafts_;       // D-052
     std::size_t shaft_offset_ = 0;          // first shaft state index
     std::vector<int> free_shafts_;          // the free shafts' indices, in order
+    // Each shaft's floor [rad/s] (D-057).
+    std::array<double, kMaxShafts> shaft_floor_{};
 
     std::vector<double> x_;
     std::vector<double> x_prev_;  // state before the current step

@@ -105,6 +105,10 @@ struct AdvanceStatus {
     // After some sub-step of this call the CG was outside the tabulated
     // atmosphere, H outside [−5, 20] km' (D-015, D-019); the profile was extended.
     bool atmosphere_out_of_range = false;
+    // After some sub-step of this call a free shaft was at or below its floor,
+    // 5 % of its governed speed, where a shaft that would slow down is held
+    // (D-057): the rotor has all but stopped in flight, a crash.
+    bool shaft_on_floor = false;
 };
 
 // The geodetic origin of the NED frame (D-017, D-044): the point the flat-earth

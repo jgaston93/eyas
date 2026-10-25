@@ -185,6 +185,7 @@ Executive::Executive(const ExecutiveConfig& config,
         if (shafts_[k].drive == ShaftDrive::free) {
             free_shafts_.push_back(static_cast<int>(k));
         }
+        shaft_floor_[k] = kShaftFloor * shafts_[k].speed;
         info.push_back({shafts_[k].name, shafts_[k].speed});
     }
     CouplingRegistry registry;
@@ -432,7 +433,8 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
     return converged;
 }
 
-Executive::VecZ Executive::solve(const MatZ& A, const VecZ& rhs) const noexcept {
+Executive::VecZ Executive::solve(std::span<const double> x, const MatZ& A,
+                                 const VecZ& rhs) const noexcept {
     if (free_shafts_.empty()) {
         // Exactly the pre-D-052 solve, so models without free shafts keep
         // their results to the bit.
@@ -440,7 +442,44 @@ Executive::VecZ Executive::solve(const MatZ& A, const VecZ& rhs) const noexcept 
         const Vec6 r6 = rhs.head<6>();
         return VecZ(A6.partialPivLu().solve(r6));
     }
-    return A.partialPivLu().solve(rhs);
+    return solve_with_floors(x, A, rhs, 6);
+}
+
+Executive::VecZ Executive::solve_with_floors(std::span<const double> x, const MatZ& A,
+                                             const VecZ& rhs, Eigen::Index first) const noexcept {
+    VecZ z = A.partialPivLu().solve(rhs);
+    // A shaft at or below its floor that would slow down is held (D-057): its
+    // row becomes Ω̇ = 0, an ideal drive's, the holding torque internal to the
+    // drive as an engine's is (D-052). Holding one shaft can turn another's
+    // acceleration negative, so up to one more solve per free shaft; a shaft
+    // once held stays held for this evaluation. Above every floor this is the
+    // one solve, so the results don't change.
+    std::array<bool, kMaxShafts> held{};
+    MatZ Ac;
+    VecZ rc;
+    for (std::size_t pass = 0; pass < free_shafts_.size(); ++pass) {
+        bool changed = false;
+        for (std::size_t r = 0; r < free_shafts_.size(); ++r) {
+            const auto k = static_cast<std::size_t>(free_shafts_[r]);
+            const Eigen::Index row = first + static_cast<Eigen::Index>(r);
+            if (!held[k] && z(row) < 0.0 && x[shaft_offset(k) + 1] <= shaft_floor_[k]) {
+                if (pass == 0 && !changed) {
+                    Ac = A;
+                    rc = rhs;
+                }
+                Ac.row(row).setZero();
+                Ac(row, row) = 1.0;
+                rc(row) = 0.0;
+                held[k] = true;
+                changed = true;
+            }
+        }
+        if (!changed) {
+            break;
+        }
+        z = Ac.partialPivLu().solve(rc);
+    }
+    return z;
 }
 
 void Executive::back_substitute(std::span<const double> x, const VecZ& z,
@@ -476,7 +515,7 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
     MatZ A;
     VecZ rhs;
     const bool converged = evaluate(t, x, controls, env, A, rhs, {});
-    back_substitute(x, solve(A, rhs), xdot);
+    back_substitute(x, solve(x, A, rhs), xdot);
     return converged;
 }
 
@@ -485,7 +524,7 @@ bool Executive::body_acceleration(const Controls& controls, const Environment& e
     MatZ A;
     VecZ rhs;
     const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {});
-    a = solve(A, rhs).head<6>();
+    a = solve(x_, A, rhs).head<6>();
     return converged;
 }
 
@@ -500,7 +539,9 @@ bool Executive::held_derivatives(double t, std::span<const double> x, const Cont
     VecZ z = VecZ::Zero(A.rows());
     const auto nf = static_cast<Eigen::Index>(free_shafts_.size());
     if (nf > 0) {
-        z.tail(nf) = A.bottomRightCorner(nf, nf).partialPivLu().solve(rhs.tail(nf));
+        const MatZ As = A.bottomRightCorner(nf, nf);
+        const VecZ rs = rhs.tail(nf);
+        z.tail(nf) = solve_with_floors(x, As, rs, 0);
     }
     net = rhs.head<6>();
     if (nf > 0) {
@@ -592,6 +633,11 @@ AdvanceStatus Executive::advance(const Controls& controls, const Environment& en
         const double altitude = origin_altitude_ - x_[body_layout::kPos + 2];
         status.atmosphere_out_of_range =
             status.atmosphere_out_of_range || isa_out_of_range(altitude);
+        for (const int k : free_shafts_) {
+            const auto s = static_cast<std::size_t>(k);
+            status.shaft_on_floor =
+                status.shaft_on_floor || x_[shaft_offset(s) + 1] <= shaft_floor_[s];
+        }
     }
     return status;
 }
