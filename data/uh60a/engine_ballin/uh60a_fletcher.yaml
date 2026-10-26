@@ -49,6 +49,7 @@ components:
     name: engines
     shaft: {name: rotor_drive}
     rotor: main_rotor  # its shaft torque seeds trim
+    tail_rotor: tail_rotor  # its torque too (D-058)
     engines: 2
     gear: 81.042  # TM-88360 p. 23
     gas_path:  # Table A.1
@@ -300,6 +301,10 @@ components:
     pitch_input: fcs
     main_rotor_wash: {rotor: main_rotor, table: ../airframe/tail_wash.csv}
     fuselage_wake: {airframe: airframe}
+    torque:  # Bailey, NACA Report 716 Eqs. 9 and 11; Ballin, NASA TM-88360 p. 26 (D-058)
+      direction: !placeholder counter_clockwise  # viewed from the thrust side; no source found (DATA_GAPS.md)
+      blade_flap_inertia: "3.1 slug*ft^2"  # IB_TR
+      profile_drag: {d0: 0.0087, d1: "-0.0216 1/rad", d2: "0.4 1/rad^2"}  # Bailey's NACA 23012 example
 
   - type: landing_gear
     name: gear

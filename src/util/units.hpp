@@ -35,7 +35,8 @@ enum class Dimension : std::uint8_t {
     mass,
     force,
     angle,
-    per_angle,  // e.g. a lift-curve slope [1/rad]
+    per_angle,          // e.g. a lift-curve slope [1/rad]
+    per_angle_squared,  // e.g. a drag polar's α² coefficient [1/rad²]
     speed,
     angular_rate,
     acceleration,

@@ -35,6 +35,10 @@
 //   Figs. B2-B4, 60, 100 and 137.5 kt, -3000 to +3000 ft/min, each from the
 //   previous trim) on Ballin's engines and with the rotor speed held:
 //   collective, rotor speed and the clutches' slip.
+// - m9_ballin_tail_rotor.csv (D-058): the UH-60A at Table B.1's loading, sea
+//   level, bare, in hover and level flight to 160 kt, with the tail rotor
+//   turning either way (its sense is a placeholder): the main and tail
+//   rotors' power, the engines', and the trim controls.
 //
 // Usage: eyas_m9_ballin_engine_cases <output-dir>
 
@@ -45,7 +49,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <span>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "analysis/free_flight.hpp"
@@ -56,6 +63,7 @@
 #include "engine/ballin_t700.hpp"
 #include "engine/genhel_t700.hpp"
 #include "env/atmosphere.hpp"
+#include "rotor/bailey_rotor.hpp"
 #include "sim/build.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "support/m7c_ballin.hpp"
@@ -86,6 +94,20 @@ std::pair<const E*, std::size_t> find(const Executive& ex) {
         }
     }
     return {nullptr, 0};
+}
+
+// The tail rotor's torque at its hub [N·m] and its speed [rad/s] at state x
+// (D-058): the coupled evaluation first, so that it reads this state's
+// main-rotor wash and airframe wake from the store.
+std::pair<double, double> tail_rotor_torque(const Executive& ex, const std::vector<double>& x,
+                                            const Controls& u, const Environment& env) {
+    std::vector<double> xdot(x.size());
+    (void)ex.derivatives(0.0, x, u, env, xdot);
+    const auto [tail, at] = find<BaileyRotor>(ex);
+    const SimContext ctx = ex.context(0.0, x, u, env);
+    const BaileyRotorLoads l =
+        tail->evaluate(ctx, std::span<const double>(x).subspan(at, tail->num_states()));
+    return {l.torque, tail->rotor_speed(ctx)};
 }
 
 void write_table_b1(const std::filesystem::path& dir) {
@@ -133,9 +155,12 @@ void write_table_b1(const std::filesystem::path& dir) {
             engine->signals(xe, {omega, r.controls.collective, 1.0, engine->np_reference(),
                                  air.pressure, air.temperature});
         const BallinT700Config& k = engine->config();
-        // The engines less the drive train: the rotors' demand.
-        const double hub = k.engines * s.q_engine - engine->drive_train_load(omega);
-        const std::array<std::pair<const char*, double>, 12> rows{{
+        // The engines less the drive train and the tail rotor (D-058): the main
+        // rotor's demand, Table B.1's "required torque".
+        const auto [q_tr, omega_tr] = tail_rotor_torque(ex, x, r.controls, trim_environment(tc));
+        const double hub =
+            k.engines * s.q_engine - engine->drive_train_load(omega) - q_tr * omega_tr / omega;
+        const std::array<std::pair<const char*, double>, 14> rows{{
             {"collective_pct", 100.0 * r.controls.collective},
             {"rotor_speed_rad_s", omega},
             {"required_torque_hub_ftlbf", hub / kFtLbf},
@@ -148,9 +173,11 @@ void write_table_b1(const std::filesystem::path& dir) {
             {"t41_degr", s.gas.t41 / units::kRankine},
             {"p45_psia", s.gas.p45 / units::kPsi},
             {"t45_degr", s.gas.t45 / units::kRankine},
+            {"tail_rotor_hp", q_tr * omega_tr / kHp},
+            {"tail_over_main_rotor_power", q_tr * omega_tr / (hub * omega)},
         }};
         for (std::size_t i = 0; i < rows.size(); ++i) {
-            const double b = i < 2 ? std::nan("") : c.b1[i - 2];
+            const double b = i < 2 || i >= 12 ? std::nan("") : c.b1[i - 2];
             f << c.name << ',' << rows[i].first << ',' << rows[i].second << ',' << b << '\n';
         }
         std::cout << c.name << ": " << r.iterations << " iterations, engine torque "
@@ -557,6 +584,57 @@ void write_climbs(const std::filesystem::path& dir) {
     }
 }
 
+void write_tail_rotor(const std::filesystem::path& dir) {
+    namespace bt = test::ballin;
+    const std::string text = bt::config_text(ballin_config("uh60a_table_b1.yaml"));
+    const std::string ccw = "direction: !placeholder counter_clockwise";
+    const std::size_t at = text.find(ccw);
+    if (at == std::string::npos) {
+        throw std::runtime_error("the tail rotor's direction is not the expected placeholder");
+    }
+    std::string cw_text = text;
+    cw_text.replace(at, ccw.size(), "direction: clockwise");
+    std::ofstream f(dir / "m9_ballin_tail_rotor.csv");
+    f.precision(8);
+    f << "# UH-60A on Ballin's T700s, Table B.1's loading, sea level ISA, bare: the tail rotor's "
+         "torque (D-058), turning either way\n";
+    f << "direction,airspeed_kt,converged,main_rotor_hp,tail_rotor_hp,tail_over_main,"
+         "engines_hp,collective_pct,pedal_pct,lon_pct,lat_pct\n";
+    for (const bool clockwise : {false, true}) {
+        const Executive ex = build(Config::from_string(clockwise ? cw_text : text, "tail rotor"));
+        const auto [engine, offset] = find<BallinT700>(ex);
+        std::vector<double> x;
+        for (const double kt : {0.0, 20.0, 40.0, 60.0, 80.0, 100.0, 120.0, 140.0, 160.0}) {
+            TrimCondition tc;
+            tc.airspeed = kt * units::kKnot;
+            const TrimResult r = solve_trim(ex, tc, nullptr, x);
+            f << (clockwise ? "clockwise" : "counter_clockwise") << ',' << kt << ','
+              << (r.converged ? 1 : 0);
+            if (!r.converged) {
+                f << ",,,,,,,,\n";
+                continue;
+            }
+            const double omega = x[ex.shaft_offset(0) + 1];
+            const std::span<const double> xe(x.data() + offset, BallinT700::kEngineStates);
+            const AirState air = isa_atmosphere(0.0, 0.0);
+            const BallinT700Signals s =
+                engine->signals(xe, {omega, r.controls.collective, 1.0, engine->np_reference(),
+                                     air.pressure, air.temperature});
+            const double engines = engine->config().engines * s.q_engine * omega;
+            const auto [q_tr, omega_tr] =
+                tail_rotor_torque(ex, x, r.controls, trim_environment(tc));
+            const double tail = q_tr * omega_tr;
+            const double main = engines - engine->drive_train_load(omega) * omega - tail;
+            f << ',' << main / kHp << ',' << tail / kHp << ',' << tail / main << ','
+              << engines / kHp << ',' << bt::collective_pct(r.controls) << ','
+              << bt::pedal_pct(r.controls) << ',' << bt::lon_pct(r.controls) << ','
+              << bt::lat_pct(r.controls) << '\n';
+        }
+        std::cout << "tail rotor turning " << (clockwise ? "clockwise" : "counter-clockwise")
+                  << " done\n";
+    }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -568,6 +646,7 @@ int main(int argc, char** argv) {
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
         write_table_b1(dir);
+        write_tail_rotor(dir);
         const Executive ballin = build(Config::from_file(ballin_config("uh60a.yaml")));
         const Executive genhel = build(Config::from_file(test::uh60a_config_path()));
         const Executive held = build(test::ballin::ideal_shaft_config());

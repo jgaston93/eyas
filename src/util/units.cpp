@@ -11,7 +11,7 @@ namespace {
 // units.hpp.
 using D = Dimension;
 // clang-format off
-constexpr std::array<std::pair<std::string_view, Unit>, 135> kRegistry{{
+constexpr std::array<std::pair<std::string_view, Unit>, 136> kRegistry{{
     {"1",          {1.0, D::dimensionless}},
     {"m",          {1.0, D::length}},
     {"ft",         {kFoot, D::length}},
@@ -28,6 +28,7 @@ constexpr std::array<std::pair<std::string_view, Unit>, 135> kRegistry{{
     {"deg",        {kDegree, D::angle}},
     {"1/rad",      {1.0, D::per_angle}},
     {"1/deg",      {1.0 / kDegree, D::per_angle}},
+    {"1/rad^2",    {1.0, D::per_angle_squared}},  // e.g. a drag polar's α² term
     {"m/s",        {1.0, D::speed}},
     {"ft/s",       {kFoot, D::speed}},
     {"kt",         {kKnot, D::speed}},
@@ -194,6 +195,8 @@ std::string_view dimension_name(Dimension d) noexcept {
             return "angle";
         case Dimension::per_angle:
             return "per angle";
+        case Dimension::per_angle_squared:
+            return "per angle squared";
         case Dimension::speed:
             return "speed";
         case Dimension::angular_rate:

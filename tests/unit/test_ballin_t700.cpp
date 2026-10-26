@@ -344,6 +344,53 @@ private:
 // anticipates the power from the collective; a collective far from the power
 // (76 ft·lbf at 70 %) asks for more than the authority (TrimSeedHoldsTheEcu-
 // AtItsLimitOutsideItsAuthority).
+// The tail rotor's demand (D-058) adds to the main rotor's in the clutches'
+// rule and trim's seed: a demand split between the two rotors gives the seed
+// and the derivatives of the whole demand on the main rotor, to the bit.
+TEST(BallinT700, TailRotorDemandAddsToTheRotors) {
+    const Harness whole;
+    BallinT700Config c = load_engine()->config();
+    c.shaft = "main";
+    c.rotor = "rotor";
+    c.tail_rotor = "tail";
+    BallinT700 split(c);
+    EXPECT_EQ(split.consumes(),
+              (std::vector<std::string>{"rotor.shaft_torque", "tail.shaft_torque"}));
+    CouplingRegistry registry;
+    const CouplingSlot main_slot = registry.add("rotor.shaft_torque", "rotor");
+    const CouplingSlot tail_slot = registry.add("tail.shaft_torque", "tail");
+    CouplingOutputs store(registry.size());
+    split.bind(registry);
+    const std::vector<ShaftInfo> info = {{"main", Harness::kGoverned}};
+    split.bind_shafts(info);
+
+    const double main_demand = 6000.0;  // [N·m] at the shaft
+    const double tail_demand = 750.0;
+    for (const double omega : {Harness::kGoverned, 0.97 * Harness::kGoverned}) {
+        SimContext ctx = whole.context(omega, 0.55, main_demand + tail_demand);
+        std::vector<double> x_whole(whole.size());
+        whole.engine().trim_seed(ctx, x_whole);
+        std::vector<double> xd_whole;
+        double q_whole = 0.0;
+        whole.evaluate(x_whole, ctx, xd_whole, q_whole);
+
+        store.begin_evaluation();
+        store.set(main_slot, main_demand);
+        store.set(tail_slot, tail_demand);
+        ctx.coupling = &store;
+        EXPECT_EQ(split.rotor_demand(ctx), main_demand + tail_demand);
+        std::vector<double> x_split(split.num_states());
+        split.trim_seed(ctx, x_split);
+        EXPECT_EQ(x_split, x_whole);
+        std::vector<double> xd_split(split.num_states(), 0.0);
+        std::vector<double> g(6 * split.num_states(), 0.0);
+        ComponentDerivs d{xd_split, g, Wrench{}, Mat66::Zero()};
+        split.derivatives(ctx, x_whole, d);
+        EXPECT_EQ(xd_split, xd_whole);
+        EXPECT_EQ(d.Q0(0), q_whole);
+    }
+}
+
 TEST(BallinT700, TrimSeedIsAtRest) {
     const Harness h;
     const BallinT700Config& c = h.engine().config();
@@ -1218,9 +1265,11 @@ TEST(BallinT700Aircraft, ResetStartsWhereInitDoes) {
 // Table B.1's loading, sea level ISA, D-054) trims at Table B.1's three
 // conditions, hover, 80 kt and 80 kt at −1000 ft/min (γ = −7.08°), within
 // the M7a sweep's 15 iterations: the governor holds the rotor at 27 rad/s
-// (isochronous, its integrator inside its range) and the revolution closes.
-// The comparison with Table B.1's engine values is in VALIDATION.md (M9
-// Stage B1′); Eyas's tail rotor takes no torque from the shaft yet (#40).
+// (isochronous, its integrator inside its range; the trimmed state, the
+// revolution's start, is on the shaft's 4/rev ripple, about 1e-5 of the
+// speed, as in TrimsAtTheSpeedReference) and the revolution closes. The
+// comparison with Table B.1's engine values is in VALIDATION.md (M9 Stage
+// B1′); the tail rotor takes its torque from the shaft (D-058).
 TEST(BallinT700Aircraft, TrimsAtTableB1Conditions) {
     const Config cfg = Config::from_file(std::string(EYAS_VEHICLE_DATA_DIR) +
                                          "/uh60a/engine_ballin/uh60a_table_b1.yaml");
@@ -1248,7 +1297,7 @@ TEST(BallinT700Aircraft, TrimsAtTableB1Conditions) {
         ASSERT_TRUE(r.converged);
         EXPECT_LE(r.iterations, 15);
         const double omega = r.component_states[omega_at];
-        EXPECT_NEAR(omega, governed, 1e-6 * governed);
+        EXPECT_NEAR(omega, governed, 2e-5 * governed);
         EXPECT_NEAR(omega * r.period, 2.0 * std::numbers::pi, 1e-5);
         const double z = r.component_states[first + BallinT700::kZ];
         EXPECT_GT(z, engine->config().zlolim_high);
@@ -1361,8 +1410,10 @@ TEST(BallinT700Aircraft, TrimsWithOneEngineOut) {
 }
 
 // A descent the rotor autorotates in with the engines lit (D-056 item 5): at
-// 100 kt, continued from level flight, the clutches let go between −2750
-// and −3000 ft/min, and the rotor turns faster than the governed speed,
+// 100 kt, continued from level flight, the clutches let go between −3000
+// and −3250 ft/min (between −2750 and −3000 before the tail rotor took its
+// torque from the shaft, D-058: about its 126 hp, W ΔV), and the rotor turns
+// faster than the governed speed,
 // while the engines run free at no load, governed at the reference
 // (isochronous: their NP sensors at it). The rotor and airframe then trim
 // exactly as with both engines out, since free-running lit engines and dead
@@ -1382,7 +1433,7 @@ TEST(BallinT700Aircraft, OverrunsInASteepDescentAsInAutorotation) {
         ASSERT_TRUE(next.converged);
         r = next;
         const double slip = a.states(x, 0)[BallinT700::kSlip];
-        if (fpm >= -2750.0) {
+        if (fpm >= -3000.0) {
             EXPECT_EQ(slip, 0.0);
             // The start of the revolution is on the shaft's 4/rev ripple, about
             // 1e-5 of the speed (TrimsAtTheSpeedReference).
@@ -1413,7 +1464,9 @@ TEST(BallinT700Aircraft, OverrunsInASteepDescentAsInAutorotation) {
 // collective with both engines shut off runs the rotor down. Without the
 // shaft floor the solution diverged when the shaft speed crossed zero
 // (5.7 s); with it the rotor stops at the floor, AdvanceStatus says so, and
-// the run stays finite.
+// the run stays finite. With the tail rotor's torque on the shaft (D-058)
+// the falling aircraft's upflow holds the rotor up longer: it first reaches
+// the floor at 9.5 s (before D-058, inside 8 s), so the run is 12 s.
 TEST(BallinT700Aircraft, RotorRunDownStopsAtTheShaftFloor) {
     const Config cfg =
         Config::from_file(std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a.yaml");
@@ -1434,7 +1487,7 @@ TEST(BallinT700Aircraft, RotorRunDownStopsAtTheShaftFloor) {
     const double floor = kShaftFloor * governed;
     double lowest = governed;
     bool reported = false;
-    for (int frame = 0; frame < 8 * 60; ++frame) {
+    for (int frame = 0; frame < 12 * 60; ++frame) {
         const AdvanceStatus st = ex.advance(u, env, 16'666'667);
         ASSERT_FALSE(st.non_finite) << "t " << ex.sim_time();
         lowest = std::min(lowest, ex.state()[ex.shaft_offset(0) + 1]);

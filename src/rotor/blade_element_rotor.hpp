@@ -14,6 +14,7 @@
 #include "rotor/airfoil.hpp"
 #include "rotor/controls.hpp"
 #include "rotor/ground_effect.hpp"
+#include "rotor/rotation_direction.hpp"
 #include "rotor/shaft_link.hpp"
 #include "util/table.hpp"
 
@@ -39,11 +40,6 @@ class Config;
 // above and −1 for clockwise, so ψ_k = 0 points aft and ψ_k increases with
 // rotation (spec §4).
 namespace eyas {
-
-enum class RotationDirection : std::uint8_t {
-    counter_clockwise,  // viewed from above (UH-60, spec §4)
-    clockwise,
-};
 
 enum class InflowModel : std::uint8_t {
     uniform,      // momentum, solved each evaluation, no states (D-024)
