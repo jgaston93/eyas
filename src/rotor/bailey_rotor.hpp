@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -8,6 +9,7 @@
 
 #include "core/component.hpp"
 #include "rotor/controls.hpp"
+#include "rotor/rotation_direction.hpp"
 #include "rotor/rotor_wash.hpp"
 #include "rotor/shaft_link.hpp"
 
@@ -16,8 +18,9 @@ class Config;
 }
 
 // Closed-form (Bailey) rotor: the GenHel tail rotor (CR-166309 §5.4.2,
-// pp. 5.4-4 to 5.4-8; spec §6.6; D-028). Thrust only: no torque and no
-// in-plane H force, as in GenHel. One state, the uniform induced inflow λ_i.
+// pp. 5.4-4 to 5.4-8; spec §6.6; D-028). Thrust, no in-plane H force, as in
+// GenHel; the torque optionally (below, D-058). One state, the uniform
+// induced inflow λ_i.
 //
 // Frames: hub frame h as the blade-element rotor (D-024): z_h down the shaft,
 // opposite the thrust, from hub Euler angles (pitch, roll) relative to body.
@@ -44,6 +47,21 @@ class Config;
 // Loads: thrust along −z_h and GenHel's drag −½ρ S v_x|v_x| along x_b, at
 // the hub, moved to the CG. G = H = 0.
 //
+// Torque (optional, D-058; GenHel has none, p. 5.4-2): Bailey's (NACA
+// Report 716 Eqs. 9 and 11, the torque Ames added to GenHel's tail rotor,
+// Ballin NASA TM-88360 App. A), C_Q = C_Qd − C_Qa with
+//   (1/a)(2C_Qa/σ) = t₄₁λ² + t₄₂λθ + t₄₃λθ_tw + t₄₄θ² + t₄₅θθ_tw + t₄₆θ_tw²,
+//   2C_Qd/σ        = δ₀t₅₁ + δ₁(t₅₂λ + t₅₃θ + t₅₄θ_tw)
+//                    + δ₂(t₅₅λ² + t₅₆λθ + t₅₇λθ_tw + t₅₈θ² + t₅₉θθ_tw + t₅,₁₀θ_tw²),
+// c_d = δ₀ + δ₁α + δ₂α², the t's to μ² (as t₃₁…t₃₃), with the blades'
+// flapping through the Lock number γ = ρacR⁴/I₁ (pp. 210, 223–224, the
+// weight-moment terms dropped as Bailey does, p. 212), derived and checked
+// against Bailey's appendix by tools/derive_bailey_torque.py; θ after δ₃,
+// whose cyclic feathering Bailey's non-feathering rotor doesn't have. The
+// torque Q = ρπR²(ΩR)²R C_Q, unblocked, opposes the rotation: on the
+// airframe −Q along the rotation axis, on the shaft −gear × Q (D-052),
+// published as the demand <name>.shaft_torque = gear × Q [N·m].
+//
 // Fuselage wake (optional, p. 5.4-5; M6b): GenHel reads the fin's and the
 // stabilator's wake maps here (QV1MP, SGV1MP, EPH1MP), so the airframe looks
 // them up once and publishes them (D-003): the dynamic-pressure factor K
@@ -69,6 +87,23 @@ struct FuselageWakeInput {
     double downwash = 0.0;    // ε [rad], undelayed
     double sidewash_d = 0.0;  // σ_d [rad], lagged
     double downwash_d = 0.0;  // ε_d [rad], lagged
+};
+
+// Bailey's torque (D-058).
+struct BaileyTorque {
+    RotationDirection direction = RotationDirection::counter_clockwise;
+    double flap_inertia = 0.0;  // I₁ [kg·m²], a blade's about its flapping hinge
+    double d0 = 0.0;            // δ₀ [-]
+    double d1 = 0.0;            // δ₁ [1/rad]
+    double d2 = 0.0;            // δ₂ [1/rad²]
+};
+
+// Bailey's t's for the torque (D-058), t₄₁…t₄₆ then t₅₁…t₅₁₀, split as
+// t = t0 + (t1 + γ² t2) μ²: the parts the tip loss fixes, computed once.
+struct BaileyTorqueTerms {
+    std::array<double, 16> t0{};
+    std::array<double, 16> t1{};
+    std::array<double, 16> t2{};
 };
 
 struct BaileyRotorConfig {
@@ -101,6 +136,7 @@ struct BaileyRotorConfig {
     // must equal gear × the shaft's governed speed. None: constant rotor_speed.
     using ShaftLink = eyas::ShaftLink;  // rotor/shaft_link.hpp
     std::optional<ShaftLink> shaft;
+    std::optional<BaileyTorque> torque;  // none: thrust only, as GenHel (D-058)
 };
 
 struct BaileyRotorLoads {
@@ -113,6 +149,8 @@ struct BaileyRotorLoads {
     double mu_z = 0.0;           // μ_z [-], along z_h
     double lambda_i = 0.0;       // λ_i [-] induced inflow / ΩR, along +z_h (opposite the thrust)
     double lambda_dot = 0.0;     // dλ_i/dt [1/s]
+    double cq = 0.0;             // C_Q [-] (D-058; zero without the torque)
+    double torque = 0.0;         // Q [N·m], positive opposing the rotation
     Vec3 wash_b = Vec3::Zero();  // [m/s] main-rotor wash velocity used
     // Fuselage wake (zero/one without it).
     double q_factor = 1.0;       // K [-]
@@ -146,6 +184,8 @@ public:
                      ComponentDerivs& out) const override;
 
     std::string_view name() const noexcept override { return config_.name; }
+    // <name>.shaft_torque [N·m] with the torque on a shaft (D-058).
+    std::vector<std::string> produces() const override;
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
     void bind_shafts(std::span<const ShaftInfo> shafts) override;
@@ -185,8 +225,12 @@ private:
     CouplingSlot q_factor_;
     CouplingSlot sidewash_;
     CouplingSlot downwash_;
-    int shaft_index_ = -1;  // D-052
-    double gear_ = 1.0;     // the shaft link's gear, set with shaft_index_
+    CouplingSlot shaft_torque_;  // D-058
+    Vec3 spin_axis_b_;           // unit, along the rotation (D-058)
+    double lock_per_density_;    // γ/ρ = acR⁴/I₁ [m³/kg] (D-058; zero without the torque)
+    BaileyTorqueTerms torque_terms_;  // its t's parts fixed by the tip loss (D-058)
+    int shaft_index_ = -1;            // D-052
+    double gear_ = 1.0;               // the shaft link's gear, set with shaft_index_
 };
 
 }  // namespace eyas

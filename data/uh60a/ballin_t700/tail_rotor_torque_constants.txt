@@ -1,0 +1,14 @@
+# Transcribed by eye from the rendered page image (130 dpi) of Ballin, NASA TM-88360 (1987),
+# App. A, "Additional Tail Rotor Constants for UH-60A Black Hawk", p. 26 (PDF p. 28), with
+# their definitions on the same page: the tail-rotor torque constants of the Ames simulation.
+# Typeset; read with high confidence. D-058.
+#
+# The delta's are Bailey's numerical example, the NACA 23012 section at a Reynolds number of
+# 2 000 000 (Bailey, NACA Report 716 (1941) p. 217), alpha in radians; not a measured polar of
+# the UH-60A's tail-rotor section (DATA_GAPS.md "UH-60A tail-rotor torque").
+#
+# constant  value     units   meaning
+DELTA0      0.0087    -       # section profile drag c_d = delta0 + delta1 alpha + delta2 alpha^2
+DELTA1      -0.0216   1/rad
+DELTA2      0.4       1/rad^2
+IB_TR       3.1       slug*ft^2  # a tail-rotor blade's mass moment of inertia (flapping), for the Lock number

@@ -501,15 +501,27 @@ double BallinT700::drive_train_load(double omega) const noexcept {
 }
 
 double BallinT700::rotor_demand(const SimContext& ctx) const noexcept {
-    return ctx.coupling != nullptr && demand_.valid() ? ctx.coupling->get(demand_) : 0.0;
+    if (ctx.coupling == nullptr) {
+        return 0.0;
+    }
+    // The main rotor's and the tail rotor's (D-058), both at the shaft.
+    return (demand_.valid() ? ctx.coupling->get(demand_) : 0.0) +
+           (tail_demand_.valid() ? ctx.coupling->get(tail_demand_) : 0.0);
 }
 
 std::vector<std::string> BallinT700::consumes() const {
-    return {config_.rotor + ".shaft_torque"};
+    std::vector<std::string> out = {config_.rotor + ".shaft_torque"};
+    if (!config_.tail_rotor.empty()) {
+        out.push_back(config_.tail_rotor + ".shaft_torque");
+    }
+    return out;
 }
 
 void BallinT700::bind(const CouplingRegistry& registry) {
     demand_ = registry.find(config_.rotor + ".shaft_torque", config_.name);
+    if (!config_.tail_rotor.empty()) {
+        tail_demand_ = registry.find(config_.tail_rotor + ".shaft_torque", config_.name);
+    }
 }
 
 void BallinT700::bind_shafts(std::span<const ShaftInfo> shafts) {
@@ -1143,8 +1155,9 @@ namespace eyas {
 
 std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node, int first_engine) {
     using units::Dimension;
-    node.allow_keys({"type", "name", "shaft", "rotor", "engines", "gear", "gas_path", "output",
-                     "gas_generator_spool", "maps", "ecu", "hmu", "drive_train", "clutch"});
+    node.allow_keys({"type", "name", "shaft", "rotor", "tail_rotor", "engines", "gear", "gas_path",
+                     "output", "gas_generator_spool", "maps", "ecu", "hmu", "drive_train",
+                     "clutch"});
     BallinT700Config c;
     c.name = node.string("name");
     if (c.name.empty()) {
@@ -1154,6 +1167,12 @@ std::unique_ptr<BallinT700> BallinT700::from_config(const Config& node, int firs
     sh.allow_keys({"name"});
     c.shaft = sh.string("name");
     c.rotor = node.string("rotor");
+    if (node.contains("tail_rotor")) {  // optional (D-058)
+        c.tail_rotor = node.string("tail_rotor");
+        if (c.tail_rotor.empty()) {
+            node.fail("tail_rotor", "must not be empty");
+        }
+    }
     const std::int64_t engines = node.integer("engines");
     if (engines < 1 || engines > static_cast<std::int64_t>(kMaxEnginesPerComponent)) {
         node.fail("engines", "must be 1 or 2 (Fig. C2's load share pairs two; D-055)");

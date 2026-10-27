@@ -88,6 +88,9 @@ private:
 // Drive train (TM-88360 App. A, eqs. A2, A5, A11, A12; D-054 item 3): the
 // gearbox's oil drag DAMPBX Ω and the accessories, ACCHP at the governed speed
 // falling 10 % per 100 % of speed, load the shaft.
+// The tail rotor's torque, when its model has one (D-058), loads it through
+// the executive's shaft row; the clutches' rule and trim's seed read it
+// from the tail rotor, as the main rotor's.
 //
 // Inputs: the collective stick (Controls::collective, XCPC = 100 × it), each
 // engine's power lever and the engine-speed trim (Controls::engines from
@@ -95,9 +98,12 @@ private:
 // atmosphere at the aircraft (P2, T2). Outputs: the shaft's torque and
 // inertia; the spools' angular momentum to the airframe.
 struct BallinT700Config {
-    std::string name;      // instance name (D-003)
-    std::string shaft;     // the shaft it drives
-    std::string rotor;     // the instance publishing <rotor>.shaft_torque [N·m] (trim's seed)
+    std::string name;   // instance name (D-003)
+    std::string shaft;  // the shaft it drives
+    std::string rotor;  // the instance publishing <rotor>.shaft_torque [N·m] (trim's seed)
+    // The tail rotor publishing <tail_rotor>.shaft_torque [N·m], added to the
+    // rotor's in the clutches' rule and trim's seed (D-058); empty: none.
+    std::string tail_rotor;
     int engines = 2;       // N_E: 1 or 2 (Fig. C2's load share pairs two)
     int first_engine = 0;  // this component's first entry in Controls::engines
     double gear = 0.0;     // n_E: power-turbine speed over the shaft's [-]
@@ -338,7 +344,8 @@ public:
     void bind(const CouplingRegistry& registry) override;
     void bind_shafts(std::span<const ShaftInfo> shafts) override;
 
-    // The main rotor's demand [N·m] in the coupling store of ctx (0 without one).
+    // The rotors' demand at the shaft [N·m] in the coupling store of ctx, the
+    // main rotor's and any tail rotor's (D-058); 0 without a store.
     double rotor_demand(const SimContext& ctx) const noexcept;
 
     // The gas path at gas-generator speed `ng` and power-turbine speed `np`
@@ -441,7 +448,8 @@ private:
     std::shared_ptr<const Table1D> start_p3_, start_p41_, start_p45_;  // the steady line by NGC
     mutable Cursors cursors_;
     CouplingSlot demand_;
-    double maps_floor_ = 0.0;  // NGC [fraction] (D-056 item 3)
+    CouplingSlot tail_demand_;  // D-058
+    double maps_floor_ = 0.0;   // NGC [fraction] (D-056 item 3)
     // A steady state known at init (sea level, zero shaft torque, at the bound
     // shaft's governed speed or before binding the design speed): the initial
     // state, and where a trim-time solve that fails falls back.

@@ -1,5 +1,5 @@
-"""Plots for the M9 Stage B1' and B2a entries (Ballin's T700, D-054, D-055) in
-docs/VALIDATION.md.
+"""Plots for the M9 Stage B1', B2a and B2b entries (Ballin's T700, D-054 to D-056) and the
+tail rotor's torque (D-058) in docs/VALIDATION.md.
 
 Reads the CSVs written by the eyas_m9_ballin_engine_cases executable and writes PNGs: the
 UH-60A on Ballin's engines at Table B.1's conditions against Table B.1 (NASA TM-100991 p. 53),
@@ -215,6 +215,52 @@ def plot_climbs(data, outdir):
     plt.close(fig)
 
 
+def plot_tail_rotor(data, outdir):
+    """The tail rotor's share of the main rotor's power, and the trim's change with its sense of
+    rotation (D-058)."""
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(10.0, 4.0))
+    by = {}
+    for r in data:
+        if r["converged"] == "1":
+            by.setdefault(r["direction"], []).append(r)
+    for d, style in (("counter_clockwise", "-"), ("clockwise", "--")):
+        rs = by.get(d, [])
+        kt = [float(r["airspeed_kt"]) for r in rs]
+        a1.plot(kt, [100.0 * float(r["tail_over_main"]) for r in rs], style, color="C3",
+                label=f"tail rotor {d.replace('_', '-')}")
+    a1.axhline(13.0, color="0.3", ls=":", lw=1.0)
+    a1.annotate("Ballin p. 12: 13 % in hover (Ames)", (2.0, 13.3), fontsize=8)
+    a1.axhline(10.0, color="0.6", ls=":", lw=1.0)
+    a1.annotate("Sikorsky GenHel: 10 %", (2.0, 10.3), fontsize=8)
+    a1.set_xlabel("airspeed [kt]")
+    a1.set_ylabel("tail-rotor power / main-rotor power [%]")
+    a1.grid(True, alpha=0.3)
+    a1.legend(fontsize=8)
+    ccw = {r["airspeed_kt"]: r for r in by.get("counter_clockwise", [])}
+    cw = {r["airspeed_kt"]: r for r in by.get("clockwise", [])}
+    kts = [k for k in ccw if k in cw]
+    for q, label, color in (("lon_pct", "longitudinal", "C0"), ("lat_pct", "lateral", "C1"),
+                            ("pedal_pct", "pedal", "C2"), ("collective_pct", "collective", "C4")):
+        a2.plot([float(k) for k in kts], [float(cw[k][q]) - float(ccw[k][q]) for k in kts],
+                color=color, label=label)
+    a2.set_xlabel("airspeed [kt]")
+    a2.set_ylabel("clockwise minus counter-clockwise [% of travel]")
+    a2.grid(True, alpha=0.3)
+    a2.legend(fontsize=8)
+    fig.suptitle("UH-60A on Ballin's T700s, Table B.1's loading, sea level: "
+                 "the tail rotor's torque (D-058)")
+    fig.tight_layout()
+    fig.savefig(outdir / "m9_ballin_tail_rotor.png", dpi=110)
+    plt.close(fig)
+    for d, rs in by.items():
+        for r in rs:
+            print(f"{d:17s} {float(r['airspeed_kt']):5.0f} kt  main {float(r['main_rotor_hp']):7.1f} hp"
+                  f"  tail {float(r['tail_rotor_hp']):6.1f} hp  ratio "
+                  f"{100.0 * float(r['tail_over_main']):5.2f} %  lon {float(r['lon_pct']):6.2f}"
+                  f"  lat {float(r['lat_pct']):6.2f}  pedal {float(r['pedal_pct']):6.2f}"
+                  f"  coll {float(r['collective_pct']):6.2f}")
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit("usage: plot_m9_ballin.py <data-dir> <output-dir>")
@@ -227,6 +273,7 @@ def main():
     plot_failure(rows(data / "m9_ballin_failure.csv"), out)
     plot_autorotation(rows(data / "m9_ballin_autorotation.csv"), out)
     plot_climbs(rows(data / "m9_ballin_climbs.csv"), out)
+    plot_tail_rotor(rows(data / "m9_ballin_tail_rotor.csv"), out)
     for case, _ in CASES:
         for q, label in QUANTITIES:
             (r,) = [x for x in table if x["case"] == case and x["quantity"] == q]

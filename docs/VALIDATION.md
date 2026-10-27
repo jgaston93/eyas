@@ -1786,3 +1786,51 @@ A free shaft that reaches 5 % of its governed speed and would slow further is he
 **The floor's value.** #74's run with floors of 2, 5 and 10 %, for 20 s with the engines shut off and 30 s with them lit at idle. Without a floor both diverge, at 5.7 and 5.9 s. With any of the three the run stays finite, the rotor sits on its floor, and the aircraft falls (95–100 m/s by the end), tumbling at up to 7 rad/s. 5 % leaves a wide margin above 2 %, where the tail rotor's inflow rate is already about 15 /s, growing as 1/Ω². No rotor recovers from that speed in flight, so the value bounds the models' domain, not the aircraft's.
 
 `AdvanceStatus::shaft_on_floor` reports it to the host (D-057). The pilot station's readout of it is Stage C's.
+
+## M9 — The tail rotor's torque (2026-10-26; issues #40, #39)
+
+The tail rotor takes Bailey's torque from the drive (D-058; NACA Report 716 Eqs. 9 and 11, the coefficients to μ², the constants Ames used, Ballin TM-88360 p. 26), on the aircraft on Ballin's engines. The aircraft on GenHel's engines keep GenHel's thrust-only tail rotor and its 10 % loss factor, unchanged.
+
+| Check | Status | Evidence |
+|---|---|---|
+| The coefficients | ✅ | `tools/derive_bailey_torque.py` derives the sixteen t₄ and t₅ coefficients from Bailey's assumptions (sympy) and reproduces the μ⁰ and μ² parts of his appendix (pp. 223–224) exactly; it fails on a mismatch. |
+| Layer 1: Bailey's assumptions integrated | ✅ | `BaileyRotor.TorqueMatchesBaileysAssumptionsIntegrated`: against a numerical integration with nothing truncated (reversed flow kept, the flapping by harmonic balance): exact in hover, within 0.5 σμ³ to μ = 0.35 (worst 0.34) over 864 evaluations. Each μ² coefficient's mutation is caught. |
+| Layer 2: hover closed form | ✅ | `HoverTorqueIsInducedPlusJohnsonsProfilePower`: C_Q = λC_T + Johnson's profile power for the same polar and a linearly twisted blade (2013 Eq. 3.90), to 1e-15. |
+| On the airframe and the shaft | ✅ | `TorqueActsAgainstTheRotation` (−Q along the rotation axis, either sense; −gear × Q on the shaft), `TorqueSlowsAFreeShaft` (Ω̇ = −gear Q/J through the executive), `BallinT700.TailRotorDemandAddsToTheRotors` (the clutches' rule and trim's seed count it, bit for bit). |
+| Unchanged elsewhere | ✅ | GenHel's aircraft bit for bit (their configs unchanged; no torque without the block). Three Ballin-aircraft tests moved (D-058): the Table B.1 speeds within the measured 4/rev ripple (1e-6 in hover, 2e-5 at 80 kt; D-058 amendment), the 100 kt overrun now between −3000 and −3250 ft/min, #74's run-down reaching the floor at 9.5 s, a delay from Bailey's series out of its range below about 30 % rotor speed, not physics (issue #86). The builder refuses a tail-rotor torque that the shaft's engine doesn't count (`TailRotorTorqueMustBeCountedByTheEngine`). |
+
+**Against Ballin.** In hover at Table B.1's loading the tail rotor takes 169 hp, 10.6 % of the main rotor's 1592 hp: Ballin (TM-88360 p. 12) gives 13 % for the Ames simulation, which had this model, in its hover case (App. E's, at its own conditions), and Sikorsky's GenHel assumes 10 %. Its share falls with speed, to 4.7 % at 80 kt and 2.5 % at 160 kt (42–63 hp).
+
+![The tail rotor's power, and the trim's dependence on its sense of rotation](validation/m9/m9_ballin_tail_rotor.png)
+
+**Table B.1, before and after** (`m9_ballin_table_b1.csv`; Eyas minus Table B.1):
+
+| | hover | 80 kt | 80 kt, −1000 ft/min |
+|---|---|---|---|
+| engine torque, before (B1′) | −4 to −7 % | | |
+| engine torque, now | +2.5 % | −0.1 % | +0.5 % |
+| fuel per engine, now | +2.0 % | +0.25 % | +0.7 % |
+| main rotor's torque (unchanged) | −1.3 % | −6.4 % | −11.8 % |
+
+With the tail rotor's 169 hp the engines deliver 275 hp more than the main rotor takes in hover, against Table B.1's 209 hp: the engine's states follow (NG within 0.24 %, the temperatures within 0.8 %).
+
+**Fletcher's yaw rate to collective on Ballin's engines** (`eyas_m7c_fletcher` with `uh60a_fletcher.yaml`, Eyas minus flight, mean / RMS): hover magnitude −2.3 / 4.6 → −1.4 / 4.2 dB, phase −78 / 85° (unchanged); 80 kt magnitude −1.3 / 1.5 → −1.1 / 1.4 dB, phase −9 / 11° (unchanged). Roll and pitch to cyclic move by less than 0.05 dB and 0.8° (the same build with and without the torque).
+
+**B2a and B2b with the torque** (`eyas_m9_ballin_engine_cases`): one lever to idle at 80 kt, the rotor droops to 98.1 % (98.1); one engine out, 97.5 % (97.6); both out, 84.0 % (84.3), decaying at 6.0 %/s (5.8). Autorotation against Johnson's V_d = P_level/W (D-056's table; before in brackets):
+
+| Airspeed | P_level | P_level/W | Eyas's V_d | Ratio |
+|---|---|---|---|---|
+| 60 kt | 823 kW (785) | 2165 ft/min | 2526 ft/min (2428) | 1.17 (1.17) |
+| 80 kt | 824 kW (790) | 2166 ft/min | 2557 ft/min (2437) | 1.18 (1.17) |
+| 100 kt | 915 kW (883) | 2407 ft/min | 3035 ft/min (2897) | 1.26 (1.25) |
+| 120 kt | 1111 kW (1077) | 2923 ft/min | 4086 ft/min (3889) | 1.40 (1.37) |
+
+The tail rotor's power is now in both the level power and the autorotation; the ratio to Johnson's estimate is unchanged to 0.03.
+
+**The sense of rotation** (a placeholder, DATA_GAPS.md; GenHel's spinning part JYGY1 implies counter-clockwise, the placeholder's value): trimmed both ways at Table B.1's loading, the reaction moves the longitudinal cyclic by 1.0 % of travel in hover, 0.6 % at 20 kt and at most 0.23 % from 60 kt up; the lateral cyclic, pedal and collective by at most 0.51 %, the tail rotor's power by at most 1.8 % (3 hp in hover).
+
+**The μ² truncation** (D-058): against Bailey's assumptions integrated without it, at the trims above: within 1 % to 80 kt, then 5 % high at 120 kt, 15 % at 140 kt and 48 % at 160 kt (63 hp against 42 hp; under 1 % of the aircraft's power). Ames flew the same truncation; extending the torque and GenHel's thrust beyond μ² is open.
+
+**Ballin's climbs and descents** (`m9_ballin_climbs.csv`, D-056's sweep, each trim continued from its neighbour): on the engines the continuation now stops at 60 kt −1000 ft/min (before, −2500), at 60 kt +3000 ft/min (on a branch overrunning at 119 % rotor speed) and at 100 kt −3000 ft/min (before, overrun at 102.6 %); 100 kt from +500 ft/min and 137.5 kt from +1500 ft/min are as before. With the rotor speed held, 60 kt +3000 ft/min no longer trims (near full collective). These are the trims' start-point sensitivity (#76), which the torque moves rather than causes: a probe at Ballin's conditions trimmed each of 60 kt to −2500 ft/min and 100 kt to −3000 ft/min from level flight and cold, with and without the torque. Without it, 60 kt −2500 failed from level flight and 100 kt −2000 cold; with it, 100 kt −2500 and −3000 and +500 fail from level flight and trim cold; 60 kt −3000 fails both ways either way.
+
+**Open.** The sense of rotation (a source stating it); the range below about 30 % rotor speed, where Bailey's series windmills the tail rotor far too hard (issue #86, D-058 amendment); the polar, Bailey's NACA 23012 example rather than the UH-60A's section; the truncation above 120 kt; Ballin's 13 % in hover against Eyas's 10.6 % (Ballin's hover case's conditions aren't Table B.1's); the climbs' continuation on Ballin's engines (#76).

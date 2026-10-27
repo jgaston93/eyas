@@ -812,6 +812,7 @@ def build(variant=None, engine="genhel"):
                 f"# Inertias are GenHel's (D-002); not for use as the aircraft's own data.\n")
     tr = constants("tail_rotor_constants_5_4_5.txt")
     af = constants("airframe_constants_5_2_5_3.txt")
+    tail_torque = tail_rotor_torque_block() if engine == "ballin" else ""
     mp = constants("mass_properties_5_10.txt")
     mo = constants("motion_input_5_10_5.txt")
     en = constants("engine_constants_5_6_5.txt")
@@ -973,7 +974,7 @@ components:
     additional_loads: airframe/motion_additions.csv  # p. 5.10-19 downwash correction terms (D-048)
 
   - type: bailey_rotor
-    name: tail_rotor
+    name: {TAIL_ROTOR}
     blades: {int(tr["NB_TR"])}
     radius: "{fmt(tr["R_TR"])} ft"
     rotor_speed: "{fmt(tr["OMEGA_TR"])} rad/s"
@@ -993,7 +994,7 @@ components:
     pitch_input: fcs
     main_rotor_wash: {{rotor: main_rotor, table: airframe/tail_wash.csv}}
     fuselage_wake: {{airframe: airframe}}
-
+{tail_torque}
   - type: landing_gear
     name: gear
     friction:
@@ -1112,17 +1113,38 @@ def ballin_shaft_parts(mo, mr):
     return "".join(rows).rstrip("\n")
 
 
+# The tail rotor's instance name: its component and the engine's tail_rotor key (D-058).
+TAIL_ROTOR = "tail_rotor"
+
+
+def tail_rotor_torque_block():
+    """Bailey's tail-rotor torque (D-058) with Ballin's constants (TM-88360 App. A p. 26), for
+    the aircraft on Ballin's engines: Ames's GenHel had it (Ballin p. 4), Sikorsky's takes the
+    tail rotor's power as 10 % of the main rotor's (p. 12; GenHel's loss factor)."""
+    t = transcription("tail_rotor_torque_constants.txt")
+    return f"""    torque:  # Bailey, NACA Report 716 Eqs. 9 and 11; Ballin, NASA TM-88360 p. 26 (D-058)
+      direction: !placeholder counter_clockwise  # viewed from the thrust side; inferred from GenHel's JYGY1, not stated (DATA_GAPS.md)
+      blade_flap_inertia: "{fmt(t['IB_TR'][0])} {t['IB_TR'][1]}"  # IB_TR
+      profile_drag: {{d0: {fmt(t['DELTA0'][0])}, d1: "{fmt(t['DELTA1'][0])} {t['DELTA1'][1]}", d2: "{fmt(t['DELTA2'][0])} {t['DELTA2'][1]}"}}  # Bailey's NACA 23012 example
+"""
+
+
 def ballin_component_entry():
     """The ballin_t700 block (ballin_engine_block) as an entry of an aircraft config's
     components. The aircraft configs on Ballin's engines sit beside its tables, in
     engine_ballin/, so the tables' bare names stand."""
     lines = [ln for ln in ballin_engine_block().splitlines() if not ln.startswith("#")]
+    rotor_lines = [k for k, ln in enumerate(lines) if ln.startswith("rotor: ")]
+    if len(rotor_lines) != 1:
+        raise SystemExit(f"ballin_engine_block: expected one 'rotor:' key, found {len(rotor_lines)}")
     out = []
     for k, ln in enumerate(lines):
         prefix = "  - " if k == 0 else "    "
         comment = "  # Ballin, NASA TM-100991 (1988); engine_ballin/ballin_t700.yaml (D-054)" \
             if k == 0 else ""
         out.append(prefix + ln + comment)
+        if k == rotor_lines[0]:
+            out.append(f"    tail_rotor: {TAIL_ROTOR}  # its torque too (D-058)")
     return "\n".join(out)
 
 

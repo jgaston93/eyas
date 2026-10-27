@@ -18,10 +18,12 @@
 #include "core/rigid_body.hpp"
 #include "rotor/bailey_rotor.hpp"
 #include "rotor/blade_element_rotor.hpp"
+#include "rotor/hub_frame.hpp"
 #include "rotor/pitt_peters.hpp"
 #include "rotor/rotor_wash.hpp"
 #include "sim/executive.hpp"
 #include "support/alloc_counter.hpp"
+#include "support/bailey_torque_reference.hpp"
 #include "support/m3_fixtures.hpp"
 #include "support/m6_fixtures.hpp"
 #include "util/config.hpp"
@@ -321,6 +323,202 @@ TEST(BaileyRotor, ConsumesMainRotorWashThroughTheExecutive) {
     EXPECT_EQ(count.count(), 0U);
 }
 
+// ---- Torque (D-058) ----------------------------------------------------------
+
+// The UH-60A tail rotor's Bailey torque constants (Ballin, NASA TM-88360
+// p. 26: Bailey's NACA 23012 polar, NACA Report 716 p. 217, and IB_TR).
+BaileyTorque ballin_torque(RotationDirection dir = RotationDirection::counter_clockwise) {
+    return BaileyTorque{dir, 3.1 * units::kSlug * kFoot * kFoot, 0.0087, -0.0216, 0.4};
+}
+
+// A bare rotor (hub frame = body axes) at advance ratio μ and inflow λ
+// (positive up through the disk), its pitch θ through the pedal; λ_i fixed.
+struct TorqueCase {
+    BaileyRotorLoads loads;
+    double lambda_i = 0.03;
+};
+TorqueCase evaluate_at(const BaileyRotor& rotor, double mu, double lambda, double theta) {
+    SimContext ctx;
+    ctx.air.density = 1.2;
+    TorqueCase t;
+    ctx.body.vel_b = Vec3(mu, 0.0, lambda + t.lambda_i) * rotor.tip_speed();
+    ctx.controls.pedal = theta;
+    t.loads = rotor.evaluate(ctx, t.lambda_i, Vec3::Zero());
+    return t;
+}
+
+// Layer 1 (D-058): the closed-form torque against Bailey's assumptions
+// integrated numerically (tests/support/bailey_torque_reference.hpp), with the
+// reversed-velocity region and the flapping kept whole. The closed form keeps
+// terms to μ², so they agree exactly in hover and to O(μ³) in forward flight;
+// the bound 0.5 σμ³ holds with margin (measured at most 0.34 σμ³ over these
+// cases, to μ = 0.35), and at the smallest μ a wrong μ² coefficient exceeds
+// it (μ down to 0.002 for the small ones, such as δ₁θ_tw's). Inflows from
+// −0.15 to +0.05, Lock numbers about 3 and 10, Ballin's polar and a
+// synthetic stronger one.
+TEST(BaileyRotor, TorqueMatchesBaileysAssumptionsIntegrated) {
+    struct Polar {
+        double d0, d1, d2;
+    };
+    for (const double B : {1.0, 0.92}) {
+        for (const double tw : {0.0, -18.0 * kDegree}) {
+            for (const double inertia : {4.2, 1.4}) {
+                for (const Polar p : {Polar{0.0087, -0.0216, 0.4}, Polar{0.01, 0.3, 2.0}}) {
+                    BaileyRotorConfig c = bare(B, tw);
+                    c.torque = BaileyTorque{RotationDirection::counter_clockwise, inertia, p.d0,
+                                            p.d1, p.d2};
+                    const BaileyRotor rotor(c);
+                    const double sigma = rotor.solidity();
+                    const double gamma =
+                        1.2 * c.lift_slope * c.chord * std::pow(c.radius, 4) / inertia;
+                    for (const double th : {5.0 * kDegree, 20.0 * kDegree}) {
+                        for (const double lam : {-0.15, -0.06, 0.05}) {
+                            for (const double mu :
+                                 {0.0, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.35}) {
+                                const TorqueCase t = evaluate_at(rotor, mu, lam, th);
+                                const test::BaileyTorqueCase ref_case{B,
+                                                                      gamma,
+                                                                      t.loads.mu,
+                                                                      t.loads.mu_z - t.lambda_i,
+                                                                      t.loads.pitch,
+                                                                      tw,
+                                                                      p.d0,
+                                                                      p.d1,
+                                                                      p.d2};
+                                const double ref =
+                                    test::bailey_torque_reference(ref_case).cq(sigma, c.lift_slope);
+                                const double tol = sigma * (0.5 * mu * mu * mu + 1e-14);
+                                EXPECT_NEAR(t.loads.cq, ref, tol)
+                                    << "B " << B << " tw " << tw << " I1 " << inertia << " d1 "
+                                    << p.d1 << " th " << th << " lam " << lam << " mu " << mu;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Layer 2 (D-058): in hover the torque is the induced power λ_J C_T plus
+// Johnson's profile power of a constant-chord, linearly twisted blade in
+// uniform inflow for the same polar (Johnson 2013 Eq. 3.90, p. 58: θ.75 the
+// pitch at 0.75R, λ_J the inflow positive down), independent of Bailey.
+TEST(BaileyRotor, HoverTorqueIsInducedPlusJohnsonsProfilePower) {
+    for (const double tw : {0.0, -18.0 * kDegree}) {
+        BaileyRotorConfig c = bare(1.0, tw);
+        c.torque = ballin_torque();
+        const BaileyTorque& q = *c.torque;
+        const BaileyRotor rotor(c);
+        const double sigma = rotor.solidity();
+        for (const double th : {2.0 * kDegree, 12.0 * kDegree, 25.0 * kDegree}) {
+            for (const double lam : {-0.08, -0.03, 0.02}) {
+                const BaileyRotorLoads l = evaluate_at(rotor, 0.0, lam, th).loads;
+                const double lj = -lam;
+                const double t75 = th + 0.75 * tw;
+                const double cpo = sigma * q.d0 / 8.0 +
+                                   sigma * q.d1 / 8.0 * (t75 + tw / 20.0 - 4.0 / 3.0 * lj) +
+                                   sigma * q.d2 / 8.0 *
+                                       (t75 * t75 + t75 * tw / 10.0 + 7.0 / 240.0 * tw * tw +
+                                        2.0 * lj * lj - 8.0 / 3.0 * t75 * lj);
+                EXPECT_NEAR(l.cq, lj * l.ct + cpo, 1e-15) << "tw " << tw << " th " << th;
+                // Q = ρπR²(ΩR)²R C_Q.
+                const double qa = 1.2 * rotor.disk_area() * rotor.tip_speed() * rotor.tip_speed();
+                EXPECT_NEAR(l.torque, qa * c.radius * l.cq, 1e-12 * std::abs(l.torque));
+            }
+        }
+    }
+}
+
+// The torque on the airframe and the shaft (D-058, D-052): the airframe gets
+// −Q along the rotation axis (−s z_h, viewed from the thrust side), the
+// thrust and drag unchanged; the shaft −gear × Q, and nothing without the
+// torque block.
+TEST(BaileyRotor, TorqueActsAgainstTheRotation) {
+    test::GenHelTailRotorInput in = test::genhel_uh60a_tail_rotor();
+    BaileyRotorConfig plain = test::bailey_from_genhel(in);
+    plain.shaft = ShaftLink{"drive", 124.62 / 27.0};
+    SimContext ctx = context_from(in);
+    ctx.body.vel_b = Vec3(40.0, 3.0, -2.0);
+    ctx.controls.pedal = 15.0 * kDegree;
+    ctx.num_shafts = 1;
+    ctx.shafts[0] = {0.0, 27.0};
+    const std::vector<ShaftInfo> info = {{"drive", 27.0}};
+    const double lambda_i = 0.02;
+    BaileyRotor without(plain);
+    without.bind_shafts(info);
+    const BaileyRotorLoads l0 = without.evaluate(ctx, lambda_i, Vec3::Zero());
+    EXPECT_EQ(l0.torque, 0.0);
+    EXPECT_TRUE(without.produces().empty());
+
+    for (const auto dir : {RotationDirection::counter_clockwise, RotationDirection::clockwise}) {
+        BaileyRotorConfig c = plain;
+        c.torque = ballin_torque(dir);
+        BaileyRotor rotor(c);
+        rotor.bind_shafts(info);
+        const BaileyRotorLoads l = rotor.evaluate(ctx, lambda_i, Vec3::Zero());
+        EXPECT_GT(l.thrust, 0.0);
+        EXPECT_GT(l.torque, 0.0);  // a demand at this thrust
+        EXPECT_EQ(l.body.F, l0.body.F);
+        const double s = dir == RotationDirection::counter_clockwise ? 1.0 : -1.0;
+        const Vec3 axis_b = hub_rotation(c.hub_pitch, c.hub_roll).transpose() * Vec3(0, 0, -s);
+        EXPECT_LT((l.body.M - (l0.body.M - l.torque * axis_b)).norm(), 1e-12 * l.torque);
+        // The UH-60A's cant: the axis is mostly along body y (the pitch axis).
+        EXPECT_NEAR(std::abs(axis_b.y()), std::sin(70.0 * kDegree), 1e-12);
+
+        std::vector<double> xdot(rotor.num_states());
+        std::vector<double> g(6 * rotor.num_states());
+        std::vector<double> gs(rotor.num_states() * kMaxShafts);
+        ComponentDerivs d{xdot, g, Wrench{}, Mat66::Zero()};
+        d.Gs = gs;
+        const std::vector<double> x = {lambda_i, 0.0};
+        rotor.derivatives(ctx, x, d);
+        EXPECT_DOUBLE_EQ(d.Q0(0), -c.shaft->gear * l.torque);
+        EXPECT_EQ(d.Ka.norm() + d.Ks.norm(), 0.0);
+        EXPECT_EQ(rotor.produces(), std::vector<std::string>{"tail_rotor.shaft_torque"});
+    }
+}
+
+// End to end on a free shaft (D-052): with the tail rotor alone on it, the
+// shaft decelerates at gear × Q / J.
+TEST(BaileyRotor, TorqueSlowsAFreeShaft) {
+    BaileyRotorConfig c = test::bailey_from_genhel(test::genhel_uh60a_tail_rotor());
+    const double gear = 124.62 / 27.0;
+    c.shaft = ShaftLink{"drive", gear};
+    c.torque = ballin_torque();
+    ExecutiveConfig ec = executive_config();
+    ShaftConfig s;
+    s.name = "drive";
+    s.speed = 27.0;
+    const double J = 900.0;
+    s.parts = {ShaftPart{J, 1.0, Vec3::Zero()}};
+    s.drive = ShaftDrive::free;
+    ec.shafts = {s};
+    std::vector<std::unique_ptr<DynamicComponent>> v;
+    v.push_back(std::make_unique<BaileyRotor>(c));
+    const auto* tail = dynamic_cast<const BaileyRotor*>(v.back().get());
+    Executive ex(ec, std::move(v));
+    BodyState b;
+    b.vel_b = Vec3(30.0, 0.0, 0.0);
+    ex.set_body_state(b);
+    std::vector<double> x(ex.state().begin(), ex.state().end());
+    x[body_layout::kSize] = 0.04;
+    ASSERT_TRUE(ex.restore(x, 0, 0));
+    Controls u;
+    u.pedal = 0.5;
+    std::vector<double> xdot(ex.num_states());
+    ASSERT_TRUE(ex.derivatives(0.0, ex.state(), u, Environment{}, xdot));
+    SimContext ctx;
+    ctx.body = ex.body_state();
+    ctx.air = isa_atmosphere(-ctx.body.pos_n.z(), 0.0);
+    ctx.controls = u;
+    ctx.num_shafts = 1;
+    ctx.shafts[0] = {0.0, 27.0};
+    const BaileyRotorLoads l = tail->evaluate(ctx, 0.04, Vec3::Zero());
+    ASSERT_GT(l.torque, 0.0);
+    EXPECT_NEAR(xdot[ex.shaft_offset(0) + 1], -gear * l.torque / J, 1e-12 * gear * l.torque / J);
+}
+
 TEST(BaileyRotor, ReadsConfig) {
     const Config cfg = Config::from_string(R"(
 type: bailey_rotor
@@ -352,6 +550,37 @@ controls:
     EXPECT_DOUBLE_EQ(c.hub_roll, 70.0 * kDegree);
     EXPECT_FALSE(c.wash.has_value());
     EXPECT_TRUE(r->consumes().empty());
+    EXPECT_FALSE(c.torque.has_value());
+
+    // The torque block (D-058).
+    const std::string base = R"(
+type: bailey_rotor
+name: tail_rotor
+blades: 4
+radius: "5.5 ft"
+rotor_speed: "124.62 rad/s"
+chord: "0.81 ft"
+lift_slope: "5.73 1/rad"
+tip_loss: 0.92
+twist: "-18 deg"
+hub: {position: {x: "0 m", y: "0 m", z: "0 m"}}
+controls: {theta0: {pedal: "20 deg"}}
+)";
+    const auto torque_cfg = [&](const std::string& dir) {
+        return Config::from_string(base + "torque:\n  direction: " + dir +
+                                   "\n  blade_flap_inertia: \"3.1 slug*ft^2\"\n"
+                                   "  profile_drag: {d0: 0.0087, d1: \"-0.0216 1/rad\", "
+                                   "d2: \"0.4 1/rad^2\"}\n");
+    };
+    const auto rt = BaileyRotor::from_config(torque_cfg("clockwise"));
+    ASSERT_TRUE(rt->config().torque.has_value());
+    const BaileyTorque& t = *rt->config().torque;
+    EXPECT_EQ(t.direction, RotationDirection::clockwise);
+    EXPECT_DOUBLE_EQ(t.flap_inertia, 3.1 * units::kSlug * kFoot * kFoot);
+    EXPECT_DOUBLE_EQ(t.d0, 0.0087);
+    EXPECT_DOUBLE_EQ(t.d1, -0.0216);
+    EXPECT_DOUBLE_EQ(t.d2, 0.4);
+    EXPECT_THROW((void)BaileyRotor::from_config(torque_cfg("sideways")), InitError);
 
     // δ₃ without its coning rate is an error, not a silent zero (D-021).
     const Config bad = Config::from_string(R"(

@@ -69,6 +69,96 @@ void validate(const BaileyRotorConfig& c) {
             throw InitError("bailey rotor: a fuselage wake needs the hub aft of the CG (x < 0)");
         }
     }
+    if (c.torque) {
+        if (!positive(c.torque->flap_inertia)) {
+            throw InitError("bailey rotor: the blade's flapping inertia must be positive");
+        }
+        if (!std::isfinite(c.torque->d0) || !std::isfinite(c.torque->d1) ||
+            !std::isfinite(c.torque->d2)) {
+            throw InitError("bailey rotor: the profile-drag coefficients must be finite");
+        }
+        if (c.shaft && c.name.empty()) {
+            throw InitError("bailey rotor: a torque on a shaft needs the rotor's name (D-058)");
+        }
+    }
+}
+
+// Bailey's torque coefficient C_Q = C_Qd − C_Qa (NACA Report 716 Eqs. 9 and
+// 11, the weight-moment terms dropped, p. 212), its t's to μ² (pp. 223–224),
+// as derived and checked by tools/derive_bailey_torque.py: at θ (the pitch at
+// the root), linear twist θ_tw, inflow λ (positive up through the disk),
+// advance ratio squared μ², tip loss B and Lock number γ, solidity σ and
+// lift slope a. The t's are split as t = t₀ + (t₁ + γ² t₂) μ², the parts
+// fixed by B computed once (bailey_torque_terms).
+BaileyTorqueTerms bailey_torque_terms(double B) noexcept {
+    const double B2 = B * B;
+    const double B3 = B2 * B;
+    const double B4 = B2 * B2;
+    const double B5 = B4 * B;
+    const double B6 = B4 * B2;
+    const double B7 = B6 * B;
+    const double B8 = B4 * B4;
+    const double B9 = B8 * B;
+    const double B10 = B8 * B2;
+    const double B11 = B8 * B3;
+    const double B12 = B8 * B4;
+    BaileyTorqueTerms t;
+    // t₄₁ … t₄₆
+    t.t0 = {B2 / 2.0, B3 / 3.0, B4 / 4.0, 0.0, 0.0, 0.0,
+            // t₅₁ … t₅₁₀
+            1.0 / 4.0, 1.0 / 3.0, 1.0 / 4.0, 1.0 / 5.0, 1.0 / 2.0, 2.0 / 3.0, 1.0 / 2.0, 1.0 / 4.0,
+            2.0 / 5.0, 1.0 / 6.0};
+    t.t1 = {5.0 / 4.0,
+            8.0 * B / 3.0,
+            2.0 * B2,
+            8.0 * B2 / 9.0,
+            4.0 * B3 / 3.0,
+            B4 / 2.0,
+            1.0 / 4.0,
+            0.0,
+            1.0 / 4.0,
+            1.0 / 6.0,
+            -1.0 / 4.0 + 1.0 / B2 + 1.0 / (2.0 * B4),
+            4.0 / (3.0 * B) + 4.0 / (3.0 * B3),
+            1.0 + 1.0 / B2,
+            1.0 / 4.0 + 8.0 / (9.0 * B2),
+            1.0 / 3.0 + 4.0 / (3.0 * B),
+            5.0 / 8.0};
+    t.t2 = {B8 / 1296.0,
+            B9 / 864.0,
+            B10 / 1080.0,
+            B10 / 2304.0,
+            B11 / 1440.0,
+            B12 / 3600.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            B4 / 162.0 - B5 / 81.0 + B6 / 144.0,
+            B5 / 108.0 - B6 / 54.0 + B7 / 96.0,
+            B6 / 135.0 - 2.0 * B7 / 135.0 + B8 / 120.0,
+            B6 / 288.0 - B7 / 144.0 + B8 / 256.0,
+            B7 / 180.0 - B8 / 90.0 + B9 / 160.0,
+            B8 / 450.0 - B9 / 225.0 + B10 / 400.0};
+    return t;
+}
+
+double bailey_cq(const BaileyTorque& q, const BaileyTorqueTerms& terms, double sigma, double a,
+                 double gamma, double mu2, double lambda, double theta, double twist) noexcept {
+    std::array<double, 16> t{};
+    const double g2 = gamma * gamma;
+    for (std::size_t i = 0; i < t.size(); ++i) {
+        t[i] = terms.t0[i] + (terms.t1[i] + g2 * terms.t2[i]) * mu2;
+    }
+    const double l = lambda;
+    const double th = theta;
+    const double tw = twist;
+    const double accelerating = t[0] * l * l + t[1] * l * th + t[2] * l * tw + t[3] * th * th +
+                                t[4] * th * tw + t[5] * tw * tw;
+    const double decelerating = q.d0 * t[6] + q.d1 * (t[7] * l + t[8] * th + t[9] * tw) +
+                                q.d2 * (t[10] * l * l + t[11] * l * th + t[12] * l * tw +
+                                        t[13] * th * th + t[14] * th * tw + t[15] * tw * tw);
+    return sigma / 2.0 * (decelerating - a * accelerating);
 }
 
 }  // namespace
@@ -83,6 +173,21 @@ BaileyRotor::BaileyRotor(BaileyRotorConfig config) : config_(std::move(config)) 
     coning_pitch_ = config_.coning_per_thrust * std::tan(config_.delta3);
     C_hb_ = hub_rotation(config_.hub_pitch, config_.hub_roll);
     C_bh_ = C_hb_.transpose();
+    const double s =
+        config_.torque && config_.torque->direction == RotationDirection::clockwise ? -1.0 : 1.0;
+    spin_axis_b_ = C_bh_ * Vec3(0.0, 0.0, -s);
+    lock_per_density_ = config_.torque
+                            ? config_.lift_slope * config_.chord * std::pow(config_.radius, 4) /
+                                  config_.torque->flap_inertia
+                            : 0.0;
+    torque_terms_ = bailey_torque_terms(config_.tip_loss);
+}
+
+std::vector<std::string> BaileyRotor::produces() const {
+    if (config_.torque && config_.shaft) {
+        return {config_.name + ".shaft_torque"};
+    }
+    return {};
 }
 
 void BaileyRotor::initial_states(std::span<double> x) const {
@@ -130,6 +235,9 @@ void BaileyRotor::bind(const CouplingRegistry& registry) {
     }
     if (!config_.pitch_input.empty()) {
         pitch_ = registry.find(config_.pitch_input + ".theta_tr", consumer);
+    }
+    if (config_.torque && config_.shaft) {
+        shaft_torque_ = registry.find(config_.name + ".shaft_torque", config_.name);
     }
 }
 
@@ -252,6 +360,14 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i, c
     F_b.x() -= 0.5 * rho * c.drag_area * v_b.x() * std::abs(v_b.x());
     out.body.F = F_b;
     out.body.M = c.hub_position_b.cross(F_b);
+
+    // Bailey's torque (D-058), opposing the rotation.
+    if (c.torque) {
+        out.cq = bailey_cq(*c.torque, torque_terms_, solidity_, c.lift_slope,
+                           rho * lock_per_density_, mu2, lambda, out.pitch, c.twist);
+        out.torque = q_area * c.radius * out.cq;
+        out.body.M -= out.torque * spin_axis_b_;
+    }
     return out;
 }
 
@@ -262,9 +378,17 @@ void BaileyRotor::derivatives(const SimContext& ctx, std::span<const double> x,
     out.xdot0[0] = loads.lambda_dot;
     if (shaft_index_ >= 0 && !out.Gs.empty()) {
         // λ_i is a velocity over ΩR: with it held, λ̇ gains −λ Ω̇/Ω (D-052).
-        // No torque on the shaft: the tail-rotor torque isn't modelled (issue
-        // #40), and the thrust and drag act at the hub, with no axial moment.
         out.Gs[static_cast<std::size_t>(shaft_index_)] = -gear_ * x[0] / rotor_speed(ctx);
+    }
+    if (shaft_index_ >= 0) {
+        // On the shaft its torque alone (D-058; zero without it): the thrust
+        // and drag act at the hub, with no axial moment. The torque doesn't
+        // depend on the accelerations, so K_a = K_s = 0.
+        const auto k = static_cast<Eigen::Index>(shaft_index_);
+        out.Q0(k) = -gear_ * loads.torque;
+        if (out.coupling != nullptr && shaft_torque_.valid()) {
+            out.coupling->set(shaft_torque_, gear_ * loads.torque);
+        }
     }
     if (config_.fuselage_wake) {
         out.xdot0[1] = loads.sidewash_rate;
@@ -293,7 +417,7 @@ std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
         {"type",          "name",     "blades", "radius",   "rotor_speed",       "chord",
          "lift_slope",    "tip_loss", "twist",  "delta3",   "coning_per_thrust", "pitch_bias",
          "drag_area",     "blockage", "hub",    "controls", "pitch_input",       "main_rotor_wash",
-         "fuselage_wake", "shaft"});
+         "fuselage_wake", "shaft",    "torque"});
     BaileyRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -357,6 +481,27 @@ std::unique_ptr<BaileyRotor> BaileyRotor::from_config(const Config& node) {
         c.fuselage_wake = node.in_context("fuselage_wake", [&] {
             return fuselage_wake_from_config(node.child("fuselage_wake"));
         });
+    }
+    if (node.contains("torque")) {  // optional (D-058)
+        const Config tq = node.child("torque");
+        tq.allow_keys({"direction", "blade_flap_inertia", "profile_drag"});
+        BaileyTorque t;
+        const std::string dir = tq.string("direction");
+        if (dir == "counter_clockwise") {
+            t.direction = RotationDirection::counter_clockwise;
+        } else if (dir == "clockwise") {
+            t.direction = RotationDirection::clockwise;
+        } else {
+            tq.fail("direction",
+                    "must be counter_clockwise or clockwise (viewed from the thrust side)");
+        }
+        t.flap_inertia = tq.quantity("blade_flap_inertia", Dimension::inertia);
+        const Config pd = tq.child("profile_drag");
+        pd.allow_keys({"d0", "d1", "d2"});
+        t.d0 = pd.number("d0");
+        t.d1 = pd.quantity("d1", Dimension::per_angle);
+        t.d2 = pd.quantity("d2", Dimension::per_angle_squared);
+        c.torque = t;
     }
     return node.in_context("", [&] { return std::make_unique<BaileyRotor>(std::move(c)); });
 }
