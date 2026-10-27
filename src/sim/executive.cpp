@@ -192,16 +192,13 @@ Executive::Executive(const ExecutiveConfig& config,
     order_ = order_and_bind(components_, registry);
     // Readouts (D-059): the first component of each role, every gear.
     reports_.assign(components_.size(), 0);
-    std::vector<ReadoutRole> taken;
+    std::array<bool, kNumReadoutRoles> taken{};
     for (std::size_t i = 0; i < components_.size(); ++i) {
         const ReadoutRole role = components_[i]->readout_role();
-        if (role == ReadoutRole::none) {
-            continue;
-        }
-        if (role == ReadoutRole::landing_gear ||
-            std::find(taken.begin(), taken.end(), role) == taken.end()) {
+        const auto r = static_cast<std::size_t>(role);
+        if (role != ReadoutRole::none && (role == ReadoutRole::landing_gear || !taken[r])) {
             reports_[i] = 1;
-            taken.push_back(role);
+            taken[r] = true;
         }
     }
     coupling_ = CouplingOutputs(registry.size());
@@ -560,21 +557,20 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
 
 bool Executive::body_acceleration(const Controls& controls, const Environment& env,
                                   Vec6& a) const noexcept {
-    MatZ A;
-    VecZ rhs;
-    const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {});
-    VecZ z;
-    const bool settled = solve(x_, A, rhs, z);
-    a = z.head<6>();
-    return converged && settled;
+    return output_evaluation(controls, env, a, nullptr);
 }
 
 bool Executive::body_acceleration(const Controls& controls, const Environment& env, Vec6& a,
                                   Readouts& readouts) const noexcept {
     readouts = Readouts{};
+    return output_evaluation(controls, env, a, &readouts);
+}
+
+bool Executive::output_evaluation(const Controls& controls, const Environment& env, Vec6& a,
+                                  Readouts* readouts) const noexcept {
     MatZ A;
     VecZ rhs;
-    const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {}, &readouts);
+    const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {}, readouts);
     VecZ z;
     const bool settled = solve(x_, A, rhs, z);
     a = z.head<6>();

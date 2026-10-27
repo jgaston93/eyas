@@ -201,6 +201,10 @@ private:
     // shafts' rows after them, and each component's load0 into
     // `component_loads` if it isn't empty. Returns false if some bounded
     // iteration did not converge.
+    // The output evaluation at the current state (D-043, D-059), readouts
+    // written when non-null.
+    bool output_evaluation(const Controls& controls, const Environment& env, Vec6& a,
+                           Readouts* readouts) const noexcept;
     bool evaluate(double t, std::span<const double> x, const Controls& controls,
                   const Environment& env, MatZ& A, VecZ& rhs, std::span<Wrench> component_loads,
                   Readouts* readouts = nullptr) const noexcept;

@@ -115,10 +115,14 @@ void expect_same(double got, double want, const char* field) {
         << field << ": got " << got << ", want " << want;
 }
 
-void expect_readouts(const Model& m, const Controls& c, const Environment& env,
-                     const std::string& config) {
+// The reference: an executive built from the same config, restored to the
+// model's state for each check.
+Executive reference(const std::string& config) {
     const Config cfg = Config::from_file(config);
-    Executive ex = build_executive(cfg, read_origin(cfg).origin().altitude);
+    return build_executive(cfg, read_origin(cfg).origin().altitude);
+}
+
+void expect_readouts(const Model& m, const Controls& c, const Environment& env, Executive& ex) {
     const std::span<const double> x = m.state();
     const std::int64_t steps = m.outputs().sim_time_ns / ex.step_ns();
     ASSERT_TRUE(ex.restore(x, steps, m.remainder_ns()));
@@ -157,6 +161,7 @@ TEST(Readouts, MatchTheComponentsOwnQueriesInFlight) {
     for (const char* name : {"uh60a.yaml", "engine_ballin/uh60a.yaml"}) {
         SCOPED_TRACE(name);
         Model m = Model::from_file(config_path(name));
+        Executive ex = reference(config_path(name));
         TrimCondition tc;
         tc.airspeed = 80.0 * units::kKnot;
         tc.altitude = 1000.0;
@@ -165,14 +170,14 @@ TEST(Readouts, MatchTheComponentsOwnQueriesInFlight) {
         ASSERT_TRUE(r.converged);
         Environment env;
         env.isa_delta_T = tc.isa_delta_T;
-        expect_readouts(m, r.controls, env, config_path(name));
+        expect_readouts(m, r.controls, env, ex);
         for (int f = 0; f < 60; ++f) {
             Controls c = r.controls;
             c.lat_cyclic += doublet(f, 0);
             c.lon_cyclic += doublet(f, 30);
             (void)m.advance(c, env, 16'666'667);
             if (f % 10 == 9) {
-                expect_readouts(m, c, env, config_path(name));
+                expect_readouts(m, c, env, ex);
             }
         }
     }
@@ -181,6 +186,7 @@ TEST(Readouts, MatchTheComponentsOwnQueriesInFlight) {
 // On the ground: weight on wheels both ways, from a drop onto the gear.
 TEST(Readouts, MatchTheComponentsOwnQueriesOnTheGround) {
     Model m = Model::from_file(config_path("uh60a.yaml"));
+    Executive ex = reference(config_path("uh60a.yaml"));
     Controls c;
     c.collective = 0.2;
     c.brake_left = c.brake_right = 1.0;
@@ -192,14 +198,15 @@ TEST(Readouts, MatchTheComponentsOwnQueriesOnTheGround) {
     for (int f = 0; f < 60; ++f) {
         (void)m.advance(c, env, 16'666'667);
         if (f % 6 == 5) {
-            expect_readouts(m, c, env, config_path("uh60a.yaml"));
+            expect_readouts(m, c, env, ex);
         }
     }
     EXPECT_TRUE(m.outputs().weight_on_wheels);
 }
 
 // A stand-in component of any role that reports `value` in its role's
-// fields (gear: weight on wheels when value > 0).
+// fields (gear: weight on wheels when value > 0). One without a role writes
+// the tail rotor's thrust if it is handed the readouts, so a test sees it.
 class Reporter : public DynamicComponent {
 public:
     Reporter(ReadoutRole role, double value) : role_(role), value_(value) {}
@@ -213,6 +220,9 @@ public:
         }
         Readouts& r = *out.readouts;
         switch (role_) {
+            case ReadoutRole::none:  // writes a field it doesn't own, if it is let report
+                r.tail_rotor_thrust = value_;
+                break;
             case ReadoutRole::main_rotor:
                 r.main_rotor_thrust = value_;
                 break;
@@ -251,9 +261,9 @@ TEST(Readouts, FirstOfEachRoleAndEveryGearReport) {
     Vec6 a;
     ASSERT_TRUE(ex.body_acceleration(Controls{}, Environment{}, a, r));
     EXPECT_EQ(r.main_rotor_thrust, 1.0);
-    EXPECT_TRUE(r.weight_on_wheels);  // the second gear's
-    EXPECT_TRUE(std::isnan(r.tail_rotor_thrust));
-    EXPECT_TRUE(std::isnan(r.coning));  // filled by none of these
+    EXPECT_TRUE(r.weight_on_wheels);               // the second gear's
+    EXPECT_TRUE(std::isnan(r.tail_rotor_thrust));  // the role-less one not let report
+    EXPECT_TRUE(std::isnan(r.coning));             // filled by none of these
 }
 
 }  // namespace

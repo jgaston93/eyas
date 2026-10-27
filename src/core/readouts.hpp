@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <limits>
 
 // Readouts (D-059, SPEC_REVIEW #32): what a component reports for the
@@ -18,6 +19,7 @@ enum class ReadoutRole : unsigned char {
     airframe,         // the stabilator's incidence
     flight_controls,  // the blade pitch after the servos and head limits
 };
+inline constexpr std::size_t kNumReadoutRoles = 6;
 
 struct Readouts {
     static constexpr double kNan = std::numeric_limits<double>::quiet_NaN();

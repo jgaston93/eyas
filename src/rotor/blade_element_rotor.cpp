@@ -584,27 +584,28 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
     const RotorLoads loads = evaluate_at(kin, x);
     out.load0_b = loads.body;
     out.converged = loads.converged;
+    // Multiblade flapping (zero for rigid blades), for the readouts and the
+    // coupling outputs, computed once when either wants it.
+    const bool publishes = out.coupling != nullptr && slots_.lambda0.valid();
+    MultibladeFlap flap;
+    if (config_.flap && (publishes || out.readouts != nullptr)) {
+        flap = multiblade_flap(x, kin.psi, config_.num_blades);
+    }
     if (out.readouts != nullptr) {  // D-059
         Readouts& r = *out.readouts;
-        const double psi = azimuth(ctx);
-        r.rotor_speed_percent = 100.0 * rotor_speed(ctx) / config_.rotor_speed;
+        r.rotor_speed_percent = 100.0 * kin.omega / config_.rotor_speed;
         r.main_rotor_thrust = loads.thrust;
         r.main_rotor_torque = loads.torque;
         r.main_rotor_power = loads.power;
-        r.main_rotor_azimuth = psi;
-        MultibladeFlap m;
-        if (config_.flap) {
-            m = multiblade_flap(x, psi, config_.num_blades);
-        }
-        r.coning = m.beta0;
-        r.flap_1c = m.beta1c;
-        r.flap_1s = m.beta1s;
+        r.main_rotor_azimuth = kin.psi;
+        r.coning = flap.beta0;
+        r.flap_1c = flap.beta1c;
+        r.flap_1s = flap.beta1s;
     }
-    if (out.coupling != nullptr && slots_.lambda0.valid()) {
+    if (publishes) {
         const double lambda0 =
             config_.inflow == InflowModel::pitt_peters ? x[inflow_offset()] : loads.lambda_i;
-        const double beta_1c =
-            config_.flap ? multiblade_flap(x, kin.psi, config_.num_blades).beta1c : 0.0;
+        const double beta_1c = flap.beta1c;
         // With tip loss on the inflow (D-051) the wash maps get the full
         // disc's equivalent inflow; at B = 1 λ0 itself, to the bit.
         out.coupling->set(slots_.lambda0,
