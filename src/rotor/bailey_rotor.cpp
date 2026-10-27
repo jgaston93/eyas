@@ -88,9 +88,9 @@ void validate(const BaileyRotorConfig& c) {
 // as derived and checked by tools/derive_bailey_torque.py: at θ (the pitch at
 // the root), linear twist θ_tw, inflow λ (positive up through the disk),
 // advance ratio squared μ², tip loss B and Lock number γ, solidity σ and
-// lift slope a.
-double bailey_cq(const BaileyTorque& q, double sigma, double a, double B, double gamma, double mu2,
-                 double lambda, double theta, double twist) noexcept {
+// lift slope a. The t's are split as t = t₀ + (t₁ + γ² t₂) μ², the parts
+// fixed by B computed once (bailey_torque_terms).
+BaileyTorqueTerms bailey_torque_terms(double B) noexcept {
     const double B2 = B * B;
     const double B3 = B2 * B;
     const double B4 = B2 * B2;
@@ -98,41 +98,66 @@ double bailey_cq(const BaileyTorque& q, double sigma, double a, double B, double
     const double B6 = B4 * B2;
     const double B7 = B6 * B;
     const double B8 = B4 * B4;
+    const double B9 = B8 * B;
+    const double B10 = B8 * B2;
+    const double B11 = B8 * B3;
+    const double B12 = B8 * B4;
+    BaileyTorqueTerms t;
+    // t₄₁ … t₄₆
+    t.t0 = {B2 / 2.0, B3 / 3.0, B4 / 4.0, 0.0, 0.0, 0.0,
+            // t₅₁ … t₅₁₀
+            1.0 / 4.0, 1.0 / 3.0, 1.0 / 4.0, 1.0 / 5.0, 1.0 / 2.0, 2.0 / 3.0, 1.0 / 2.0, 1.0 / 4.0,
+            2.0 / 5.0, 1.0 / 6.0};
+    t.t1 = {5.0 / 4.0,
+            8.0 * B / 3.0,
+            2.0 * B2,
+            8.0 * B2 / 9.0,
+            4.0 * B3 / 3.0,
+            B4 / 2.0,
+            1.0 / 4.0,
+            0.0,
+            1.0 / 4.0,
+            1.0 / 6.0,
+            -1.0 / 4.0 + 1.0 / B2 + 1.0 / (2.0 * B4),
+            4.0 / (3.0 * B) + 4.0 / (3.0 * B3),
+            1.0 + 1.0 / B2,
+            1.0 / 4.0 + 8.0 / (9.0 * B2),
+            1.0 / 3.0 + 4.0 / (3.0 * B),
+            5.0 / 8.0};
+    t.t2 = {B8 / 1296.0,
+            B9 / 864.0,
+            B10 / 1080.0,
+            B10 / 2304.0,
+            B11 / 1440.0,
+            B12 / 3600.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            B4 / 162.0 - B5 / 81.0 + B6 / 144.0,
+            B5 / 108.0 - B6 / 54.0 + B7 / 96.0,
+            B6 / 135.0 - 2.0 * B7 / 135.0 + B8 / 120.0,
+            B6 / 288.0 - B7 / 144.0 + B8 / 256.0,
+            B7 / 180.0 - B8 / 90.0 + B9 / 160.0,
+            B8 / 450.0 - B9 / 225.0 + B10 / 400.0};
+    return t;
+}
+
+double bailey_cq(const BaileyTorque& q, const BaileyTorqueTerms& terms, double sigma, double a,
+                 double gamma, double mu2, double lambda, double theta, double twist) noexcept {
+    std::array<double, 16> t{};
     const double g2 = gamma * gamma;
-    const double t41 = B2 / 2.0 + (5.0 / 4.0 + g2 * B8 / 1296.0) * mu2;
-    const double t42 = B3 / 3.0 + (8.0 * B / 3.0 + g2 * B8 * B / 864.0) * mu2;
-    const double t43 = B4 / 4.0 + (2.0 * B2 + g2 * B8 * B2 / 1080.0) * mu2;
-    const double t44 = (8.0 * B2 / 9.0 + g2 * B8 * B2 / 2304.0) * mu2;
-    const double t45 = (4.0 * B3 / 3.0 + g2 * B8 * B3 / 1440.0) * mu2;
-    const double t46 = (B4 / 2.0 + g2 * B8 * B4 / 3600.0) * mu2;
-    const double t51 = 1.0 / 4.0 + mu2 / 4.0;
-    const double t52 = 1.0 / 3.0;
-    const double t53 = 1.0 / 4.0 + mu2 / 4.0;
-    const double t54 = 1.0 / 5.0 + mu2 / 6.0;
-    const double t55 = 1.0 / 2.0 + (-1.0 / 4.0 + 1.0 / B2 + 1.0 / (2.0 * B4) +
-                                    g2 * (B4 / 162.0 - B5 / 81.0 + B6 / 144.0)) *
-                                       mu2;
-    const double t56 =
-        2.0 / 3.0 +
-        (4.0 / (3.0 * B) + 4.0 / (3.0 * B3) + g2 * (B5 / 108.0 - B6 / 54.0 + B7 / 96.0)) * mu2;
-    const double t57 =
-        1.0 / 2.0 + (1.0 + 1.0 / B2 + g2 * (B6 / 135.0 - 2.0 * B7 / 135.0 + B8 / 120.0)) * mu2;
-    const double t58 =
-        1.0 / 4.0 +
-        (1.0 / 4.0 + 8.0 / (9.0 * B2) + g2 * (B6 / 288.0 - B7 / 144.0 + B8 / 256.0)) * mu2;
-    const double t59 =
-        2.0 / 5.0 +
-        (1.0 / 3.0 + 4.0 / (3.0 * B) + g2 * (B7 / 180.0 - B8 / 90.0 + B8 * B / 160.0)) * mu2;
-    const double t510 =
-        1.0 / 6.0 + (5.0 / 8.0 + g2 * (B8 / 450.0 - B8 * B / 225.0 + B8 * B2 / 400.0)) * mu2;
+    for (std::size_t i = 0; i < t.size(); ++i) {
+        t[i] = terms.t0[i] + (terms.t1[i] + g2 * terms.t2[i]) * mu2;
+    }
     const double l = lambda;
     const double th = theta;
     const double tw = twist;
-    const double accelerating =
-        t41 * l * l + t42 * l * th + t43 * l * tw + t44 * th * th + t45 * th * tw + t46 * tw * tw;
-    const double decelerating = q.d0 * t51 + q.d1 * (t52 * l + t53 * th + t54 * tw) +
-                                q.d2 * (t55 * l * l + t56 * l * th + t57 * l * tw + t58 * th * th +
-                                        t59 * th * tw + t510 * tw * tw);
+    const double accelerating = t[0] * l * l + t[1] * l * th + t[2] * l * tw + t[3] * th * th +
+                                t[4] * th * tw + t[5] * tw * tw;
+    const double decelerating = q.d0 * t[6] + q.d1 * (t[7] * l + t[8] * th + t[9] * tw) +
+                                q.d2 * (t[10] * l * l + t[11] * l * th + t[12] * l * tw +
+                                        t[13] * th * th + t[14] * th * tw + t[15] * tw * tw);
     return sigma / 2.0 * (decelerating - a * accelerating);
 }
 
@@ -155,6 +180,7 @@ BaileyRotor::BaileyRotor(BaileyRotorConfig config) : config_(std::move(config)) 
                             ? config_.lift_slope * config_.chord * std::pow(config_.radius, 4) /
                                   config_.torque->flap_inertia
                             : 0.0;
+    torque_terms_ = bailey_torque_terms(config_.tip_loss);
 }
 
 std::vector<std::string> BaileyRotor::produces() const {
@@ -337,8 +363,8 @@ BaileyRotorLoads BaileyRotor::evaluate(const SimContext& ctx, double lambda_i, c
 
     // Bailey's torque (D-058), opposing the rotation.
     if (c.torque) {
-        out.cq = bailey_cq(*c.torque, solidity_, c.lift_slope, B, rho * lock_per_density_, mu2,
-                           lambda, out.pitch, c.twist);
+        out.cq = bailey_cq(*c.torque, torque_terms_, solidity_, c.lift_slope,
+                           rho * lock_per_density_, mu2, lambda, out.pitch, c.twist);
         out.torque = q_area * c.radius * out.cq;
         out.body.M -= out.torque * spin_axis_b_;
     }

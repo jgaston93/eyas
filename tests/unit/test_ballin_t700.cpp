@@ -30,6 +30,7 @@
 #include "sim/build.hpp"
 #include "sim/executive.hpp"
 #include "support/alloc_counter.hpp"
+#include "support/m7c_ballin.hpp"
 #include "util/config.hpp"
 #include "util/units.hpp"
 
@@ -1265,9 +1266,12 @@ TEST(BallinT700Aircraft, ResetStartsWhereInitDoes) {
 // Table B.1's loading, sea level ISA, D-054) trims at Table B.1's three
 // conditions, hover, 80 kt and 80 kt at −1000 ft/min (γ = −7.08°), within
 // the M7a sweep's 15 iterations: the governor holds the rotor at 27 rad/s
-// (isochronous, its integrator inside its range; the trimmed state, the
-// revolution's start, is on the shaft's 4/rev ripple, about 1e-5 of the
-// speed, as in TrimsAtTheSpeedReference) and the revolution closes. The
+// (isochronous, its integrator inside its range) and the revolution closes.
+// The trimmed state, the revolution's start, is on the shaft's 4/rev ripple:
+// measured over the free revolution from each trim, 1e-8 of the speed peak to
+// peak in hover and 2.4e-5 to 3.3e-5 at 80 kt, its mean within 5e-7 of the
+// governed speed (D-058 amendment). The bound is 1e-6 in hover and, at 80 kt,
+// 2e-5, above the ripple's half amplitude. The
 // comparison with Table B.1's engine values is in VALIDATION.md (M9 Stage
 // B1′); the tail rotor takes its torque from the shaft (D-058).
 TEST(BallinT700Aircraft, TrimsAtTableB1Conditions) {
@@ -1297,7 +1301,7 @@ TEST(BallinT700Aircraft, TrimsAtTableB1Conditions) {
         ASSERT_TRUE(r.converged);
         EXPECT_LE(r.iterations, 15);
         const double omega = r.component_states[omega_at];
-        EXPECT_NEAR(omega, governed, 2e-5 * governed);
+        EXPECT_NEAR(omega, governed, (knots == 0.0 ? 1e-6 : 2e-5) * governed);
         EXPECT_NEAR(omega * r.period, 2.0 * std::numbers::pi, 1e-5);
         const double z = r.component_states[first + BallinT700::kZ];
         EXPECT_GT(z, engine->config().zlolim_high);
@@ -1464,9 +1468,12 @@ TEST(BallinT700Aircraft, OverrunsInASteepDescentAsInAutorotation) {
 // collective with both engines shut off runs the rotor down. Without the
 // shaft floor the solution diverged when the shaft speed crossed zero
 // (5.7 s); with it the rotor stops at the floor, AdvanceStatus says so, and
-// the run stays finite. With the tail rotor's torque on the shaft (D-058)
-// the falling aircraft's upflow holds the rotor up longer: it first reaches
-// the floor at 9.5 s (before D-058, inside 8 s), so the run is 12 s.
+// the run stays finite. With the tail rotor's torque on the shaft (D-058) it
+// first reaches the floor at 9.5 s (before D-058, inside 8 s), so the run is
+// 12 s. The delay isn't physics: below about 30 % rotor speed the tail rotor
+// is at μ ≈ 0.4–4 and λ up to 1, far outside Bailey's series, which then
+// windmills it at up to ~50× its normal torque and spins the drive back up
+// (D-058 amendment, issue #86). This test checks the floor, not that.
 TEST(BallinT700Aircraft, RotorRunDownStopsAtTheShaftFloor) {
     const Config cfg =
         Config::from_file(std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a.yaml");
@@ -1498,6 +1505,39 @@ TEST(BallinT700Aircraft, RotorRunDownStopsAtTheShaftFloor) {
     EXPECT_GT(lowest, 0.99 * floor);
     for (const double v : ex.state()) {
         ASSERT_TRUE(std::isfinite(v));
+    }
+}
+
+// D-058: a tail rotor with torque on an engine's shaft must be counted by
+// that engine. Ballin's names it (tail_rotor); GenHel's already counts the
+// tail rotor's power in K_Q, so the torque there is refused.
+TEST(BallinT700Aircraft, TailRotorTorqueMustBeCountedByTheEngine) {
+    const std::string ballin = test::ballin::config_text(std::string(EYAS_VEHICLE_DATA_DIR) +
+                                                         "/uh60a/engine_ballin/uh60a.yaml");
+    EXPECT_NO_THROW((void)build_executive(Config::from_string(ballin), 0.0));
+    const std::string unnamed =
+        std::regex_replace(ballin, std::regex(R"(\n    tail_rotor: tail_rotor[^\n]*)"), "");
+    ASSERT_NE(unnamed, ballin);
+    try {
+        (void)build_executive(Config::from_string(unnamed), 0.0);
+        ADD_FAILURE() << "expected InitError";
+    } catch (const InitError& e) {
+        EXPECT_NE(std::string(e.what()).find("tail_rotor"), std::string::npos) << e.what();
+    }
+
+    const std::string genhel =
+        test::ballin::config_text(std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a.yaml");
+    EXPECT_NO_THROW((void)build_executive(Config::from_string(genhel), 0.0));
+    const std::string with_torque = std::regex_replace(
+        genhel, std::regex(R"((\n    pitch_bias: "6.0 deg"))"),
+        "$1\n    torque: {direction: counter_clockwise, blade_flap_inertia: \"3.1 slug*ft^2\", "
+        "profile_drag: {d0: 0.0087, d1: \"-0.0216 1/rad\", d2: \"0.4 1/rad^2\"}}");
+    ASSERT_NE(with_torque, genhel);
+    try {
+        (void)build_executive(Config::from_string(with_torque), 0.0);
+        ADD_FAILURE() << "expected InitError";
+    } catch (const InitError& e) {
+        EXPECT_NE(std::string(e.what()).find("K_Q"), std::string::npos) << e.what();
     }
 }
 

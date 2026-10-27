@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <string>
@@ -95,6 +96,14 @@ struct BaileyTorque {
     double d0 = 0.0;            // δ₀ [-]
     double d1 = 0.0;            // δ₁ [1/rad]
     double d2 = 0.0;            // δ₂ [1/rad²]
+};
+
+// Bailey's t's for the torque (D-058), t₄₁…t₄₆ then t₅₁…t₅₁₀, split as
+// t = t0 + (t1 + γ² t2) μ²: the parts the tip loss fixes, computed once.
+struct BaileyTorqueTerms {
+    std::array<double, 16> t0{};
+    std::array<double, 16> t1{};
+    std::array<double, 16> t2{};
 };
 
 struct BaileyRotorConfig {
@@ -219,8 +228,9 @@ private:
     CouplingSlot shaft_torque_;  // D-058
     Vec3 spin_axis_b_;           // unit, along the rotation (D-058)
     double lock_per_density_;    // γ/ρ = acR⁴/I₁ [m³/kg] (D-058; zero without the torque)
-    int shaft_index_ = -1;       // D-052
-    double gear_ = 1.0;          // the shaft link's gear, set with shaft_index_
+    BaileyTorqueTerms torque_terms_;  // its t's parts fixed by the tip loss (D-058)
+    int shaft_index_ = -1;            // D-052
+    double gear_ = 1.0;               // the shaft link's gear, set with shaft_index_
 };
 
 }  // namespace eyas

@@ -85,6 +85,40 @@ std::vector<std::unique_ptr<ForceModel>> read_force_models(const Config& config)
     return forces;
 }
 
+// A Bailey rotor with torque on a shaft (D-058) loads that shaft, so every
+// engine on it must count its demand: Ballin's names it as its tail_rotor;
+// GenHel's can't, and already takes the tail rotor's power in its loss factor
+// K_Q (CR-166309 p. 5.6-20), so the torque there would count it twice.
+void check_tail_rotor_torque(const Config& list,
+                             const std::vector<std::unique_ptr<DynamicComponent>>& components) {
+    for (const auto& rotor : components) {
+        const auto* tail = dynamic_cast<const BaileyRotor*>(rotor.get());
+        if (tail == nullptr) {
+            continue;
+        }
+        const BaileyRotorConfig& tc = tail->config();
+        if (!tc.torque || !tc.shaft) {
+            continue;
+        }
+        const std::string& shaft = tc.shaft->name;
+        for (std::size_t i = 0; i < components.size(); ++i) {
+            if (const auto* e = dynamic_cast<const BallinT700*>(components[i].get());
+                e != nullptr && e->config().shaft == shaft && e->config().tail_rotor != tc.name) {
+                list[i].fail("tail_rotor", "the Bailey rotor '" + tc.name +
+                                               "' has torque on shaft '" + shaft +
+                                               "': name it here (D-058)");
+            }
+            if (const auto* e = dynamic_cast<const GenHelT700*>(components[i].get());
+                e != nullptr && e->config().shaft == shaft) {
+                list[i].fail("shaft", "the Bailey rotor '" + tc.name + "' has torque on shaft '" +
+                                          shaft +
+                                          "', which GenHel's engine already counts in K_Q "
+                                          "(D-058)");
+            }
+        }
+    }
+}
+
 // Components with states or acceleration coupling, in config order. The
 // executive evaluates them producers first (D-003).
 std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& config) {
@@ -127,6 +161,7 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
             c.fail("type", "unknown component '" + type + "'");
         }
     }
+    check_tail_rotor_torque(list, components);
     return components;
 }
 
