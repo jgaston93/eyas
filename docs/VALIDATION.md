@@ -1834,3 +1834,13 @@ The tail rotor's power is now in both the level power and the autorotation; the 
 **Ballin's climbs and descents** (`m9_ballin_climbs.csv`, D-056's sweep, each trim continued from its neighbour): on the engines the continuation now stops at 60 kt −1000 ft/min (before, −2500), at 60 kt +3000 ft/min (on a branch overrunning at 119 % rotor speed) and at 100 kt −3000 ft/min (before, overrun at 102.6 %); 100 kt from +500 ft/min and 137.5 kt from +1500 ft/min are as before. With the rotor speed held, 60 kt +3000 ft/min no longer trims (near full collective). These are the trims' start-point sensitivity (#76), which the torque moves rather than causes: a probe at Ballin's conditions trimmed each of 60 kt to −2500 ft/min and 100 kt to −3000 ft/min from level flight and cold, with and without the torque. Without it, 60 kt −2500 failed from level flight and 100 kt −2000 cold; with it, 100 kt −2500 and −3000 and +500 fail from level flight and trim cold; 60 kt −3000 fails both ways either way.
 
 **Open.** The sense of rotation (a source stating it); the range below about 30 % rotor speed, where Bailey's series windmills the tail rotor far too hard (issue #86, D-058 amendment); the polar, Bailey's NACA 23012 example rather than the UH-60A's section; the truncation above 120 kt; Ballin's 13 % in hover against Eyas's 10.6 % (Ballin's hover case's conditions aren't Table B.1's); the climbs' continuation on Ballin's engines (#76).
+
+## M9 — Readouts by role (2026-10-27; issue #44, Stage C1 of #39)
+
+The components report the outputs' Tier 4 and flight-control fields themselves, by role, during the output evaluation (D-059): `Model` no longer finds them by type or evaluates them a second time. The outputs are unchanged.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Outputs unchanged | ✅ | `Readouts.MatchTheComponentsOwnQueriesInFlight`, `…OnTheGround`: every Tier 4 and flight-control field bit for bit equal to the components' own queries made as before D-059, on GenHel's and Ballin's engines, from an 80 kt trim through two doublets and through a drop onto the gear. Three reporting mutations caught. |
+| Who reports | ✅ | `Readouts.FirstOfEachRoleAndEveryGearReport`: the first component of each role in config order, every landing gear, none without a role; stand-in component types `Model` doesn't know report. A mutation letting every component report is caught. |
+| Real-time | ✅ | `RealTime.ZeroAllocationInFlight` (outputs included). `eyas_bench` against `main`, back to back: `advance()` about 2 µs faster in hover (269.5 against 271.5 µs mean), the same at 120 kt within noise; `step()` unchanged. |

@@ -207,6 +207,8 @@ public:
     void initial_states(std::span<double> x) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
+    // D-059: reports its Readouts fields in derivatives().
+    ReadoutRole readout_role() const noexcept override { return ReadoutRole::airframe; }
 
     std::string_view name() const noexcept override { return config_.name; }
     std::vector<std::string> produces() const override;

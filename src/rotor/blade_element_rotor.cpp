@@ -584,6 +584,22 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
     const RotorLoads loads = evaluate_at(kin, x);
     out.load0_b = loads.body;
     out.converged = loads.converged;
+    if (out.readouts != nullptr) {  // D-059
+        Readouts& r = *out.readouts;
+        const double psi = azimuth(ctx);
+        r.rotor_speed_percent = 100.0 * rotor_speed(ctx) / config_.rotor_speed;
+        r.main_rotor_thrust = loads.thrust;
+        r.main_rotor_torque = loads.torque;
+        r.main_rotor_power = loads.power;
+        r.main_rotor_azimuth = psi;
+        MultibladeFlap m;
+        if (config_.flap) {
+            m = multiblade_flap(x, psi, config_.num_blades);
+        }
+        r.coning = m.beta0;
+        r.flap_1c = m.beta1c;
+        r.flap_1s = m.beta1s;
+    }
     if (out.coupling != nullptr && slots_.lambda0.valid()) {
         const double lambda0 =
             config_.inflow == InflowModel::pitt_peters ? x[inflow_offset()] : loads.lambda_i;

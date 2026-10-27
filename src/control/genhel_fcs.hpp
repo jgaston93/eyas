@@ -372,6 +372,8 @@ public:
     void initial_states(std::span<double> x) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
+    // D-059: reports its Readouts fields in derivatives().
+    ReadoutRole readout_role() const noexcept override { return ReadoutRole::flight_controls; }
     // Every state: each servo at rest at its command, each sensor reading its
     // input with the body acceleration zero, the airspeed lag at the
     // equivalent airspeed (D-045).

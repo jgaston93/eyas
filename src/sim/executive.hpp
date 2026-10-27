@@ -121,6 +121,13 @@ public:
     // some component's bounded iteration did not converge (D-023).
     [[nodiscard]] bool body_acceleration(const Controls& controls, const Environment& env,
                                          Vec6& a) const noexcept;
+    // As body_acceleration(), and the components' readouts in the same
+    // evaluation (D-059): `readouts` is reset, then each role's component
+    // writes its fields (the first of each role in config order, every
+    // landing gear for weight on wheels); a role no component fills keeps
+    // NaN (false).
+    [[nodiscard]] bool body_acceleration(const Controls& controls, const Environment& env, Vec6& a,
+                                         Readouts& readouts) const noexcept;
 
     // The context a derivative evaluation at (t, x) gives every component:
     // unit quaternion (D-014), atmosphere at the CG (D-016), ground plane
@@ -195,8 +202,8 @@ private:
     // `component_loads` if it isn't empty. Returns false if some bounded
     // iteration did not converge.
     bool evaluate(double t, std::span<const double> x, const Controls& controls,
-                  const Environment& env, MatZ& A, VecZ& rhs,
-                  std::span<Wrench> component_loads) const noexcept;
+                  const Environment& env, MatZ& A, VecZ& rhs, std::span<Wrench> component_loads,
+                  Readouts* readouts = nullptr) const noexcept;
     // Solves A z = rhs at state x: with no free shaft through the 6 × 6 path
     // exactly as before D-052 (bit for bit), else through the generalized
     // one, with the shafts' floors (D-057). Returns false if which shafts
@@ -232,9 +239,12 @@ private:
     std::vector<SteadyKind> steady_kinds_;  // one per state (D-045)
     std::vector<std::size_t> phases_;       // the states labelled phase
     std::vector<std::size_t> order_;        // evaluation order, producers first (D-003)
-    std::vector<ShaftConfig> shafts_;       // D-052
-    std::size_t shaft_offset_ = 0;          // first shaft state index
-    std::vector<int> free_shafts_;          // the free shafts' indices, in order
+    // Whether each component (config order) reports its readout role's
+    // fields (D-059): the first of each role, and every landing gear.
+    std::vector<unsigned char> reports_;
+    std::vector<ShaftConfig> shafts_;  // D-052
+    std::size_t shaft_offset_ = 0;     // first shaft state index
+    std::vector<int> free_shafts_;     // the free shafts' indices, in order
     // Each shaft's floor [rad/s] (D-057).
     std::array<double, kMaxShafts> shaft_floor_{};
 

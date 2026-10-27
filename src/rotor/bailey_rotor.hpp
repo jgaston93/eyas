@@ -182,6 +182,8 @@ public:
     void steady_kinds(std::span<SteadyKind> kinds) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
+    // D-059: reports its Readouts fields in derivatives().
+    ReadoutRole readout_role() const noexcept override { return ReadoutRole::tail_rotor; }
 
     std::string_view name() const noexcept override { return config_.name; }
     // <name>.shaft_torque [N·m] with the torque on a shaft (D-058).

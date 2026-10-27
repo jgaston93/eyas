@@ -233,6 +233,8 @@ public:
     void initial_states(std::span<double> x) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
                      ComponentDerivs& out) const override;
+    // D-059: reports its Readouts fields in derivatives().
+    ReadoutRole readout_role() const noexcept override { return ReadoutRole::main_rotor; }
 
     // Coupling outputs (D-003, D-028), "<name>.<field>", all independent of
     // the body acceleration:

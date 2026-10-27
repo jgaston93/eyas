@@ -684,6 +684,12 @@ void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
                             ComponentDerivs& out) const {
     const AfcsSignals s = afcs_signals(config_, ctx, x);
     const GenHelFcsOutputs o = evaluate(ctx, x, s);
+    if (out.readouts != nullptr) {  // D-059
+        out.readouts->main_rotor_theta0 = o.theta0;
+        out.readouts->main_rotor_theta1s = o.theta1s;
+        out.readouts->main_rotor_theta1c = o.theta1c;
+        out.readouts->tail_rotor_theta0 = o.theta_tr;
+    }
     if (out.coupling != nullptr && theta0_.valid()) {
         out.coupling->set(theta0_, o.theta0);
         out.coupling->set(theta1s_, o.theta1s);
