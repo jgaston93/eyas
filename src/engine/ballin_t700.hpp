@@ -381,6 +381,10 @@ public:
     // The lowest corrected gas-generator speed every map read by it covers
     // [fraction of NG_des] (D-056 item 3).
     double maps_floor() const noexcept { return maps_floor_; }
+    // The highest corrected gas-generator speed every map read by it covers
+    // [fraction of NG_des]: where Ballin's model stops being valid (TM-100991
+    // p. 25). No steady state is found above it.
+    double maps_top() const noexcept { return maps_top_; }
     // NG at the maps' floor at inlet temperature `t2` [K] [fraction of NG_des].
     double ng_floor(double t2) const noexcept;
     // Out (D-056 item 3): the fuel off and NG [fraction of NG_des] at or below
@@ -455,6 +459,7 @@ private:
     CouplingSlot demand_;
     CouplingSlot tail_demand_;  // D-058
     double maps_floor_ = 0.0;   // NGC [fraction] (D-056 item 3)
+    double maps_top_ = 0.0;     // NGC [fraction]
     // A steady state known at init (sea level, zero shaft torque, at the bound
     // shaft's governed speed or before binding the design speed): the initial
     // state, and where a trim-time solve that fails falls back.

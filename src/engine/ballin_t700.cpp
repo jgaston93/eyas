@@ -282,8 +282,11 @@ bool BallinT700::steady_gas(double fuel, double np, double p2, double t2, double
         r(4) = (g.q_gt - g.q_c) / std::max(std::abs(g.q_c), 1.0);
         return true;
     };
-    const auto ok = [](const Vec& v) {
-        return v(0) > v(1) && v(1) > v(2) && v(2) > 0.0 && v(3) > 0.0 && v(4) > 0.0;
+    // Past the maps' top they are flat in NG, so the torque balance has no
+    // slope there and Newton would stall on it (TM-100991 p. 25: the model
+    // is valid to 100 %).
+    const auto ok = [top = maps_top_](const Vec& v) {
+        return v(0) > v(1) && v(1) > v(2) && v(2) > 0.0 && v(3) > 0.0 && v(4) > 0.0 && v(4) <= top;
     };
     int iterations = 0;
     // The gas temperature's start from the fuel: two Newton passes, the first
@@ -408,6 +411,9 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     maps_floor_ =
         std::max({c.f1->params().front(), c.f3->x_axis().breakpoints().front(),
                   c.f10->x_axis().breakpoints().front(), c.f_hs->x_axis().breakpoints().front()});
+    maps_top_ =
+        std::min({c.f1->params().back(), c.f3->x_axis().breakpoints().back(),
+                  c.f10->x_axis().breakpoints().back(), c.f_hs->x_axis().breakpoints().back()});
     cursors_.f1 = c.f1->make_cursor();
     cursors_.fec1 = c.fec1->make_cursor();
     cursors_.fhm7 = c.fhm7->make_cursor();

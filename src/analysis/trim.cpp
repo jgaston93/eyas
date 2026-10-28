@@ -16,6 +16,7 @@
 #include "env/atmosphere.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 
 namespace eyas {
 namespace {
@@ -434,10 +435,14 @@ public:
             r(static_cast<Eigen::Index>(kHead + nc_ + q)) = seeded_ ? 0.0 : x_[i] - start_[i];
         }
         if (free_period()) {
-            // The turn less one rotor revolution, in (−π, π]: ψ is wrapped.
+            // The turn less one rotor revolution. ψ is wrapped into [0, 2π)
+            // every step (D-052), so its whole turns come from the shaft's
+            // mean speed, Ω̄ T. Taken modulo 2π alone, zero turns closed it
+            // too, and a revolution of almost no length, ψ hardly moving,
+            // passed as a trim.
             const std::size_t i = ex_.shaft_offset(static_cast<std::size_t>(period_shaft_));
-            r(r.size() - 1) =
-                seeded_ ? 0.0 : std::remainder(x_[i] - start_[i] - turn_, 2.0 * std::numbers::pi);
+            const double travel = 0.5 * (x_[i + 1] + start_[i + 1]) * held_.period();
+            r(r.size() - 1) = seeded_ ? 0.0 : unwrapped_change(x_[i] - start_[i], travel) - turn_;
         }
         if (seeded_) {
             for (const std::size_t e : seeders_) {
