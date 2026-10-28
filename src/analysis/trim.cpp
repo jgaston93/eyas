@@ -502,10 +502,11 @@ private:
 
 // The seeders' states in z at their trim seed for the state the problem
 // packs for z (D-053 item 6 and amendment 5): a start for Newton's method,
-// the engines delivering the rotor's demand with losses.
-void seed_start(const Executive& ex, Problem& p, VecX& z, std::size_t nc) {
+// the engines delivering the rotor's demand with losses. False if there is
+// nothing to seed, or z packs no state, and z is unchanged.
+bool seed_start(const Executive& ex, Problem& p, VecX& z, std::size_t nc) {
     if (!p.has_seeders() || !p.pack(z)) {
-        return;
+        return false;
     }
     p.seed(p.controls(z));
     for (const std::size_t i : p.seeders()) {
@@ -514,6 +515,7 @@ void seed_start(const Executive& ex, Problem& p, VecX& z, std::size_t nc) {
             z(static_cast<Eigen::Index>(kHead + first + j)) = p.state()[ex.component_offset(i) + j];
         }
     }
+    return true;
 }
 
 struct Norms {
@@ -659,8 +661,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         // move it back inside.
         VecX r_kept;
         if (p.has_seeders() && !(p.residual(z, r_kept) && converged(norms(r_kept), o))) {
-            seed_start(ex, p, z, nc);
-            seeded = true;
+            seeded = seed_start(ex, p, z, nc);
         }
     } else {
         // Cold start: mid collective, level, every component at its initial
@@ -789,16 +790,28 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         // off (in the vortex ring it stalled 10 % of collective from the trim
         // the ideal drive finds).
         two_stages();
-    } else {
-        const VecX z_start = z;
+    } else if (!seeded) {
         newton(o);
+    } else {
         // A nearby trim's start, its engines seeded for this condition, whose
         // full Newton steps fail (issue #76: climbs from level flight on
-        // Ballin's engines gave up after 2-3 iterations) takes the two stages
-        // from the same start. One that converges directly is as before.
-        if (seeded && p.has_seeders() && !(ok && converged(m, o))) {
+        // Ballin's engines gave up after 2-8 iterations) takes the two stages
+        // from the same start. One that converges directly is as before. If
+        // the two stages fail too, the attempt that ended nearer trim stands,
+        // a valid residual before none.
+        const VecX z_start = z;
+        newton(o);
+        if (!(ok && converged(m, o))) {
+            const VecX z_direct = z;
+            const bool ok_direct = ok;
+            const double r_direct = ok ? r.norm() : std::numeric_limits<double>::infinity();
             z = z_start;
             two_stages();
+            if (!(ok && converged(m, o)) &&
+                r_direct < (ok ? r.norm() : std::numeric_limits<double>::infinity())) {
+                z = z_direct;
+                ok = ok_direct;
+            }
         }
     }
 
