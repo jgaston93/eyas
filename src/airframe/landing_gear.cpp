@@ -419,6 +419,9 @@ void LandingGear::derivatives(const SimContext& ctx, std::span<const double> x,
         out.load0_b.F += g.load.F;
         out.load0_b.M += g.load.M;
         out.H += g.H;
+        if (out.readouts != nullptr && g.st.normal_load > 0.0) {  // D-059
+            out.readouts->weight_on_wheels = true;
+        }
     }
 }
 

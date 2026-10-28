@@ -294,6 +294,9 @@ void AirframeAero::derivatives(const SimContext& ctx, std::span<const double> x,
                                ComponentDerivs& out) const {
     const AirframeAeroLoads l = evaluate(ctx, x);
     out.load0_b = l.body;
+    if (out.readouts != nullptr) {  // D-059
+        out.readouts->stabilator_incidence = l.stabilator_incidence;
+    }
     out.xdot0[0] = l.downwash_rate;
     out.xdot0[1] = l.sidewash_rate;
     if (out.coupling != nullptr && alpha_wf_.valid()) {

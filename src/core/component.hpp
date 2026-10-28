@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/coupling.hpp"
+#include "core/readouts.hpp"
 #include "core/types.hpp"
 #include "env/atmosphere.hpp"
 
@@ -72,6 +73,11 @@ struct ComponentDerivs {
     VecS Q0 = VecS::Zero();
     MatS6 Ka = MatS6::Zero();
     MatSS Ks = MatSS::Zero();
+    // The output evaluation's readouts (D-059): non-null only for the
+    // component the executive picked for its readout_role(), in the one
+    // evaluation Model makes for the outputs; the component writes its
+    // role's fields from this evaluation's results.
+    Readouts* readouts = nullptr;
 };
 
 // What a component on a shaft is told at init (D-052).
@@ -114,6 +120,11 @@ public:
     virtual std::vector<std::string> produces() const { return {}; }
     virtual std::vector<std::string> consumes() const { return {}; }
     virtual void bind(const CouplingRegistry& /*registry*/) {}
+
+    // The outputs this component reports (D-059): its role's Readouts fields,
+    // written in derivatives() when out.readouts is non-null. Fixed for a
+    // configured component. The default reports nothing.
+    virtual ReadoutRole readout_role() const noexcept { return ReadoutRole::none; }
 
     // The aircraft's shafts (D-052), in config order, at init after bind():
     // a component configured on a shaft finds its index here and checks its

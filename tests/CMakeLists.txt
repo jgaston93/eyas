@@ -34,6 +34,7 @@ add_executable(eyas_unit_tests
     unit/test_landing_gear.cpp
     unit/test_model.cpp
     unit/test_outputs.cpp
+    unit/test_readouts.cpp
     unit/test_pitt_peters.cpp
     unit/test_vortex_ring.cpp
     unit/test_ground_effect.cpp

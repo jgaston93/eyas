@@ -297,7 +297,7 @@ Verification: the probe above, as a test (loads continuous as the x–z componen
 **Why it matters:** V2 has no data to compare against as written, and V1 compares against trims made under a different lateral constraint unless Eyas trims the same way.
 **Suggested resolution:** see the D-035 amendment (M7c): V2 redefined around what Fletcher publishes; V1 on Figs. B1–B4 at Ballin's weight, CG and density altitude, under GenHel's lateral constraint; turns and App. D deferred.
 
-## 32. The Tier 4 outputs are tied to concrete component types and recompute the step's loads — `open (M9 or the tiltrotor work)`
+## 32. The Tier 4 outputs are tied to concrete component types and recompute the step's loads — `resolved → DECISIONS.md D-059 (2026-10-27)`
 **Spec:** §6.10 (`AircraftState` Tier 4), §6 (component interfaces); D-043.
 **Problem:** found in the M8a code review.
 - `Model` finds the main rotor, the tail rotor and the gear by `dynamic_cast` to `BladeElementRotor`, `BaileyRotor` and `LandingGear`, and reads their loads through type-specific queries. A new rotor model (M9's variable-Ω rotor, a tiltrotor's proprotors, a second main rotor) leaves its Tier 4 fields NaN, or picks a rotor by config order, until `Model` is edited.

@@ -190,6 +190,17 @@ Executive::Executive(const ExecutiveConfig& config,
     }
     CouplingRegistry registry;
     order_ = order_and_bind(components_, registry);
+    // Readouts (D-059): the first component of each role, every gear.
+    reports_.assign(components_.size(), 0);
+    std::array<bool, kNumReadoutRoles> taken{};
+    for (std::size_t i = 0; i < components_.size(); ++i) {
+        const ReadoutRole role = components_[i]->readout_role();
+        const auto r = static_cast<std::size_t>(role);
+        if (role != ReadoutRole::none && (role == ReadoutRole::landing_gear || !taken[r])) {
+            reports_[i] = 1;
+            taken[r] = true;
+        }
+    }
     coupling_ = CouplingOutputs(registry.size());
     for (const auto& c : components_) {
         c->bind_shafts(info);
@@ -347,7 +358,7 @@ SimContext Executive::context(double t, std::span<const double> x, const Control
 
 bool Executive::evaluate(double t, std::span<const double> x, const Controls& controls,
                          const Environment& env, MatZ& A, VecZ& rhs,
-                         std::span<Wrench> component_loads) const noexcept {
+                         std::span<Wrench> component_loads, Readouts* readouts) const noexcept {
     SimContext ctx = context(t, x, controls, env);
     // Force models run before every component and can't consume (D-003), so
     // they get no store; components get it once it is reset for this evaluation.
@@ -393,6 +404,9 @@ bool Executive::evaluate(double t, std::span<const double> x, const Controls& co
                           &coupling_};
         if (!Gs_.empty()) {
             d.Gs = std::span<double>(Gs_).subspan(local * kMaxShafts, n * kMaxShafts);
+        }
+        if (reports_[i] != 0) {
+            d.readouts = readouts;
         }
         components_[i]->derivatives(ctx, x.subspan(offsets_[i], n), d);
         rhs.head<3>() += d.load0_b.F;
@@ -543,9 +557,20 @@ bool Executive::derivatives(double t, std::span<const double> x, const Controls&
 
 bool Executive::body_acceleration(const Controls& controls, const Environment& env,
                                   Vec6& a) const noexcept {
+    return output_evaluation(controls, env, a, nullptr);
+}
+
+bool Executive::body_acceleration(const Controls& controls, const Environment& env, Vec6& a,
+                                  Readouts& readouts) const noexcept {
+    readouts = Readouts{};
+    return output_evaluation(controls, env, a, &readouts);
+}
+
+bool Executive::output_evaluation(const Controls& controls, const Environment& env, Vec6& a,
+                                  Readouts* readouts) const noexcept {
     MatZ A;
     VecZ rhs;
-    const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {});
+    const bool converged = evaluate(sim_time(), x_, controls, env, A, rhs, {}, readouts);
     VecZ z;
     const bool settled = solve(x_, A, rhs, z);
     a = z.head<6>();

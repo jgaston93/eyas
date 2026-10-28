@@ -10,18 +10,12 @@
 #include <utility>
 #include <vector>
 
-#include "airframe/airframe_aero.hpp"
-#include "airframe/landing_gear.hpp"
 #include "analysis/held_orbit.hpp"
 #include "analysis/trim.hpp"
-#include "control/genhel_fcs.hpp"
 #include "core/attitude.hpp"
 #include "env/air_data.hpp"
 #include "env/atmosphere.hpp"
 #include "env/geodesy.hpp"
-#include "rotor/bailey_rotor.hpp"
-#include "rotor/blade_element_rotor.hpp"
-#include "rotor/multiblade.hpp"
 #include "sim/build.hpp"
 #include "sim/executive.hpp"
 #include "util/config.hpp"
@@ -31,22 +25,10 @@
 
 namespace eyas {
 
-namespace {
-constexpr std::size_t kNone = static_cast<std::size_t>(-1);
-}  // namespace
-
 struct Model::Impl {
     FlatEarthMap map;  // declared before executive, which is built from its origin
     Executive executive;
     std::vector<std::string> placeholders;  // data gaps, from Config (D-025)
-
-    // The components the Tier 4 outputs read (D-043), as component indices
-    // (config order); kNone when the config has none.
-    std::size_t main_rotor = kNone;  // the first blade-element rotor
-    std::size_t tail_rotor = kNone;  // the first Bailey rotor
-    std::vector<std::size_t> gears;  // every landing-gear component
-    std::size_t airframe = kNone;    // the first airframe aerodynamics (stabilator)
-    std::size_t fcs = kNone;         // the first GenHel flight control system
 
     // The inputs the outputs are evaluated with: those of the last advance()
     // that ran, or the trimmed ones (D-043).
@@ -73,24 +55,8 @@ std::unique_ptr<Model::Impl> build(const Config& config, const GeodeticOrigin* o
     Executive executive = build_executive(config, origin_altitude);
     // Read after the build, so that placeholder data files noted by the
     // component readers are included.
-    auto impl = std::make_unique<Model::Impl>(Model::Impl{
-        map, std::move(executive), config.placeholders(), kNone, kNone, {}, kNone, kNone, {}, {}});
-    const Executive& ex = impl->executive;
-    for (std::size_t i = 0; i < ex.num_components(); ++i) {
-        const DynamicComponent* c = &ex.component(i);
-        if (impl->main_rotor == kNone && dynamic_cast<const BladeElementRotor*>(c) != nullptr) {
-            impl->main_rotor = i;
-        } else if (impl->tail_rotor == kNone && dynamic_cast<const BaileyRotor*>(c) != nullptr) {
-            impl->tail_rotor = i;
-        } else if (dynamic_cast<const LandingGear*>(c) != nullptr) {
-            impl->gears.push_back(i);
-        } else if (impl->airframe == kNone && dynamic_cast<const AirframeAero*>(c) != nullptr) {
-            impl->airframe = i;
-        } else if (impl->fcs == kNone && dynamic_cast<const GenHelFcs*>(c) != nullptr) {
-            impl->fcs = i;
-        }
-    }
-    return impl;
+    return std::make_unique<Model::Impl>(
+        Model::Impl{map, std::move(executive), config.placeholders(), {}, {}});
 }
 
 }  // namespace
@@ -231,12 +197,13 @@ void Model::update_outputs() noexcept {
     o.heading = e.heading;
     o.quat_norm_error = ex.quat_norm_error();
 
-    // Tiers 2–4 (D-043): one evaluation at the final state. It leaves the
-    // coupling store consistent for the component queries below.
+    // Tiers 2–4 (D-043): one evaluation at the final state, in which the
+    // components report their readouts (D-059).
     const Controls& c = impl_->controls;
     const Environment& env = impl_->env;
     Vec6 a;
-    (void)ex.body_acceleration(c, env, a);
+    Readouts r;
+    (void)ex.body_acceleration(c, env, a, r);
     const double t = ex.sim_time();
     const std::span<const double> x = ex.state();
     const SimContext ctx = ex.context(t, x, c, env);
@@ -269,57 +236,23 @@ void Model::update_outputs() noexcept {
     o.vertical_speed = -o.vel_n.z();
     o.outside_air_temperature = air.temperature;
 
-    // Tier 4
-    const auto states = [&](std::size_t i) {
-        return x.subspan(ex.component_offset(i), ex.component_size(i));
-    };
-    if (impl_->main_rotor != kNone) {
-        const auto& rotor = static_cast<const BladeElementRotor&>(ex.component(impl_->main_rotor));
-        const std::span<const double> xr = states(impl_->main_rotor);
-        const RotorLoads loads = rotor.evaluate(ctx, xr);
-        const double psi = rotor.azimuth(ctx);
-        // Ω over its governed value: 100 % with a constant speed or an ideal
-        // drive (D-052).
-        o.rotor_speed_percent = 100.0 * rotor.rotor_speed(ctx) / rotor.config().rotor_speed;
-        o.main_rotor_thrust = loads.thrust;
-        o.main_rotor_torque = loads.torque;
-        o.main_rotor_power = loads.power;
-        o.main_rotor_azimuth = psi;
-        MultibladeFlap m;
-        if (rotor.config().flap) {
-            m = multiblade_flap(xr, psi, rotor.config().num_blades);
-        }
-        o.coning = m.beta0;
-        o.flap_1c = m.beta1c;
-        o.flap_1s = m.beta1s;
-    }
-    if (impl_->tail_rotor != kNone) {
-        const auto& rotor = static_cast<const BaileyRotor&>(ex.component(impl_->tail_rotor));
-        o.tail_rotor_thrust = rotor.evaluate(ctx, states(impl_->tail_rotor)).thrust;
-        o.tail_rotor_azimuth = rotor.azimuth(ctx, states(impl_->tail_rotor));
-    }
-    bool wow = false;
-    for (const std::size_t i : impl_->gears) {
-        const auto& gear = static_cast<const LandingGear&>(ex.component(i));
-        for (std::size_t k = 0; k < gear.config().gears.size(); ++k) {
-            wow = wow || gear.gear_state(ctx, states(i), k).normal_load > 0.0;
-        }
-    }
-    o.weight_on_wheels = wow;
-
-    // Flight controls (D-045)
-    if (impl_->airframe != kNone) {
-        const auto& af = static_cast<const AirframeAero&>(ex.component(impl_->airframe));
-        o.stabilator_incidence = af.evaluate(ctx, states(impl_->airframe)).stabilator_incidence;
-    }
-    if (impl_->fcs != kNone) {
-        const auto& fcs = static_cast<const GenHelFcs&>(ex.component(impl_->fcs));
-        const GenHelFcsOutputs f = fcs.evaluate(ctx, states(impl_->fcs));
-        o.main_rotor_theta0 = f.theta0;
-        o.main_rotor_theta1s = f.theta1s;
-        o.main_rotor_theta1c = f.theta1c;
-        o.tail_rotor_theta0 = f.theta_tr;
-    }
+    // Tier 4 and the flight controls (D-045), as the components reported them
+    o.rotor_speed_percent = r.rotor_speed_percent;
+    o.main_rotor_thrust = r.main_rotor_thrust;
+    o.main_rotor_torque = r.main_rotor_torque;
+    o.main_rotor_power = r.main_rotor_power;
+    o.coning = r.coning;
+    o.flap_1c = r.flap_1c;
+    o.flap_1s = r.flap_1s;
+    o.main_rotor_azimuth = r.main_rotor_azimuth;
+    o.tail_rotor_thrust = r.tail_rotor_thrust;
+    o.tail_rotor_azimuth = r.tail_rotor_azimuth;
+    o.weight_on_wheels = r.weight_on_wheels;
+    o.stabilator_incidence = r.stabilator_incidence;
+    o.main_rotor_theta0 = r.main_rotor_theta0;
+    o.main_rotor_theta1s = r.main_rotor_theta1s;
+    o.main_rotor_theta1c = r.main_rotor_theta1c;
+    o.tail_rotor_theta0 = r.tail_rotor_theta0;
 }
 
 }  // namespace eyas
