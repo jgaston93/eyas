@@ -52,14 +52,18 @@ std::vector<ControlRow> read_controls(const std::string& path) {
         if (with_afcs) {
             char c5 = 0;
             std::string text;
-            // The switches end at the next comma (an engine column) or the line.
-            if (!(s >> c5) || c5 != ',' || !std::getline(s, text, ',') || text.empty()) {
+            // The switches end at the next comma (an engine column) or the
+            // line; blanks around them are allowed, as around the numbers.
+            if (!(s >> c5) || c5 != ',' || !std::getline(s, text, ',')) {
                 throw std::runtime_error(path + ":" + std::to_string(n) + ": bad row (afcs)");
             }
             if (with_engines) {
                 s.unget();  // the engine columns start with that comma
-            } else {
-                text.erase(text.find_last_not_of(" \t\r") + 1);
+            }
+            text.erase(text.find_last_not_of(" \t\r") + 1);
+            text.erase(0, text.find_first_not_of(" \t"));
+            if (text.empty()) {
+                throw std::runtime_error(path + ":" + std::to_string(n) + ": bad row (afcs)");
             }
             try {
                 r.afcs = parse_afcs(text, '+');

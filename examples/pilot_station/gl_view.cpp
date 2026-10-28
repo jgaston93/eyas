@@ -634,7 +634,10 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     // Engines and the drive (D-060), right, below: one row per engine the
     // aircraft has, "---" for what its model lacks (GenHel's has no TGT).
     panel(w - 440, 300, 430, 125);
-    std::string eng = "      NG %   NP %  TQ N.m  TGT C  WF kg/h\n";
+    std::array<char, 64> head{};  // the labels right-aligned over the cells below
+    (void)std::snprintf(head.data(), head.size(), "%4s%7s%7s%8s%7s%8s\n", "", "NG %", "NP %",
+                        "TQ N.m", "TGT C", "WF kg/h");
+    std::string eng = head.data();
     const auto cell = [](double v, const char* fmt) {
         std::array<char, 16> c{};
         if (std::isfinite(v)) {

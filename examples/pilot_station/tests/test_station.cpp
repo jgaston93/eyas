@@ -877,6 +877,38 @@ TEST(StationRecorder, EngineControlChangesAreRecorded) {
     EXPECT_EQ(at.rotor_speed_reference, c.rotor_speed_reference);
 }
 
+// Engine controls the model reads as others (eyas/types.hpp: a NaN lever is
+// fly, a lever past a stop is at it, a speed trim that isn't positive and
+// finite is 1) are recorded as the model reads them: no row while the flight
+// doesn't change, and the file reads back (code review of #88).
+TEST(StationRecorder, EngineControlsAreRecordedAsTheModelReadsThem) {
+    Station& st = uh60a();
+    ASSERT_TRUE(st.start(1));
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "eyas_station_engines_nan.csv").string();
+    eyas::Controls c = st.starts()[1].controls;  // levers at fly, the reference 1
+    {
+        Recorder rec(path, "", "cfg.yaml", "", 60);
+        rec.begin(st, st.outputs());
+        rec.frame(0.0, {}, c, st.outputs());
+        c.engines[0].power_lever = std::numeric_limits<double>::quiet_NaN();
+        c.engines[1].power_lever = 2.0;
+        c.rotor_speed_reference = std::numeric_limits<double>::quiet_NaN();
+        rec.frame(0.1, {}, c, st.outputs());
+        rec.frame(0.2, {}, c, st.outputs());
+        c.rotor_speed_reference = -1.0;
+        c.engines[1].power_lever = -0.5;  // at the idle stop: a change
+        rec.frame(0.3, {}, c, st.outputs());
+        rec.end();
+    }
+    const std::vector<examples::ControlRow> rows = examples::read_controls(path);
+    ASSERT_EQ(rows.size(), 2U);
+    EXPECT_EQ(rows[1].t, 0.3);
+    EXPECT_EQ(rows[1].engines[0].power_lever, 1.0);
+    EXPECT_EQ(rows[1].engines[1].power_lever, 0.0);
+    EXPECT_EQ(rows[1].rotor_speed_reference, 1.0);
+}
+
 // The state history carries the engine controls (D-055, D-056), so a
 // piloted run shows what the levers, the speed trim and the shutoffs did,
 // then the drive's readouts (D-060).
@@ -991,6 +1023,19 @@ TEST(StationRecorder, ControlFileReaderIsStrict) {
         read("eyas_cf_eng_extra.csv", engines + "0,0,0,0,0,sas,0.5,1,1,1,1.01,1,0,1,1,7\n"),
         std::runtime_error);
     EXPECT_THROW(read("eyas_cf_eng_none.csv", engines + "0,0,0,0,0,sas\n"), std::runtime_error);
+    // Blanks around the switches, as around the numbers (code review of #88).
+    const auto spaced = read("eyas_cf_spaced.csv",
+                             std::string(examples::kControlHeaderAfcs) + "\n0, 0, 0, 0, 0, sas \n");
+    ASSERT_EQ(spaced.size(), 1U);
+    EXPECT_TRUE(spaced[0].afcs.sas_digital && spaced[0].afcs.sas_analog);
+    const auto spaced_engines = read(
+        "eyas_cf_eng_spaced.csv", engines + "0, 0, 0, 0, 0, sas , 0.5, 1, 1, 1, 1, 1, 0, 1, 1\n");
+    ASSERT_EQ(spaced_engines.size(), 1U);
+    EXPECT_TRUE(spaced_engines[0].afcs.sas_digital);
+    EXPECT_FALSE(spaced_engines[0].engines[1].fuel_on);
+    EXPECT_THROW(read("eyas_cf_blank_afcs.csv",
+                      std::string(examples::kControlHeaderAfcs) + "\n0,0,0,0,0, \n"),
+                 std::runtime_error);
 }
 
 // The exact FlightGear sequence (code review): the untouched throttle reads

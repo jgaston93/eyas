@@ -1,6 +1,8 @@
 #include "recorder.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <stdexcept>
 #include <utility>
@@ -100,20 +102,30 @@ void Recorder::frame(double t, const ControlDeltas& d, const eyas::Controls& c,
                   << " s: the brakes changed, and eyas_drive has no brake input\n";
         brakes_noted_ = true;
     }
+    // The engine controls as the model reads them (eyas/types.hpp): a lever
+    // clamped to its stops, NaN at fly; a speed trim that isn't positive and
+    // finite at 1. The same flight, and values that compare equal from frame
+    // to frame and read back (code review of #88).
+    std::array<eyas::EngineControls, eyas::kMaxEngines> engines = c.engines;
+    for (eyas::EngineControls& e : engines) {
+        e.power_lever = std::isnan(e.power_lever) ? 1.0 : std::clamp(e.power_lever, 0.0, 1.0);
+    }
+    const double reference = c.rotor_speed_reference > 0.0 && std::isfinite(c.rotor_speed_reference)
+                                 ? c.rotor_speed_reference
+                                 : 1.0;
     // A row whenever the increments, the AFCS switches or the engine
     // controls change (the switches replay from the afcs column, M8c3; the
     // engine controls from theirs, D-060).
     if (controls_.is_open() &&
         (first_ || d.collective != last_.collective || d.lat_cyclic != last_.lat_cyclic ||
          d.lon_cyclic != last_.lon_cyclic || d.pedal != last_.pedal || c.afcs != last_afcs_ ||
-         c.engines != last_engines_ || c.rotor_speed_reference != last_speed_reference_)) {
-        examples::write_control_row(
-            controls_, {t, d.collective, d.lat_cyclic, d.lon_cyclic, d.pedal, true, c.afcs, true,
-                        c.engines, c.rotor_speed_reference});
+         engines != last_engines_ || reference != last_speed_reference_)) {
+        examples::write_control_row(controls_, {t, d.collective, d.lat_cyclic, d.lon_cyclic,
+                                                d.pedal, true, c.afcs, true, engines, reference});
         last_ = d;
         last_afcs_ = c.afcs;
-        last_engines_ = c.engines;
-        last_speed_reference_ = c.rotor_speed_reference;
+        last_engines_ = engines;
+        last_speed_reference_ = reference;
         first_ = false;
     }
     if (state_.is_open()) {

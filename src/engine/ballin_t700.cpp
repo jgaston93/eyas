@@ -371,6 +371,11 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     if (c.engines > static_cast<int>(kMaxEnginesPerComponent) || c.first_engine < 0) {
         throw InitError("ballin_t700: one or two engines (D-055)");
     }
+    // Its engines' Controls::engines and readout entries (D-055, D-060).
+    if (c.first_engine + c.engines > static_cast<int>(kMaxEngines)) {
+        throw InitError("ballin_t700: engines past Controls::engines' " +
+                        std::to_string(kMaxEngines) + " (D-055)");
+    }
     require_positive(c.gear, "gear");
     require_positive(c.ng_des, "NG_des");
     require_positive(c.np_des, "NP_des");

@@ -577,6 +577,8 @@ TEST(BallinT700, ReportsAtItsOwnEngineEntries) {
             << e;
         EXPECT_NEAR(r.engines[e].power_turbine_speed_percent, 100.0, 1e-9) << e;  // at NP_des
     }
+    c.first_engine = 3;  // its second engine past Controls::engines
+    EXPECT_THROW((void)BallinT700(c), InitError);
 }
 
 // Bound to a shaft governed off the engine's design speed (27 rad/s against

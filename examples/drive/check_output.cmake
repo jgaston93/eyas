@@ -1,8 +1,8 @@
 # Checks the driver's output CSV: LINES lines (header included), and no
 # non-finite value in any row ("nan" or "inf" as written by iostreams)
 # except NaN in the drive's readouts that a model may lack (D-060): the tail
-# rotor's torque and power, the turbine gas temperature, and the engines'
-# columns past the aircraft's engines.
+# rotor's torque and power and the turbine gas temperature in any row, and an
+# engine's columns only where that engine is absent (its NG is NaN).
 # Usage: cmake -DFILE=<csv> -DLINES=<n> -P check_output.cmake
 cmake_policy(SET CMP0057 NEW)  # if(IN_LIST)
 file(STRINGS "${FILE}" rows)
@@ -12,11 +12,17 @@ if(NOT n EQUAL LINES)
 endif()
 list(GET rows 0 header)
 string(REPLACE "," ";" header "${header}")
-set(may_be_nan)
+set(always_nan)   # column indices that may be NaN in any row
+set(engine_cols)  # column indices of the engines' readouts ...
+set(engine_ng)    # ... and, in step, the index of that engine's NG column
 set(index 0)
 foreach(column IN LISTS header)
-    if(column MATCHES "^(tail_rotor_torque_Nm|tail_rotor_power_W|tgt_K_[1-4]|ng_percent_[1-4]|np_percent_[1-4]|engine_torque_Nm_[1-4]|engine_power_W_[1-4]|fuel_flow_kgps_[1-4])$")
-        list(APPEND may_be_nan ${index})
+    if(column MATCHES "^(tail_rotor_torque_Nm|tail_rotor_power_W|tgt_K_[1-4])$")
+        list(APPEND always_nan ${index})
+    elseif(column MATCHES "^(ng_percent|np_percent|engine_torque_Nm|engine_power_W|fuel_flow_kgps)_([1-4])$")
+        list(FIND header "ng_percent_${CMAKE_MATCH_2}" ng)
+        list(APPEND engine_cols ${index})
+        list(APPEND engine_ng ${ng})
     endif()
     math(EXPR index "${index} + 1")
 endforeach()
@@ -28,9 +34,20 @@ foreach(row IN LISTS rows)
         string(REPLACE "," ";" fields "${row}")
         set(index 0)
         foreach(field IN LISTS fields)
-            if(field MATCHES "^-?nan$" AND NOT index IN_LIST may_be_nan)
-                list(GET header ${index} column)
-                message(FATAL_ERROR "${FILE}: non-finite ${column} in: ${row}")
+            if(field MATCHES "^-?nan$" AND NOT index IN_LIST always_nan)
+                set(absent FALSE)
+                list(FIND engine_cols ${index} k)
+                if(k GREATER_EQUAL 0)
+                    list(GET engine_ng ${k} ng)
+                    list(GET fields ${ng} ng_value)
+                    if(ng_value MATCHES "^-?nan$")
+                        set(absent TRUE)
+                    endif()
+                endif()
+                if(NOT absent)
+                    list(GET header ${index} column)
+                    message(FATAL_ERROR "${FILE}: non-finite ${column} in: ${row}")
+                endif()
             endif()
             math(EXPR index "${index} + 1")
         endforeach()

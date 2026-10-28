@@ -374,13 +374,28 @@ TEST(Readouts, EnginesDeliverWhatTheDriveTakesInTrim) {
                 const SimContext ctx = ex.context(ex.sim_time(), ex.state(), r.controls, env);
                 double take = o.main_rotor_power;
                 for (std::size_t i = 0; i < ex.num_components(); ++i) {
+                    // NP is the shaft's speed through the gearbox, the
+                    // clutches engaged: from the shaft's state, not the
+                    // engine's own (code review of #88).
+                    const auto np_from_shaft = [&](double gear, double np_100, int shaft) {
+                        const double omega = ctx.shafts[static_cast<std::size_t>(shaft)].omega;
+                        for (int e = 0; e < 2; ++e) {
+                            EXPECT_NEAR(
+                                o.engines[static_cast<std::size_t>(e)].power_turbine_speed_percent /
+                                    100.0 * np_100,
+                                gear * omega, 1e-12 * gear * omega);
+                        }
+                        return omega;
+                    };
                     if (const auto* b = dynamic_cast<const BallinT700*>(&ex.component(i))) {
-                        const double omega =
-                            ctx.shafts[static_cast<std::size_t>(b->shaft_index())].omega;
+                        const BallinT700Config& bc = b->config();
+                        const double omega = np_from_shaft(bc.gear, bc.np_des, b->shaft_index());
                         take += o.tail_rotor_power + b->drive_train_load(omega) * omega;
                     }
                     if (const auto* g = dynamic_cast<const GenHelT700*>(&ex.component(i))) {
-                        take *= 1.0 + g->config().loss_factor;
+                        const GenHelT700Config& gc = g->config();
+                        (void)np_from_shaft(gc.gear, gc.power_turbine_100, g->shaft_index());
+                        take *= 1.0 + gc.loss_factor;
                         EXPECT_TRUE(std::isnan(o.tail_rotor_power));
                     }
                 }

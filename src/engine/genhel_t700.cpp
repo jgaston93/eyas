@@ -36,8 +36,10 @@ GenHelT700::GenHelT700(GenHelT700Config config) : config_(std::move(config)) {
     if (c.engines < 1) {
         throw InitError("genhel_t700: needs at least one engine");
     }
-    if (c.first_engine < 0) {
-        throw InitError("genhel_t700: first_engine must not be negative");
+    // Its engines' Controls::engines and readout entries (D-055, D-060).
+    if (c.first_engine < 0 || c.first_engine + c.engines > static_cast<int>(kMaxEngines)) {
+        throw InitError("genhel_t700: engines past Controls::engines' " +
+                        std::to_string(kMaxEngines) + " (D-055)");
     }
     for (const auto& t : {c.torque_ngg, c.lds_rigging, c.lds_cam, c.fuel, c.p3, c.dp3_dwf,
                           c.dqgg_dwf, c.dqpt_dwf, c.dqpt_dnpt}) {
@@ -226,9 +228,7 @@ void GenHelT700::derivatives(const SimContext& ctx, std::span<const double> x,
     if (out.readouts != nullptr) {  // D-060
         const EngineState r = readout(x, s);
         const auto first = static_cast<std::size_t>(c.first_engine);
-        for (std::size_t e = first;
-             e < first + static_cast<std::size_t>(c.engines) && e < out.readouts->engines.size();
-             ++e) {
+        for (std::size_t e = first; e < first + static_cast<std::size_t>(c.engines); ++e) {
             out.readouts->engines[e] = r;
         }
     }
@@ -350,8 +350,8 @@ std::unique_ptr<GenHelT700> GenHelT700::from_config(const Config& node, int firs
     c.shaft = sh.string("name");
     c.rotor = node.string("rotor");
     const std::int64_t engines = node.integer("engines");
-    if (engines < 1 || engines > 8) {
-        node.fail("engines", "must be between 1 and 8");
+    if (engines < 1 || engines > static_cast<std::int64_t>(kMaxEngines)) {
+        node.fail("engines", "must be between 1 and " + std::to_string(kMaxEngines));
     }
     c.engines = static_cast<int>(engines);
     c.first_engine = first_engine;

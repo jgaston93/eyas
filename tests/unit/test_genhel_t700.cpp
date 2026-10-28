@@ -20,6 +20,7 @@
 #include "support/alloc_counter.hpp"
 #include "support/genhel_t700_reference.hpp"
 #include "support/m9_engine.hpp"
+#include "util/error.hpp"
 
 namespace eyas {
 namespace {
@@ -587,6 +588,8 @@ TEST(GenHelT700, ReportsEachOfItsEnginesAlike) {
         EXPECT_TRUE(std::isnan(s.turbine_gas_temperature)) << e;
         EXPECT_FALSE(s.out) << e;
     }
+    c.first_engine = 3;  // its second engine past Controls::engines
+    EXPECT_THROW((void)GenHelT700(c), InitError);
 }
 
 // The high/low-gain switch's torque integrator (D-053 item 2): Q_INT rises
