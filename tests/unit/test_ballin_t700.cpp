@@ -978,6 +978,54 @@ TEST(BallinT700, MapsFloorIsTheHighestFirstSpeed) {
     EXPECT_DOUBLE_EQ(engine->ng_floor(t2), floor * std::sqrt(t2 / BallinT700::kTstd));
 }
 
+// The maps' top: the lowest last corrected speed of the maps read by NGC,
+// 100 % to the digitizing (f_hs's 99.991 %), where Ballin's model stops being
+// valid (TM-100991 p. 25).
+TEST(BallinT700, MapsTopIsTheLowestLastSpeed) {
+    const auto engine = load_engine();
+    const BallinT700Config& c = engine->config();
+    const double top =
+        std::min({c.f1->params().back(), c.f3->x_axis().breakpoints().back(),
+                  c.f10->x_axis().breakpoints().back(), c.f_hs->x_axis().breakpoints().back()});
+    EXPECT_DOUBLE_EQ(engine->maps_top(), top);
+    EXPECT_NEAR(top, 0.99991, 1e-6);  // data/uh60a/engine_ballin/f_hs_heat_sink.csv
+}
+
+// Steady states run up to the maps' top, and no further: the largest shaft
+// torque with one, found by bisection at 5250 ft ISA (Ballin's App. B
+// altitude), is at a corrected speed within 0.2 % of the top and not past it.
+// Above the top the maps are flat in NG, and the steady solve's Newton steps
+// past it used to stall there, at 98.9 %.
+TEST(BallinT700, SteadyStatesReachTheMapsTop) {
+    const auto engine = load_engine();
+    const BallinT700Config& c = engine->config();
+    const AirState air = isa_atmosphere(5250.0 * kFoot, 0.0);
+    const double omega = c.np_des / c.gear;
+    const auto steady = [&](double shp, BallinT700Gas& g) {
+        double fuel = 0.0;
+        double ng = 0.0;
+        return engine->steady_for_torque(shp * kHp / omega, omega, air.pressure, air.temperature,
+                                         fuel, ng, g);
+    };
+    BallinT700Gas g;
+    double lo = 2000.0;  // [shp] both engines
+    double hi = 4000.0;
+    ASSERT_TRUE(steady(lo, g));
+    ASSERT_FALSE(steady(hi, g));
+    double ngc = g.ngc;
+    for (int k = 0; k < 30; ++k) {
+        const double mid = 0.5 * (lo + hi);
+        if (steady(mid, g)) {
+            lo = mid;
+            ngc = g.ngc;
+            EXPECT_LE(g.ngc, engine->maps_top());
+        } else {
+            hi = mid;
+        }
+    }
+    EXPECT_GT(ngc, engine->maps_top() - 0.002);
+}
+
 // The shutoff (D-056 item 2): with the fuel off the metering valve's command
 // is zero, below the valve's minimum flow WFMIN; with it on, at least WFMIN.
 TEST(BallinT700, FuelShutoffClosesTheValve) {
@@ -1439,6 +1487,30 @@ TEST(BallinT700Aircraft, ContinuesFromANearbyTrim) {
         EXPECT_NEAR(next.pitch, cold.pitch, 1e-5);
         EXPECT_NEAR(next.roll, cold.roll, 1e-5);
         EXPECT_NEAR(a.omega(next), a.omega(cold), 1e-5 * a.governed());
+    }
+}
+
+// A trim's revolution is one turn of the rotor: ψ's whole turns count, not
+// only its change modulo 2π. Continued from 155 kt to 160 kt at 16 000 lbm and
+// 5250 ft, past where the engines reach the maps' top, Newton found a
+// "revolution" of almost no length, with ψ hardly moving (zero turns), at
+// −36° pitch and reported it converged (Ω T = 1e-16). Whether a trim converges
+// or not, a converged one turns once: Ω T = 2π (the main rotor geared 1:1), to
+// the ripple in Ω at t = 0 (9e-5 at 155 kt).
+TEST(BallinT700Aircraft, ConvergesOnlyOnOneTurnOfTheRotor) {
+    const test::Uh60aHarness ac(std::string(EYAS_VEHICLE_DATA_DIR) +
+                                "/uh60a/engine_ballin/uh60a_ballin.yaml");
+    const Executive& ex = ac.executive();
+    const auto omega = [&](const TrimResult& r) {
+        return r.component_states[ex.shaft_offset(0) + 1 - body_layout::kSize];
+    };
+    const test::ballin::Point from = test::ballin::genhel_trim(ex, 155.0, 0.0, nullptr);
+    ASSERT_TRUE(from.converged);
+    EXPECT_NEAR(omega(from.trim) * from.trim.period, 2.0 * std::numbers::pi, 1e-3);
+    const test::ballin::Point next = test::ballin::genhel_trim(ex, 160.0, 0.0, &from);
+    if (next.converged) {
+        EXPECT_NEAR(omega(next.trim) * next.trim.period, 2.0 * std::numbers::pi, 1e-3)
+            << "period " << next.trim.period << " s, pitch " << next.trim.pitch;
     }
 }
 

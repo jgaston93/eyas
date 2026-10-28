@@ -29,6 +29,7 @@
 #include "support/m6d_fixtures.hpp"
 #include "support/m7_fixtures.hpp"
 #include "util/error.hpp"
+#include "util/math.hpp"
 #include "util/units.hpp"
 
 namespace eyas {
@@ -234,6 +235,25 @@ TEST(Trim, Uh60aRotorOnEnginesClosesItsRevolution) {
             EXPECT_NEAR(omega, governed, 1e-6 * governed);
         }
     }
+}
+
+// A free shaft's turn over the trim's revolution counts its whole turns
+// (unwrapped_change): ψ is kept in [0, 2π), so one turn and zero turns both
+// leave ψ where it started. Only the mean speed times the period tells them
+// apart; the trim's closure took them modulo 2π and accepted a revolution of
+// almost no length at 160 kt on Ballin's engines
+// (BallinT700Aircraft.ConvergesOnlyOnOneTurnOfTheRotor).
+TEST(Trim, ShaftTurnCountsWholeTurns) {
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    EXPECT_DOUBLE_EQ(unwrapped_change(0.0, 0.0), 0.0);  // no time, no turn
+    EXPECT_DOUBLE_EQ(unwrapped_change(0.0, kTwoPi), kTwoPi);
+    EXPECT_DOUBLE_EQ(unwrapped_change(1e-3, kTwoPi), kTwoPi + 1e-3);
+    // ψ wrapped past 2π: from 6.2 to 0.1 rad is a step forward, not back.
+    EXPECT_NEAR(unwrapped_change(0.1 - 6.2, 0.2), kTwoPi - 6.1, 1e-12);
+    EXPECT_NEAR(unwrapped_change(0.1 - 6.2, kTwoPi + 0.2), 2.0 * kTwoPi - 6.1, 1e-12);
+    EXPECT_NEAR(unwrapped_change(-0.05, 3.0 * kTwoPi), 3.0 * kTwoPi - 0.05, 1e-12);
+    // A rough travel, within π, picks the same turn.
+    EXPECT_DOUBLE_EQ(unwrapped_change(1e-3, kTwoPi + 3.0), unwrapped_change(1e-3, kTwoPi - 3.0));
 }
 
 // Code review of #69: the two stages of a cold start (D-053 amendment 2) each

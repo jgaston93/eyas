@@ -36,6 +36,16 @@ inline double wrap_2pi(double a) noexcept {
     return w >= kTwoPi ? 0.0 : w;
 }
 
+// The change of an angle kept in [0, 2π) [rad] with its whole turns: its
+// wrapped change plus the multiple of 2π that brings it nearest `travel`, an
+// estimate of the true change good to within π (a mean rate times the time).
+// E.g. a shaft's turn over a trim's revolution (D-052 wraps ψ every step):
+// taken modulo 2π alone, zero turns and one look the same.
+inline double unwrapped_change(double wrapped_change, double travel) noexcept {
+    constexpr double kTwoPi = 2.0 * std::numbers::pi;
+    return wrapped_change + kTwoPi * std::round((travel - wrapped_change) / kTwoPi);
+}
+
 // The three points Brent's method keeps: a (the previous b), b (the best
 // estimate) and c (with b, the bracket).
 enum class BrentPoint : unsigned char { a, b, c };
