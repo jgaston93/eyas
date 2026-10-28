@@ -552,6 +552,33 @@ TEST(BallinT700, InitialStatesBeforeBindingAreAtRest) {
     EXPECT_NEAR(x[BallinT700::kSpdsf], 0.0, 1e-12);  // no speed error
 }
 
+// The readouts (D-060): the component's engines report at their own entries,
+// from first_engine on; the others stay unset.
+TEST(BallinT700, ReportsAtItsOwnEngineEntries) {
+    BallinT700Config c = load_engine()->config();
+    c.first_engine = 2;
+    const BallinT700 engine(c);
+    std::vector<double> x(engine.num_states());
+    engine.initial_states(x);
+    SimContext ctx;
+    ctx.air = isa_atmosphere(0.0, 0.0);
+    std::vector<double> xdot(engine.num_states());
+    std::vector<double> g(6 * engine.num_states());
+    ComponentDerivs d{xdot, g, Wrench{}, Mat66::Zero()};
+    Readouts r;
+    d.readouts = &r;
+    engine.derivatives(ctx, x, d);
+    for (const std::size_t e : {std::size_t{0}, std::size_t{1}}) {
+        EXPECT_TRUE(std::isnan(r.engines[e].gas_generator_speed_percent)) << e;
+    }
+    for (const std::size_t e : {std::size_t{2}, std::size_t{3}}) {
+        EXPECT_NEAR(r.engines[e].gas_generator_speed_percent,
+                    100.0 * x[(e - 2) * BallinT700::kEngineStates + BallinT700::kNg], 1e-12)
+            << e;
+        EXPECT_NEAR(r.engines[e].power_turbine_speed_percent, 100.0, 1e-9) << e;  // at NP_des
+    }
+}
+
 // Bound to a shaft governed off the engine's design speed (27 rad/s against
 // NP_des/gear = 27.006 rad/s), the initial state is the rest point at the
 // shaft's speed: every rate zero, no torque at the shaft, no speed error

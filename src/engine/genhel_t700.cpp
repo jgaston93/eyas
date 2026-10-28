@@ -36,6 +36,9 @@ GenHelT700::GenHelT700(GenHelT700Config config) : config_(std::move(config)) {
     if (c.engines < 1) {
         throw InitError("genhel_t700: needs at least one engine");
     }
+    if (c.first_engine < 0) {
+        throw InitError("genhel_t700: first_engine must not be negative");
+    }
     for (const auto& t : {c.torque_ngg, c.lds_rigging, c.lds_cam, c.fuel, c.p3, c.dp3_dwf,
                           c.dqgg_dwf, c.dqpt_dwf, c.dqpt_dnpt}) {
         if (!t) {
@@ -198,6 +201,19 @@ GenHelT700Signals GenHelT700::signals(std::span<const double> x, double omega, d
     return s;
 }
 
+EngineState GenHelT700::readout(std::span<const double> x,
+                                const GenHelT700Signals& s) const noexcept {
+    const GenHelT700Config& c = config_;
+    const double np = c.gear * s.engine_speed;  // [rad/s]
+    EngineState r;
+    r.gas_generator_speed_percent = 100.0 * x[kNgg];
+    r.power_turbine_speed_percent = 100.0 * np / c.power_turbine_100;
+    r.torque = s.q_pt;  // per engine, at the power turbine (p. 5.6-16)
+    r.power = s.q_pt * np;
+    r.fuel_flow = s.fuel;
+    return r;
+}
+
 void GenHelT700::derivatives(const SimContext& ctx, std::span<const double> x,
                              ComponentDerivs& out) const {
     const GenHelT700Config& c = config_;
@@ -207,6 +223,15 @@ void GenHelT700::derivatives(const SimContext& ctx, std::span<const double> x,
     const GenHelT700Signals s = signals(x, omega, ctx.controls.collective, demand,
                                         speed_reference(ctx.controls.rotor_speed_reference));
     const auto ksz = static_cast<std::size_t>(shaft_index_);
+    if (out.readouts != nullptr) {  // D-060
+        const EngineState r = readout(x, s);
+        const auto first = static_cast<std::size_t>(c.first_engine);
+        for (std::size_t e = first;
+             e < first + static_cast<std::size_t>(c.engines) && e < out.readouts->engines.size();
+             ++e) {
+            out.readouts->engines[e] = r;
+        }
+    }
     const auto set_g = [&](std::size_t row, const Vec3& w) {  // ∂ẋ_row/∂ω̇
         for (std::size_t j = 0; j < 3; ++j) {
             out.G[row * 6 + 3 + j] = w(static_cast<Eigen::Index>(j));
@@ -310,7 +335,7 @@ void GenHelT700::equilibrium(double engine_torque, double rotor_demand, double c
 
 // ---- Config ------------------------------------------------------------------
 
-std::unique_ptr<GenHelT700> GenHelT700::from_config(const Config& node) {
+std::unique_ptr<GenHelT700> GenHelT700::from_config(const Config& node, int first_engine) {
     using units::Dimension;
     node.allow_keys({"type", "name", "shaft", "rotor", "engines", "gear", "power_turbine_speed",
                      "gas_generator_speed", "loss_factor", "maps", "ecu", "switch", "fuel_control",
@@ -329,6 +354,7 @@ std::unique_ptr<GenHelT700> GenHelT700::from_config(const Config& node) {
         node.fail("engines", "must be between 1 and 8");
     }
     c.engines = static_cast<int>(engines);
+    c.first_engine = first_engine;
     c.gear = node.number("gear");
     c.power_turbine_100 = node.quantity("power_turbine_speed", Dimension::angular_rate);
     c.gas_generator_100 = node.quantity("gas_generator_speed", Dimension::angular_rate);

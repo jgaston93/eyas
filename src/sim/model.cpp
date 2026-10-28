@@ -248,6 +248,9 @@ void Model::update_outputs() noexcept {
     o.tail_rotor_thrust = r.tail_rotor_thrust;
     o.tail_rotor_azimuth = r.tail_rotor_azimuth;
     o.weight_on_wheels = r.weight_on_wheels;
+    o.tail_rotor_torque = r.tail_rotor_torque;
+    o.tail_rotor_power = r.tail_rotor_power;
+    o.engines = r.engines;
     o.stabilator_incidence = r.stabilator_incidence;
     o.main_rotor_theta0 = r.main_rotor_theta0;
     o.main_rotor_theta1s = r.main_rotor_theta1s;

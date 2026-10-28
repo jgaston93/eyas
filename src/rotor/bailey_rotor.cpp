@@ -379,6 +379,10 @@ void BaileyRotor::derivatives(const SimContext& ctx, std::span<const double> x,
     if (out.readouts != nullptr) {  // D-059
         out.readouts->tail_rotor_thrust = loads.thrust;
         out.readouts->tail_rotor_azimuth = azimuth(ctx, x);
+        if (config_.torque) {  // D-060
+            out.readouts->tail_rotor_torque = loads.torque;
+            out.readouts->tail_rotor_power = loads.torque * rotor_speed(ctx);
+        }
     }
     if (shaft_index_ >= 0 && !out.Gs.empty()) {
         // λ_i is a velocity over ΩR: with it held, λ̇ gains −λ Ω̇/Ω (D-052).

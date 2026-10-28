@@ -1,0 +1,10 @@
+time_s,d_collective,d_lat_cyclic,d_lon_cyclic,d_pedal,afcs,power_lever_1,power_lever_2,power_lever_3,power_lever_4,rotor_speed_reference,fuel_on_1,fuel_on_2,fuel_on_3,fuel_on_4
+# The engine controls moved in flight (D-060), from a 60 kt trim on Ballin's
+# engines with the SAS and PBA on: engine 1's power lever pulled halfway,
+# the engine-speed trim up 1 %, then engine 2's fuel shut off with a little
+# collective; 10 s in all.
+0.0,0,0,0,0,sas+pba,1,1,1,1,1,1,1,1,1
+2.0,0,0,0,0,sas+pba,0.5,1,1,1,1,1,1,1,1
+4.0,0,0,0,0,sas+pba,0.5,1,1,1,1.01,1,1,1,1
+6.0,0.02,0,0,0,sas+pba,0.5,1,1,1,1.01,1,0,1,1
+10.0,0.02,0,0,0,sas+pba,0.5,1,1,1,1.01,1,0,1,1

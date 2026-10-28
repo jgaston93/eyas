@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <limits>
 
@@ -17,6 +18,20 @@ namespace eyas {
 namespace detail {
 inline constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
 }  // namespace detail
+
+// One engine's readouts (M9, D-060). Every field is NaN (out: false) for an
+// entry past the aircraft's engines, and NaN where its engine model has no
+// such quantity. Torque and power are the engine's output shaft's, at the
+// power-turbine speed, as a flight test's engine torque sensor measures them.
+struct EngineState {
+    double gas_generator_speed_percent = detail::kNan;  // NG [%] of its 100 % speed
+    double power_turbine_speed_percent = detail::kNan;  // NP [%] of its 100 % speed
+    double torque = detail::kNan;                       // [N·m] at the output shaft
+    double power = detail::kNan;                        // [W] = torque × NP
+    double fuel_flow = detail::kNan;                    // W_f [kg/s]
+    double turbine_gas_temperature = detail::kNan;      // T4.5 [K], the gas's
+    bool out = false;  // flamed out: no gas path, no torque (D-056)
+};
 
 struct AircraftState {
     // ---- Tier 1: pose (M2) --------------------------------------------------
@@ -85,6 +100,15 @@ struct AircraftState {
     // [rad] [0, 2π): Ω_TR t, for display; the tail rotor has no blade states.
     double tail_rotor_azimuth = detail::kNan;
     bool weight_on_wheels = false;  // some gear carries a normal load
+
+    // ---- Tier 4: drive (M9, D-060) -------------------------------------------
+    // The tail rotor's aerodynamic shaft torque and power, as the main rotor's;
+    // NaN for a tail rotor without a torque model (D-058).
+    double tail_rotor_torque = detail::kNan;  // Q [N·m]
+    double tail_rotor_power = detail::kNan;   // P [W] = Q Ω_TR
+    // The engines, in Controls::engines' order (config order). A model that
+    // runs several engines as one reports each with the same values.
+    std::array<EngineState, kMaxEngines> engines{};
 
     // ---- Flight controls (M8c, D-045) -----------------------------------------
     // Stabilator: trailing edge down positive, from the airframe (scheduled,

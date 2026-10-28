@@ -93,6 +93,19 @@ if(EYAS_BUILD_TESTS)
                 -DWORK=${CMAKE_CURRENT_BINARY_DIR}/station_replay_afcs
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/check_replay.cmake)
 
+    # The same with the engine controls moved in flight on Ballin's engines
+    # (D-060): the recording's engine columns replay them, and the state
+    # histories, which carry the engine controls, must still be
+    # byte-identical and show each control moved.
+    add_test(NAME ExampleStation.EngineRecordingReplaysExactly
+        COMMAND ${CMAKE_COMMAND}
+                -DSTATION=$<TARGET_FILE:eyas_pilot_station> -DDRIVE=$<TARGET_FILE:eyas_drive>
+                -DCONFIG=${PROJECT_SOURCE_DIR}/data/uh60a/engine_ballin/uh60a.yaml
+                -DCONTROLS=${CMAKE_CURRENT_SOURCE_DIR}/drive/engines_10s.csv
+                "-DCOLUMN_VALUES=power_lever_1=2;rotor_speed_reference=2;fuel_on_2=2"
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/station_replay_engines
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/check_replay.cmake)
+
     add_test(NAME ExampleStation.ScriptRunsFromTheStartPoint
         COMMAND ${CMAKE_COMMAND}
                 -DSTATION=$<TARGET_FILE:eyas_pilot_station> -DCONFIG=${EYAS_UH60A_CONFIG}

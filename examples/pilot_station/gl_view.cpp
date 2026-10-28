@@ -631,6 +631,33 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
         100.0 * hud.applied.rotor_speed_reference);
     text(w - 340, 50, 1.6, b.data());
 
+    // Engines and the drive (D-060), right, below: one row per engine the
+    // aircraft has, "---" for what its model lacks (GenHel's has no TGT).
+    panel(w - 440, 300, 430, 125);
+    std::string eng = "      NG %   NP %  TQ N.m  TGT C  WF kg/h\n";
+    const auto cell = [](double v, const char* fmt) {
+        std::array<char, 16> c{};
+        if (std::isfinite(v)) {
+            (void)std::snprintf(c.data(), c.size(), fmt, v);
+        } else {
+            (void)std::snprintf(c.data(), c.size(), "%s", "    ---");
+        }
+        return std::string(c.data());
+    };
+    for (std::size_t e = 0; e < s.engines.size(); ++e) {
+        const eyas::EngineState& es = s.engines[e];
+        if (!std::isfinite(es.gas_generator_speed_percent)) {
+            continue;  // no such engine
+        }
+        eng += "ENG" + std::to_string(e + 1) + cell(es.gas_generator_speed_percent, "%7.1f") +
+               cell(es.power_turbine_speed_percent, "%7.1f") + cell(es.torque, "%8.0f") +
+               cell(es.turbine_gas_temperature - 273.15, "%7.0f") +
+               cell(es.fuel_flow * 3600.0, "%8.0f") + (es.out ? "  OUT" : "") + '\n';
+    }
+    eng += "TR TQ" + cell(s.tail_rotor_torque, "%8.0f") + " N.m " +
+           cell(s.tail_rotor_power * 1e-3, "%6.0f") + " kW";
+    text(w - 430, 310, 1.4, eng.c_str());
+
     // Status, top.
     panel(0, 0, w, 30);
     (void)std::snprintf(b.data(), b.size(),
@@ -651,6 +678,9 @@ void GlView::Impl::draw_hud(const HudInfo& hud, int w, int h) {
     }
     if (hud.crashed) {
         text(w / 2.0 - 250, 100, 3.0, "CRASHED - R or 1-4 to fly again", 1.0F, 0.35F, 0.25F);
+    }
+    if (s.last_advance.shaft_on_floor) {  // D-057: the rotor has all but stopped
+        text(w / 2.0 - 230, 220, 2.2, "ROTOR STOPPED (shaft on its floor)", 1.0F, 0.3F, 0.3F);
     }
     if (hud.faulted) {
         text(w / 2.0 - 260, 60, 2.2, "FRAME FAULT (non-finite, capped or rejected)", 1.0F, 0.3F,

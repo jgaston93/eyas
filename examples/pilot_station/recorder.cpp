@@ -57,7 +57,6 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
     ++segment_;
     first_ = true;
     brakes_noted_ = false;
-    engines_noted_ = false;
     const StartPoint& sp = station.starts()[station.current_start()];
     start_ = sp.controls;
     if (!controls_path_.empty()) {
@@ -68,8 +67,7 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
         }
         controls_ << "# Eyas pilot station recording (D-044), start '" << sp.name << "'\n";
         if (sp.replayable) {
-            controls_ << "# Replays exactly unless a later comment says the brakes or the "
-                         "engine controls changed.\n";
+            controls_ << "# Replays exactly unless a later comment says the brakes changed.\n";
             controls_ << "# Replay: eyas_drive --config " << shell_quote(config_) << " --controls "
                       << shell_quote(path) << " --out <out.csv> --rate " << rate_
                       << " --trim-speed " << exact(sp.trim_speed_kt) << " --altitude "
@@ -80,7 +78,7 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
         } else {
             controls_ << "# Not replayable in eyas_drive: it starts from a trim, not on the pad.\n";
         }
-        controls_ << examples::kControlHeaderAfcs << '\n';
+        controls_ << examples::kControlHeaderEngines << '\n';
     }
     if (!state_path_.empty()) {
         const std::string path = segment_path(state_path_, segment_);
@@ -102,22 +100,20 @@ void Recorder::frame(double t, const ControlDeltas& d, const eyas::Controls& c,
                   << " s: the brakes changed, and eyas_drive has no brake input\n";
         brakes_noted_ = true;
     }
-    if (controls_.is_open() && !engines_noted_ &&
-        (c.engines != start_.engines || c.rotor_speed_reference != start_.rotor_speed_reference)) {
-        controls_ << "# NOT REPLAYABLE from t = " << exact(t)
-                  << " s: the engine controls changed, and eyas_drive has no engine input "
-                     "(D-055)\n";
-        engines_noted_ = true;
-    }
-    // A row whenever the increments or the AFCS switches change (the
-    // switches replay from the afcs column; M8c3).
+    // A row whenever the increments, the AFCS switches or the engine
+    // controls change (the switches replay from the afcs column, M8c3; the
+    // engine controls from theirs, D-060).
     if (controls_.is_open() &&
         (first_ || d.collective != last_.collective || d.lat_cyclic != last_.lat_cyclic ||
-         d.lon_cyclic != last_.lon_cyclic || d.pedal != last_.pedal || c.afcs != last_afcs_)) {
+         d.lon_cyclic != last_.lon_cyclic || d.pedal != last_.pedal || c.afcs != last_afcs_ ||
+         c.engines != last_engines_ || c.rotor_speed_reference != last_speed_reference_)) {
         examples::write_control_row(
-            controls_, {t, d.collective, d.lat_cyclic, d.lon_cyclic, d.pedal, true, c.afcs});
+            controls_, {t, d.collective, d.lat_cyclic, d.lon_cyclic, d.pedal, true, c.afcs, true,
+                        c.engines, c.rotor_speed_reference});
         last_ = d;
         last_afcs_ = c.afcs;
+        last_engines_ = c.engines;
+        last_speed_reference_ = c.rotor_speed_reference;
         first_ = false;
     }
     if (state_.is_open()) {
