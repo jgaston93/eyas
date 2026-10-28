@@ -81,11 +81,12 @@ class Config;
 namespace eyas {
 
 struct GenHelT700Config {
-    std::string name;   // instance name (D-003)
-    std::string shaft;  // the shaft it drives; GenHel's inertias and G_E are referred to it
-    std::string rotor;  // the instance publishing <rotor>.shaft_torque [N·m]
-    int engines = 2;    // N_E
-    double gear = 0.0;  // G_E: power-turbine speed over shaft speed [-]
+    std::string name;      // instance name (D-003)
+    std::string shaft;     // the shaft it drives; GenHel's inertias and G_E are referred to it
+    std::string rotor;     // the instance publishing <rotor>.shaft_torque [N·m]
+    int engines = 2;       // N_E
+    int first_engine = 0;  // its first entry in Controls::engines and the readouts (D-060)
+    double gear = 0.0;     // G_E: power-turbine speed over shaft speed [-]
     double power_turbine_100 = 0.0;  // N_PT100 [rad/s]
     double gas_generator_100 = 0.0;  // N_GG100 [rad/s]
     double loss_factor = 0.0;        // K_Q [-]
@@ -190,7 +191,8 @@ public:
     explicit GenHelT700(GenHelT700Config config);
 
     // Reads a `type: genhel_t700` config node; tables relative to `base`.
-    static std::unique_ptr<GenHelT700> from_config(const Config& node);
+    // `first_engine`: the first of Controls::engines its engines take.
+    static std::unique_ptr<GenHelT700> from_config(const Config& node, int first_engine = 0);
 
     std::size_t num_states() const override { return kNumStates; }
     // The equilibrium at zero demand and zero collective.
@@ -215,6 +217,12 @@ public:
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
     void bind_shafts(std::span<const ShaftInfo> shafts) override;
+    ReadoutRole readout_role() const noexcept override { return ReadoutRole::engines; }
+
+    // Each engine's readouts at x and its signals there (D-060): GenHel runs
+    // its N_E engines as one, so each engine's are the same. GenHel models no
+    // gas temperatures (NaN) and no flame-out.
+    EngineState readout(std::span<const double> x, const GenHelT700Signals& s) const noexcept;
 
     // The signals at x with the shaft at speed `omega` [rad/s], the collective
     // stick at `collective` [0, 1], the main rotor's demand `rotor_demand`

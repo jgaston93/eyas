@@ -343,6 +343,11 @@ public:
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
     void bind_shafts(std::span<const ShaftInfo> shafts) override;
+    ReadoutRole readout_role() const noexcept override { return ReadoutRole::engines; }
+
+    // One engine's readouts (D-060) at its states `x` (kEngineStates) and
+    // its signals there.
+    EngineState readout(std::span<const double> x, const BallinT700Signals& s) const noexcept;
 
     // The rotors' demand at the shaft [N·m] in the coupling store of ctx, the
     // main rotor's and any tail rotor's (D-058); 0 without a store.

@@ -20,6 +20,7 @@
 #include "support/alloc_counter.hpp"
 #include "support/genhel_t700_reference.hpp"
 #include "support/m9_engine.hpp"
+#include "util/error.hpp"
 
 namespace eyas {
 namespace {
@@ -558,6 +559,37 @@ TEST(GenHelT700, ShaftTermsAreSymmetric) {
     EXPECT_EQ(dd.Ks(0, 0), 0.0);
     const Mat3 Hw = dd.H.block<3, 3>(3, 3);
     EXPECT_LT((Hw - Hw.transpose()).norm(), 1e-12 * Hw.norm());
+}
+
+// The readouts (D-060): GenHel runs its N_E engines as one, so each of its
+// entries, from first_engine on, reads the same; the others stay unset.
+TEST(GenHelT700, ReportsEachOfItsEnginesAlike) {
+    const t700::Data d;
+    GenHelT700Config c = make_config(d);
+    c.first_engine = 1;
+    const Harness h(c);
+    std::vector<double> x(Engine::kNumStates);
+    h.engine().equilibrium(2.0 * 12000.0 * kFtLbf, 2.0 * 12000.0 * kFtLbf / 1.1, 0.5, x);
+    std::vector<double> xd;
+    ComponentDerivs dd{{}, {}, Wrench{}, Mat66::Zero()};
+    Readouts r;
+    dd.readouts = &r;
+    h.evaluate(x, kGovernor, 0.5, 2.0 * 12000.0 * kFtLbf / 1.1, xd, &dd);
+    ASSERT_EQ(c.engines, 2);
+    EXPECT_TRUE(std::isnan(r.engines[0].torque));
+    EXPECT_TRUE(std::isnan(r.engines[3].torque));
+    for (const std::size_t e : {std::size_t{1}, std::size_t{2}}) {
+        const EngineState& s = r.engines[e];
+        EXPECT_EQ(s.gas_generator_speed_percent, 100.0 * x[Engine::kNgg]) << e;
+        EXPECT_NEAR(s.torque, 12000.0 * kFtLbf / (d.GE), 1e-6 * s.torque) << e;  // per engine
+        EXPECT_NEAR(s.power, s.torque * s.power_turbine_speed_percent / 100.0 * c.power_turbine_100,
+                    1e-9 * s.power)
+            << e;
+        EXPECT_TRUE(std::isnan(s.turbine_gas_temperature)) << e;
+        EXPECT_FALSE(s.out) << e;
+    }
+    c.first_engine = 3;  // its second engine past Controls::engines
+    EXPECT_THROW((void)GenHelT700(c), InitError);
 }
 
 // The high/low-gain switch's torque integrator (D-053 item 2): Q_INT rises

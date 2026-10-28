@@ -29,8 +29,10 @@
 // control system's switches for the trim and the run (a list of sas,
 // sas_digital, sas_analog, pba, fps, fps_turn, trim_release; default: the
 // control file's at t = 0, else none); a control file's optional afcs column
-// changes them from its rows on, as the station records them (M8c3). Exit
-// codes: 0
+// changes them from its rows on, as the station records them (M8c3); its
+// optional engine columns set the engine controls (power levers, engine-speed
+// trim, fuel shutoffs) from each row on, the trim at their defaults (D-060).
+// Exit codes: 0
 // done; 1 a frame failed (AdvanceStatus non_finite, rejected or capped);
 // 2 usage or input error; 3 trim did not converge.
 
@@ -144,6 +146,8 @@ int run(const Options& opt) {
     condition.altitude = opt.altitude;
     condition.ground_height = opt.ground;  // trimmed in ground effect, as flown (D-050)
     condition.afcs = afcs;                 // the trimmed controls carry them through the run
+    // The engine controls trim at their defaults, as the station's starts do;
+    // the file's engine columns take over from its first row (D-060).
     const eyas::TrimResult trim = model.trim(condition);
     if (!trim.converged) {
         std::cerr << "error: trim did not converge\n";

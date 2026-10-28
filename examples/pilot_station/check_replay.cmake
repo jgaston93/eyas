@@ -3,13 +3,16 @@
 # the command in its header; the two state histories must be byte-identical.
 #
 #   cmake -DSTATION=... -DDRIVE=... -DCONFIG=... -DCONTROLS=... -DWORK=<dir>
-#         [-DAFCS=<switches>] [-DSWITCH_SETS=<n>] -P check_replay.cmake
+#         [-DAFCS=<switches>] [-DSWITCH_SETS=<n>] [-DCOLUMN_VALUES=<col>=<n>;...]
+#         -P check_replay.cmake
 #
 # AFCS, if given, is the station's --afcs (its start switches); a control
 # file with an afcs column switches them in flight (M8c3). SWITCH_SETS, if
 # given, is how many different sets of switches the state history must show
 # (its afcs column), so that a replay that dropped the switches can't pass by
-# agreeing with a station that dropped them too (code review).
+# agreeing with a station that dropped them too (code review). COLUMN_VALUES
+# does the same for any state-history columns, by name (the engine controls,
+# D-060); SWITCH_SETS is afcs=<n>.
 
 file(MAKE_DIRECTORY ${WORK})
 set(rec ${WORK}/recording.csv)
@@ -55,24 +58,31 @@ if(NOT n EQUAL 602)
     message(FATAL_ERROR "expected 602 lines (header, t = 0, 600 frames), got ${n}")
 endif()
 if(SWITCH_SETS)
-    # The afcs column, found by name (the engine controls follow it).
-    list(GET lines 0 header)
-    string(REPLACE "," ";" header "${header}")
-    list(FIND header afcs afcs_column)
-    if(afcs_column LESS 0)
-        message(FATAL_ERROR "no afcs column in ${station_out}")
-    endif()
-    list(REMOVE_AT lines 0)
-    set(sets)
-    foreach(line IN LISTS lines)
-        string(REPLACE "," ";" fields "${line}")
-        list(GET fields ${afcs_column} switches)
-        list(APPEND sets "${switches}")
-    endforeach()
-    list(REMOVE_DUPLICATES sets)
-    list(LENGTH sets n_sets)
-    if(NOT n_sets EQUAL SWITCH_SETS)
-        message(FATAL_ERROR "expected ${SWITCH_SETS} sets of AFCS switches, got ${n_sets}: ${sets}")
-    endif()
+    list(APPEND COLUMN_VALUES "afcs=${SWITCH_SETS}")
 endif()
+# Each column=n: the column, found by name, takes n different values.
+list(GET lines 0 header)
+string(REPLACE "," ";" header "${header}")
+set(rows ${lines})
+list(REMOVE_AT rows 0)
+foreach(pair IN LISTS COLUMN_VALUES)
+    string(REPLACE "=" ";" pair "${pair}")
+    list(GET pair 0 column)
+    list(GET pair 1 want)
+    list(FIND header ${column} index)
+    if(index LESS 0)
+        message(FATAL_ERROR "no ${column} column in ${station_out}")
+    endif()
+    set(values)
+    foreach(line IN LISTS rows)
+        string(REPLACE "," ";" fields "${line}")
+        list(GET fields ${index} value)
+        list(APPEND values "${value}")
+    endforeach()
+    list(REMOVE_DUPLICATES values)
+    list(LENGTH values n_values)
+    if(NOT n_values EQUAL want)
+        message(FATAL_ERROR "expected ${want} values of ${column}, got ${n_values}: ${values}")
+    endif()
+endforeach()
 message(STATUS "replay identical: ${n} lines")

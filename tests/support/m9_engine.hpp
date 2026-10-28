@@ -177,7 +177,8 @@ public:
         return ctx;
     }
 
-    // ẋ (a = 0, Ω̇ = 0) and the rest of the affine form.
+    // ẋ (a = 0, Ω̇ = 0) and the rest of the affine form; `full`'s readouts,
+    // if set, are passed on (D-060).
     void evaluate(std::span<const double> x, double omega, double collective, double demand,
                   std::vector<double>& xdot, ComponentDerivs* full = nullptr) const {
         const SimContext ctx = context(omega, collective, demand);
@@ -186,6 +187,7 @@ public:
         gs_.assign(kMaxShafts * GenHelT700::kNumStates, 0.0);
         ComponentDerivs d{xdot, g_, Wrench{}, Mat66::Zero()};
         d.Gs = gs_;
+        d.readouts = full != nullptr ? full->readouts : nullptr;  // D-060
         engine_.derivatives(ctx, x, d);
         if (full != nullptr) {
             *full = d;

@@ -1,0 +1,2 @@
+time_s,roll_rad,tail_rotor_torque_Nm,tgt_K_1,ng_percent_1,engine_torque_Nm_1,ng_percent_2,engine_torque_Nm_2
+0,0,nan,nan,90,100,nan,nan

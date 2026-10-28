@@ -149,7 +149,7 @@ std::vector<std::unique_ptr<DynamicComponent>> read_components(const Config& con
         } else if (type == "genhel_fcs") {
             components.push_back(GenHelFcs::from_config(c));
         } else if (type == "genhel_t700") {
-            auto e = GenHelT700::from_config(c);
+            auto e = GenHelT700::from_config(c, engines);
             take_engines(c, e->config().engines);
             components.push_back(std::move(e));
         } else if (type == "ballin_t700") {

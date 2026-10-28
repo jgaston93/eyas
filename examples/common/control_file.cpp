@@ -23,13 +23,14 @@ std::vector<ControlRow> read_controls(const std::string& path) {
             break;
         }
     }
-    // Exactly one of the two headers (trailing blanks and a CR allowed), so a
-    // misspelt afcs column isn't read as a file without one (code review).
+    // Exactly one of the three headers (trailing blanks and a CR allowed), so
+    // a misspelt column isn't read as a file without it (code review).
     line.erase(line.find_last_not_of(" \t\r") + 1);
-    const bool with_afcs = line == kControlHeaderAfcs;
+    const bool with_engines = line == kControlHeaderEngines;
+    const bool with_afcs = with_engines || line == kControlHeaderAfcs;
     if (!with_afcs && line != kControlHeader) {
-        throw std::runtime_error(path + ": expected header " + kControlHeader + " or " +
-                                 kControlHeaderAfcs);
+        throw std::runtime_error(path + ": expected header " + kControlHeader + ", " +
+                                 kControlHeaderAfcs + " or " + kControlHeaderEngines);
     }
     std::vector<ControlRow> rows;
     while (std::getline(in, line)) {
@@ -51,7 +52,17 @@ std::vector<ControlRow> read_controls(const std::string& path) {
         if (with_afcs) {
             char c5 = 0;
             std::string text;
-            if (!(s >> c5 >> text) || c5 != ',') {
+            // The switches end at the next comma (an engine column) or the
+            // line; blanks around them are allowed, as around the numbers.
+            if (!(s >> c5) || c5 != ',' || !std::getline(s, text, ',')) {
+                throw std::runtime_error(path + ":" + std::to_string(n) + ": bad row (afcs)");
+            }
+            if (with_engines) {
+                s.unget();  // the engine columns start with that comma
+            }
+            text.erase(text.find_last_not_of(" \t\r") + 1);
+            text.erase(0, text.find_first_not_of(" \t"));
+            if (text.empty()) {
                 throw std::runtime_error(path + ":" + std::to_string(n) + ": bad row (afcs)");
             }
             try {
@@ -60,6 +71,28 @@ std::vector<ControlRow> read_controls(const std::string& path) {
                 throw std::runtime_error(path + ":" + std::to_string(n) + ": " + e.what());
             }
             r.has_afcs = true;
+        }
+        if (with_engines) {
+            const auto bad = [&] {
+                return std::runtime_error(path + ":" + std::to_string(n) + ": bad row (engines)");
+            };
+            char c = 0;
+            for (eyas::EngineControls& e : r.engines) {
+                if (!(s >> c >> e.power_lever) || c != ',') {
+                    throw bad();
+                }
+            }
+            if (!(s >> c >> r.rotor_speed_reference) || c != ',') {
+                throw bad();
+            }
+            for (eyas::EngineControls& e : r.engines) {
+                int on = -1;
+                if (!(s >> c >> on) || c != ',' || (on != 0 && on != 1)) {
+                    throw bad();
+                }
+                e.fuel_on = on == 1;
+            }
+            r.has_engines = true;
         }
         if (std::string rest; s >> rest) {
             std::string what = path + ":" + std::to_string(n) + ": unexpected '";
@@ -81,6 +114,15 @@ void write_control_row(std::ostream& out, const ControlRow& r) {
     if (r.has_afcs) {
         out << ',' << afcs_text(r.afcs, '+');
     }
+    if (r.has_engines) {
+        for (const eyas::EngineControls& e : r.engines) {
+            out << ',' << e.power_lever;
+        }
+        out << ',' << r.rotor_speed_reference;
+        for (const eyas::EngineControls& e : r.engines) {
+            out << ',' << (e.fuel_on ? 1 : 0);
+        }
+    }
     out << '\n';
     out.precision(old);
 }
@@ -100,6 +142,10 @@ eyas::Controls ControlSchedule::at(const eyas::Controls& start, double t) noexce
         c.pedal += row->d_pedal;
         if (row->has_afcs) {
             c.afcs = row->afcs;
+        }
+        if (row->has_engines) {
+            c.engines = row->engines;
+            c.rotor_speed_reference = row->rotor_speed_reference;
         }
     }
     return c;

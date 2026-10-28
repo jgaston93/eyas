@@ -371,6 +371,11 @@ BallinT700::BallinT700(BallinT700Config config) : config_(std::move(config)) {
     if (c.engines > static_cast<int>(kMaxEnginesPerComponent) || c.first_engine < 0) {
         throw InitError("ballin_t700: one or two engines (D-055)");
     }
+    // Its engines' Controls::engines and readout entries (D-055, D-060).
+    if (c.first_engine + c.engines > static_cast<int>(kMaxEngines)) {
+        throw InitError("ballin_t700: engines past Controls::engines' " +
+                        std::to_string(kMaxEngines) + " (D-055)");
+    }
     require_positive(c.gear, "gear");
     require_positive(c.ng_des, "NG_des");
     require_positive(c.np_des, "NP_des");
@@ -692,6 +697,21 @@ BallinT700Signals BallinT700::signals(std::span<const double> x,
     return s;
 }
 
+EngineState BallinT700::readout(std::span<const double> x,
+                                const BallinT700Signals& s) const noexcept {
+    const BallinT700Config& c = config_;
+    const double np = c.gear * s.engine_speed;
+    EngineState r;
+    r.gas_generator_speed_percent = 100.0 * x[kNg];  // Ballin's PCNG (Figs. 11-15)
+    r.power_turbine_speed_percent = 100.0 * np / c.np_des;
+    r.torque = s.gas.q_pt;  // eq. (41), at the power turbine's output (0 out)
+    r.power = s.gas.q_pt * np;
+    r.fuel_flow = s.fuel;  // the metering valve's delivery (zero once out, D-056)
+    r.turbine_gas_temperature = s.gas.t45;
+    r.out = s.out;
+    return r;
+}
+
 unsigned BallinT700::engaged(std::span<const double> q, std::span<const double> slip,
                              double load) const noexcept {
     // The engines at zero slip engage together unless one alone would
@@ -746,6 +766,10 @@ void BallinT700::derivatives(const SimContext& ctx, std::span<const double> x,
         q[e] = sig[e].q_engine;
         // An out engine's clutch stays open (D-056 item 3).
         slip[e] = sig[e].out ? std::numeric_limits<double>::infinity() : xe[kSlip];
+        if (out.readouts != nullptr) {  // D-060
+            out.readouts->engines[static_cast<std::size_t>(c.first_engine) + e] =
+                readout(xe, sig[e]);
+        }
     }
     const double drive_load = drive_train_load(omega);
     const unsigned mask =

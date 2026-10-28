@@ -1844,3 +1844,18 @@ The components report the outputs' Tier 4 and flight-control fields themselves, 
 | Outputs unchanged | ✅ | `Readouts.MatchTheComponentsOwnQueriesInFlight`, `…OnTheGround`: every Tier 4 and flight-control field bit for bit equal to the components' own queries made as before D-059, on GenHel's and Ballin's engines, from an 80 kt trim through two doublets and through a drop onto the gear. Three reporting mutations caught. |
 | Who reports | ✅ | `Readouts.FirstOfEachRoleAndEveryGearReport`: the first component of each role in config order, every landing gear, none without a role; stand-in component types `Model` doesn't know report. A mutation letting every component report is caught. |
 | Real-time | ✅ | `RealTime.ZeroAllocationInFlight` (outputs included). `eyas_bench` against `main`, back to back: `advance()` about 2 µs faster in hover (269.5 against 271.5 µs mean), the same at 120 kt within noise; `step()` unchanged. |
+
+## M9 — Engine and tail-rotor readouts (2026-10-27; Stage C2 of #39)
+
+The outputs gain the engines' readouts, one entry per engine (NG, NP, output-shaft torque and power, fuel flow, turbine gas temperature, engine out), and the tail rotor's torque and power (D-060). The pilot station shows them, and its recordings replay the engine controls in `eyas_drive`.
+
+| Check | Status | Evidence |
+|---|---|---|
+| Readouts are the engines' own | ✅ | `Readouts.MatchTheComponentsOwnQueriesInFlight`: every engine field and the tail rotor's torque and power bit for bit equal to the engines' own signals and the tail rotor's own evaluation, on GenHel's and Ballin's engines, through two doublets. `BallinT700.ReportsAtItsOwnEngineEntries`, `GenHelT700.ReportsEachOfItsEnginesAlike`. |
+| The drive's power balance | ✅ | `Readouts.EnginesDeliverWhatTheDriveTakesInTrim`: averaged over two revolutions from hover and 80 kt trims, the engines' power equals what the rotors and the drive train take (TM-88360 App. A on Ballin's; GenHel's K_Q losses, p. 5.6-20) within 1.5e-5. At an instant the 80 kt balance is 2 % off, the shaft's 4/rev ripple. |
+| Engine out | ✅ | `Readouts.AnEngineOutReadsOut`: out in trim with zero torque, power and fuel flow; a shutoff in flight followed. |
+| Recordings replay the engine controls | ✅ | `ExampleStation.EngineRecordingReplaysExactly`: a lever, the speed trim and a shutoff moved in flight on Ballin's engines replay byte for byte; the reader's errors in `StationControls`. Eight mutations caught (D-060). |
+| Percent torque | ⬜ | Not reported: the gauge's 100 % isn't in the library's references; the UH-60 operator's manual (DTIC ADA409934) to obtain (DATA_GAPS.md). |
+| Rotor on its floor | ✅ | The station's display warns while `AdvanceStatus::shaft_on_floor` is set (D-057). Display only, checked by hand. |
+| GenHel's NP | ℹ️ | Reads 98.0 % at 100 % rotor speed, GenHel's own gearing against its N_PT100 (DATA_GAPS.md); Ballin's reads 100.0 %. |
+

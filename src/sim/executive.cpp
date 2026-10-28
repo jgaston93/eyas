@@ -190,13 +190,14 @@ Executive::Executive(const ExecutiveConfig& config,
     }
     CouplingRegistry registry;
     order_ = order_and_bind(components_, registry);
-    // Readouts (D-059): the first component of each role, every gear.
+    // Readouts (D-059): the first component of each role, every gear and
+    // every engine component (D-060).
     reports_.assign(components_.size(), 0);
     std::array<bool, kNumReadoutRoles> taken{};
     for (std::size_t i = 0; i < components_.size(); ++i) {
         const ReadoutRole role = components_[i]->readout_role();
         const auto r = static_cast<std::size_t>(role);
-        if (role != ReadoutRole::none && (role == ReadoutRole::landing_gear || !taken[r])) {
+        if (role != ReadoutRole::none && (every_component_reports(role) || !taken[r])) {
             reports_[i] = 1;
             taken[r] = true;
         }

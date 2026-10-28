@@ -837,31 +837,81 @@ TEST(StationRecorder, BrakeChangeIsMarked) {
     EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s"), 1);
 }
 
-// eyas_drive has no engine input either (D-055): a lever or speed-trim
-// change is marked, once.
-TEST(StationRecorder, EngineControlChangeIsMarked) {
+// The engine controls are recorded (D-060): a row where they change, with
+// the levers, the speed trim and the shutoffs as values, which read back
+// exactly; nothing is marked not replayable.
+TEST(StationRecorder, EngineControlChangesAreRecorded) {
     Station& st = uh60a();
     ASSERT_TRUE(st.start(1));
     const std::string path =
         (std::filesystem::temp_directory_path() / "eyas_station_engines.csv").string();
+    eyas::Controls c = st.starts()[1].controls;
     {
         Recorder rec(path, "", "cfg.yaml", "", 60);
         rec.begin(st, st.outputs());
-        eyas::Controls c = st.starts()[1].controls;
         rec.frame(0.0, {}, c, st.outputs());
-        c.engines[1].power_lever = 0.0;
+        rec.frame(0.25, {}, c, st.outputs());  // unchanged: no row
+        c.engines[1].power_lever = 0.3;
         rec.frame(0.5, {}, c, st.outputs());
         c.rotor_speed_reference = 1.01;
         rec.frame(0.6, {}, c, st.outputs());
+        c.engines[0].fuel_on = false;
+        rec.frame(0.7, {}, c, st.outputs());
         rec.end();
     }
-    const std::string text = read_file(path);
-    EXPECT_EQ(count(text, "# NOT REPLAYABLE from t = 0.5 s: the engine controls"), 1);
-    EXPECT_EQ(count(text, "# NOT REPLAYABLE"), 1);
+    EXPECT_EQ(count(read_file(path), "NOT REPLAYABLE"), 0);
+    const std::vector<examples::ControlRow> rows = examples::read_controls(path);
+    ASSERT_EQ(rows.size(), 4U);
+    for (const examples::ControlRow& r : rows) {
+        EXPECT_TRUE(r.has_engines);
+    }
+    EXPECT_EQ(rows[0].engines, st.starts()[1].controls.engines);
+    EXPECT_EQ(rows[1].t, 0.5);
+    EXPECT_EQ(rows[1].engines[1].power_lever, 0.3);
+    EXPECT_EQ(rows[2].rotor_speed_reference, 1.01);
+    EXPECT_FALSE(rows[3].engines[0].fuel_on);
+    EXPECT_TRUE(rows[3].engines[1].fuel_on);
+    examples::ControlSchedule schedule(rows);
+    const eyas::Controls at = schedule.at(st.starts()[1].controls, 0.75);
+    EXPECT_EQ(at.engines, c.engines);
+    EXPECT_EQ(at.rotor_speed_reference, c.rotor_speed_reference);
 }
 
-// The state history ends with the engine controls (D-055, D-056), so a
-// piloted run shows what the levers, the speed trim and the shutoffs did.
+// Engine controls the model reads as others (eyas/types.hpp: a NaN lever is
+// fly, a lever past a stop is at it, a speed trim that isn't positive and
+// finite is 1) are recorded as the model reads them: no row while the flight
+// doesn't change, and the file reads back (code review of #88).
+TEST(StationRecorder, EngineControlsAreRecordedAsTheModelReadsThem) {
+    Station& st = uh60a();
+    ASSERT_TRUE(st.start(1));
+    const std::string path =
+        (std::filesystem::temp_directory_path() / "eyas_station_engines_nan.csv").string();
+    eyas::Controls c = st.starts()[1].controls;  // levers at fly, the reference 1
+    {
+        Recorder rec(path, "", "cfg.yaml", "", 60);
+        rec.begin(st, st.outputs());
+        rec.frame(0.0, {}, c, st.outputs());
+        c.engines[0].power_lever = std::numeric_limits<double>::quiet_NaN();
+        c.engines[1].power_lever = 2.0;
+        c.rotor_speed_reference = std::numeric_limits<double>::quiet_NaN();
+        rec.frame(0.1, {}, c, st.outputs());
+        rec.frame(0.2, {}, c, st.outputs());
+        c.rotor_speed_reference = -1.0;
+        c.engines[1].power_lever = -0.5;  // at the idle stop: a change
+        rec.frame(0.3, {}, c, st.outputs());
+        rec.end();
+    }
+    const std::vector<examples::ControlRow> rows = examples::read_controls(path);
+    ASSERT_EQ(rows.size(), 2U);
+    EXPECT_EQ(rows[1].t, 0.3);
+    EXPECT_EQ(rows[1].engines[0].power_lever, 1.0);
+    EXPECT_EQ(rows[1].engines[1].power_lever, 0.0);
+    EXPECT_EQ(rows[1].rotor_speed_reference, 1.0);
+}
+
+// The state history carries the engine controls (D-055, D-056), so a
+// piloted run shows what the levers, the speed trim and the shutoffs did,
+// then the drive's readouts (D-060).
 TEST(StationRecorder, StateHistoryCarriesTheEngineControls) {
     Station& st = uh60a();
     ASSERT_TRUE(st.start(1));
@@ -884,11 +934,16 @@ TEST(StationRecorder, StateHistoryCarriesTheEngineControls) {
     std::string row;
     ASSERT_TRUE(std::getline(lines, header) && std::getline(lines, start) &&
                 std::getline(lines, row));
-    EXPECT_TRUE(header.ends_with(
-        ",afcs,power_lever_1,power_lever_2,power_lever_3,power_lever_4,rotor_speed_reference,"
-        "fuel_on_1,fuel_on_2,fuel_on_3,fuel_on_4"));
-    EXPECT_TRUE(start.ends_with(",sas+pba,1,1,1,1,1,1,1,1,1"));
-    EXPECT_TRUE(row.ends_with(",sas+pba,0.25,0,1,1,1.01,1,0,1,1"));
+    EXPECT_NE(
+        header.find(",afcs,power_lever_1,power_lever_2,power_lever_3,power_lever_4,"
+                    "rotor_speed_reference,fuel_on_1,fuel_on_2,fuel_on_3,fuel_on_4,"
+                    "tail_rotor_torque_Nm,tail_rotor_power_W,ng_percent_1,np_percent_1,"
+                    "engine_torque_Nm_1,engine_power_W_1,fuel_flow_kgps_1,tgt_K_1,engine_out_1,"),
+        std::string::npos);
+    EXPECT_TRUE(header.ends_with(",tgt_K_4,engine_out_4"));
+    EXPECT_NE(start.find(",sas+pba,1,1,1,1,1,1,1,1,1,"), std::string::npos);
+    EXPECT_NE(row.find(",sas+pba,0.25,0,1,1,1.01,1,0,1,1,"), std::string::npos);
+    EXPECT_TRUE(row.ends_with(",nan,nan,nan,nan,nan,nan,0"));  // no fourth engine
 }
 
 // The start's AFCS switches go into the replay command (M8c2), and every
@@ -913,8 +968,8 @@ TEST(StationRecorder, AfcsChangesAreRecorded) {
     const std::string text = read_file(path);
     EXPECT_EQ(count(text, " --afcs sas,pba "), 1);
     EXPECT_EQ(count(text, "NOT REPLAYABLE"), 0);
-    EXPECT_EQ(count(text, "\n0,0,0,0,0,sas+pba\n"), 1);
-    EXPECT_EQ(count(text, "\n0.25,0,0,0,0,sas\n"), 1);
+    EXPECT_EQ(count(text, "\n0,0,0,0,0,sas+pba,1,1,1,1,1,1,1,1,1\n"), 1);
+    EXPECT_EQ(count(text, "\n0.25,0,0,0,0,sas,1,1,1,1,1,1,1,1,1\n"), 1);
     EXPECT_EQ(count(text, "\n0.29999999999999999,"), 0);  // unchanged: no row
     // And it reads back with the switches.
     const std::vector<examples::ControlRow> rows = examples::read_controls(path);
@@ -951,6 +1006,36 @@ TEST(StationRecorder, ControlFileReaderIsStrict) {
     ASSERT_EQ(rows.size(), 1U);
     EXPECT_TRUE(rows[0].has_afcs && rows[0].afcs.fps && rows[0].afcs.sas_analog);
     EXPECT_EQ(read("eyas_cf_old.csv", old_header + "0,0,0,0,0\n").size(), 1U);
+    // The engine columns (D-060): all of them, the shutoffs 0 or 1.
+    const std::string engines = std::string(examples::kControlHeaderEngines) + "\n";
+    const auto e = read("eyas_cf_eng.csv", engines + "0,0,0,0,0,sas,0.5,1,1,1,1.01,1,0,1,1\r\n");
+    ASSERT_EQ(e.size(), 1U);
+    EXPECT_TRUE(e[0].has_afcs && e[0].afcs.sas_digital && e[0].has_engines);
+    EXPECT_EQ(e[0].engines[0].power_lever, 0.5);
+    EXPECT_EQ(e[0].rotor_speed_reference, 1.01);
+    EXPECT_FALSE(e[0].engines[1].fuel_on);
+    EXPECT_TRUE(e[0].engines[0].fuel_on && e[0].engines[3].fuel_on);
+    EXPECT_THROW(read("eyas_cf_eng_short.csv", engines + "0,0,0,0,0,sas,0.5,1,1,1,1.01,1,0,1\n"),
+                 std::runtime_error);
+    EXPECT_THROW(read("eyas_cf_eng_fuel.csv", engines + "0,0,0,0,0,sas,0.5,1,1,1,1.01,1,2,1,1\n"),
+                 std::runtime_error);
+    EXPECT_THROW(
+        read("eyas_cf_eng_extra.csv", engines + "0,0,0,0,0,sas,0.5,1,1,1,1.01,1,0,1,1,7\n"),
+        std::runtime_error);
+    EXPECT_THROW(read("eyas_cf_eng_none.csv", engines + "0,0,0,0,0,sas\n"), std::runtime_error);
+    // Blanks around the switches, as around the numbers (code review of #88).
+    const auto spaced = read("eyas_cf_spaced.csv",
+                             std::string(examples::kControlHeaderAfcs) + "\n0, 0, 0, 0, 0, sas \n");
+    ASSERT_EQ(spaced.size(), 1U);
+    EXPECT_TRUE(spaced[0].afcs.sas_digital && spaced[0].afcs.sas_analog);
+    const auto spaced_engines = read(
+        "eyas_cf_eng_spaced.csv", engines + "0, 0, 0, 0, 0, sas , 0.5, 1, 1, 1, 1, 1, 0, 1, 1\n");
+    ASSERT_EQ(spaced_engines.size(), 1U);
+    EXPECT_TRUE(spaced_engines[0].afcs.sas_digital);
+    EXPECT_FALSE(spaced_engines[0].engines[1].fuel_on);
+    EXPECT_THROW(read("eyas_cf_blank_afcs.csv",
+                      std::string(examples::kControlHeaderAfcs) + "\n0,0,0,0,0, \n"),
+                 std::runtime_error);
 }
 
 // The exact FlightGear sequence (code review): the untouched throttle reads

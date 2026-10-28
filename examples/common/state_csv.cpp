@@ -28,6 +28,14 @@ void write_state_header(std::ostream& out) {
     for (std::size_t k = 0; k < eyas::kMaxEngines; ++k) {
         out << ",fuel_on_" << k + 1;
     }
+    // The drive's readouts (D-060).
+    out << ",tail_rotor_torque_Nm,tail_rotor_power_W";
+    for (std::size_t k = 0; k < eyas::kMaxEngines; ++k) {
+        const std::size_t n = k + 1;
+        out << ",ng_percent_" << n << ",np_percent_" << n << ",engine_torque_Nm_" << n
+            << ",engine_power_W_" << n << ",fuel_flow_kgps_" << n << ",tgt_K_" << n
+            << ",engine_out_" << n;
+    }
     out << '\n';
 }
 
@@ -60,6 +68,12 @@ void write_state_row(std::ostream& out, const eyas::Controls& c, const eyas::Air
     out << ',' << c.rotor_speed_reference;
     for (const eyas::EngineControls& e : c.engines) {
         out << ',' << (e.fuel_on ? 1 : 0);
+    }
+    out << ',' << o.tail_rotor_torque << ',' << o.tail_rotor_power;
+    for (const eyas::EngineState& e : o.engines) {
+        out << ',' << e.gas_generator_speed_percent << ',' << e.power_turbine_speed_percent << ','
+            << e.torque << ',' << e.power << ',' << e.fuel_flow << ',' << e.turbine_gas_temperature
+            << ',' << (e.out ? 1 : 0);
     }
     out << '\n';
 }

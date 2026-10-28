@@ -244,7 +244,8 @@ private:
     std::vector<std::size_t> phases_;       // the states labelled phase
     std::vector<std::size_t> order_;        // evaluation order, producers first (D-003)
     // Whether each component (config order) reports its readout role's
-    // fields (D-059): the first of each role, and every landing gear.
+    // fields (D-059): the first of each role, and every landing gear and
+    // engine component (D-060).
     std::vector<unsigned char> reports_;
     std::vector<ShaftConfig> shafts_;  // D-052
     std::size_t shaft_offset_ = 0;     // first shaft state index

@@ -1,6 +1,8 @@
 #include "recorder.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <stdexcept>
 #include <utility>
@@ -57,7 +59,6 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
     ++segment_;
     first_ = true;
     brakes_noted_ = false;
-    engines_noted_ = false;
     const StartPoint& sp = station.starts()[station.current_start()];
     start_ = sp.controls;
     if (!controls_path_.empty()) {
@@ -68,8 +69,7 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
         }
         controls_ << "# Eyas pilot station recording (D-044), start '" << sp.name << "'\n";
         if (sp.replayable) {
-            controls_ << "# Replays exactly unless a later comment says the brakes or the "
-                         "engine controls changed.\n";
+            controls_ << "# Replays exactly unless a later comment says the brakes changed.\n";
             controls_ << "# Replay: eyas_drive --config " << shell_quote(config_) << " --controls "
                       << shell_quote(path) << " --out <out.csv> --rate " << rate_
                       << " --trim-speed " << exact(sp.trim_speed_kt) << " --altitude "
@@ -80,7 +80,7 @@ void Recorder::begin(const Station& station, const eyas::AircraftState& state) {
         } else {
             controls_ << "# Not replayable in eyas_drive: it starts from a trim, not on the pad.\n";
         }
-        controls_ << examples::kControlHeaderAfcs << '\n';
+        controls_ << examples::kControlHeaderEngines << '\n';
     }
     if (!state_path_.empty()) {
         const std::string path = segment_path(state_path_, segment_);
@@ -102,22 +102,30 @@ void Recorder::frame(double t, const ControlDeltas& d, const eyas::Controls& c,
                   << " s: the brakes changed, and eyas_drive has no brake input\n";
         brakes_noted_ = true;
     }
-    if (controls_.is_open() && !engines_noted_ &&
-        (c.engines != start_.engines || c.rotor_speed_reference != start_.rotor_speed_reference)) {
-        controls_ << "# NOT REPLAYABLE from t = " << exact(t)
-                  << " s: the engine controls changed, and eyas_drive has no engine input "
-                     "(D-055)\n";
-        engines_noted_ = true;
+    // The engine controls as the model reads them (eyas/types.hpp): a lever
+    // clamped to its stops, NaN at fly; a speed trim that isn't positive and
+    // finite at 1. The same flight, and values that compare equal from frame
+    // to frame and read back (code review of #88).
+    std::array<eyas::EngineControls, eyas::kMaxEngines> engines = c.engines;
+    for (eyas::EngineControls& e : engines) {
+        e.power_lever = std::isnan(e.power_lever) ? 1.0 : std::clamp(e.power_lever, 0.0, 1.0);
     }
-    // A row whenever the increments or the AFCS switches change (the
-    // switches replay from the afcs column; M8c3).
+    const double reference = c.rotor_speed_reference > 0.0 && std::isfinite(c.rotor_speed_reference)
+                                 ? c.rotor_speed_reference
+                                 : 1.0;
+    // A row whenever the increments, the AFCS switches or the engine
+    // controls change (the switches replay from the afcs column, M8c3; the
+    // engine controls from theirs, D-060).
     if (controls_.is_open() &&
         (first_ || d.collective != last_.collective || d.lat_cyclic != last_.lat_cyclic ||
-         d.lon_cyclic != last_.lon_cyclic || d.pedal != last_.pedal || c.afcs != last_afcs_)) {
-        examples::write_control_row(
-            controls_, {t, d.collective, d.lat_cyclic, d.lon_cyclic, d.pedal, true, c.afcs});
+         d.lon_cyclic != last_.lon_cyclic || d.pedal != last_.pedal || c.afcs != last_afcs_ ||
+         engines != last_engines_ || reference != last_speed_reference_)) {
+        examples::write_control_row(controls_, {t, d.collective, d.lat_cyclic, d.lon_cyclic,
+                                                d.pedal, true, c.afcs, true, engines, reference});
         last_ = d;
         last_afcs_ = c.afcs;
+        last_engines_ = engines;
+        last_speed_reference_ = reference;
         first_ = false;
     }
     if (state_.is_open()) {

@@ -64,6 +64,18 @@ if(EYAS_BUILD_TESTS)
         COMMAND ${CMAKE_COMMAND} -DFILE=${doublet_out} -DLINES=602
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/drive/check_output.cmake)
     set_tests_properties(ExampleDrive.Doublet10sOutput PROPERTIES FIXTURES_REQUIRED doublet_out)
+    # The check's NaN allowance (D-060): an absent engine's columns and the
+    # readouts a model may lack pass; a NaN in a present engine's fails.
+    add_test(NAME ExampleDrive.OutputCheckAllowsAnAbsentEngine
+        COMMAND ${CMAKE_COMMAND}
+                -DFILE=${CMAKE_CURRENT_SOURCE_DIR}/drive/check_output_cases/absent_engine.csv
+                -DLINES=2 -P ${CMAKE_CURRENT_SOURCE_DIR}/drive/check_output.cmake)
+    add_test(NAME ExampleDrive.OutputCheckRejectsAPresentEnginesNaN
+        COMMAND ${CMAKE_COMMAND}
+                -DFILE=${CMAKE_CURRENT_SOURCE_DIR}/drive/check_output_cases/present_engine_nan.csv
+                -DLINES=2 -P ${CMAKE_CURRENT_SOURCE_DIR}/drive/check_output.cmake)
+    set_tests_properties(ExampleDrive.OutputCheckRejectsAPresentEnginesNaN PROPERTIES
+        PASS_REGULAR_EXPRESSION "non-finite engine_torque_Nm_1")
 
     add_test(NAME ExampleAdapter.Flies5s COMMAND eyas_adapter_example ${EYAS_UH60A_CONFIG})
 
@@ -91,6 +103,19 @@ if(EYAS_BUILD_TESTS)
                 -DCONTROLS=${CMAKE_CURRENT_SOURCE_DIR}/drive/afcs_10s.csv
                 -DAFCS=sas,pba,fps -DSWITCH_SETS=4
                 -DWORK=${CMAKE_CURRENT_BINARY_DIR}/station_replay_afcs
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/check_replay.cmake)
+
+    # The same with the engine controls moved in flight on Ballin's engines
+    # (D-060): the recording's engine columns replay them, and the state
+    # histories, which carry the engine controls, must still be
+    # byte-identical and show each control moved.
+    add_test(NAME ExampleStation.EngineRecordingReplaysExactly
+        COMMAND ${CMAKE_COMMAND}
+                -DSTATION=$<TARGET_FILE:eyas_pilot_station> -DDRIVE=$<TARGET_FILE:eyas_drive>
+                -DCONFIG=${PROJECT_SOURCE_DIR}/data/uh60a/engine_ballin/uh60a.yaml
+                -DCONTROLS=${CMAKE_CURRENT_SOURCE_DIR}/drive/engines_10s.csv
+                "-DCOLUMN_VALUES=power_lever_1=3;rotor_speed_reference=2;fuel_on_2=2"
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/station_replay_engines
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/pilot_station/check_replay.cmake)
 
     add_test(NAME ExampleStation.ScriptRunsFromTheStartPoint
