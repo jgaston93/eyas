@@ -1411,6 +1411,37 @@ private:
     std::size_t offset_ = 0;
 };
 
+// A trim continued from a nearby one (issue #76): steps from level flight
+// into a descent at 60 kt (#76's −250 ft/min, which failed on B2b while
+// −500 converged) and into climbs at 100 kt (+1000 ft/min failed here, the
+// solver giving up after 8 iterations; on the 16 000 lbm aircraft at 5250 ft
+// +500 failed too, after 2) converge, and on the trim a cold start finds:
+// the same collective, attitude and rotor speed to the trims' tolerance.
+TEST(BallinT700Aircraft, ContinuesFromANearbyTrim) {
+    const Uh60aOnBallinEngines a;
+    for (const auto& [kt, fpm] :
+         {std::pair{60.0, -250.0}, std::pair{100.0, 500.0}, std::pair{100.0, 1000.0}}) {
+        SCOPED_TRACE(std::to_string(kt) + " kt, " + std::to_string(fpm) + " ft/min");
+        std::vector<double> x;
+        TrimCondition c;
+        c.airspeed = kt * units::kKnot;
+        const TrimResult level = a.trim(c, nullptr, x);
+        ASSERT_TRUE(level.converged);
+        c.flight_path_angle = std::asin(fpm * units::kFoot / 60.0 / c.airspeed);
+        const TrimResult next = a.trim(c, &level, x);
+        ASSERT_TRUE(next.converged)
+            << next.iterations << " iterations, force residual " << next.force_residual;
+        // Within the budget: a direct attempt, then the two stages (#76).
+        EXPECT_LE(next.iterations, 3 * TrimOptions{}.max_iterations);
+        const TrimResult cold = a.trim(c, nullptr, x);
+        ASSERT_TRUE(cold.converged);
+        EXPECT_NEAR(next.controls.collective, cold.controls.collective, 1e-5);
+        EXPECT_NEAR(next.pitch, cold.pitch, 1e-5);
+        EXPECT_NEAR(next.roll, cold.roll, 1e-5);
+        EXPECT_NEAR(a.omega(next), a.omega(cold), 1e-5 * a.governed());
+    }
+}
+
 // One engine out at 80 kt (D-056): the trim converges with the dead engine
 // out on the maps' floor, its clutch open, and the live engine alone
 // delivers what the two did, since the rotor's demand is the same: its

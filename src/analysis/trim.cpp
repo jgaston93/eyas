@@ -627,6 +627,9 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
     const std::size_t nc = ex.num_component_states();
     const auto n_unknowns = static_cast<Eigen::Index>(p.unknowns());
     VecX z = VecX::Zero(n_unknowns);
+    // A start whose seeders' engines are seeded for this condition, so it can
+    // fall back on the cold start's two stages (below).
+    bool seeded = false;
     if (start != nullptr) {
         if (start->component_states.size() != ex.num_states() - body_layout::kSize) {
             throw InitError("trim: the starting point's component states don't fit this model");
@@ -657,6 +660,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         VecX r_kept;
         if (p.has_seeders() && !(p.residual(z, r_kept) && converged(norms(r_kept), o))) {
             seed_start(ex, p, z, nc);
+            seeded = true;
         }
     } else {
         // Cold start: mid collective, level, every component at its initial
@@ -765,13 +769,11 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
             }
         }
     };
-    if (start == nullptr && p.has_seeders()) {
-        // A cold start solves first with the engines at their equilibrium and
-        // the shafts governed, as on ideal drives, then frees them from there
-        // (D-053 amendment 2): from the cold start's mid collective the full
-        // problem can wander off (in the vortex ring it stalled 10 % of
-        // collective from the trim the ideal drive finds). Stage 1 only has
-        // to reach the right neighbourhood: 10³ times the tolerances.
+    // Two stages: first with the engines at their equilibrium and the shafts
+    // governed, as on ideal drives, then freed from there (D-053 amendment
+    // 2). Stage 1 only has to reach the right neighbourhood: 10³ times the
+    // tolerances.
+    const auto two_stages = [&] {
         TrimOptions loose = o;
         loose.force_tol *= 1e3;
         loose.moment_tol *= 1e3;
@@ -780,8 +782,25 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         newton(loose);
         p.set_seeded(false);
         seed_start(ex, p, z, nc);
+        newton(o);
+    };
+    if (start == nullptr && p.has_seeders()) {
+        // A cold start: from its mid collective the full problem can wander
+        // off (in the vortex ring it stalled 10 % of collective from the trim
+        // the ideal drive finds).
+        two_stages();
+    } else {
+        const VecX z_start = z;
+        newton(o);
+        // A nearby trim's start, its engines seeded for this condition, whose
+        // full Newton steps fail (issue #76: climbs from level flight on
+        // Ballin's engines gave up after 2-3 iterations) takes the two stages
+        // from the same start. One that converges directly is as before.
+        if (seeded && p.has_seeders() && !(ok && converged(m, o))) {
+            z = z_start;
+            two_stages();
+        }
     }
-    newton(o);
 
     // The final revolution again, counting unconverged evaluations in it
     // alone (D-023), then the state at t = 0 for the final z.
