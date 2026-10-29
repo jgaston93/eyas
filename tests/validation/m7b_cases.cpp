@@ -148,6 +148,27 @@ LinearModel around_free(const Executive& ex, const std::vector<std::vector<doubl
         m.A += A / J;
         m.B += B / J;
     }
+    // As linearize() (D-053 amendment 2): states pinned on a limit or a
+    // switch on the samples are held, and a free shaft's azimuth is cyclic.
+    // The samples span one revolution from a whole number of them.
+    std::vector<std::vector<double>> samples;
+    samples.reserve(static_cast<std::size_t>(J));
+    for (int j = 0; j < J; ++j) {
+        const int s = first + j * every;
+        samples.push_back(traj[static_cast<std::size_t>(s)]);
+    }
+    const std::vector<bool> frozen = pinned_reduced(ex, rc, samples, like.period, u, env);
+    for (std::size_t i = 0; i < frozen.size(); ++i) {
+        if (frozen[i]) {
+            const auto k = static_cast<Eigen::Index>(i);
+            m.A.row(k).setZero();
+            m.A.col(k).setZero();
+            m.B.row(k).setZero();
+        }
+    }
+    for (const std::size_t i : rc.azimuth_states()) {
+        m.A.col(static_cast<Eigen::Index>(i)).setZero();
+    }
     return m;
 }
 

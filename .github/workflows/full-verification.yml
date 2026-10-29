@@ -82,10 +82,12 @@ jobs:
       - name: Test (all, slow ones included)
         run: ctest --preset debug --parallel "$(nproc)"
 
+  # About 1.5 h in all since the engine configs' trims (the Ballin engine
+  # cases alone about 35 min); each generator's time is printed.
   validation:
     name: Validation generators and plots (Release)
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 180
     env:
       CC: gcc
       CXX: g++
@@ -122,10 +124,13 @@ jobs:
           failed=""
           run() {  # name, generator, plot script
             echo "::group::$1"
+            start=$SECONDS
             if "$2" "validation-output/data/$1" && python "$3" "validation-output/data/$1" "validation-output/plots/$1"; then
               echo "::endgroup::"
+              echo "$1: $((SECONDS - start)) s"
             else
               echo "::endgroup::"
+              echo "$1: $((SECONDS - start)) s"
               echo "::error::validation generator $1 failed"
               failed="$failed $1"
             fi
@@ -168,11 +173,16 @@ jobs:
           if [ -n "$out" ]; then echo "$out"; exit 1; fi
 
   # A failed scheduled run opens an issue, or comments on the open one, so
-  # it can't go unnoticed (it once failed three nights running unseen).
+  # it can't go unnoticed (it once failed three nights running unseen). A
+  # job past its time limit ends cancelled, not failed, and failure() misses
+  # it (the generators timed out every night from 2026-10-24, unseen), so
+  # the needed jobs' results are read instead.
   report:
     name: Report a failed nightly run
     needs: [asan, clang, validation, tidy]
-    if: failure() && github.event_name == 'schedule'
+    if: >-
+      always() && github.event_name == 'schedule' &&
+      (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
     runs-on: ubuntu-24.04
     permissions:
       issues: write

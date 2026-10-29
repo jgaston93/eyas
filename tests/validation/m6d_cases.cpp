@@ -1,9 +1,10 @@
 // Writes the M6d whole-aircraft cases for the VALIDATION.md entry
 // (tools/plot_m6d.py; D-028, D-034), on the UH-60A config
 // data/uh60a/uh60a.yaml:
-// - hover out of ground effect, body held level and at rest, cyclic centred:
-//   the collective and pedal for zero vertical force and yaw moment, the yaw
-//   budget and the controls in GenHel's units;
+// - hover out of ground effect, body held level and at rest, cyclic centred,
+//   the rotor shaft held at its governed speed: the collective and pedal for
+//   zero vertical force and yaw moment, the yaw budget and the controls in
+//   GenHel's units;
 // - the ground pedal (yaw balance at collective down) and a drop from 0.3 m
 //   with brakes set: time histories, the settled ground loads against weight
 //   minus lift, and the slow rocking D-032 warned of;
@@ -27,6 +28,7 @@
 #include "eyas/model.hpp"
 #include "support/frame_status.hpp"
 #include "support/m6d_fixtures.hpp"
+#include "support/m7c_ballin.hpp"
 #include "util/units.hpp"
 
 namespace {
@@ -243,7 +245,11 @@ int main(int argc, char** argv) {
         std::filesystem::create_directories(dir);
         const Uh60aHarness ac;
         std::ofstream summary(dir / "m6d_summary.csv");
-        hover(ac, summary);
+        // The rotor shaft held at its governed speed, as the unit test
+        // HoverPedalBalancesMainRotorTorque: on the engines' free shaft
+        // (D-053) the held body has no steady state, and this is a check of
+        // the airframe's arms, not of the engines.
+        hover(Uh60aHarness(test::ballin::ideal_shaft_config()), summary);
         ground(ac, dir, summary);
         cost(summary);
         summary.close();

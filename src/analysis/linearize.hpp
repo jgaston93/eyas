@@ -158,6 +158,14 @@ struct LinearModel {
 // The central-difference half-step of each coordinate of `rc`, by kind.
 std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const LinearizeOptions& o);
 
+// The reduced coordinates of `rc` pinned on a limit or a switch at any of
+// `states` (full states sampled evenly over the period T [s], with controls
+// u): DynamicComponent::pinned_states(). linearize() holds them (D-053
+// amendment 2).
+std::vector<bool> pinned_reduced(const Executive& ex, const ReducedCoordinates& rc,
+                                 const std::vector<std::vector<double>>& states, double T,
+                                 const Controls& u, const Environment& env);
+
 // Linearizes `ex` about trim `r` for `c` along the held orbit (D-035).
 // Throws InitError if the trim doesn't fit `ex`, or if `c` has a ground and
 // options.height is false: near the ground the rotor's ground effect makes
