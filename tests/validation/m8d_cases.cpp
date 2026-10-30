@@ -108,12 +108,17 @@ void heave(const std::filesystem::path& dir) {
         const Executive ex = executive(vrs);
         const std::size_t mr = main_rotor(ex);
         const auto& rotor = dynamic_cast<const BladeElementRotor&>(ex.component(mr));
+        // Each trim starts from the last (a cold start at 20 m/s with the
+        // correction fails, issue #76; where both converge they agree to
+        // 1e-8 in the controls).
+        TrimResult previous;
         for (int i = 1; i <= 44; ++i) {
             const double rate = 0.5 * i;
             const TrimCondition c = vertical_descent(rate);
             std::vector<double> x0;
-            const TrimResult r = solve_trim(ex, c, nullptr, x0);
+            const TrimResult r = solve_trim(ex, c, i == 1 ? nullptr : &previous, x0);
             require(r.converged, "trim did not converge at " + std::to_string(rate) + " m/s");
+            previous = r;
             const std::vector<double> x = held_orbit_start(ex, c, r);
             const std::span<const double> xr(x.data() + ex.component_offset(mr),
                                              ex.component_size(mr));

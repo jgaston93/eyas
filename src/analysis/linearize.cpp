@@ -372,10 +372,6 @@ std::vector<double> perturbation_steps(const ReducedCoordinates& rc, const Linea
     return h;
 }
 
-namespace {
-
-// The reduced coordinates pinned on a limit or a switch at any of `states`
-// (sampled evenly over the period T): DynamicComponent::pinned_states().
 std::vector<bool> pinned_reduced(const Executive& ex, const ReducedCoordinates& rc,
                                  const std::vector<std::vector<double>>& states, double T,
                                  const Controls& u, const Environment& env) {
@@ -400,8 +396,6 @@ std::vector<bool> pinned_reduced(const Executive& ex, const ReducedCoordinates& 
     }
     return frozen;
 }
-
-}  // namespace
 
 LinearModel linearize(const Executive& ex, const TrimCondition& c, const TrimResult& r,
                       const LinearizeOptions& o) {
