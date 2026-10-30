@@ -42,9 +42,12 @@ struct TrimCondition {
 struct TrimResult {
     bool converged = false;  // residuals within tolerance, start state finite
     int iterations = 0;      // Newton iterations used
-    Controls controls;       // the trimmed pilot inputs (brakes released)
-    double pitch = 0.0;      // θ [rad]
-    double roll = 0.0;       // φ [rad]
+    // The trimmed pilot inputs (brakes released), always inside their travel
+    // (Controls): a condition that needs more doesn't converge, and ends
+    // with the control on its stop.
+    Controls controls;
+    double pitch = 0.0;  // θ [rad]
+    double roll = 0.0;   // φ [rad]
     // [s] The held revolution's period: one turn of the rotor, 2π/Ω at its
     // trimmed speed, which a free shaft's governor may hold a little off
     // its governed speed (D-053).

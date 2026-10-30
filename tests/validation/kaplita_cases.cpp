@@ -57,8 +57,17 @@ void sweep(std::ofstream& out, const char* variant, const std::string& text, int
             c.sideslip = beta * b::kDeg;
             std::vector<double> x;
             const TrimResult r = solve_trim(held.executive(), c, have ? &prev : nullptr, x);
-            std::cout << variant << ", " << kt << " kt, " << beta
-                      << " deg: " << (r.converged ? "converged" : "NOT CONVERGED") << "\n";
+            // Past a control's travel there is no trim, and none further out:
+            // the sweep stops there (D-053 amendment 8; 100 kt at −20° needs
+            // more than full right pedal).
+            const bool limit = !r.converged && b::on_a_stop(r.controls);
+            std::cout << variant << ", " << kt << " kt, " << beta << " deg: "
+                      << (r.converged ? "converged"
+                                      : (limit ? "past a control's travel" : "NOT CONVERGED"))
+                      << "\n";
+            if (limit) {
+                break;
+            }
             if (!r.converged) {
                 throw std::runtime_error("sideslip trim did not converge");
             }

@@ -149,8 +149,11 @@ def climbs(data, outdir, table):
                         label="flight test")
             for constraint, style, lab in (("fixed_stabilator", "o-", "Eyas, stabilator held"),
                                            ("genhel", ":", "Eyas, stabilator scheduled")):
+                # Converged trims only: a point with no trim (past full
+                # collective, or an autorotation GenHel's engines can't trim)
+                # is the solver's last iterate, not a flight condition.
                 rows = sorted((r for r in eyas if r["knots"] == kt
-                               and r["constraint"] == constraint),
+                               and r["constraint"] == constraint and r["converged"]),
                               key=lambda r: r["rate_of_climb_fpm"])
                 e = from_level(np.array([[r["rate_of_climb_fpm"] / 1000.0, r[col]]
                                          for r in rows]))

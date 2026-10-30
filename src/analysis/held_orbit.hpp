@@ -42,6 +42,11 @@ public:
     // an unknown, D-053).
     void set_period(double period) noexcept { period_ = period; }
     int steps() const noexcept { return steps_; }
+    // Whether the free shafts' speeds Ω (D-053) are held too, as the held
+    // states are: their rates are zero in every RK4 stage, so they turn at
+    // their speed as on an ideal drive, and their would-be change goes to
+    // held_change(). Off at construction. Trim's stage 1 (D-053 amendment 8).
+    void hold_free_shafts(bool on);
     // Evaluations in which some component's bounded iteration did not
     // converge (D-023), since construction or the last clear.
     std::size_t unconverged() const noexcept { return unconverged_; }
@@ -59,6 +64,7 @@ private:
     std::vector<double> k3_;
     std::vector<double> k4_;
     std::vector<std::size_t> held_;  // the held states' indices
+    std::size_t held_states_ = 0;    // of which the leading ones are the held component states
     std::vector<double> held_change_;
     std::size_t unconverged_ = 0;
 };
