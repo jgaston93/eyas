@@ -30,6 +30,18 @@ HeldIntegrator::HeldIntegrator(const Executive& ex, Environment env, double peri
             held_.push_back(i);
         }
     }
+    held_states_ = held_.size();
+}
+
+void HeldIntegrator::hold_free_shafts(bool on) {
+    held_.resize(held_states_);
+    if (on) {
+        for (std::size_t k = 0; k < ex_.shafts().size(); ++k) {
+            if (ex_.shafts()[k].drive == ShaftDrive::free) {
+                held_.push_back(ex_.shaft_offset(k) + 1);  // Ω after ψ (D-052)
+            }
+        }
+    }
 }
 
 void HeldIntegrator::clear_held_change() {

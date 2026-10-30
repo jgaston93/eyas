@@ -28,6 +28,23 @@ constexpr std::size_t kPitch = 4;
 constexpr std::size_t kRoll = 5;
 constexpr std::size_t kHead = 6;  // controls (4) and attitude; component states follow
 
+// The controls' travel (eyas/types.hpp Controls): collective [0, 1], the
+// others [−1, 1]. Trim keeps its controls inside it: past a stop the stick
+// has no more travel, and GenHel's mixer, which clamps the blade pitch at the
+// head limits but mixes the unclamped collective into the cyclic and the tail
+// rotor (CR-166309 Fig. 5.1.6), would leave a combination of the four that
+// moves nothing. Newton's minimum-norm step then ran off along it (issue
+// #76: collective 10⁷).
+constexpr std::array<double, 4> kTravelLow = {0.0, -1.0, -1.0, -1.0};
+constexpr std::array<double, 4> kTravelHigh = {1.0, 1.0, 1.0, 1.0};
+
+void keep_in_travel(VecX& z) {
+    for (std::size_t j = 0; j < 4; ++j) {
+        const auto k = static_cast<Eigen::Index>(j);
+        z(k) = std::clamp(z(k), kTravelLow[j], kTravelHigh[j]);
+    }
+}
+
 struct RotorInfo {
     double omega = 0.0;   // [rad/s]; 0: no rotor
     double radius = 1.0;  // [m], the moment scale
@@ -147,10 +164,16 @@ public:
     bool has_seeders() const { return !seeders_.empty(); }
     // Stage 1 of a cold start (D-053 amendment 2): every evaluation seeds the
     // seeders' states (the engines at their equilibrium for the rotor's
-    // demand) and puts the free shafts at their reference speeds, with that
-    // period, so the shafts barely move, as on ideal drives; their unknowns
-    // and residuals drop out.
-    void set_seeded(bool on) { seeded_ = on; }
+    // demand) and holds the free shafts at their reference speeds, with that
+    // period, as on ideal drives; their unknowns and residuals drop out. The
+    // speeds are held, not just started there (D-053 amendment 8): a seed
+    // matches the rotor's torque at one instant only, and on Ballin's
+    // engines the shaft drifted up to 8 % in a revolution, so the blades
+    // didn't come round with it and their periodicity swamped the residual.
+    void set_seeded(bool on) {
+        seeded_ = on;
+        held_.hold_free_shafts(on);
+    }
     // A free shaft's reference speed [rad/s]: its governed speed times the
     // engines' speed reference (D-055 item 1), where its governor holds it.
     double reference_speed(std::size_t shaft) const {
@@ -645,6 +668,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         z(1) = start->controls.lat_cyclic;
         z(2) = start->controls.lon_cyclic;
         z(3) = start->controls.pedal;
+        keep_in_travel(z);
         z(kPitch) = start->pitch;
         z(kRoll) = start->roll;
         for (std::size_t j = 0; j < nc; ++j) {
@@ -687,8 +711,12 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
             z(n_unknowns - 1) = p.reference_period();
         }
         // The engines at their equilibrium for the rotor's demand, before and
-        // after settling, so the free shafts hold their speed meanwhile.
+        // after settling. The settling is stage 1's (the free shafts held at
+        // their reference speeds, D-053 amendment 8): on a drifting shaft the
+        // blades settled at an azimuth other than the start's, where the
+        // revolutions that follow begin.
         seed_start(ex, p, z, nc);
+        p.set_seeded(true);
         if (p.pack(z)) {
             Vec6 ignored;
             p.hold(o.settle_periods, p.controls(z), ignored);
@@ -696,6 +724,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
                 z(static_cast<Eigen::Index>(kHead + j)) = p.state()[body_layout::kSize + j];
             }
         }
+        p.set_seeded(false);
         seed_start(ex, p, z, nc);
     }
 
@@ -718,7 +747,11 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         J.resize(n, n);
         VecX rj;
         for (Eigen::Index j = 0; j < n; ++j) {
-            const double dz = 1e-6 * std::max(1.0, std::abs(z(j)));
+            double dz = 1e-6 * std::max(1.0, std::abs(z(j)));
+            // A control on its upper stop differences inward, inside the travel.
+            if (j < 4 && z(j) + dz > kTravelHigh[static_cast<std::size_t>(j)]) {
+                dz = -dz;
+            }
             VecX zj = z;
             zj(j) += dz;
             if (!p.residual(zj, rj)) {
@@ -745,12 +778,15 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
             // Minimum-norm step: states with no effect on the residual (the
             // wash lags at zero airspeed, D-028) keep their values.
             const VecX step = J.completeOrthogonalDecomposition().solve(-r);
-            // Backtracking on the residual norm.
+            // Backtracking on the residual norm, each trial point's controls
+            // inside their travel (projected: a control the step pushes past a
+            // stop stays on it).
             bool accepted = false;
             VecX zt;
             VecX rt;
             for (int k = 0; k < 12 && !accepted; ++k) {
                 zt = z + std::ldexp(1.0, -k) * step;
+                keep_in_travel(zt);
                 accepted = p.residual(zt, rt) && rt.norm() < r.norm();
             }
             if (!accepted) {

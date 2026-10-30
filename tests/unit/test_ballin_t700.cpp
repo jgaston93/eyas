@@ -1514,6 +1514,97 @@ TEST(BallinT700Aircraft, ConvergesOnlyOnOneTurnOfTheRotor) {
     }
 }
 
+// Issue #72: cold starts in a vertical descent at V/v_h ≈ 0.8 (the timing
+// benchmark's vortex-ring case, 10 m/s with the whole AFCS on; and 10 and
+// 12 m/s with it off) trim on Ballin's engines, and to the trim the same
+// aircraft finds with its rotor speed held: the same collective and attitude
+// to 1e-4 (the governor holds the speed reference, to its 4/rev ripple). They
+// didn't: stage 1 of the cold start let the free shaft drift while the rotor
+// settled and in each revolution (up to 8 %), so the blades didn't come round
+// and Newton chased their periodicity, until it stalled at collective 0.3
+// or ran past the collective's stop (D-053 amendment 8).
+TEST(BallinT700Aircraft, ColdStartsTrimTheVortexRingDescent) {
+    const std::string path = std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a.yaml";
+    const Config free_cfg = Config::from_file(path);
+    const Config held_cfg = test::ballin::ideal_shaft_config(path);
+    const Executive free = build_executive(free_cfg, read_origin(free_cfg).origin().altitude);
+    const Executive held = build_executive(held_cfg, read_origin(held_cfg).origin().altitude);
+    for (const auto& [rate, afcs] :
+         {std::pair{10.0, true}, std::pair{10.0, false}, std::pair{12.0, false}}) {
+        SCOPED_TRACE(std::to_string(rate) + " m/s, AFCS " + (afcs ? "on" : "off"));
+        TrimCondition c;
+        c.airspeed = rate;
+        c.flight_path_angle = -0.5 * std::numbers::pi;
+        if (afcs) {
+            c.afcs = {true, true, true, true, false, false};
+        }
+        std::vector<double> x;
+        const TrimResult f = solve_trim(free, c, nullptr, x);
+        ASSERT_TRUE(f.converged) << f.iterations << " iterations, force residual "
+                                 << f.force_residual;
+        const TrimResult h = solve_trim(held, c, nullptr, x);
+        ASSERT_TRUE(h.converged);
+        EXPECT_NEAR(f.controls.collective, h.controls.collective, 1e-4);
+        EXPECT_NEAR(f.pitch, h.pitch, 1e-4);
+        EXPECT_NEAR(f.roll, h.roll, 1e-4);
+    }
+}
+
+// Issue #76: at 100 kt and −2500 ft/min (Table B.1's loading) a cold start
+// converged on another, unstable branch (pitch 12.3°, roll 17.4°, flown free
+// it pitched up and the rotor ran down), and later failed. It finds the trim
+// continued from level flight in 500 ft/min steps: the same collective,
+// attitude and rotor speed to the trims' tolerance.
+TEST(BallinT700Aircraft, ColdStartFindsTheContinuedTrimInADescent) {
+    const Uh60aOnBallinEngines a;
+    std::vector<double> x;
+    TrimCondition c;
+    c.airspeed = 100.0 * units::kKnot;
+    TrimResult continued = a.trim(c, nullptr, x);
+    ASSERT_TRUE(continued.converged);
+    for (int fpm = -500; fpm >= -2500; fpm -= 500) {
+        c.flight_path_angle = std::asin(fpm * units::kFoot / 60.0 / c.airspeed);
+        continued = a.trim(c, &continued, x);
+        ASSERT_TRUE(continued.converged) << fpm << " ft/min";
+    }
+    const TrimResult cold = a.trim(c, nullptr, x);
+    ASSERT_TRUE(cold.converged);
+    EXPECT_NEAR(cold.controls.collective, continued.controls.collective, 1e-5);
+    EXPECT_NEAR(cold.pitch, continued.pitch, 1e-5);
+    EXPECT_NEAR(cold.roll, continued.roll, 1e-5);
+    EXPECT_NEAR(a.omega(cold), a.omega(continued), 1e-5 * a.governed());
+}
+
+// Issue #92: the M7c climb sweep's autorotative descent (Ballin TM-88360
+// Fig. B3: 100 kt, −3000 ft/min, 16 000 lbm at 5250 ft, the stabilator held
+// at its level-flight incidence) trims on Ballin's engines with the rotor
+// speed free, continued from −2000 ft/min as in the gate. It didn't: the
+// direct attempt failed and the two stages' first let the shaft drift (D-053
+// amendment 8). In it the rotor drives the drive: the clutches overrun and
+// the rotor turns faster than governed (D-056), once a revolution.
+TEST(BallinT700Aircraft, TrimsTheAutorotativeDescentAtOneHundredKnots) {
+    namespace b = test::ballin;
+    const std::string path =
+        std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a_ballin.yaml";
+    const test::Uh60aHarness ac(path);
+    const b::Point level = b::genhel_trim(ac.executive(), 100.0, 0.0, nullptr);
+    ASSERT_TRUE(level.converged);
+    const double stab =
+        b::revolution_average(ac, level.x, level.trim.controls, {}, level.trim.period).stabilator;
+    const test::Uh60aHarness held = b::fixed_stabilator(stab / b::kDeg, path, false);
+    const Executive& ex = held.executive();
+    b::Point p = b::genhel_trim(ex, 100.0, 0.0, &level);
+    ASSERT_TRUE(p.converged);
+    for (const double fpm : {-1000.0, -2000.0, -3000.0}) {
+        p = b::genhel_trim(ex, 100.0, fpm, &p);
+        ASSERT_TRUE(p.converged) << fpm << " ft/min: " << p.trim.iterations
+                                 << " iterations, force residual " << p.trim.force_residual;
+    }
+    const double omega = p.trim.component_states[ex.shaft_offset(0) + 1 - body_layout::kSize];
+    EXPECT_GT(omega, 1.002 * ex.shafts()[0].speed);
+    EXPECT_NEAR(omega * p.trim.period, 2.0 * std::numbers::pi, 1e-3);
+}
+
 // One engine out at 80 kt (D-056): the trim converges with the dead engine
 // out on the maps' floor, its clutch open, and the live engine alone
 // delivers what the two did, since the rotor's demand is the same: its

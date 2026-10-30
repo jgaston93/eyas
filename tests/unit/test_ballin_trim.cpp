@@ -238,13 +238,23 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
 // autorotate, the clutch letting go of the engines, and no powered trim
 // exists. Trims in autorotation come with engine-off flight (D-053 item 7,
 // Stage B2); until then the comparison holds the rotor speed, as before.
+//
+// A climb past full collective has no trim: trim keeps the controls inside
+// their travel (D-053 amendment 8). At 137.5 kt that is +2500 ft/min and up
+// (+2000 trims on 92.5 %). Such a point is a limit, not a failure, when the
+// trim ends with the collective on its stop; the lateral climb comparison is
+// then made at the highest climb that trims. Before the bound, +3000 ft/min
+// "trimmed" on 106.6 % collective, the extra still mixed into the cyclic and
+// the tail rotor. GenHel's own curve leaves Fig. B4's 0–100 % scale near
+// +2500 ft/min; its lateral and pedal curves go on to +3000.
 TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
     const test::Uh60aHarness ac(ideal_shaft_config(config_path()));
     struct Record {
         const char* figure;
         double kt;
+        int climb_top;              // the highest climb inside the travel [ft/min]
         double collective_descent;  // Eyas − GenHel change in collective at −3000 ft/min [%]
-        double lateral_climb;       // the same, lateral cyclic at +3000 ft/min [%]
+        double lateral_climb;       // the same, lateral cyclic at climb_top [%]
         double power_slope;  // Eyas − GenHel dP/dVc over ±2000 ft/min [hp per 1000 ft/min]
     };
     // VALIDATION.md M7c, recorded 2026-10-16, re-recorded 2026-10-22 with
@@ -254,11 +264,13 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
     // slopes at 60 and 100 kt (within the read-off) match; they are recorded
     // here too, so the record is one table. The 100 kt lateral climb record
     // moved from 5.27 to 8.74 % with GenHel's downwash correction terms
-    // (D-048).
+    // (D-048). The 137.5 kt lateral climb record moved from 11.88 % at +3000
+    // to 7.18 % at +2000 ft/min on 2026-10-29: +3000 is past full collective
+    // (D-053 amendment 8).
     const std::array<Record, 3> records = {{
-        {"b2", 60.0, 3.21, 5.43, 19.8},
-        {"b3", 100.0, 5.29, 8.91, 18.0},
-        {"b4", 137.5, 8.63, 11.88, 91.3},
+        {"b2", 60.0, 3000, 3.21, 5.43, 19.8},
+        {"b3", 100.0, 3000, 5.29, 8.91, 18.0},
+        {"b4", 137.5, 2000, 8.63, 7.18, 91.3},
     }};
     // Power slope read-off: 1.75 % of the 3000 hp axis per reading, a
     // five-point fit over 4000 ft/min: σ_slope = 52.5 / √10 ≈ 16.6 hp per
@@ -278,6 +290,14 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
             for (int k = 1; k <= 3; ++k) {
                 const int fpm = sign * 1000 * k;
                 pts[fpm] = genhel_trim(held.executive(), r.kt, fpm, &pts[fpm - sign * 1000]);
+                if (fpm > r.climb_top) {
+                    // Past the limit: no trim, the collective on its upper stop.
+                    EXPECT_FALSE(pts[fpm].converged) << r.kt << " kt, " << fpm << " ft/min";
+                    EXPECT_EQ(pts[fpm].trim.controls.collective, 1.0)
+                        << r.kt << " kt, " << fpm
+                        << " ft/min: not trimmed short of full collective";
+                    break;
+                }
                 ASSERT_TRUE(pts[fpm].converged) << r.kt << " kt, " << fpm << " ft/min";
             }
         }
@@ -300,13 +320,16 @@ TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
             << r.kt << " kt: collective change at -3000 ft/min against GenHel (record "
             << r.collective_descent << "); update this record and VALIDATION.md M7c";
 
-        const double d_lat = (lat_pct(pts[3000].trim.controls) - lat_pct(pts[0].trim.controls)) -
-                             (lat(3.0) - lat(0.0));
+        const double top = r.climb_top / 1000.0;
+        const double d_lat =
+            (lat_pct(pts[r.climb_top].trim.controls) - lat_pct(pts[0].trim.controls)) -
+            (lat(top) - lat(0.0));
         const double tol_lat =
-            std::sqrt(2.0) * kSpanTerm * 100.0 + std::abs(lat.slope(3.0, 0.25)) * kRateReadOff;
+            std::sqrt(2.0) * kSpanTerm * 100.0 + std::abs(lat.slope(top, 0.25)) * kRateReadOff;
         EXPECT_NEAR(d_lat, r.lateral_climb, tol_lat)
-            << r.kt << " kt: lateral cyclic change at +3000 ft/min against GenHel (record "
-            << r.lateral_climb << "); update this record and VALIDATION.md M7c";
+            << r.kt << " kt: lateral cyclic change at +" << r.climb_top
+            << " ft/min against GenHel (record " << r.lateral_climb
+            << "); update this record and VALIDATION.md M7c";
 
         // Least-squares slope over -2000..+2000 ft/min, five equally spaced points.
         double se = 0.0;

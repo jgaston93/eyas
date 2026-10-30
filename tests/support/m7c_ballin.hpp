@@ -187,6 +187,13 @@ inline double pedal_pct(const Controls& u) {
     return 50.0 * (1.0 + u.pedal);
 }
 
+// Whether a control is on a stop of its travel: where a trim that needs more
+// than the travel ends (D-053 amendment 8).
+inline bool on_a_stop(const Controls& u) {
+    return u.collective == 0.0 || u.collective == 1.0 || std::abs(u.lat_cyclic) == 1.0 ||
+           std::abs(u.lon_cyclic) == 1.0 || std::abs(u.pedal) == 1.0;
+}
+
 // One digitized Ballin curve (a figure's panel and series), x ascending, read
 // linearly between the samples; outside them, NaN.
 class Curve {

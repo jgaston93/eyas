@@ -28,6 +28,7 @@
 #include "support/alloc_counter.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "support/m7_fixtures.hpp"
+#include "support/m7c_ballin.hpp"
 #include "util/error.hpp"
 #include "util/math.hpp"
 #include "util/units.hpp"
@@ -268,6 +269,76 @@ TEST(Trim, ColdStartStagesHaveTheirOwnIterationBudget) {
     const TrimResult r = solve_trim(ex, level(0), nullptr, x, o);
     EXPECT_TRUE(r.converged);
     EXPECT_GT(r.iterations, 6);  // both stages, counted together
+}
+
+// Trim keeps the controls inside their travel (D-053 amendment 8). The
+// UH-60A with its rotor speed held climbs vertically at 25 m/s on 0.98
+// collective (measured); 27 m/s needs more than full up, so it doesn't trim,
+// and the controls it ends on, like every iterate's, are inside their
+// travel, the collective on its upper stop. Without the bound it ended at
+// 1.05, and past the stop Newton's minimum-norm step could run off along a
+// combination of the controls that moves nothing (issue #76: 10⁷).
+TEST(Trim, ControlsStayInTheirTravel) {
+    const Config cfg = test::ballin::ideal_shaft_config();
+    const Executive ex = build_executive(cfg, read_origin(cfg).origin().altitude);
+    std::vector<double> x;
+    TrimCondition c;
+    c.flight_path_angle = 0.5 * std::numbers::pi;
+    c.airspeed = 25.0;
+    const TrimResult inside = solve_trim(ex, c, nullptr, x);
+    ASSERT_TRUE(inside.converged);
+    EXPECT_LT(inside.controls.collective, 1.0);
+    c.airspeed = 27.0;
+    const TrimResult past = solve_trim(ex, c, nullptr, x);
+    EXPECT_FALSE(past.converged);
+    EXPECT_EQ(past.controls.collective, 1.0);
+    for (const double u :
+         {past.controls.lat_cyclic, past.controls.lon_cyclic, past.controls.pedal}) {
+        EXPECT_GE(u, -1.0);
+        EXPECT_LE(u, 1.0);
+    }
+}
+
+// HeldIntegrator::hold_free_shafts (D-053 amendment 8), as trim's stage 1
+// uses it: with it on, a free shaft keeps its speed through a revolution,
+// as on an ideal drive, so the rotor turns once in 2π/Ω; the change the
+// shaft would have made is in held_change(). With it off again the shaft
+// moves, by about that change. At the UH-60A's initial state with mid
+// collective GenHel's engines don't deliver the rotor's torque, so it does
+// move.
+TEST(Trim, HeldFreeShaftsKeepTheirSpeed) {
+    const test::Uh60aHarness ac;
+    const Executive& ex = ac.executive();
+    ASSERT_EQ(ex.shafts()[0].drive, ShaftDrive::free);
+    const std::size_t psi = ex.shaft_offset(0);
+    const double omega0 = ex.shafts()[0].speed;
+    BodyState b;
+    b.pos_n = Vec3(0.0, 0.0, -500.0);
+    Controls u;
+    u.collective = 0.5;
+    const int steps = 256;
+    const auto revolution = [&](HeldIntegrator& h) {
+        std::vector<double> x = ac.initial(b);
+        Vec6 ignored = Vec6::Zero();
+        for (int s = 0; s < steps; ++s) {
+            h.step(s, u, x, ignored);
+        }
+        return x;
+    };
+    HeldIntegrator held(ex, Environment{}, 2.0 * std::numbers::pi / omega0, steps);
+    held.hold_free_shafts(true);
+    const std::vector<double> xh = revolution(held);
+    EXPECT_EQ(xh[psi + 1], omega0);
+    // ψ is wrapped into [0, 2π) (D-052): one turn lands at 0 or just below 2π.
+    EXPECT_NEAR(std::remainder(xh[psi], 2.0 * std::numbers::pi), 0.0, 1e-9);
+    const double would = held.held_change()[psi + 1];
+    held.hold_free_shafts(false);
+    held.clear_held_change();
+    const std::vector<double> xf = revolution(held);
+    const double moved = xf[psi + 1] - omega0;
+    EXPECT_GT(std::abs(moved), 1e-3 * omega0);
+    EXPECT_NEAR(would, moved, 0.1 * std::abs(moved));
+    EXPECT_EQ(held.held_change()[psi + 1], 0.0);
 }
 
 // ---- Independence of step, heading and steady wind ---------------------------------
