@@ -638,9 +638,9 @@ TEST(BallinT700, ReportsAnUnconvergedGasPath) {
 }
 
 // A demand no steady state delivers (ten times the hover torque; the steady
-// solve fails from twice it) seeds a finite, fuelled state: the seed falls
-// back to the rest point's fuel, not the failed solve's zero fuel, nor 0/0
-// where no steady state at zero fuel exists (code review of PR #71).
+// solve fails from twice it) seeds a finite, fuelled state, not the failed
+// solve's zero fuel, nor 0/0 where no steady state at zero fuel exists (code
+// review of PR #71); since D-061 the maps' top (TrimSeedPastTheTopIsAtTheTop).
 TEST(BallinT700, TrimSeedPastTheMapsIsFinite) {
     const Harness h;
     const BallinT700Config& c = h.engine().config();
@@ -675,6 +675,101 @@ TEST(BallinT700, TrimSeedPastTheMapsIsAtTheInlet) {
         EXPECT_TRUE(d.converged);
         EXPECT_NEAR(xdot[BallinT700::kNg], 0.0, 1e-6);
         EXPECT_NEAR(xdot[BallinT700::kPs3Lag], 0.0, 1e-6);
+    }
+}
+
+// A demand past the most the engines deliver seeds them at the maps' top, the
+// nearest steady state (D-061), not at the rest point's fuel: near the
+// ceiling the rotor's demand at one instant passes the top while its mean
+// doesn't, and a seed at rest started Newton far off (137.5 kt +1425 ft/min,
+// issue #92). Just under the top the steady solve seeds as before.
+TEST(BallinT700, TrimSeedPastTheTopIsAtTheTop) {
+    const Harness h;
+    const BallinT700& engine = h.engine();
+    const BallinT700Config& c = engine.config();
+    const SimContext probe = h.context(Harness::kGoverned, 0.9, 0.0);
+    double fuel = 0.0;
+    double ng = 0.0;
+    BallinT700Gas g;
+    ASSERT_TRUE(engine.steady_at_top(Harness::kGoverned, probe.air.pressure, probe.air.temperature,
+                                     fuel, ng, g));
+    // The rotor-side torque at the top, less the drive train's load.
+    const double top = c.engines * c.gear * g.q_pt - engine.drive_train_load(Harness::kGoverned);
+    const double ng_top = engine.ng_top(probe.air.temperature);
+    for (const double f : {1.001, 1.05, 2.0}) {
+        SCOPED_TRACE(f);
+        std::vector<double> x(h.size());
+        const SimContext ctx = h.context(Harness::kGoverned, 0.9, f * top);
+        engine.trim_seed(ctx, x);
+        for (std::size_t e = 0; e < static_cast<std::size_t>(c.engines); ++e) {
+            EXPECT_NEAR(x[e * BallinT700::kEngineStates + BallinT700::kNg], ng_top, 1e-6 * ng_top);
+        }
+    }
+    std::vector<double> x(h.size());
+    engine.trim_seed(h.context(Harness::kGoverned, 0.9, 0.999 * top), x);
+    EXPECT_LT(x[BallinT700::kNg], ng_top);
+    EXPECT_GT(x[BallinT700::kNg], (1.0 - 1e-3) * ng_top);
+}
+
+// Within about 10⁻⁴ of the top's torque the steady solve for torque can fail
+// short of the top; the seed is then the top, the nearer steady state, not
+// the rest point's fuel (code review of PR #96).
+TEST(BallinT700, TrimSeedJustUnderTheTopIsAtTheTop) {
+    const Harness h;
+    const BallinT700& engine = h.engine();
+    const BallinT700Config& c = engine.config();
+    const SimContext probe = h.context(Harness::kGoverned, 0.9, 0.0);
+    const double p2 = probe.air.pressure;
+    const double t2 = probe.air.temperature;
+    double fuel = 0.0;
+    double ng = 0.0;
+    BallinT700Gas g;
+    ASSERT_TRUE(engine.steady_at_top(Harness::kGoverned, p2, t2, fuel, ng, g));
+    const double drive = engine.drive_train_load(Harness::kGoverned);
+    const double top = c.engines * c.gear * g.q_pt;  // at the shaft
+    const double ng_top = engine.ng_top(t2);
+    int failed = 0;
+    for (int k = 0; k < 500; ++k) {
+        const double q = (0.999 + 2e-6 * k) * top;
+        double f = 0.0;
+        double n = 0.0;
+        BallinT700Gas s;
+        if (engine.steady_for_torque(q, Harness::kGoverned, p2, t2, f, n, s)) {
+            continue;
+        }
+        SCOPED_TRACE(q / top);
+        ++failed;
+        std::vector<double> x(h.size());
+        engine.trim_seed(h.context(Harness::kGoverned, 0.9, q - drive), x);
+        for (std::size_t e = 0; e < static_cast<std::size_t>(c.engines); ++e) {
+            EXPECT_NEAR(x[e * BallinT700::kEngineStates + BallinT700::kNg], ng_top, 1e-5 * ng_top);
+        }
+    }
+    EXPECT_GT(failed, 0);  // the case exists on this day
+}
+
+// Trim keeps each gas generator at or below the maps' top on the day
+// (D-061), NG = NGC_top × NG_des √θ2 (TM-100991 eq. 6); no other bound.
+TEST(BallinT700, TrimBoundsTheGasGeneratorAtTheMapsTop) {
+    const Harness h;
+    for (const double feet : {0.0, 10000.0}) {
+        SCOPED_TRACE(feet);
+        SimContext ctx = h.context(Harness::kGoverned, 0.5, 0.0);
+        ctx.air = isa_atmosphere(feet * kFoot, 0.0);
+        const double inf = std::numeric_limits<double>::infinity();
+        std::vector<double> lower(h.size(), -inf);
+        std::vector<double> upper(h.size(), inf);
+        h.engine().trim_bounds(ctx, lower, upper);
+        const double top =
+            h.engine().maps_top() * std::sqrt(ctx.air.temperature / BallinT700::kTstd);
+        for (std::size_t i = 0; i < h.size(); ++i) {
+            EXPECT_EQ(lower[i], -inf) << i;
+            if (i % BallinT700::kEngineStates == BallinT700::kNg) {
+                EXPECT_NEAR(upper[i], top, 1e-15) << i;
+            } else {
+                EXPECT_EQ(upper[i], inf) << i;
+            }
+        }
     }
 }
 
@@ -1024,6 +1119,34 @@ TEST(BallinT700, SteadyStatesReachTheMapsTop) {
         }
     }
     EXPECT_GT(ngc, engine->maps_top() - 0.002);
+}
+
+// The steady state at the maps' top is the most the engines deliver: at a
+// corrected speed within 10⁻⁶ of the top and not past it, and the steady
+// solve for torque converges just under its torque and fails just over it
+// (D-061; 5250 ft ISA).
+TEST(BallinT700, SteadyAtTopIsTheMostTheEnginesDeliver) {
+    const auto engine = load_engine();
+    const BallinT700Config& c = engine->config();
+    const AirState air = isa_atmosphere(5250.0 * kFoot, 0.0);
+    const double omega = c.np_des / c.gear;
+    double fuel = 0.0;
+    double ng = 0.0;
+    BallinT700Gas g;
+    ASSERT_TRUE(engine->steady_at_top(omega, air.pressure, air.temperature, fuel, ng, g));
+    EXPECT_LE(g.ngc, engine->maps_top());
+    EXPECT_GT(g.ngc, engine->maps_top() - 1e-6);
+    const double q = c.engines * c.gear * g.q_pt;  // [N·m] at the shaft
+    double f = 0.0;
+    double n = 0.0;
+    BallinT700Gas h;
+    EXPECT_TRUE(
+        engine->steady_for_torque(0.999 * q, omega, air.pressure, air.temperature, f, n, h));
+    EXPECT_LT(f, fuel);
+    f = 0.0;
+    n = 0.0;
+    EXPECT_FALSE(
+        engine->steady_for_torque(1.001 * q, omega, air.pressure, air.temperature, f, n, h));
 }
 
 // The shutoff (D-056 item 2): with the fuel off the metering valve's command

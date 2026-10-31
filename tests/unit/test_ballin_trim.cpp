@@ -24,9 +24,12 @@
 // value, a calibration, not a validation. Since D-048 the shape is gated to
 // 90 kt; above, the cyclic is an open difference (b1_open).
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
 #include <map>
+#include <ostream>
 #include <string>
 #include <vector>
 
@@ -155,9 +158,10 @@ const std::map<std::string, std::map<int, double>>& b1_open() {
     return open;
 }
 
-// Level flight, 0 to 160 kt, under GenHel's lateral constraint (Fig. B1).
-TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
-    const test::Uh60aHarness ac(config_path());
+// Level flight, 0 to 160 kt, under GenHel's lateral constraint (Fig. B1), on
+// the aircraft `config`.
+void level_gate(const Config& config) {
+    const test::Uh60aHarness ac(config);
     std::map<std::string, Curve> genhel;
     for (const Quantity& q : b1_quantities()) {
         genhel.emplace(q.panel, Curve("b1", q.panel, "sikorsky_genhel"));
@@ -228,123 +232,204 @@ TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
     EXPECT_EQ(tracked, 63);
 }
 
+// On GenHel's engines (D-053), the rotor speed free.
+TEST(BallinTrim, LevelFlightAgainstSikorskyGenHel) {
+    level_gate(Config::from_file(config_path()));
+}
+
+// On Ballin's engines (D-054), the rotor speed free: the M7 regression on the
+// engine configs (issue #92). The same records hold; at 160 kt the engines
+// run at 98.7 % corrected gas-generator speed, inside their maps (D-061).
+TEST(BallinTrim, LevelFlightOnBallinsEngines) {
+    level_gate(Config::from_file(engine_config_path()));
+}
+
 // Climb and descent (Figs. B2-B4), the stabilator held at Eyas's level-flight
 // incidence as Sikorsky's runs held theirs (Ballin p. 10): changes from level
 // flight. The conditions of B2-B4 are missing (DATA_GAPS.md), so only these
-// trends are compared, and only the open ones are recorded here. The rotor
-// is held at its governed speed (an ideal drive), as these trims were made
-// before the engines (D-053): at 60 kt from −2000 ft/min and at 100 kt at
-// −3000 ft/min the rotor needs no power at 100 % rotor speed, so it would
-// autorotate, the clutch letting go of the engines, and no powered trim
-// exists. Trims in autorotation come with engine-off flight (D-053 item 7,
-// Stage B2); until then the comparison holds the rotor speed, as before.
+// trends are compared, and only the open ones are recorded here.
 //
-// A climb past full collective has no trim: trim keeps the controls inside
-// their travel (D-053 amendment 8). At 137.5 kt that is +2500 ft/min and up
-// (+2000 trims on 92.5 %). Such a point is a limit, not a failure, when the
-// trim ends with the collective on its stop; the lateral climb comparison is
-// then made at the highest climb that trims. Before the bound, +3000 ft/min
+// A climb past the aircraft's limit has no trim, and the gate checks the
+// limit it ends on: past full collective (trim keeps the controls inside
+// their travel, D-053 amendment 8) the collective on its upper stop; past
+// the engines' ceiling (trim keeps Ballin's gas generators inside their maps,
+// D-061) every engine at the maps' top. The lateral climb comparison is then
+// made at the highest climb that trims, and the power slope over the climbs
+// that trim.
+enum class Limit { collective, engines };
+
+struct ClimbRecord {
+    const char* figure;
+    double kt;
+    int climb_top;              // the highest climb that trims [ft/min]
+    Limit limit;                // what the next one up ends on
+    double collective_descent;  // Eyas − GenHel change in collective at −3000 ft/min [%]
+    double lateral_climb;       // the same, lateral cyclic at climb_top [%]
+    // Eyas − GenHel dP/dVc over −2000 ft/min to min(+2000, climb_top)
+    // [hp per 1000 ft/min]
+    double power_slope;
+};
+
+// Power read-off: 1.75 % of the 3000 hp axis per reading; a least-squares
+// slope over points with abscissae x [1000 ft/min] has σ = 52.5 / √Σ(x − x̄)²
+// (16.6 hp per 1000 ft/min over the five from −2000 to +2000).
+constexpr double kPowerReadOff = 52.5;  // [hp]
+
+// The aircraft `config` against the record `r`, its stabilator held at the
+// level-flight incidence [deg] by `held_at`.
+void climb_gate(const Config& config, const std::function<test::Uh60aHarness(double)>& held_at,
+                const ClimbRecord& r) {
+    const test::Uh60aHarness ac(config);
+    Point level = genhel_trim(ac.executive(), r.kt, 0.0, nullptr);
+    ASSERT_TRUE(level.converged) << r.kt << " kt";
+    const double stab =
+        revolution_average(ac, level.x, level.trim.controls, {}, level.trim.period).stabilator;
+    const test::Uh60aHarness held = held_at(stab / kDeg);
+    std::map<int, Point> pts;
+    std::map<int, double> power;
+    pts[0] = genhel_trim(held.executive(), r.kt, 0.0, &level);
+    ASSERT_TRUE(pts[0].converged);
+    for (int sign : {1, -1}) {
+        for (int k = 1; k <= 3; ++k) {
+            const int fpm = sign * 1000 * k;
+            pts[fpm] = genhel_trim(held.executive(), r.kt, fpm, &pts[fpm - sign * 1000]);
+            if (fpm > r.climb_top) {
+                // Past the limit: no trim, on the limit.
+                const Point& p = pts[fpm];
+                EXPECT_FALSE(p.converged) << r.kt << " kt, " << fpm << " ft/min";
+                if (r.limit == Limit::collective) {
+                    EXPECT_EQ(p.trim.controls.collective, 1.0)
+                        << r.kt << " kt, " << fpm
+                        << " ft/min: not trimmed short of full collective";
+                } else {
+                    EXPECT_TRUE(engines_on_maps_top(held.executive(), p.x, condition(r.kt, fpm),
+                                                    p.trim.controls))
+                        << r.kt << " kt, " << fpm
+                        << " ft/min: not trimmed short of the engines' maps' top";
+                }
+                break;
+            }
+            ASSERT_TRUE(pts[fpm].converged) << r.kt << " kt, " << fpm << " ft/min";
+        }
+    }
+    const int slope_top = std::min(2000, r.climb_top);
+    for (int fpm = -2000; fpm <= slope_top; fpm += 1000) {
+        power[fpm] =
+            revolution_average(held, pts[fpm].x, pts[fpm].trim.controls, {}, pts[fpm].trim.period)
+                .power /
+            kHp;
+    }
+    const Curve coll(r.figure, "collective", "sikorsky_genhel");
+    const Curve lat(r.figure, "lateral", "sikorsky_genhel");
+    const Curve pow(r.figure, "power", "sikorsky_genhel");
+
+    const double d_coll =
+        (collective_pct(pts[-3000].trim.controls) - collective_pct(pts[0].trim.controls)) -
+        (coll(-3.0) - coll(0.0));
+    const double tol_coll =
+        std::sqrt(2.0) * kSpanTerm * 100.0 + std::abs(coll.slope(-3.0, 0.25)) * kRateReadOff;
+    EXPECT_NEAR(d_coll, r.collective_descent, tol_coll)
+        << r.kt << " kt: collective change at -3000 ft/min against GenHel (record "
+        << r.collective_descent << "); update this record and VALIDATION.md M7c";
+
+    const double top = r.climb_top / 1000.0;
+    const double d_lat = (lat_pct(pts[r.climb_top].trim.controls) - lat_pct(pts[0].trim.controls)) -
+                         (lat(top) - lat(0.0));
+    const double tol_lat =
+        std::sqrt(2.0) * kSpanTerm * 100.0 + std::abs(lat.slope(top, 0.25)) * kRateReadOff;
+    EXPECT_NEAR(d_lat, r.lateral_climb, tol_lat)
+        << r.kt << " kt: lateral cyclic change at +" << r.climb_top
+        << " ft/min against GenHel (record " << r.lateral_climb
+        << "); update this record and VALIDATION.md M7c";
+
+    // Least-squares slope of Eyas − GenHel over the equally spaced points.
+    double mean = 0.0;
+    for (const auto& [fpm, p] : power) {
+        mean += fpm / 1000.0 / static_cast<double>(power.size());
+    }
+    double sxd = 0.0;
+    double sxx = 0.0;
+    for (const auto& [fpm, p] : power) {
+        const double x = fpm / 1000.0;
+        sxd += (x - mean) * (p - 100.0 * pow(x));  // B2-B4 power is plotted in hp/100
+        sxx += (x - mean) * (x - mean);
+    }
+    const double d_slope = sxd / sxx;
+    EXPECT_NEAR(d_slope, r.power_slope, kPowerReadOff / std::sqrt(sxx))
+        << r.kt << " kt: power slope against GenHel (record " << r.power_slope
+        << "); update this record and VALIDATION.md M7c";
+}
+
+// The rotor held at its governed speed (an ideal drive), as these trims were
+// made before the engines (D-053). At 137.5 kt +2500 ft/min and up is past
+// full collective (+2000 trims on 92.5 %). Before the bound, +3000 ft/min
 // "trimmed" on 106.6 % collective, the extra still mixed into the cyclic and
 // the tail rotor. GenHel's own curve leaves Fig. B4's 0–100 % scale near
 // +2500 ft/min; its lateral and pedal curves go on to +3000.
-TEST(BallinTrim, ClimbAndDescentTrendsAgainstSikorskyGenHel) {
-    const test::Uh60aHarness ac(ideal_shaft_config(config_path()));
-    struct Record {
-        const char* figure;
-        double kt;
-        int climb_top;              // the highest climb inside the travel [ft/min]
-        double collective_descent;  // Eyas − GenHel change in collective at −3000 ft/min [%]
-        double lateral_climb;       // the same, lateral cyclic at climb_top [%]
-        double power_slope;  // Eyas − GenHel dP/dVc over ±2000 ft/min [hp per 1000 ft/min]
-    };
-    // VALIDATION.md M7c, recorded 2026-10-16, re-recorded 2026-10-22 with
-    // D-051 (tip loss on the inflow; every record moved within its tolerance
-    // but the 137.5 kt power slope, 73.1 to 91.3). At 60 kt the descent
-    // collective (within its tolerance, the curve being steep) and the power
-    // slopes at 60 and 100 kt (within the read-off) match; they are recorded
-    // here too, so the record is one table. The 100 kt lateral climb record
-    // moved from 5.27 to 8.74 % with GenHel's downwash correction terms
-    // (D-048). The 137.5 kt lateral climb record moved from 11.88 % at +3000
-    // to 7.18 % at +2000 ft/min on 2026-10-29: +3000 is past full collective
-    // (D-053 amendment 8).
-    const std::array<Record, 3> records = {{
-        {"b2", 60.0, 3000, 3.21, 5.43, 19.8},
-        {"b3", 100.0, 3000, 5.29, 8.91, 18.0},
-        {"b4", 137.5, 2000, 8.63, 7.18, 91.3},
-    }};
-    // Power slope read-off: 1.75 % of the 3000 hp axis per reading, a
-    // five-point fit over 4000 ft/min: σ_slope = 52.5 / √10 ≈ 16.6 hp per
-    // 1000 ft/min.
-    constexpr double kSlopeTol = 16.6;
-    for (const Record& r : records) {
-        Point level = genhel_trim(ac.executive(), r.kt, 0.0, nullptr);
-        ASSERT_TRUE(level.converged) << r.kt << " kt";
-        const double stab =
-            revolution_average(ac, level.x, level.trim.controls, {}, level.trim.period).stabilator;
-        const test::Uh60aHarness held = fixed_stabilator(stab / kDeg, config_path(), true);
-        std::map<int, Point> pts;
-        std::map<int, double> power;
-        pts[0] = genhel_trim(held.executive(), r.kt, 0.0, &level);
-        ASSERT_TRUE(pts[0].converged);
-        for (int sign : {1, -1}) {
-            for (int k = 1; k <= 3; ++k) {
-                const int fpm = sign * 1000 * k;
-                pts[fpm] = genhel_trim(held.executive(), r.kt, fpm, &pts[fpm - sign * 1000]);
-                if (fpm > r.climb_top) {
-                    // Past the limit: no trim, the collective on its upper stop.
-                    EXPECT_FALSE(pts[fpm].converged) << r.kt << " kt, " << fpm << " ft/min";
-                    EXPECT_EQ(pts[fpm].trim.controls.collective, 1.0)
-                        << r.kt << " kt, " << fpm
-                        << " ft/min: not trimmed short of full collective";
-                    break;
-                }
-                ASSERT_TRUE(pts[fpm].converged) << r.kt << " kt, " << fpm << " ft/min";
-            }
-        }
-        for (int fpm = -2000; fpm <= 2000; fpm += 1000) {
-            power[fpm] = revolution_average(held, pts[fpm].x, pts[fpm].trim.controls, {},
-                                            pts[fpm].trim.period)
-                             .power /
-                         kHp;
-        }
-        const Curve coll(r.figure, "collective", "sikorsky_genhel");
-        const Curve lat(r.figure, "lateral", "sikorsky_genhel");
-        const Curve pow(r.figure, "power", "sikorsky_genhel");
+//
+// VALIDATION.md M7c, recorded 2026-10-16, re-recorded 2026-10-22 with D-051
+// (tip loss on the inflow; every record moved within its tolerance but the
+// 137.5 kt power slope, 73.1 to 91.3). At 60 kt the descent collective
+// (within its tolerance, the curve being steep) and the power slopes at 60
+// and 100 kt (within the read-off) match; they are recorded here too, so the
+// record is one table. The 100 kt lateral climb record moved from 5.27 to
+// 8.74 % with GenHel's downwash correction terms (D-048). The 137.5 kt
+// lateral climb record moved from 11.88 % at +3000 to 7.18 % at +2000 ft/min
+// on 2026-10-29: +3000 is past full collective (D-053 amendment 8).
+constexpr std::array<ClimbRecord, 3> kHeldRecords = {{
+    {"b2", 60.0, 3000, Limit::collective, 3.21, 5.43, 19.8},
+    {"b3", 100.0, 3000, Limit::collective, 5.29, 8.91, 18.0},
+    {"b4", 137.5, 2000, Limit::collective, 8.63, 7.18, 91.3},
+}};
 
-        const double d_coll =
-            (collective_pct(pts[-3000].trim.controls) - collective_pct(pts[0].trim.controls)) -
-            (coll(-3.0) - coll(0.0));
-        const double tol_coll =
-            std::sqrt(2.0) * kSpanTerm * 100.0 + std::abs(coll.slope(-3.0, 0.25)) * kRateReadOff;
-        EXPECT_NEAR(d_coll, r.collective_descent, tol_coll)
-            << r.kt << " kt: collective change at -3000 ft/min against GenHel (record "
-            << r.collective_descent << "); update this record and VALIDATION.md M7c";
+class ClimbHeld : public ::testing::TestWithParam<ClimbRecord> {};
 
-        const double top = r.climb_top / 1000.0;
-        const double d_lat =
-            (lat_pct(pts[r.climb_top].trim.controls) - lat_pct(pts[0].trim.controls)) -
-            (lat(top) - lat(0.0));
-        const double tol_lat =
-            std::sqrt(2.0) * kSpanTerm * 100.0 + std::abs(lat.slope(top, 0.25)) * kRateReadOff;
-        EXPECT_NEAR(d_lat, r.lateral_climb, tol_lat)
-            << r.kt << " kt: lateral cyclic change at +" << r.climb_top
-            << " ft/min against GenHel (record " << r.lateral_climb
-            << "); update this record and VALIDATION.md M7c";
-
-        // Least-squares slope over -2000..+2000 ft/min, five equally spaced points.
-        double se = 0.0;
-        double sg = 0.0;
-        for (int fpm = -2000; fpm <= 2000; fpm += 1000) {
-            const double x = fpm / 1000.0;
-            se += x * power[fpm];
-            sg += x * 100.0 * pow(x);  // B2-B4 power is plotted in hp/100
-        }
-        const double d_slope = (se - sg) / 10.0;  // Σx² = 10
-        EXPECT_NEAR(d_slope, r.power_slope, kSlopeTol)
-            << r.kt << " kt: power slope against GenHel (record " << r.power_slope
-            << "); update this record and VALIDATION.md M7c";
-    }
+TEST_P(ClimbHeld, TrendsAgainstSikorskyGenHel) {
+    climb_gate(
+        ideal_shaft_config(config_path()),
+        [](double inc) { return fixed_stabilator(inc, config_path(), true); }, GetParam());
 }
+
+// On Ballin's engines (D-054), the rotor speed free: the M7 regression on the
+// engine configs (issue #92). The descents at 60 and 100 kt −3000 ft/min
+// autorotate, the clutches slipping (D-056). Past the engines' ceiling the
+// climbs end with the engines at the maps' top (D-061): +3000 ft/min at 60
+// and 100 kt, +2000 at 137.5 kt, where the ideal drive trims on 92.5 %
+// collective.
+//
+// VALIDATION.md M7c, recorded 2026-10-30 (D-061). Where the condition is the
+// ideal drive's the records agree with its within their tolerances: the
+// power slopes at 60 and 100 kt (19.8 and 18.3 against 19.8 and 18.0), the
+// descent collective at 100 and 137.5 kt (4.77 and 8.63 against 5.29 and
+// 8.63). At 60 kt −3000 ft/min the rotor autorotates at 108.6 % and the
+// descent collective moves from 3.21 to −0.54 %, inside GenHel's read-off
+// (3.78). The lateral climb records are at the engines' climb tops, +2000
+// and +1000 ft/min, and the 137.5 kt power slope is over −2000 to +1000 ft/min.
+constexpr std::array<ClimbRecord, 3> kEngineRecords = {{
+    {"b2", 60.0, 2000, Limit::engines, -0.54, 4.09, 19.8},
+    {"b3", 100.0, 2000, Limit::engines, 4.77, 5.10, 18.3},
+    {"b4", 137.5, 1000, Limit::engines, 8.63, 3.04, 71.7},
+}};
+
+class ClimbOnEngines : public ::testing::TestWithParam<ClimbRecord> {};
+
+TEST_P(ClimbOnEngines, TrendsAgainstSikorskyGenHel) {
+    climb_gate(
+        Config::from_file(engine_config_path()),
+        [](double inc) { return fixed_stabilator(inc, engine_config_path(), false); }, GetParam());
+}
+
+void PrintTo(const ClimbRecord& r, std::ostream* os) {
+    *os << r.figure << " (" << r.kt << " kt)";
+}
+
+std::string figure_name(const ::testing::TestParamInfo<ClimbRecord>& info) {
+    return info.param.figure;
+}
+
+INSTANTIATE_TEST_SUITE_P(BallinTrim, ClimbHeld, ::testing::ValuesIn(kHeldRecords), figure_name);
+INSTANTIATE_TEST_SUITE_P(BallinTrim, ClimbOnEngines, ::testing::ValuesIn(kEngineRecords),
+                         figure_name);
 
 }  // namespace
 }  // namespace eyas

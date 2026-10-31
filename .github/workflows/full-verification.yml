@@ -21,7 +21,10 @@ jobs:
   # Under the strict build the whole-aircraft trims take up to 2 h each
   # (BallinTrim.LevelFlightAgainstSikorskyGenHel: 7100 s), so the suite is
   # split four ways (ctest -I: every fourth test) and each part may use
-  # GitHub's 6 h job limit.
+  # GitHub's 6 h job limit. The gate on Ballin's engines (D-061) is left out:
+  # about three times slower than the gate on GenHel's (an estimated 6 h
+  # each), it runs in every PR's Release jobs and in the Clang job below, and
+  # the engines' code it adds runs here in BallinT700Aircraft's trims.
   asan:
     name: Ubuntu GCC ASan+UBSan (strict), tests part ${{ matrix.part }} of 4
     runs-on: ubuntu-24.04
@@ -35,6 +38,7 @@ jobs:
       CXX: g++
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 500M
+      ASAN_TOO_SLOW: ^(BallinTrim\.LevelFlightOnBallinsEngines|BallinTrim/ClimbOnEngines\..*)$
     steps:
       - uses: actions/checkout@v5
       - name: Install Ninja and ccache
@@ -52,7 +56,9 @@ jobs:
       - name: Build
         run: cmake --build --preset asan
       - name: Test (every fourth test, slow ones included)
-        run: ctest --preset asan --parallel "$(nproc)" -I ${{ matrix.part }},,4
+        run: >-
+          ctest --preset asan --parallel "$(nproc)" -I ${{ matrix.part }},,4
+          --exclude-regex "$ASAN_TOO_SLOW"
 
   clang:
     name: Ubuntu Clang Debug, all tests

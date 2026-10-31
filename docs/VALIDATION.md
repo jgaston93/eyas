@@ -852,7 +852,7 @@ Answered with a scratch probe on Ballin's B1 trims (GenHel's lateral constraint,
 
 ### The V1 gate
 
-`BallinTrim.LevelFlightAgainstSikorskyGenHel` and `BallinTrim.ClimbAndDescentTrendsAgainstSikorskyGenHel` (`tests/unit/test_ballin_trim.cpp`; slow, about 30 s and 60 s in Debug) trim the Ballin aircraft and compare against the Sikorsky GenHel curves with a tolerance from the measured read-off: 1.75 % of the axis span plus the local slope times 1.5 kt (0.1 thousand ft/min for B2–B4); DECISIONS.md D-035. They gate the longitudinal cyclic (10–150 kt; its shape, with the mean removed, since the mean set neutral cyclic, and the mean tracked at its record), lateral cyclic (10–110 kt), stabilator (10–150 kt) and pitch attitude (0–80 kt), all within tolerance, and track every open difference above (lateral cyclic above 110 kt, longitudinal cyclic at 100–150 kt, pitch at 50 kt, collective, sideslip, pedal, main-rotor power; the descent collective, climb lateral cyclic and power slope of B2–B4) at its recorded value, so a change either way fails the test. A deliberate change to one record was caught.
+`BallinTrim.LevelFlightAgainstSikorskyGenHel` and `BallinTrim/ClimbHeld.TrendsAgainstSikorskyGenHel/b2`–`b4` (`tests/unit/test_ballin_trim.cpp`; slow, about 70 s and 40 s each in Release; the climbs were one test, `ClimbAndDescentTrendsAgainstSikorskyGenHel`, until D-061, and run on Ballin's engines too: M9 below) trim the Ballin aircraft and compare against the Sikorsky GenHel curves with a tolerance from the measured read-off: 1.75 % of the axis span plus the local slope times 1.5 kt (0.1 thousand ft/min for B2–B4); DECISIONS.md D-035. They gate the longitudinal cyclic (10–150 kt; its shape, with the mean removed, since the mean set neutral cyclic, and the mean tracked at its record), lateral cyclic (10–110 kt), stabilator (10–150 kt) and pitch attitude (0–80 kt), all within tolerance, and track every open difference above (lateral cyclic above 110 kt, longitudinal cyclic at 100–150 kt, pitch at 50 kt, collective, sideslip, pedal, main-rotor power; the descent collective, climb lateral cyclic and power slope of B2–B4) at its recorded value, so a change either way fails the test. A deliberate change to one record was caught.
 
 ### Open: hover power
 
@@ -1833,7 +1833,7 @@ The tail rotor's power is now in both the level power and the autorotation; the 
 **The μ² truncation** (D-058): against Bailey's assumptions integrated without it, at the trims above: within 1 % to 80 kt, then 5 % high at 120 kt, 15 % at 140 kt and 48 % at 160 kt (63 hp against 42 hp; under 1 % of the aircraft's power). Ames flew the same truncation; extending the torque and GenHel's thrust beyond μ² is open.
 
 **Ballin's climbs and descents** (`m9_ballin_climbs.csv`, D-056's sweep, each trim continued from its neighbour): on the engines the continuation now stops at 60 kt −1000 ft/min (before, −2500), at 60 kt +3000 ft/min (on a branch overrunning at 119 % rotor speed) and at 100 kt −3000 ft/min (before, overrun at 102.6 %); 100 kt from +500 ft/min and 137.5 kt from +1500 ft/min are as before. With the rotor speed held, 60 kt +3000 ft/min no longer trims (near full collective). These are the trims' start-point sensitivity (#76), which the torque moves rather than causes: a probe at Ballin's conditions trimmed each of 60 kt to −2500 ft/min and 100 kt to −3000 ft/min from level flight and cold, with and without the torque. Without it, 60 kt −2500 failed from level flight and 100 kt −2000 cold; with it, 100 kt −2500 and −3000 and +500 fail from level flight and trim cold; 60 kt −3000 fails both ways either way.
-*Since D-053 amendment 8 (2026-10-29):* on the engines 60 kt +3000 ft/min trims (79.3 % collective at the governed rotor speed, not the 119 % branch), so it is inside the engines' ceiling; with the rotor speed held it still doesn't trim, at 79.3 %, short of any limit (a warm start with no engines has no two-stage fallback; issue #76). 100 kt +3000 ft/min is past the engines' ceiling either way.
+*Since D-053 amendment 8 (2026-10-29):* on the engines 60 kt +3000 ft/min trims (79.3 % collective at the governed rotor speed, not the 119 % branch). *Since D-061 (2026-10-30)*, in this sweep's setup (stabilator scheduled, 500 ft/min steps): on the engines 60 kt trims to +3000 ft/min, 100 kt to +2500 and 137.5 kt to +1500 (before, +1000), and the next step is past the ceiling; with the rotor speed held 60 kt +3000 (79.3 %) and 100 kt +3000 (84.6 %) now trim, and 137.5 kt trims to +2000 (92.5 %), its +2500 ending on the collective's stop. The held runs keep the engines as components on an ideal shaft, so the bound on NG (D-061) acts there too: before, those trims failed short of any limit. In the V1 gate's setup (stabilator held) 60 kt +3000 is past the ceiling on the engines (below, the V1 gate on Ballin's engines).
 
 **Open.** The sense of rotation (a source stating it); the range below about 30 % rotor speed, where Bailey's series windmills the tail rotor far too hard (issue #86, D-058 amendment); the polar, Bailey's NACA 23012 example rather than the UH-60A's section; the truncation above 120 kt; Ballin's 13 % in hover against Eyas's 10.6 % (Ballin's hover case's conditions aren't Table B.1's); the climbs' continuation on Ballin's engines (#76).
 
@@ -1860,4 +1860,38 @@ The outputs gain the engines' readouts, one entry per engine (NG, NP, output-sha
 | Percent torque | ⬜ | Not reported: the gauge's 100 % isn't in the library's references; the UH-60 operator's manual (DTIC ADA409934) to obtain (DATA_GAPS.md). |
 | Rotor on its floor | ✅ | The station's display warns while `AdvanceStatus::shaft_on_floor` is set (D-057). Display only, checked by hand. |
 | GenHel's NP | ℹ️ | Reads 98.0 % at 100 % rotor speed, GenHel's own gearing against its N_PT100 (DATA_GAPS.md); Ballin's reads 100.0 %. |
+
+## M9 — The V1 gate on Ballin's engines: the engines' ceiling (2026-10-30; issues #92, #39)
+
+The M7 regression on the engine configs: the V1 gate (M7c) on `data/uh60a/engine_ballin/uh60a_ballin.yaml`, Ballin's loading at 5250 ft ISA with the rotor speed free. Ballin's T700 is valid to the top of its maps, 100 % corrected gas-generator speed (TM-100991 p. 25), about 2810 shp for both engines here. Trim now keeps each gas generator at or below it, and seeds the engines at it when the rotor asks for more, so a climb past the ceiling ends with every engine at the top, a limit the gate checks (D-061).
+
+| Check | Status | Evidence |
+|---|---|---|
+| Level flight, 0–160 kt | ✅ | `BallinTrim.LevelFlightOnBallinsEngines`: every gated and tracked quantity at the records of GenHel's engines (the same 63 tracked); 160 kt at 98.7 % corrected speed. |
+| Climbs and descents (Figs. B2–B4) | ✅ | `BallinTrim/ClimbOnEngines.TrendsAgainstSikorskyGenHel/b2`–`b4`, at their own records (below). |
+| Past the ceiling | ✅ | 60 and 100 kt +3000 ft/min, 137.5 kt +2000: not converged, every engine at the top (within 10⁻⁶; checked by the gate). Before D-061 they ended anywhere from 97.8 % to 6 × 10³ times the top. |
+| Autorotation | ✅ | 60 and 100 kt −3000 ft/min trim with the clutches slipping, the rotor at 108.6 % and 101.0 %. |
+| The seed near the ceiling | ✅ | `BallinT700.TrimSeedPastTheTopIsAtTheTop`, `SteadyAtTopIsTheMostTheEnginesDeliver`, `TrimBoundsTheGasGeneratorAtTheMapsTop`; mutations of the bound, the seed and the steady solve's retry caught (D-061). |
+
+**The ceiling at each airspeed** (1000 ft/min steps as in the gate; the ideal drive in brackets):
+
+| Airspeed | Highest climb that trims | Corrected speed there | Next step up |
+|---|---|---|---|
+| 60 kt | +2000 ft/min (+3000) | 97.0 % | +3000: at the top |
+| 100 kt | +2000 ft/min (+3000) | 97.5 % | +3000: at the top |
+| 137.5 kt | +1000 ft/min (+2000) | 97.7 % | +2000: at the top |
+
+In 100 ft/min steps 137.5 kt trims to +1700 ft/min (99.95 %) and ends at the top at +1800. Before D-061 the climb stopped at +1400 ft/min: the engines' seed took the rotor's demand at one instant, which there passed the top while its mean didn't, and fell back on the rest point's fuel. Cold starts past the ceiling end at the top too; before, they ended on overrunning branches at 104–134 % rotor speed with no engine torque.
+
+**Records** (Eyas − Sikorsky GenHel, changes from level flight; the ideal drive's, M7c, in brackets):
+
+| Figure | Descent collective at −3000 ft/min | Lateral cyclic at the highest climb | Power slope |
+|---|---|---|---|
+| B2, 60 kt | −0.54 % (3.21) | 4.09 % at +2000 (5.43 at +3000) | 19.8 (19.8) hp per 1000 ft/min |
+| B3, 100 kt | 4.77 % (5.29) | 5.10 % at +2000 (8.91 at +3000) | 18.3 (18.0) |
+| B4, 137.5 kt | 8.63 % (8.63) | 3.04 % at +1000 (7.18 at +2000) | 71.7 over −2000 to +1000 (91.3 over ±2000) |
+
+Where the condition is the ideal drive's, the records agree with its within their tolerances. The 60 kt descent collective moves with the autorotation (the rotor at 108.6 %), to within GenHel's read-off (3.78 %). The lateral cyclic's open difference grows with the climb rate (the ideal drive's records, at the higher climbs, are the larger), so its record falls with the lower climb top.
+
+*Not run under the nightly strict ASan build* (about 6 h each there, the job's limit): every PR's Release jobs and the nightly Clang job run them (D-061, D-037).
 
