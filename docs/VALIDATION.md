@@ -734,7 +734,7 @@ Every M7c difference that isn't explained by the data's accuracy, with where it 
 | B2–B4 descent collective | Eyas falls 6–9 % less at 100–137.5 kt | Unexplained | Parked |
 | B2–B4 climb lateral cyclic | +5.3 % at +3000 ft/min (100 kt); at 137.5 kt +7.2 % at +2000 (gate record) | Unexplained. Since D-053 amendment 8 (2026-10-29) trim keeps the controls in their travel: at 137.5 kt +2500 ft/min and up need more than full collective and don't trim (the earlier +9.5 % at +3000 came from a trim on 105 %) | Parked |
 | B2–B4 power slope at 137.5 kt | 14 % above GenHel; Eyas − GenHel +88 hp per 1000 ft/min, **+91 with D-051** | Unexplained | Parked |
-| Slow on-axis response below 1.5 rad/s | Hover pitch +3.7 dB; 80 kt phase lead 27° (roll), 43° (pitch) | At 80 kt, M_u < 0 from the held stabilator in the rotor downwash, as simple wake theory gives | Parked |
+| Slow on-axis response below 1.5 rad/s | Hover pitch +3.7 dB; 80 kt phase lead 27° (roll), 43° (pitch); since D-048 76° (roll, a lightly damped mode near 0.27 rad/s) and 16° (pitch), M9 | At 80 kt, M_u < 0 from the held stabilator in the rotor downwash, as simple wake theory gives | Parked |
 | 80 kt phugoid-type divergence | +0.289 1/s | Same cause as the line above | Parked |
 | Off-axis angular rates | Phase off by 140–160° (hover) | Known limitation of Pitt–Peters without wake distortion | M9 wake distortion (D-041) |
 | Yaw rate to collective, hover | −3.8 dB mean, +43°; on GenHel's engines (M9 Stage B) −2.5 dB, +96° | Rotor speed and engine dynamics (Fletcher); GenHel's engine model's rotor-speed response to collective (Ballin TM-88360 p. 12) | M9: NASA T700 model (TM-100991) next |
@@ -875,6 +875,8 @@ Cruise main-rotor power is in D-039 (mean −45 hp against GenHel); with GenHel'
 | phase, 1.5–12 rad/s: mean / RMS [deg] | −3.1 / 11.7 | 3.0 / 8.6 | 0.1 / 6.2 | 4.6 / 7.7 |
 | magnitude, below 1.5 rad/s: mean / RMS [dB] | 0.7 / 2.2 | 3.7 / 4.0 | −0.8 / 2.5 | 2.3 / 3.6 |
 | phase, below 1.5 rad/s: mean / RMS [deg] | 1.5 / 3.0 | 9.6 / 11.5 | 27.3 / 33.2 | 43.0 / 49.0 |
+
+*Since D-048 (2026-10-20)* the 80 kt columns below 1.5 rad/s are −2.2 / 9.6 dB, 76 / 106° (roll) and 1.5 / 3.1 dB, 16 / 29° (pitch), and the 80 kt modes below differ; found in the M7 regression (M9, Fletcher's responses on the engines).
 
 - *On-axis, 1.5–12 rad/s (roll from lateral, pitch from longitudinal):* Eyas matches the flight data in both conditions: magnitude within 1.6 dB RMS, phase within 12° RMS. This is the band of the rotor-fuselage coupled roll and pitch response that flight control design works in.
 - *On-axis, below 1.5 rad/s (the whole-aircraft modes), open:* in hover, Eyas's pitch response is 3.7 dB too large on average from 0.56 rad/s (where the coherence first reaches 0.6) to 1.5 rad/s, with a higher peak near 0.7 rad/s. At 80 kt the magnitudes are close, but Eyas leads in phase: 27° on average in roll, below 1 rad/s, and 43° in pitch at 0.2–1 rad/s, up to 85°. The flight roll response stays flat in magnitude down to 0.1 rad/s; Eyas's falls by about 5 dB, with phase lead, as with a stronger roll restoring moment through sideslip. The likely suspects are the slow-mode derivatives: the speed and incidence stability in pitch, and the dihedral and weathercock stability in roll and yaw. The condensed-model modes against Padfield §4.3 (the rest of V2) are the next check.
@@ -1895,3 +1897,45 @@ Where the condition is the ideal drive's, the records agree with its within thei
 
 *Not run under the nightly strict ASan build* (about 6 h each there, the job's limit): every PR's Release jobs and the nightly Clang job run them (D-061, D-037).
 
+
+## M9 — Fletcher's responses on the engines (2026-10-31; issue #39)
+
+The M7 regression's second half: V2 (M7c) on the engine configs. `eyas_m7c_fletcher` runs Fletcher's conditions (hover and 80 kt, stabilator held, no augmentation, ISA sea level) on three drives:
+- **held:** Ballin's engines kept as components, the rotor shaft ideal (the generator's new `ideal` argument);
+- **GenHel's engines:** `data/uh60a/uh60a_fletcher.yaml`;
+- **Ballin's engines:** `data/uh60a/engine_ballin/uh60a_fletcher.yaml`.
+
+GenHel's engines on an ideal shaft aren't a usable baseline: their governor's states then have no dynamics of their own, and the condensed model's quasi-static block is singular.
+
+| Check | Status | Evidence |
+|---|---|---|
+| On-axis roll and pitch, 1.5–12 rad/s | ✅ | The three drives agree to 0.1 dB and 0.5° RMS; all within 1.6 dB and 12° RMS of the flight data, as M7c. |
+| On-axis, below 1.5 rad/s | ⚠️ open | Held and engines agree to 0.6 dB and 9° RMS. The 80 kt roll differs from M7c's table: D-048 changed it (below). |
+| Off-axis | ℹ️ known limitation | As M7c (no wake distortion, D-041): unchanged by the drive to 1.2 dB and 10° RMS. |
+| Yaw rate to collective | ✅ 80 kt, ⚠️ hover | Ballin's engines −1.1 / 1.4 dB, −9 / 11° at 80 kt; hover open (M9 Stage B1′). |
+| Modes | ✅ | The condensed modes' real parts move by at most 0.035 1/s with the drive (the engine and rotor-speed states are quasi-static in the condensed model); at 80 kt the roll subsidence's near-real pair splits more on Ballin's engines (±0.38i against ±0.13i held). |
+
+**On-axis responses, Eyas (with the servo) minus flight, mean / RMS** (held / GenHel's engines / Ballin's engines):
+
+| | 1.5–12 rad/s, magnitude [dB] | 1.5–12 rad/s, phase [deg] | below 1.5 rad/s, magnitude [dB] | below 1.5 rad/s, phase [deg] |
+|---|---|---|---|---|
+| p/δlat hover | −0.6 / 1.6 (all three) | −3.5 / 11.5 (all three) | 0.8 / 2.2, 2.3, 2.2 | 1.4 / 3.1, 3.0, 3.0 |
+| q/δlon hover | 0.0 / 1.2 (all three) | 3.0 / 8.7 (all three) | 3.7 / 4.0 (all three) | 9.1 / 10.9, 10.9, 10.8 |
+| p/δlat 80 kt | 0.0 / 0.9, −0.1 / 0.9, −0.1 / 0.9 | −0.1 / 5.9, −0.2 / 6.0, −0.1 / 6.0 | −2.4 / 9.7, −2.3 / 9.5, −3.0 / 9.7 | 78 / 109, 75 / 106, 76 / 107 |
+| q/δlon 80 kt | 0.7 / 1.0, 0.8 / 1.1, 0.8 / 1.1 | 6.0 / 9.5, 5.9 / 9.2, 5.8 / 9.1 | 1.4 / 3.1, 0.8 / 2.8, 1.7 / 2.9 | 16 / 28, 22 / 30, 25 / 33 |
+
+**Yaw rate to collective** (every reading Fletcher drew; held / GenHel's / Ballin's): hover −3.4 / 6.3, −2.5 / 4.6, −1.4 / 4.2 dB and +45 / 61, +96 / 122, −78 / 85°; 80 kt −8.7 / 9.1, −10.0 / 10.1, −1.1 / 1.4 dB and +28 / 29, −103 / 104, −9 / 11°. As reported in M9 Stage B1′ and since the tail rotor's torque (D-058); the plot is unchanged.
+
+**The 80 kt slow response since D-048** (found here; M7c's V2 table predates it). Running the generator at each merge since M7c (each commit's own generator and default config) puts the whole change in PR #55, GenHel's motion-module additions (D-048, 2026-10-20). At 80 kt below 1.5 rad/s:
+- *Roll:* phase 27 / 33° → 76 / 106°, magnitude −0.8 / 2.5 → −2.2 / 9.6 dB. Worse.
+- *Pitch:* phase 43 / 49° → 16 / 29°, magnitude 2.3 / 3.6 → 1.5 / 3.1 dB. Better.
+- *The modes:* the oscillation M7c listed at −0.201 ± 0.261i (ζ 0.61) became a lightly damped one at −0.035 ± 0.253i (ζ 0.14); the divergence +0.289 → +0.407, the Dutch roll −0.337 ± 1.093i → −0.422 ± 1.276i, the spiral −0.073 → −0.178. The dihedral derivative L_v grew by 29 % (−0.062 → −0.079 (rad/s²)/(m/s)), the change that brought the steady sideslips to Kaplita's gradients (D-048).
+- *Why the roll misses:* the lightly damped oscillation, near 0.27 rad/s, shows strongly in Eyas's roll response (a peak and a 180° phase swing), where the flight roll response is flat to 0.1 rad/s. The flight pitch response has its own lightly damped resonance near 0.4 rad/s, which the new mode now resembles more closely, hence the better pitch phase. So Kaplita's steady sideslips and Fletcher's slow roll pull the lateral-directional derivatives in opposite ways. Which derivatives would reconcile both is open, with M7c's parked slow-mode question (D-041). The engines change none of it.
+
+**Hover:** within 0.1 dB and 0.6° of M7c's table on every on-axis entry.
+
+![Roll and pitch to cyclic in hover, on Ballin's engines](validation/m9/m9_ballin_fletcher_hover.png)
+
+![Roll and pitch to cyclic at 80 kt, on Ballin's engines](validation/m9/m9_ballin_fletcher_80kt.png)
+
+*Reproduce:* `./build/release/tests/eyas_m7c_fletcher <dir> data/uh60a/engine_ballin/uh60a_fletcher.yaml [ideal]`, then `tools/plot_m7c_fletcher.py <dir> <plots>`; nightly in `full-verification.yml`, the held drive included.
