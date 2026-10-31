@@ -21,8 +21,10 @@
 // below 3 rad/s against the Floquet exponents of the free flow map (V2 mode
 // character).
 //
-// Usage: eyas_m7c_fletcher <output-dir> [config]  (default
-// data/uh60a/uh60a_fletcher.yaml)
+// Usage: eyas_m7c_fletcher <output-dir> [config [ideal]]  (default
+// data/uh60a/uh60a_fletcher.yaml; `ideal`: the rotor shaft held at its
+// governed speed, an ideal drive, D-052, the engines kept as components: the
+// M7 regression's baseline for the engines' effect, D-061)
 
 #include <array>
 #include <cmath>
@@ -45,6 +47,7 @@ using test::ballin::kDeg;
 // The aircraft: Fletcher's weight on GenHel's engines, or another config given
 // on the command line (Ballin's engines, data/uh60a/engine_ballin/; D-054).
 std::string g_config;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+bool g_ideal = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 std::string fletcher_config() {
     return g_config.empty() ? std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a_fletcher.yaml"
                             : g_config;
@@ -88,7 +91,7 @@ void write(const std::filesystem::path& dir) {
     };
     for (const Case& cs : {Case{"hover", 0.0, 40.0}, Case{"80kt", 80.0, 4.0}}) {
         const test::Uh60aHarness ac =
-            test::ballin::fixed_stabilator(cs.stabilator_deg, fletcher_config());
+            test::ballin::fixed_stabilator(cs.stabilator_deg, fletcher_config(), g_ideal);
         TrimCondition c;
         c.airspeed = cs.kt * units::kKnot;
         c.altitude = 0.0;
@@ -183,13 +186,14 @@ void write(const std::filesystem::path& dir) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2 && argc != 3) {
-        std::cerr << "usage: eyas_m7c_fletcher <output-dir> [config]\n";
+    if (argc < 2 || argc > 4 || (argc == 4 && std::string(argv[3]) != "ideal")) {
+        std::cerr << "usage: eyas_m7c_fletcher <output-dir> [config [ideal]]\n";
         return 2;
     }
-    if (argc == 3) {
+    if (argc >= 3) {
         g_config = argv[2];
     }
+    g_ideal = argc == 4;
     try {
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);

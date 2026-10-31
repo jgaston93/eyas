@@ -150,6 +150,9 @@ jobs:
           # Fletcher's yaw-to-collective on Ballin's engines (D-054).
           fletcher_ballin() { ./build/release/tests/eyas_m7c_fletcher "$1" data/uh60a/engine_ballin/uh60a_fletcher.yaml; }
           run m7c_fletcher_ballin fletcher_ballin tools/plot_m7c_fletcher.py
+          # The same with the rotor shaft held, the engines kept: the M7 regression's baseline (#39).
+          fletcher_ideal() { ./build/release/tests/eyas_m7c_fletcher "$1" data/uh60a/engine_ballin/uh60a_fletcher.yaml ideal; }
+          run m7c_fletcher_ideal fletcher_ideal tools/plot_m7c_fletcher.py
           run ballin_app_d ./build/release/tests/eyas_ballin_app_d_cases tools/plot_ballin_app_d.py
           run kaplita ./build/release/tests/eyas_kaplita_cases tools/plot_kaplita.py
           run kaplita_transients ./build/release/tests/eyas_kaplita_transient_cases tools/plot_kaplita_transients.py
