@@ -161,6 +161,17 @@ public:
     virtual bool has_trim_seed() const noexcept { return false; }
     virtual void trim_seed(const SimContext& /*ctx*/, std::span<double> /*x*/) const {}
 
+    // Trim (D-061): the range of each state the model is valid in, on the
+    // day in ctx.air (not depending on the state). Trim keeps its unknowns
+    // inside it, as it keeps the controls inside their travel: past the end
+    // of a model's data, where its tables hold their edge values, a state
+    // moves nothing, and Newton's minimum-norm step could run off along it.
+    // A condition that needs more doesn't converge and ends with the state on
+    // its bound. lower.size() == upper.size() == num_states(), arriving at
+    // −∞ and +∞; the default leaves them so.
+    virtual void trim_bounds(const SimContext& /*ctx*/, std::span<double> /*lower*/,
+                             std::span<double> /*upper*/) const {}
+
     // Marks (1) the states pinned at x on a limit or a switch, whose rates
     // aren't differentiable there: a limited integrator at the limit its
     // input pushes against, an engaged clutch's slip. Linearization holds

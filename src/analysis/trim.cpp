@@ -38,13 +38,6 @@ constexpr std::size_t kHead = 6;  // controls (4) and attitude; component states
 constexpr std::array<double, 4> kTravelLow = {0.0, -1.0, -1.0, -1.0};
 constexpr std::array<double, 4> kTravelHigh = {1.0, 1.0, 1.0, 1.0};
 
-void keep_in_travel(VecX& z) {
-    for (std::size_t j = 0; j < 4; ++j) {
-        const auto k = static_cast<Eigen::Index>(j);
-        z(k) = std::clamp(z(k), kTravelLow[j], kTravelHigh[j]);
-    }
-}
-
 struct RotorInfo {
     double omega = 0.0;   // [rad/s]; 0: no rotor
     double radius = 1.0;  // [m], the moment scale
@@ -155,7 +148,31 @@ public:
             period_shaft_ = rotor.shaft;
             turn_ = 2.0 * std::numbers::pi / rotor.gear;
         }
+        // The bounds on z: the controls' travel and the components' states'
+        // valid ranges on the condition's day (D-061).
+        const double inf = std::numeric_limits<double>::infinity();
+        lower_ = VecX::Constant(static_cast<Eigen::Index>(unknowns()), -inf);
+        upper_ = VecX::Constant(static_cast<Eigen::Index>(unknowns()), inf);
+        for (std::size_t j = 0; j < 4; ++j) {
+            lower_(static_cast<Eigen::Index>(j)) = kTravelLow[j];
+            upper_(static_cast<Eigen::Index>(j)) = kTravelHigh[j];
+        }
+        BodyState body;
+        (void)trim_body_state(c_, 0.0, 0.0, ex.origin_altitude(), body);  // level: always a track
+        pack_body(body, x_);
+        ex.initial_shaft_states(x_);
+        const SimContext ctx = ex.context(0.0, x_, controls(VecX::Zero(kHead)), held_.env());
+        for (std::size_t i = 0; i < ex.num_components(); ++i) {
+            const std::size_t first = kHead + ex.component_offset(i) - body_layout::kSize;
+            ex.component(i).trim_bounds(
+                ctx, std::span<double>(lower_.data() + first, ex.component_size(i)),
+                std::span<double>(upper_.data() + first, ex.component_size(i)));
+        }
     }
+
+    // z inside its bounds (projected: an unknown past a bound stays on it).
+    void keep_in_bounds(VecX& z) const { z = z.cwiseMax(lower_).cwiseMin(upper_); }
+    double upper(Eigen::Index j) const { return upper_(j); }
 
     std::size_t unknowns() const { return kHead + nc_ + free_.size() + (free_period() ? 1 : 0); }
     // The period is an unknown, z's last entry.
@@ -526,6 +543,8 @@ private:
     std::vector<double> scratch_;
     int period_shaft_ = -1;  // the free shaft the rotor turns on, or −1
     double turn_ = 0.0;      // its turn in one rotor revolution, 2π/g [rad]
+    VecX lower_;             // bounds on z (D-061)
+    VecX upper_;
 };
 
 // The seeders' states in z at their trim seed for the state the problem
@@ -543,6 +562,7 @@ bool seed_start(const Executive& ex, Problem& p, VecX& z, std::size_t nc) {
             z(static_cast<Eigen::Index>(kHead + first + j)) = p.state()[ex.component_offset(i) + j];
         }
     }
+    p.keep_in_bounds(z);
     return true;
 }
 
@@ -668,7 +688,6 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         z(1) = start->controls.lat_cyclic;
         z(2) = start->controls.lon_cyclic;
         z(3) = start->controls.pedal;
-        keep_in_travel(z);
         z(kPitch) = start->pitch;
         z(kRoll) = start->roll;
         for (std::size_t j = 0; j < nc; ++j) {
@@ -681,6 +700,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         if (p.free_period()) {
             z(n_unknowns - 1) = start->period > 0.0 ? start->period : trim_period(ex);
         }
+        p.keep_in_bounds(z);
         // A nearby trim's engines deliver its torque, not this one's, so they
         // start from their equilibrium for this condition's demand, unless
         // the start already is this condition's trim: a converged start then
@@ -726,6 +746,7 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         }
         p.set_seeded(false);
         seed_start(ex, p, z, nc);
+        p.keep_in_bounds(z);
     }
 
     TrimResult result;
@@ -748,8 +769,9 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
         VecX rj;
         for (Eigen::Index j = 0; j < n; ++j) {
             double dz = 1e-6 * std::max(1.0, std::abs(z(j)));
-            // A control on its upper stop differences inward, inside the travel.
-            if (j < 4 && z(j) + dz > kTravelHigh[static_cast<std::size_t>(j)]) {
+            // An unknown on its upper bound (a control on its stop) differences
+            // inward, inside the bounds.
+            if (z(j) + dz > p.upper(j)) {
                 dz = -dz;
             }
             VecX zj = z;
@@ -778,15 +800,15 @@ TrimResult solve_trim(const Executive& ex, const TrimCondition& c, const TrimRes
             // Minimum-norm step: states with no effect on the residual (the
             // wash lags at zero airspeed, D-028) keep their values.
             const VecX step = J.completeOrthogonalDecomposition().solve(-r);
-            // Backtracking on the residual norm, each trial point's controls
-            // inside their travel (projected: a control the step pushes past a
-            // stop stays on it).
+            // Backtracking on the residual norm, each trial point inside the
+            // bounds (projected: a control the step pushes past a stop stays
+            // on it, an engine past its maps' top on the top).
             bool accepted = false;
             VecX zt;
             VecX rt;
             for (int k = 0; k < 12 && !accepted; ++k) {
                 zt = z + std::ldexp(1.0, -k) * step;
-                keep_in_travel(zt);
+                p.keep_in_bounds(zt);
                 accepted = p.residual(zt, rt) && rt.norm() < r.norm();
             }
             if (!accepted) {

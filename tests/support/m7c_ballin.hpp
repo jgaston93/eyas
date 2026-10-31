@@ -24,7 +24,9 @@
 #include <vector>
 
 #include "airframe/airframe_aero.hpp"
+#include "analysis/held_orbit.hpp"
 #include "analysis/trim.hpp"
+#include "engine/ballin_t700.hpp"
 #include "rotor/blade_element_rotor.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "util/units.hpp"
@@ -39,6 +41,12 @@ inline constexpr double kRollSwitch = 50.0;  // [kt] zero roll from here up (Fig
 
 inline std::string config_path() {
     return std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a_ballin.yaml";
+}
+
+// The same aircraft on Ballin's engines (TM-100991, D-054), its rotor on a
+// free shaft.
+inline std::string engine_config_path() {
+    return std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a_ballin.yaml";
 }
 
 // Level flight or a steady climb [ft/min] at airspeed kt [kt], straight.
@@ -192,6 +200,35 @@ inline double pedal_pct(const Controls& u) {
 inline bool on_a_stop(const Controls& u) {
     return u.collective == 0.0 || u.collective == 1.0 || std::abs(u.lat_cyclic) == 1.0 ||
            std::abs(u.lon_cyclic) == 1.0 || std::abs(u.pedal) == 1.0;
+}
+
+// Whether every engine of Ballin's (BallinT700) in `ex` is at the maps' top
+// in the state `x` on the day of condition `c`: where a trim that needs more
+// power than they deliver ends (D-061). Trim keeps NG at or below the top;
+// within 10⁻⁶ of it counts as on it, as Newton's last accepted step can stop
+// that far short of the bound (100 kt +3000 ft/min: 2.8 × 10⁻⁷). False if
+// there are none.
+inline bool engines_on_maps_top(const Executive& ex, const std::vector<double>& x,
+                                const TrimCondition& c, const Controls& u) {
+    bool any = false;
+    const SimContext ctx = ex.context(0.0, x, u, trim_environment(c));
+    for (std::size_t i = 0; i < ex.num_components(); ++i) {
+        const auto* b = dynamic_cast<const BallinT700*>(&ex.component(i));
+        if (b == nullptr) {
+            continue;
+        }
+        const double top = b->ng_top(ctx.air.temperature);
+        for (int e = 0; e < b->config().engines; ++e) {
+            const double ng =
+                x[ex.component_offset(i) + static_cast<std::size_t>(e) * BallinT700::kEngineStates +
+                  BallinT700::kNg];
+            if (!(ng <= top && ng >= top * (1.0 - 1e-6))) {
+                return false;
+            }
+        }
+        any = true;
+    }
+    return any;
 }
 
 // One digitized Ballin curve (a figure's panel and series), x ascending, read

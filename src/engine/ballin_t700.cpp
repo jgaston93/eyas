@@ -270,9 +270,6 @@ bool BallinT700::steady_gas(double fuel, double np, double p2, double t2, double
     using Vec = Eigen::Matrix<double, 5, 1>;
     const BallinT700Config& c = config_;
     const double root = std::sqrt(t2 / kTstd);
-    const double n0 = ng > 0.0 ? ng / (c.ng_des * root) : 0.9;
-    Vec y((*start_p3_)(n0), (*start_p41_)(n0), (*start_p45_)(n0), 0.0, n0);
-    y(3) = (c.k_t41_2 + 1200.0) / t2;  // a mid-range gas temperature; refined below
     const auto f = [&](const Vec& v, Vec& r) {
         BallinT700Gas g;
         const double n = v(4) * c.ng_des * root;
@@ -289,17 +286,32 @@ bool BallinT700::steady_gas(double fuel, double np, double p2, double t2, double
         return v(0) > v(1) && v(1) > v(2) && v(2) > 0.0 && v(3) > 0.0 && v(4) > 0.0 && v(4) <= top;
     };
     int iterations = 0;
-    // The gas temperature's start from the fuel: two Newton passes, the first
-    // with the temperature found by fixed point from the start's pressures.
-    for (int k = 0; k < 4; ++k) {
-        BallinT700Gas g;
-        Eigen::Matrix<double, 4, 1> r;
-        if (residuals(y.data(), y(4) * c.ng_des * root, np, -1.0, fuel, p2, t2, r.data(), &g) ==
-            0.0) {
-            y(3) = g.t41ns / t2;
+    // From the steady line at corrected speed n0: the gas temperature's start
+    // from the fuel, two Newton passes, the first with the temperature found
+    // by fixed point from the start's pressures.
+    Vec y;
+    const auto solve = [&](double n0) {
+        y = Vec((*start_p3_)(n0), (*start_p41_)(n0), (*start_p45_)(n0), 0.0, n0);
+        y(3) = (c.k_t41_2 + 1200.0) / t2;  // a mid-range gas temperature; refined below
+        for (int k = 0; k < 4; ++k) {
+            BallinT700Gas g;
+            Eigen::Matrix<double, 4, 1> r;
+            if (residuals(y.data(), y(4) * c.ng_des * root, np, -1.0, fuel, p2, t2, r.data(), &g) ==
+                0.0) {
+                y(3) = g.t41ns / t2;
+            }
         }
+        return newton<5>(f, ok, y, kMaxIter, kTol, iterations);
+    };
+    // A start at the caller's NG, or the middle of the line. Started near the
+    // maps' top, Newton's steps over it are cut back onto it, where the maps
+    // are flat, and it stalled up to 0.08 % of corrected speed short of the
+    // top (D-061): then from the middle.
+    constexpr double kMiddle = 0.9;
+    bool converged = solve(ng > 0.0 ? ng / (c.ng_des * root) : kMiddle);
+    if (!converged && ng > 0.0) {
+        converged = solve(kMiddle);
     }
-    const bool converged = newton<5>(f, ok, y, kMaxIter, kTol, iterations);
     ng = y(4) * c.ng_des * root;
     Eigen::Matrix<double, 4, 1> r;
     residuals(y.data(), ng, np, -1.0, fuel, p2, t2, r.data(), &out);
@@ -347,6 +359,48 @@ bool BallinT700::steady_for_torque(double shaft_torque, double omega, double p2,
         r1 = torque(w1, n1, out);  // NG warm-started from the last solve
     }
     return false;
+}
+
+bool BallinT700::steady_at_top(double omega, double p2, double t2, double& fuel, double& ng,
+                               BallinT700Gas& out) const noexcept {
+    // Bisection on the fuel flow between a steady state and none: steady_gas
+    // finds none above the maps' top, and NG rises steadily with the fuel.
+    const double np = config_.gear * omega;
+    double lo = rest_fuel_at(p2);
+    ng = 0.0;
+    if (!steady_gas(lo, np, p2, t2, ng, out)) {
+        return false;
+    }
+    double hi = 2.0 * lo;
+    double n = 0.0;
+    BallinT700Gas g;
+    for (int k = 0; k < 20 && steady_gas(hi, np, p2, t2, n, g); ++k) {
+        lo = hi;
+        ng = n;
+        out = g;
+        hi *= 2.0;
+        n = 0.0;
+    }
+    for (int k = 0; k < 200 && hi - lo > 1e-9 * hi; ++k) {
+        const double mid = 0.5 * (lo + hi);
+        n = 0.0;
+        if (steady_gas(mid, np, p2, t2, n, g)) {
+            lo = mid;
+            ng = n;
+            out = g;
+        } else {
+            hi = mid;
+        }
+    }
+    if (!(hi - lo <= 1e-9 * hi)) {
+        return false;
+    }
+    // Just inside the top: the top is a corner of the maps read there, and a
+    // state on it is steady only to the corner's conditioning (PS3 to 3e-9
+    // at 20000 ft); 10⁻⁶ of the fuel inside, to round-off.
+    fuel = (1.0 - 1e-6) * lo;
+    ng = 0.0;
+    return steady_gas(fuel, np, p2, t2, ng, out);
 }
 
 // ---- The component -----------------------------------------------------------
@@ -613,6 +667,10 @@ double BallinT700::flapper_at_rest(double spdg) const noexcept {
 
 double BallinT700::ng_floor(double t2) const noexcept {
     return maps_floor_ * std::sqrt(t2 / kTstd);  // NGC = NG/(NG_des √θ2), eq. (6)
+}
+
+double BallinT700::ng_top(double t2) const noexcept {
+    return maps_top_ * std::sqrt(t2 / kTstd);  // eq. (6)
 }
 
 bool BallinT700::is_out(double ng, const BallinT700Inputs& in) const noexcept {
@@ -1059,6 +1117,17 @@ void BallinT700::steady_kinds(std::span<SteadyKind> kinds) const {
     }
 }
 
+void BallinT700::trim_bounds(const SimContext& ctx, std::span<double> /*lower*/,
+                             std::span<double> upper) const {
+    // Above the maps' top every map holds its edge value (TM-100991 p. 25:
+    // the model is valid to 100 % corrected speed), so a faster gas
+    // generator changes nothing there.
+    const double top = ng_top(inputs(ctx, 0).t2);
+    for (int e = 0; e < config_.engines; ++e) {
+        upper[static_cast<std::size_t>(e) * kEngineStates + kNg] = top;
+    }
+}
+
 void BallinT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
     // The engines with their fuel on share the rotor's demand and the drive
     // train's load equally; those with it off are out (D-056).
@@ -1084,9 +1153,19 @@ void BallinT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
     BallinT700Gas g;
     if (lit > 0 && !steady_for_torque(load > 0.0 ? load : 0.0, free_speed, ctx.air.pressure,
                                       ctx.air.temperature, fuel, ng, g, lit)) {
-        // Past the maps (a demand no steady state delivers): seed from the rest
-        // point's fuel, scaled to the inlet's pressure; trim moves on from it.
-        fuel = rest_fuel_at(ctx.air.pressure);
+        // Past the maps (a demand no steady state delivers): above their top,
+        // seed at the top, the nearest steady state (D-061; the demand is the
+        // rotor's at one instant, which near the ceiling can pass the top
+        // while its mean over the revolution doesn't); otherwise from the rest
+        // point's fuel, scaled to the inlet's pressure. Trim moves on from it.
+        double top_fuel = 0.0;
+        if (load > 0.0 &&
+            steady_at_top(free_speed, ctx.air.pressure, ctx.air.temperature, top_fuel, ng, g) &&
+            lit * config_.gear * g.q_pt < load) {
+            fuel = top_fuel;
+        } else {
+            fuel = rest_fuel_at(ctx.air.pressure);
+        }
     }
     for (std::size_t e = 0; e < static_cast<std::size_t>(config_.engines); ++e) {
         BallinT700Inputs in = inputs(ctx, static_cast<int>(e));

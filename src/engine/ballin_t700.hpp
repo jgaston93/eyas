@@ -334,6 +334,9 @@ public:
     void steady_kinds(std::span<SteadyKind> kinds) const override;
     bool has_trim_seed() const noexcept override { return true; }
     void trim_seed(const SimContext& ctx, std::span<double> x) const override;
+    // NG at most at the maps' top (D-061).
+    void trim_bounds(const SimContext& ctx, std::span<double> lower,
+                     std::span<double> upper) const override;
     void pinned_states(const SimContext& ctx, std::span<const double> x,
                        std::span<unsigned char> pinned) const override;
     void derivatives(const SimContext& ctx, std::span<const double> x,
@@ -372,6 +375,13 @@ public:
     bool steady_for_torque(double shaft_torque, double omega, double p2, double t2, double& fuel,
                            double& ng, BallinT700Gas& out, int engines = 0) const noexcept;
 
+    // The steady fuel flow per engine [kg/s] with the gas generator at the
+    // maps' top, at shaft speed `omega` [rad/s]: the most the engines deliver
+    // in a steady state (D-061), 10⁻⁶ of the fuel inside the top (about
+    // 10⁻⁷ of corrected speed). Trim time. Returns converged.
+    bool steady_at_top(double omega, double p2, double t2, double& fuel, double& ng,
+                       BallinT700Gas& out) const noexcept;
+
     // Engine `e`'s inputs in ctx (D-055 item 1).
     BallinT700Inputs inputs(const SimContext& ctx, int e) const noexcept;
 
@@ -387,6 +397,8 @@ public:
     double maps_top() const noexcept { return maps_top_; }
     // NG at the maps' floor at inlet temperature `t2` [K] [fraction of NG_des].
     double ng_floor(double t2) const noexcept;
+    // NG at the maps' top at inlet temperature `t2` [K] [fraction of NG_des].
+    double ng_top(double t2) const noexcept;
     // Out (D-056 item 3): the fuel off and NG [fraction of NG_des] at or below
     // the floor.
     bool is_out(double ng, const BallinT700Inputs& in) const noexcept;
