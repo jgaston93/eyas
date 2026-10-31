@@ -374,12 +374,20 @@ bool BallinT700::steady_at_top(double omega, double p2, double t2, double& fuel,
     double hi = 2.0 * lo;
     double n = 0.0;
     BallinT700Gas g;
-    for (int k = 0; k < 20 && steady_gas(hi, np, p2, t2, n, g); ++k) {
+    bool bracketed = false;  // hi has no steady state
+    for (int k = 0; k < 20; ++k) {
+        if (!steady_gas(hi, np, p2, t2, n, g)) {
+            bracketed = true;
+            break;
+        }
         lo = hi;
         ng = n;
         out = g;
         hi *= 2.0;
         n = 0.0;
+    }
+    if (!bracketed) {
+        return false;
     }
     for (int k = 0; k < 200 && hi - lo > 1e-9 * hi; ++k) {
         const double mid = 0.5 * (lo + hi);
@@ -400,7 +408,10 @@ bool BallinT700::steady_at_top(double omega, double p2, double t2, double& fuel,
     // at 20000 ft); 10⁻⁶ of the fuel inside, to round-off.
     fuel = (1.0 - 1e-6) * lo;
     ng = 0.0;
-    return steady_gas(fuel, np, p2, t2, ng, out);
+    // A steady solve that failed short of the top (Newton not converging,
+    // not the maps ending) would have ended the bisection there: then this
+    // isn't the top, and there's no answer.
+    return steady_gas(fuel, np, p2, t2, ng, out) && out.ngc > (1.0 - 1e-5) * maps_top_;
 }
 
 // ---- The component -----------------------------------------------------------
@@ -1153,18 +1164,23 @@ void BallinT700::trim_seed(const SimContext& ctx, std::span<double> x) const {
     BallinT700Gas g;
     if (lit > 0 && !steady_for_torque(load > 0.0 ? load : 0.0, free_speed, ctx.air.pressure,
                                       ctx.air.temperature, fuel, ng, g, lit)) {
-        // Past the maps (a demand no steady state delivers): above their top,
-        // seed at the top, the nearest steady state (D-061; the demand is the
-        // rotor's at one instant, which near the ceiling can pass the top
-        // while its mean over the revolution doesn't); otherwise from the rest
-        // point's fuel, scaled to the inlet's pressure. Trim moves on from it.
+        // Past the maps (a demand no steady state delivers), or a steady
+        // solve that failed within about 10⁻⁴ of the top's torque: seed at
+        // the nearer of the top and the rest point's fuel (scaled to the
+        // inlet's pressure) in torque (D-061; the demand is the rotor's at one
+        // instant, which near the ceiling can pass the top while its mean
+        // over the revolution doesn't). Trim moves on from it.
+        fuel = rest_fuel_at(ctx.air.pressure);
         double top_fuel = 0.0;
+        double rest_ng = 0.0;
+        BallinT700Gas rest;
         if (load > 0.0 &&
             steady_at_top(free_speed, ctx.air.pressure, ctx.air.temperature, top_fuel, ng, g) &&
-            lit * config_.gear * g.q_pt < load) {
+            (!steady_gas(fuel, config_.gear * free_speed, ctx.air.pressure, ctx.air.temperature,
+                         rest_ng, rest) ||
+             std::abs(lit * config_.gear * g.q_pt - load) <
+                 std::abs(lit * config_.gear * rest.q_pt - load))) {
             fuel = top_fuel;
-        } else {
-            fuel = rest_fuel_at(ctx.air.pressure);
         }
     }
     for (std::size_t e = 0; e < static_cast<std::size_t>(config_.engines); ++e) {

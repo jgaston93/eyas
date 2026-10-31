@@ -711,6 +711,43 @@ TEST(BallinT700, TrimSeedPastTheTopIsAtTheTop) {
     EXPECT_GT(x[BallinT700::kNg], (1.0 - 1e-3) * ng_top);
 }
 
+// Within about 10⁻⁴ of the top's torque the steady solve for torque can fail
+// short of the top; the seed is then the top, the nearer steady state, not
+// the rest point's fuel (code review of PR #96).
+TEST(BallinT700, TrimSeedJustUnderTheTopIsAtTheTop) {
+    const Harness h;
+    const BallinT700& engine = h.engine();
+    const BallinT700Config& c = engine.config();
+    const SimContext probe = h.context(Harness::kGoverned, 0.9, 0.0);
+    const double p2 = probe.air.pressure;
+    const double t2 = probe.air.temperature;
+    double fuel = 0.0;
+    double ng = 0.0;
+    BallinT700Gas g;
+    ASSERT_TRUE(engine.steady_at_top(Harness::kGoverned, p2, t2, fuel, ng, g));
+    const double drive = engine.drive_train_load(Harness::kGoverned);
+    const double top = c.engines * c.gear * g.q_pt;  // at the shaft
+    const double ng_top = engine.ng_top(t2);
+    int failed = 0;
+    for (int k = 0; k < 500; ++k) {
+        const double q = (0.999 + 2e-6 * k) * top;
+        double f = 0.0;
+        double n = 0.0;
+        BallinT700Gas s;
+        if (engine.steady_for_torque(q, Harness::kGoverned, p2, t2, f, n, s)) {
+            continue;
+        }
+        SCOPED_TRACE(q / top);
+        ++failed;
+        std::vector<double> x(h.size());
+        engine.trim_seed(h.context(Harness::kGoverned, 0.9, q - drive), x);
+        for (std::size_t e = 0; e < static_cast<std::size_t>(c.engines); ++e) {
+            EXPECT_NEAR(x[e * BallinT700::kEngineStates + BallinT700::kNg], ng_top, 1e-5 * ng_top);
+        }
+    }
+    EXPECT_GT(failed, 0);  // the case exists on this day
+}
+
 // Trim keeps each gas generator at or below the maps' top on the day
 // (D-061), NG = NGC_top × NG_des √θ2 (TM-100991 eq. 6); no other bound.
 TEST(BallinT700, TrimBoundsTheGasGeneratorAtTheMapsTop) {

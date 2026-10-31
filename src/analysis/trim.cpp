@@ -158,7 +158,9 @@ public:
             upper_(static_cast<Eigen::Index>(j)) = kTravelHigh[j];
         }
         BodyState body;
-        (void)trim_body_state(c_, 0.0, 0.0, ex.origin_altitude(), body);  // level: always a track
+        // The bounds read only the day (ctx.air, from the altitude, which
+        // trim_body_state sets before it can fail on a sideslip).
+        (void)trim_body_state(c_, 0.0, 0.0, ex.origin_altitude(), body);
         pack_body(body, x_);
         ex.initial_shaft_states(x_);
         const SimContext ctx = ex.context(0.0, x_, controls(VecX::Zero(kHead)), held_.env());
