@@ -115,6 +115,15 @@ def level(data, outdir, table):
     plt.close(fig)
 
 
+def aircraft(path):
+    """The aircraft and drive from the CSV's comment line (eyas_m7c_cases), as a title suffix;
+    empty for files written before it named them."""
+    with path.open(encoding="utf-8") as f:
+        first = f.readline()
+    _, sep, rest = first.partition("aircraft: ")
+    return f"\n({rest.strip()})" if sep else ""
+
+
 def from_level(xy):
     """A climb series as the change from its own level-flight value (interpolated at 0)."""
     if not len(xy):
@@ -173,7 +182,7 @@ def climbs(data, outdir, table):
             ax.set_xlabel("rate of climb [1000 ft/min]")
         axs[0, 0].legend(fontsize=7)
         fig.suptitle(f"Change from level flight at {kt:g} kt against Ballin Fig. "
-                     f"{fig_id.upper()}", fontsize=10)
+                     f"{fig_id.upper()}{aircraft(data / 'm7c_climb.csv')}", fontsize=10)
         fig.tight_layout()
         fig.savefig(outdir / f"m7c_climb_{kt:g}kt.png", dpi=110)
         plt.close(fig)
