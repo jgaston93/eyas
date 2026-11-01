@@ -732,9 +732,9 @@ Every M7c difference that isn't explained by the data's accuracy, with where it 
 | Hover main-rotor power | −71 hp (4.4 %); **−38 hp (2.3 %) with D-051** | **Tip loss on the inflow done (D-051, 2026-10-22): +38 hp.** About 140 hp of GenHel's power is unexplained like for like (below) | Nonuniform-inflow losses, issue #66 |
 | Cruise power and collective | −49 hp mean; collective −6.4 % at 160 kt; **with D-051, −5 hp mean (36 rms) over 0–160 kt and collective −4.2 % at 160 kt** | Within the yawed-drag ruling (D-039) | Tracked by the gate |
 | B2–B4 descent collective | Eyas falls 6–9 % less at 100–137.5 kt | Unexplained | Parked |
-| B2–B4 climb lateral cyclic | +5.3 % at +3000 ft/min (100 kt); at 137.5 kt +7.2 % at +2000 (gate record) | Unexplained. Since D-053 amendment 8 (2026-10-29) trim keeps the controls in their travel: at 137.5 kt +2500 ft/min and up need more than full collective and don't trim (the earlier +9.5 % at +3000 came from a trim on 105 %) | Parked |
+| B2–B4 climb lateral cyclic | +5.3 % at +3000 ft/min (100 kt); since D-048 +8.9 % (M9); at 137.5 kt +7.2 % at +2000 (gate record) | Unexplained. Since D-053 amendment 8 (2026-10-29) trim keeps the controls in their travel: at 137.5 kt +2500 ft/min and up need more than full collective and don't trim (the earlier +9.5 % at +3000 came from a trim on 105 %) | Parked |
 | B2–B4 power slope at 137.5 kt | 14 % above GenHel; Eyas − GenHel +88 hp per 1000 ft/min, **+91 with D-051** | Unexplained | Parked |
-| Slow on-axis response below 1.5 rad/s | Hover pitch +3.7 dB; 80 kt phase lead 27° (roll), 43° (pitch); since D-048 76° (roll, a lightly damped mode near 0.27 rad/s) and 16° (pitch), M9 | At 80 kt, M_u < 0 from the held stabilator in the rotor downwash, as simple wake theory gives | Parked |
+| Slow on-axis response below 1.5 rad/s | Hover pitch +3.7 dB; 80 kt phase lead 27° (roll), 43° (pitch); since D-048 76° (roll, a lightly damped mode near 0.27 rad/s, from M_ADD's sideslip dependence) and 16° (pitch), M9 | At 80 kt, M_u < 0 from the held stabilator in the rotor downwash, as simple wake theory gives | Parked |
 | 80 kt phugoid-type divergence | +0.289 1/s | Same cause as the line above | Parked |
 | Off-axis angular rates | Phase off by 140–160° (hover) | Known limitation of Pitt–Peters without wake distortion | M9 wake distortion (D-041) |
 | Yaw rate to collective, hover | −3.8 dB mean, +43°; on GenHel's engines (M9 Stage B) −2.5 dB, +96° | Rotor speed and engine dynamics (Fletcher); GenHel's engine model's rotor-speed response to collective (Ballin TM-88360 p. 12) | M9: NASA T700 model (TM-100991) next |
@@ -832,7 +832,7 @@ With the stabilator held, against Sikorsky (rms over the Sikorsky curve's readin
 - *Power against climb rate* (slope over ±2000 ft/min, hp per 1000 ft/min): Eyas 465 / 479 / 521, Sikorsky 445 / 469 / 447, Ames 441 / 455 / 447, flight test 414 / 483 / 368 (four points each); W·V_c at 16 000 lbf is 485. At 60 and 100 kt Eyas is within 2–4 % of GenHel, so the unknown weight of B2–B4 can't be far from B1's; at 137.5 kt Eyas's slope is 14 % above GenHel's and above W·V_c. `Open.`
 - *Collective in steep descent:* Eyas's collective falls less than GenHel's, by 3.4, 6.0 and 9.2 % at −3000 ft/min, growing with speed. `Open.`
 - *Lateral cyclic in steep climb:* Eyas moves right of GenHel by 3.2 and 5.3 % at +3000 ft/min (60, 100 kt) and 7.2 % at +2000 ft/min at 137.5 kt (the gate's record since 2026-10-29: +2500 ft/min and up need more than full collective there, D-053 amendment 8; it was 9.5 % at +3000 on a trim at 105 %). `Open.`
-- *Since the engines:* the table above was recorded on 2026-10-16 with every climb point trimmed and the rotor speed held. The generator now flies the climbs on GenHel's engines, where some ends don't trim (60 kt below −2000 ft/min the rotor autorotates and GenHel's clutch has no steady slip; 137.5 kt above +2000 ft/min is past full collective), and `plot_m7c.py` leaves unconverged points out of the plots and differences (it had used them). The table is re-derived with the M7 regression on the engine configs (issue #39).
+- *Since the engines:* the table above was recorded on 2026-10-16 with every climb point trimmed and the rotor speed held. It is re-derived on the engine configs, and moved by D-048 before any engine, in M9, "Ballin's climbs on the engines". The generator flies GenHel's engines by default, where some ends don't trim, and `plot_m7c.py` leaves unconverged points out of the plots and differences.
 - These are trends at constant weight and density altitude of unknown value; the climb runs also sit at Eyas's level-flight sideslip, which differs from GenHel's (above).
 - *Investigated (2026-10-16), each by a probe at the climb conditions, stabilator held; Eyas − Sikorsky change from level at 60 / 100 / 137.5 kt:*
   - *Inflow model:* uniform inflow in place of Pitt–Peters (GenHel's inflow has no first-harmonic terms, K_CM = K_CL = 0) removes the climb lateral drift at 60 kt (+3.2 → −0.2 %) but not at 100 and 137.5 kt (+4.1, +9.0 %), and leaves the descent collective (+3.8 / +5.8 / +9.0 %) and the power slope (+78 at 137.5 kt) unchanged.
@@ -1929,8 +1929,9 @@ GenHel's engines on an ideal shaft aren't a usable baseline: their governor's st
 **The 80 kt slow response since D-048** (found here; M7c's V2 table predates it). Running the generator at each merge since M7c (each commit's own generator and default config) puts the whole change in PR #55, GenHel's motion-module additions (D-048, 2026-10-20). At 80 kt below 1.5 rad/s:
 - *Roll:* phase 27 / 33° → 76 / 106°, magnitude −0.8 / 2.5 → −2.2 / 9.6 dB. Worse.
 - *Pitch:* phase 43 / 49° → 16 / 29°, magnitude 2.3 / 3.6 → 1.5 / 3.1 dB. Better.
-- *The modes:* the oscillation M7c listed at −0.201 ± 0.261i (ζ 0.61) became a lightly damped one at −0.035 ± 0.253i (ζ 0.14); the divergence +0.289 → +0.407, the Dutch roll −0.337 ± 1.093i → −0.422 ± 1.276i, the spiral −0.073 → −0.178. The dihedral derivative L_v grew by 29 % (−0.062 → −0.079 (rad/s²)/(m/s)), the change that brought the steady sideslips to Kaplita's gradients (D-048).
-- *Why the roll misses:* the lightly damped oscillation, near 0.27 rad/s, shows strongly in Eyas's roll response (a peak and a 180° phase swing), where the flight roll response is flat to 0.1 rad/s. The flight pitch response has its own lightly damped resonance near 0.4 rad/s, which the new mode now resembles more closely, hence the better pitch phase. So Kaplita's steady sideslips and Fletcher's slow roll pull the lateral-directional derivatives in opposite ways. Which derivatives would reconcile both is open, with M7c's parked slow-mode question (D-041). The engines change none of it.
+- *The modes:* the oscillation M7c listed at −0.201 ± 0.261i (ζ 0.61) became a lightly damped one at −0.035 ± 0.253i (ζ 0.14); the divergence +0.289 → +0.407, the Dutch roll −0.337 ± 1.093i → −0.422 ± 1.276i, the spiral −0.073 → −0.178. The dihedral derivative L_v grew by 29 % (−0.062 → −0.079 (rad/s²)/(m/s)), but that isn't what changes the roll response (the probe below).
+- *Why the roll misses:* the lightly damped oscillation, near 0.27 rad/s, shows strongly in Eyas's roll response (a peak and a 180° phase swing), where the flight roll response is flat to 0.1 rad/s. The flight pitch response has its own lightly damped resonance near 0.4 rad/s, which the new mode resembles more closely, hence the better pitch phase.
+- *Which term (probe, 2026-10-31):* D-048's downwash correction terms run with one at a time made independent of sideslip, held at its zero-sideslip value (scratch copies of `motion_additions.csv`; Ballin's engines kept on an ideal shaft). With M_ADD flat, the 80 kt roll below 1.5 rad/s returns to 30 / 35° and −1.4 / 3.3 dB (before D-048 27 / 33°, −0.8 / 2.5 dB), the oscillation to −0.222 ± 0.270i (ζ 0.63), and the pitch to 44 / 51° (before 43 / 49°). With L_ADD flat, roll 75 / 109° and ζ 0.11: no change. So the pitch moment against sideslip (M_ADD, the term that gives Kaplita's sideslip pitch gradients) couples the slow pitch oscillation to the sideslip, and the roll follows. Kaplita's steady sideslips and Fletcher's slow roll pull M_ADD's dynamic effect in opposite ways. GenHel's terms are fitted to steady flight (Kaplita p. 14); whether they belong in the dynamics as they are is open, with M7c's parked slow-mode question (D-041). The engines change none of it.
 
 **Hover:** within 0.1 dB and 0.6° of M7c's table on every on-axis entry.
 
@@ -1939,3 +1940,62 @@ GenHel's engines on an ideal shaft aren't a usable baseline: their governor's st
 ![Roll and pitch to cyclic at 80 kt, on Ballin's engines](validation/m9/m9_ballin_fletcher_80kt.png)
 
 *Reproduce:* `./build/release/tests/eyas_m7c_fletcher <dir> data/uh60a/engine_ballin/uh60a_fletcher.yaml [ideal]`, then `tools/plot_m7c_fletcher.py <dir> <plots>`; nightly in `full-verification.yml`, the held drive included.
+
+## M9 — Ballin's climbs on the engines: M7c's table re-derived (2026-10-31; issue #39)
+
+The M7 regression's last item: M7c's climb and descent table (Figs. B2–B4, change from level flight, Eyas − Sikorsky GenHel with the stabilator held) on the engine configs. `eyas_m7c_cases` takes the aircraft and an `ideal` argument, as `eyas_m7c_fletcher`, and runs three drives:
+- **held:** `uh60a_ballin.yaml` with its rotor shaft ideal (the V1 gate's ClimbHeld);
+- **GenHel's engines:** `uh60a_ballin.yaml`, the generator's default;
+- **Ballin's engines:** `engine_ballin/uh60a_ballin.yaml`.
+
+The comparison script, run on the generator at the M7c merge, reproduces M7c's table to every printed digit.
+
+**RMS of Eyas − Sikorsky, change from level** (over the Sikorsky readings inside the climbs that trim; held / GenHel's engines / Ballin's engines):
+
+| | 60 kt | 100 kt | 137.5 kt |
+|---|---|---|---|
+| climbs that trim [1000 ft/min] | −3 to +3 / −2 to +3 / −3 to +2.5 | −3 to +3 / −2 to +3 / −3 to +2.5 | −3 to +2 / −3 to +2 / −3 to +1.5 |
+| collective [%] | 1.2 / 0.7 / 0.9 | 2.2 / 1.4 / 2.2 | 3.4 / 3.4 / 3.5 |
+| longitudinal cyclic [%] | 0.6 / 0.6 / 0.6 | 1.3 / 0.8 / 1.4 | 1.6 / 1.6 / 1.7 |
+| lateral cyclic [%] | 2.6 / 2.9 / 2.2 | 3.7 / 4.0 / 2.9 | 3.2 / 3.3 / 2.6 |
+| pedal [%] | 0.6 / 0.6 / 0.9 | 1.5 / 1.3 / 1.6 | 2.1 / 2.1 / 2.2 |
+| pitch attitude [deg] | 0.59 / 0.47 / 0.61 | 0.59 / 0.51 / 0.55 | 0.46 / 0.46 / 0.48 |
+| main-rotor power [hp] | 63 / 65 / 49 | 56 / 60 / 51 | 116 / 118 / 92 |
+| power slope, Eyas (Sikorsky) [hp per 1000 ft/min] | 467 (445), all three | 486 (469), all three | 539 / 541 / 522 (447) |
+
+- **The engines change little.** Where all three trim they agree within their read-off; the RMS differences come mostly from the ranges that trim. The 137.5 kt slope on Ballin's engines is over −2000 to +1500 ft/min.
+- **Where they stop:**
+  - On GenHel's engines, 60 and 100 kt below −2000 ft/min autorotate, and GenHel's clutch has no steady slip, so they don't trim (D-056).
+  - On Ballin's engines, every descent trims (the autorotations with the clutches slipping). The climbs stop at the engines' ceiling one 500 ft/min step earlier than with the rotor speed held (D-061).
+  - At 137.5 kt every drive stops by +2500 ft/min: full collective, or the ceiling.
+- **Held / scheduled stabilator**, RMS (Ballin's engines): longitudinal cyclic 0.6 / 2.4, 1.4 / 5.0, 1.7 / 6.6 %; pitch 0.61 / 0.75, 0.55 / 0.58, 0.48 / 1.00°. Holding it, as Sikorsky did, still matches better.
+
+**Changes from M7c's table, all from D-048** (found here, by running the generator at each merge since M7c). The held drive's table moved before any engine: PR #55 (D-048, GenHel's motion-module additions, 2026-10-20) makes the change; the merges before it change nothing, and those after it move the held table by at most 0.2 % and 0.03° where the same climbs trim (137.5 kt now stops at +2000 ft/min, D-053 amendment 8). Against M7c's 2026-10-16 values (60 / 100 / 137.5 kt):
+- *Longitudinal cyclic,* better: 2.4 / 3.3 / 2.9 → 0.6 / 1.3 / 1.6 %.
+- *Pitch attitude,* worse at 60 and 100 kt: 0.23 / 0.34 / 0.65 → 0.59 / 0.59 / 0.46°. Eyas's pitch now changes more than GenHel's in descent (−1.4° at 100 kt, −3000 ft/min).
+- *Lateral cyclic in climb,* worse: +3.2 / +5.3 % at +3000 ft/min → +5.4 / +8.9 % (held; the gate's records since D-048).
+- *Descent collective and the 137.5 kt power slope:* about the same (+8.6 % at 137.5 kt, −3000 ft/min; slope +92 hp per 1000 ft/min over GenHel's).
+
+*Which term (probe, 2026-10-31,* as for Fletcher above: each D-048 term held at its zero-sideslip value, rotor shaft held). In these wings-level climbs the trimmed sideslip swings with the climb rate (−5.3° to +5.8° at 100 kt, −3000 to +3000 ft/min, through the terms' corner at zero; −0.8° to +8.7° before D-048), so the terms move with it. RMS at 60 / 100 / 137.5 kt:
+
+| | longitudinal cyclic [%] | pitch attitude [deg] | lateral cyclic [%] (at +3000 ft/min, 100 kt) |
+|---|---|---|---|
+| as is | 0.6 / 1.3 / 1.6 | 0.59 / 0.59 / 0.46 | 2.6 / 3.7 / 3.2 (+8.9) |
+| M_ADD flat | 2.0 / 3.1 / 2.7 | 0.23 / 0.33 / 0.37 | 2.3 / 3.0 / 2.9 (+7.0) |
+| L_ADD flat | 0.6 / 1.3 / 1.6 | 0.58 / 0.57 / 0.46 | 2.2 / 3.1 / 3.0 (+7.4) |
+| both flat | 2.1 / 3.2 / 2.8 | 0.22 / 0.32 / 0.37 | 1.9 / 2.5 / 2.7 (+5.7) |
+| before D-048 | 2.4 / 3.3 / 2.9 | 0.23 / 0.34 / 0.65 | 1.5 / 2.5 / 4.5 (+5.3) |
+
+M_ADD trades the climbs' longitudinal cyclic (better with it) against their pitch attitude (worse); both terms add to the climb lateral drift, together about 3 % of its 9 % at 100 kt. Ballin's B2–B4 don't give GenHel's sideslip, so whether GenHel's climbs swept the terms as far is unknown.
+
+The three unexplained B2–B4 gaps stay open (gap register): descent collective, climb lateral cyclic, the 137.5 kt power slope.
+
+![Climbs at 60 kt on Ballin's engines](validation/m9/m9_ballin_climb_60kt.png)
+
+![Climbs at 100 kt on Ballin's engines](validation/m9/m9_ballin_climb_100kt.png)
+
+![Climbs at 137.5 kt on Ballin's engines](validation/m9/m9_ballin_climb_137.5kt.png)
+
+*Reproduce:* `./build/release/tests/eyas_m7c_cases <dir> [config [ideal]]`, then `tools/plot_m7c.py <dir> <plots>`; nightly in `full-verification.yml`, all three drives.
+
+**With this the M7 regression on the engine configs is done (issue #39):** the V1 gate on Ballin's engines (D-061), Fletcher's responses (above) and the climb table. Their open items are in the gap register.

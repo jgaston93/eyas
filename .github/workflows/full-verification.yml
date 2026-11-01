@@ -88,12 +88,13 @@ jobs:
       - name: Test (all, slow ones included)
         run: ctest --preset debug --parallel "$(nproc)"
 
-  # About 1.5 h in all since the engine configs' trims (the Ballin engine
-  # cases alone about 35 min); each generator's time is printed.
+  # About 2.3 h in all on 2026-10-31, before the M7c climbs on the engines
+  # and the held drive (about 20 min each) were added; each generator's time
+  # is printed.
   validation:
     name: Validation generators and plots (Release)
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
     env:
       CC: gcc
       CXX: g++
@@ -145,6 +146,11 @@ jobs:
             run "$m" "./build/release/tests/eyas_${m}_cases" "tools/plot_${m}.py"
           done
           run m9_engines ./build/release/tests/eyas_m9_engine_cases tools/plot_m9_engines.py
+          # M7c's climbs on Ballin's engines and with the rotor shaft held (#39).
+          m7c_ballin() { ./build/release/tests/eyas_m7c_cases "$1" data/uh60a/engine_ballin/uh60a_ballin.yaml; }
+          run m7c_ballin m7c_ballin tools/plot_m7c.py
+          m7c_ideal() { ./build/release/tests/eyas_m7c_cases "$1" data/uh60a/uh60a_ballin.yaml ideal; }
+          run m7c_ideal m7c_ideal tools/plot_m7c.py
           run m7c_fletcher ./build/release/tests/eyas_m7c_fletcher tools/plot_m7c_fletcher.py
           run m9_ballin ./build/release/tests/eyas_m9_ballin_engine_cases tools/plot_m9_ballin.py
           # Fletcher's yaw-to-collective on Ballin's engines (D-054).

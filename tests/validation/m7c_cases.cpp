@@ -16,7 +16,10 @@
 // are written in Ballin's percent scales: longitudinal 0 = full forward,
 // lateral and pedal 100 = full right, collective 100 = full up.
 //
-// Usage: eyas_m7c_cases <output-dir>
+// Usage: eyas_m7c_cases <output-dir> [config [ideal]]  (default
+// data/uh60a/uh60a_ballin.yaml, on GenHel's engines; `ideal`: the rotor shaft
+// held at its governed speed, the engines kept as components, as the V1
+// gate's ClimbHeld: the M7 regression on the engine configs, issue #39)
 
 #include <filesystem>
 #include <fstream>
@@ -31,6 +34,14 @@ namespace {
 
 using namespace eyas;
 using namespace eyas::test::ballin;
+
+std::string g_config;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+bool g_ideal = false;  // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
+
+std::filesystem::path aircraft() {
+    return g_config.empty() ? std::filesystem::path(config_path())
+                            : std::filesystem::path(g_config);
+}
 
 const char* kHeader =
     "knots,rate_of_climb_fpm,constraint,converged,collective_pct,lat_cyclic_pct,"
@@ -48,7 +59,8 @@ void row(std::ofstream& out, const test::Uh60aHarness& ac, double kt, double fpm
 }
 
 void write(const std::filesystem::path& dir) {
-    const test::Uh60aHarness ac(config_path());
+    const test::Uh60aHarness ac = g_ideal ? test::Uh60aHarness(ideal_shaft_config(aircraft()))
+                                          : test::Uh60aHarness(aircraft().string());
     const Executive& ex = ac.executive();
     const std::string comment =
         "# UH-60A at Ballin's App. B conditions (NASA TM-88360): uh60a_ballin.yaml, ISA 5250 ft "
@@ -88,7 +100,7 @@ void write(const std::filesystem::path& dir) {
         const double level_stab =
             revolution_average(ac, level0.x, level0.trim.controls, {}, level0.trim.period)
                 .stabilator;
-        const test::Uh60aHarness held = fixed_stabilator(level_stab / kDeg);
+        const test::Uh60aHarness held = fixed_stabilator(level_stab / kDeg, aircraft(), g_ideal);
         for (const auto& [name, h] :
              {std::pair<const char*, const test::Uh60aHarness*>{"genhel", &ac},
               {"fixed_stabilator", &held}}) {
@@ -116,10 +128,14 @@ void write(const std::filesystem::path& dir) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        std::cerr << "usage: eyas_m7c_cases <output-dir>\n";
+    if (argc < 2 || argc > 4 || (argc == 4 && std::string(argv[3]) != "ideal")) {
+        std::cerr << "usage: eyas_m7c_cases <output-dir> [config [ideal]]\n";
         return 2;
     }
+    if (argc >= 3) {
+        g_config = argv[2];
+    }
+    g_ideal = argc == 4;
     try {
         const std::filesystem::path dir(argv[1]);
         std::filesystem::create_directories(dir);
