@@ -62,9 +62,13 @@ void write(const std::filesystem::path& dir) {
     const test::Uh60aHarness ac = g_ideal ? test::Uh60aHarness(ideal_shaft_config(aircraft()))
                                           : test::Uh60aHarness(aircraft().string());
     const Executive& ex = ac.executive();
+    // The aircraft and the drive, so the three drives' files tell apart (and
+    // plot_m7c.py titles its plots with them).
+    const std::filesystem::path file = aircraft().parent_path().filename() / aircraft().filename();
     const std::string comment =
-        "# UH-60A at Ballin's App. B conditions (NASA TM-88360): uh60a_ballin.yaml, ISA 5250 ft "
-        "(M7c, D-035)\n";
+        "# UH-60A at Ballin's App. B conditions (NASA TM-88360), ISA 5250 ft (M7c, D-035); "
+        "aircraft: " +
+        file.generic_string() + (g_ideal ? ", rotor shaft ideal" : ", drive as configured") + "\n";
 
     std::ofstream level(dir / "m7c_level.csv");
     level << comment << kHeader;

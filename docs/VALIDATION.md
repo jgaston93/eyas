@@ -831,7 +831,7 @@ With the stabilator held, against Sikorsky (rms over the Sikorsky curve's readin
 
 - *Power against climb rate* (slope over ±2000 ft/min, hp per 1000 ft/min): Eyas 465 / 479 / 521, Sikorsky 445 / 469 / 447, Ames 441 / 455 / 447, flight test 414 / 483 / 368 (four points each); W·V_c at 16 000 lbf is 485. At 60 and 100 kt Eyas is within 2–4 % of GenHel, so the unknown weight of B2–B4 can't be far from B1's; at 137.5 kt Eyas's slope is 14 % above GenHel's and above W·V_c. `Open.`
 - *Collective in steep descent:* Eyas's collective falls less than GenHel's, by 3.4, 6.0 and 9.2 % at −3000 ft/min, growing with speed. `Open.`
-- *Lateral cyclic in steep climb:* Eyas moves right of GenHel by 3.2 and 5.3 % at +3000 ft/min (60, 100 kt) and 7.2 % at +2000 ft/min at 137.5 kt (the gate's record since 2026-10-29: +2500 ft/min and up need more than full collective there, D-053 amendment 8; it was 9.5 % at +3000 on a trim at 105 %). `Open.`
+- *Lateral cyclic in steep climb:* Eyas moves right of GenHel by 3.2 and 5.3 % at +3000 ft/min (60, 100 kt; since D-048 5.4 and 8.9 %, M9 below) and 7.2 % at +2000 ft/min at 137.5 kt (the gate's record since 2026-10-29: +2500 ft/min and up need more than full collective there, D-053 amendment 8; it was 9.5 % at +3000 on a trim at 105 %). `Open.`
 - *Since the engines:* the table above was recorded on 2026-10-16 with every climb point trimmed and the rotor speed held. It is re-derived on the engine configs, and moved by D-048 before any engine, in M9, "Ballin's climbs on the engines". The generator flies GenHel's engines by default, where some ends don't trim, and `plot_m7c.py` leaves unconverged points out of the plots and differences.
 - These are trends at constant weight and density altitude of unknown value; the climb runs also sit at Eyas's level-flight sideslip, which differs from GenHel's (above).
 - *Investigated (2026-10-16), each by a probe at the climb conditions, stabilator held; Eyas − Sikorsky change from level at 60 / 100 / 137.5 kt:*
@@ -1948,7 +1948,7 @@ The M7 regression's last item: M7c's climb and descent table (Figs. B2–B4, cha
 - **GenHel's engines:** `uh60a_ballin.yaml`, the generator's default;
 - **Ballin's engines:** `engine_ballin/uh60a_ballin.yaml`.
 
-The comparison script, run on the generator at the M7c merge, reproduces M7c's table to every printed digit.
+`tools/m7c_climb_table.py` computes the table below from the runs; on the generator at the M7c merge it reproduces M7c's table to every printed digit.
 
 **RMS of Eyas − Sikorsky, change from level** (over the Sikorsky readings inside the climbs that trim; held / GenHel's engines / Ballin's engines):
 
@@ -1966,7 +1966,7 @@ The comparison script, run on the generator at the M7c merge, reproduces M7c's t
 - **The engines change little.** Where all three trim they agree within their read-off; the RMS differences come mostly from the ranges that trim. The 137.5 kt slope on Ballin's engines is over −2000 to +1500 ft/min.
 - **Where they stop:**
   - On GenHel's engines, 60 and 100 kt below −2000 ft/min autorotate, and GenHel's clutch has no steady slip, so they don't trim (D-056).
-  - On Ballin's engines, every descent trims (the autorotations with the clutches slipping). The climbs stop at the engines' ceiling one 500 ft/min step earlier than with the rotor speed held (D-061).
+  - On Ballin's engines, every descent trims (the autorotations with the clutches slipping). The climbs stop at the engines' ceiling one 500 ft/min step earlier than with the rotor speed held (D-061). The generator steps by 500 ft/min and the V1 gate's ClimbOnEngines by 1000, so the gate's records stop at +2000 and +1000 ft/min, the last whole thousands below these tops.
   - At 137.5 kt every drive stops by +2500 ft/min: full collective, or the ceiling.
 - **Held / scheduled stabilator**, RMS (Ballin's engines): longitudinal cyclic 0.6 / 2.4, 1.4 / 5.0, 1.7 / 6.6 %; pitch 0.61 / 0.75, 0.55 / 0.58, 0.48 / 1.00°. Holding it, as Sikorsky did, still matches better.
 
@@ -1996,6 +1996,6 @@ The three unexplained B2–B4 gaps stay open (gap register): descent collective,
 
 ![Climbs at 137.5 kt on Ballin's engines](validation/m9/m9_ballin_climb_137.5kt.png)
 
-*Reproduce:* `./build/release/tests/eyas_m7c_cases <dir> [config [ideal]]`, then `tools/plot_m7c.py <dir> <plots>`; nightly in `full-verification.yml`, all three drives.
+*Reproduce:* `./build/release/tests/eyas_m7c_cases <dir> [config [ideal]]`, then `tools/plot_m7c.py <dir> <plots>` (the plots above are its `m7c_climb_<kt>kt.png`, renamed; their titles name the aircraft and the drive) and `tools/m7c_climb_table.py <dir> ...` for the tables; nightly in `full-verification.yml`, all three drives.
 
 **With this the M7 regression on the engine configs is done (issue #39):** the V1 gate on Ballin's engines (D-061), Fletcher's responses (above) and the climb table. Their open items are in the gap register.
