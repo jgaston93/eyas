@@ -69,14 +69,16 @@ Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double 
 }
 
 double wake_curvature_gain(double k_r, double fade, double mu) noexcept {
-    return mu >= fade ? 0.0 : k_r * (1.0 - smoothstep(mu / fade));
+    // smoothstep clamps at 1, so the gain is exactly 0 from μ_f.
+    return k_r * (1.0 - smoothstep(mu / fade));
 }
 
 Vec3 wake_curvature_inflow(double k_r, const Vec3& omega_h, double beta1c_dot, double beta1s_dot,
                            double s, double omega) noexcept {
     // The disc point r e_r(ψ), e_r = (−cos ψ, s sin ψ, 0) (D-024), moves down
     // (z_h) at r (q_h cos ψ + s p_h sin ψ) with the shaft and up at
-    // r (β̇_1c cos ψ + β̇_1s sin ψ) with the tip-path plane's tilt.
+    // r (β̇_1c cos ψ + β̇_1s sin ψ) with the tip-path plane's tilt (Johnson
+    // 2013 Eq. 11.159).
     return {0.0, k_r * (s * omega_h.x() - beta1s_dot) / omega,
             k_r * (omega_h.y() - beta1c_dot) / omega};
 }

@@ -37,7 +37,7 @@ inline MultibladeFlap multiblade_flap(std::span<const double> x, double psi,
 }
 
 // Rates of the cyclic flap coefficients [rad/s] (D-062): d/dt of β_1c and
-// β_1s above, with x[2k + 1] = β̇_k and ψ̇ = omega = Ω [rad/s]:
+// β_1s above (Padfield 3rd ed. Eqs. 3.42–3.45), with x[2k + 1] = β̇_k and ψ̇ = omega = Ω [rad/s]:
 //   β̇_1c = (2/N) Σ (β̇_k cos ψ_k − Ω β_k sin ψ_k),
 //   β̇_1s = (2/N) Σ (β̇_k sin ψ_k + Ω β_k cos ψ_k).
 struct MultibladeFlapRate {

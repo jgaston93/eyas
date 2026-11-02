@@ -99,9 +99,9 @@ double wake_curvature_gain(double k_r, double fade, double mu) noexcept;
 // tip-path plane's downward velocity gradient over ΩR, in hub axes,
 //   λ_K,1c = K_R (q_h − β̇_1c)/Ω,  λ_K,1s = K_R (s p_h − β̇_1s)/Ω,
 // (Johnson 2013 Eqs. 11.155, 11.158–11.159), with omega_h the body rate in
-// hub axes [rad/s], (beta1c_dot, beta1s_dot) the rates of the multiblade flap
-// coefficients [rad/s], s = +1 counter-clockwise from above, −1 clockwise, and
-// omega = Ω [rad/s].
+// hub axes [rad/s], (beta1c_dot, beta1s_dot) the tip-path plane's tilt rates
+// [rad/s] (on an offset hinge, (1 − e/R) times the flap coefficients'),
+// s = +1 counter-clockwise from above, −1 clockwise, and omega = Ω [rad/s].
 Vec3 wake_curvature_inflow(double k_r, const Vec3& omega_h, double beta1c_dot, double beta1s_dot,
                            double s, double omega) noexcept;
 

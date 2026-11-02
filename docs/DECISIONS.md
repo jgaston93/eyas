@@ -1541,7 +1541,7 @@ Also: accel_b against a central difference of the flown velocity (< 5e-3 m/s²);
   L M λ̇ + λ = L C + A α̇_TPP,  A: λ_c += K_R α̇_y,TPP, λ_s += −K_R α̇_x,TPP (dimensionless rates, over Ω),
 with α̇_y,TPP = α̇_y − β̇_1c and α̇_x,TPP = α̇_x + β̇_1s. In the production form (D-027) that is M̃ dλ/dτ = C − V L̂⁻¹ (λ − λ_K): the wake-curvature inflow λ_K is the quasi-static target the gradients relax to, behind their own time constants, with no new states. Written in Eyas's hub axes (D-024: z_h down, e_r = (−cos ψ, s sin ψ, 0)) from Johnson's vortex-theory reading (Eq. 11.159: the extra downwash is K_R times the disc's own downward velocity, which slows the wake's convection), λ_K is K_R times the linear part of the tip-path plane's downward velocity over ΩR:
   λ_K,1c = K_R (q_h − β̇_1c)/Ω,  λ_K,1s = K_R (s p_h − β̇_1s)/Ω,
-with (p_h, q_h) the body rate in hub axes and β̇_1c, β̇_1s the rates of the multiblade flap coefficients (Padfield 3rd ed. Eqs. 3.42–3.45, differentiated at ψ̇ = Ω). Check of signs: a nose-up pitch rate moves the aft disc (ψ = 0) down, slows the convection there and raises the downwash aft (λ_1c > 0); Johnson's Eq. 19.92 then gives the static off-axis flapping from shaft rate scaled by (1 − K_R) at ν_β = 1, which is what flips the sign (the test below).
+with (p_h, q_h) the body rate in hub axes and β̇_1c, β̇_1s the tip-path plane's tilt rates: the rates of the multiblade flap coefficients (Padfield 3rd ed. Eqs. 3.42–3.45, differentiated at ψ̇ = Ω) times (1 − e/R), since the tips sit R − e out from the offset hinges (D-026; 1 at e = 0, Johnson's case). Check of signs: a nose-up pitch rate moves the aft disc (ψ = 0) down, slows the convection there and raises the downwash aft (λ_1c > 0); Johnson's Eq. 19.92 then gives the static off-axis flapping from shaft rate scaled by (1 − K_R) at ν_β = 1, which is what flips the sign (the test below).
 
 **Decisions and their alternatives:**
 1. *Formulation: K_R on the tip-path-plane rate (Johnson Eq. 11.155, after Keller & Curtiss 1998).* The wake follows the disc, not the shaft.
@@ -1567,7 +1567,7 @@ with (p_h, q_h) the body rate in hub axes and β̇_1c, β̇_1s the rates of the 
    - Alternative: Kramer et al.'s Bo-105 values, which keep K_R ≈ 1.1–1.6 at 80 kt. That is a hingeless rotor, not the UH-60A.
 4. *Where it enters: all of V L̂⁻¹(λ − λ_K), as the equation reads.* λ_K has no mean part, so in hover only the two moment rows see it. In skewed flow the thrust row's coupling to λ_1c carries it too, faded out by μ = 0.125.
    - With tip loss on the inflow (D-051), the moment rows are the full disc's, so λ_K enters unscaled.
-   - The hinge offset is not modeled in the gradient; Johnson's derivation is for e = 0.
+   - The hinge offset enters only through the tip-path plane's geometry, (1 − e/R) on the flap rates (review of PR #102: the first version used the flap coefficients' rates as the plane's, about 5 % too large for the UH-60A). Johnson's derivation is for e = 0; nothing else is changed for the offset.
 5. *Config: `wake_curvature`, required (D-021).* It is `none` or a map {`k_r`, `fade_advance_ratio`} (dimensionless) and is allowed only with `inflow: pitt_peters`. With `none`, or at K_R(μ) = 0, the result is bit-identical to Eyas without it.
    - The UH-60A configs (`tools/build_uh60a_config.py`) get it on with the values above, if the validation below passes. Otherwise it is `none` and the failure is reported. (It failed one criterion and is on by the spec owner's ruling: Outcome below.)
    - No §6 interface changes.
@@ -1595,13 +1595,13 @@ with (p_h, q_h) the body rate in hub axes and β̇_1c, β̇_1s the rates of the 
 
 | | off | K_R 1.5 | **1.75** | 2.0 | 2.2 |
 |---|---|---|---|---|---|
-| q/δlat phase [deg] | −164 / 164 | −38 / 41 | **−30 / 32** | −25 / 26 | −22 / 23 |
-| q/δlat magnitude [dB] | −10.5 / 10.6 | −10.5 / 10.7 | **−8.4 / 8.5** | −6.6 / 6.8 | −5.4 / 5.6 |
-| p/δlon phase [deg] | −72 / 89 | −62 / 99 | **−61 / 101** | −60 / 103 | −60 / 105 |
-| p/δlon magnitude [dB] | 5.1 / 5.7 | 7.9 / 8.5 | **8.4 / 8.9** | 8.8 / 9.3 | 9.2 / 9.7 |
+| q/δlat phase [deg] | −164 / 164 | −36 / 39 | **−29 / 30** | −24 / 25 | −21 / 22 |
+| q/δlat magnitude [dB] | −10.5 / 10.6 | −10.3 / 10.5 | **−8.2 / 8.3** | −6.4 / 6.6 | −5.2 / 5.4 |
+| p/δlon phase [deg] | −72 / 89 | −63 / 100 | **−62 / 102** | −62 / 104 | −61 / 106 |
+| p/δlon magnitude [dB] | 5.1 / 5.7 | 7.7 / 8.3 | **8.2 / 8.7** | 8.6 / 9.1 | 9.0 / 9.4 |
 
 - *Phase below 90°:* passes, both off-axis responses.
-- *Magnitude RMS no worse:* q/δlat passes; **p/δlon fails** (5.7 → 8.9 dB), at every K_R tried.
+- *Magnitude RMS no worse:* q/δlat passes; **p/δlon fails** (5.7 → 8.7 dB), at every K_R tried.
 - *On-axis:* passes (1.5–12 rad/s within 0.1 dB and 1.6° RMS). Below 1.5 rad/s the magnitudes get closer (p/δlat 2.3 → 1.0, q/δlon 4.0 → 2.6 dB RMS) and the phases further (3.0 → 12.2°, 10.9 → 19.0°).
 - *80 kt:* bit-identical. The M7 regression: VALIDATION.md.
 
@@ -1611,5 +1611,6 @@ The rule in decision 5 would leave the term off. The spec owner ruled it on (202
 - The hover roll derivatives: L_δlon −0.774 with and without the term; L_q −0.867 → +1.324. The term flips the roll moment from pitch rate, as Johnson's Eq. 21.51 has it for K_R > 1 (the coupling (1 − K_R) θ̇). Before, L_q·q partly cancelled L_δlon in the response; now the two add.
 - So the deficit is in the direct control coupling L_δlon. With GenHel's swashplate phase set to 0, L_δlon = +0.984: Eyas's rotor alone cross-couples by about +5.4° of the cyclic's direction, and the −9.7° phase over-corrects it to −4.3°. Over 3–10 rad/s the effective cross-coupling angle is about 13° in Eyas against about 4° in the flight data: Eyas's rotor cross-couples about 4° less than the rotor the 9.7° was set for.
 - Adding Fletcher's identified δ3 (7.84°) as pitch-flap coupling, with the term on: p/δlon 4.1 / 4.4 dB, −20 / 28°; q/δlat −4.5 / 4.5 dB, −37 / 38°. Both off-axis responses then beat the term-off model. Without the term, δ3 alone leaves q/δlat at −115°. Fletcher's δ3 is an identified equivalent and GenHel's δ3 is 0 (DATA_GAPS, human-confirmed), so it isn't adopted.
+- The probes ran on the first version (no (1 − e/R)); the table above is rerun with the hinge-offset fix, which moves it by at most 0.3 dB and 2° (the first version: q/δlat −30 / 32°, −8.4 / 8.5 dB; p/δlon 8.4 / 8.9 dB), both off-axis responses closer.
 - Ruled out: the longitudinal-to-pedal mixing (no effect); D-027's eq. 23b moment mass flow (p/δlon 6.0 dB off, 9.2 on); the shaft-rate form of decision 1 (p/δlon 5.1 dB but phase −99 / 127°).
 - Open, issue #100: the candidates are pitch-flap coupling in the hardware (a source, #101), lag dynamics and lag-pitch coupling (#43), blade torsion (#45) and a higher-order wake (#43).

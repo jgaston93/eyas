@@ -717,8 +717,9 @@ BladeElementRotorConfig curved_rotor(RotationDirection dir, double k_r) {
 // Eq. 11.159: the extra downwash is K_R times the disc's downward velocity):
 // the downward velocity over ΩR of the tip-path plane's points (R, ψ), from
 // the shaft's rotation (ω_h × R e_r(ψ), D-024) and from the plane's tilt rate
-// (central differences of the blades' first harmonic, the blade states
-// advanced at their own rates), fitted to cos ψ and sin ψ.
+// (central differences of the blades' tip heights' first harmonic, a tip
+// R − e out from its hinge, the blade states advanced at their own rates),
+// fitted to cos ψ and sin ψ.
 Vec3 curvature_reference(const BladeElementRotor& rotor, const SimContext& ctx,
                          const std::vector<double>& x, double k_r) {
     const BladeElementRotorConfig& c = rotor.config();
@@ -727,15 +728,16 @@ Vec3 curvature_reference(const BladeElementRotor& rotor, const SimContext& ctx,
     const double R = c.radius;
     const double s = c.direction == RotationDirection::counter_clockwise ? 1.0 : -1.0;
     const int nb = c.num_blades;
+    const double e = c.flap->offset;
     const auto tilt = [&](double tau) {
         double b1c = 0.0;
         double b1s = 0.0;
         for (int i = 0; i < nb; ++i) {
             const auto j = static_cast<std::size_t>(2 * i);
             const double psi = k.psi + W * tau - 2.0 * kPi * i / nb;
-            const double b = x[j] + x[j + 1] * tau;
-            b1c += 2.0 * b * std::cos(psi) / nb;
-            b1s += 2.0 * b * std::sin(psi) / nb;
+            const double tip_height = (R - e) * (x[j] + x[j + 1] * tau);
+            b1c += 2.0 * tip_height * std::cos(psi) / nb;
+            b1s += 2.0 * tip_height * std::sin(psi) / nb;
         }
         return std::array<double, 2>{b1c, b1s};
     };
@@ -751,7 +753,7 @@ Vec3 curvature_reference(const BladeElementRotor& rotor, const SimContext& ctx,
         const double psi = 2.0 * kPi * i / kPoints;
         const Vec3 e_r(-std::cos(psi), s * std::sin(psi), 0.0);
         const double shaft_down = k.omega_h.cross(R * e_r).z();
-        const double plane_up = R * (b1c_dot * std::cos(psi) + b1s_dot * std::sin(psi));
+        const double plane_up = b1c_dot * std::cos(psi) + b1s_dot * std::sin(psi);
         const double w = (shaft_down - plane_up) / (W * R);
         lc += 2.0 * w * std::cos(psi) / kPoints;
         ls += 2.0 * w * std::sin(psi) / kPoints;
@@ -808,6 +810,18 @@ TEST(PittPetersRotor, WakeCurvatureFromTheTipPathPlaneRate) {
             }
         }
     }
+}
+
+// The flap coefficients are a disc tilt only with three blades or more.
+TEST(PittPetersRotor, WakeCurvatureNeedsThreeBlades) {
+    BladeElementRotorConfig c = curved_rotor(RotationDirection::counter_clockwise, 1.75);
+    c.num_blades = 2;
+    EXPECT_THROW(BladeElementRotor{c}, InitError);
+    c.wake_curvature.reset();
+    EXPECT_NO_THROW(BladeElementRotor{c});
+    c = curved_rotor(RotationDirection::counter_clockwise, 1.75);
+    c.num_blades = 3;
+    EXPECT_NO_THROW(BladeElementRotor{c});
 }
 
 // Off, at K_R = 0 and from μ_f: the same bits as a rotor without the key.

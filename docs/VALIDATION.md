@@ -880,7 +880,7 @@ Cruise main-rotor power is in D-039 (mean −45 hp against GenHel); with GenHel'
 
 - *On-axis, 1.5–12 rad/s (roll from lateral, pitch from longitudinal):* Eyas matches the flight data in both conditions: magnitude within 1.6 dB RMS, phase within 12° RMS. This is the band of the rotor-fuselage coupled roll and pitch response that flight control design works in.
 - *On-axis, below 1.5 rad/s (the whole-aircraft modes), open:* in hover, Eyas's pitch response is 3.7 dB too large on average from 0.56 rad/s (where the coherence first reaches 0.6) to 1.5 rad/s, with a higher peak near 0.7 rad/s. At 80 kt the magnitudes are close, but Eyas leads in phase: 27° on average in roll, below 1 rad/s, and 43° in pitch at 0.2–1 rad/s, up to 85°. The flight roll response stays flat in magnitude down to 0.1 rad/s; Eyas's falls by about 5 dB, with phase lead, as with a stronger roll restoring moment through sideslip. The likely suspects are the slow-mode derivatives: the speed and incidence stability in pitch, and the dihedral and weathercock stability in roll and yaw. The condensed-model modes against Padfield §4.3 (the rest of V2) are the next check.
-- *Off-axis (roll from longitudinal, pitch from lateral), known limitation:* Eyas misses badly in both conditions (phase off by 140–160° on average in hover; magnitude off by up to 13 dB in hover and 28 dB at 80 kt). This is the documented limitation of blade-element rotors with Pitt–Peters inflow. Fletcher (p. VII-4-3) writes that such models "predict the on-axis responses well to about 10 rad/sec but have deficiencies in their off-axis angular rate response prediction", reports the same for AH-64 and BO 105 models, and attributes it to the wake distortion in pitch and roll that Pitt–Peters doesn't model (p. VII-4-4, after Rosen). Padfield 3rd ed. §5.3.3 (p. 298) calls it "a common feature of current modelling standards". Fletcher's fix is an identified aerodynamic phase lag in the flapping equations, a fitted equivalent. A wake-distortion model is added to M9 (D-041). *Since D-062* (M9, "Wake curvature"): the hover pitch-from-lateral phase error falls to −30 / 32°; roll from longitudinal grows to 8.9 dB RMS (#100); 80 kt unchanged.
+- *Off-axis (roll from longitudinal, pitch from lateral), known limitation:* Eyas misses badly in both conditions (phase off by 140–160° on average in hover; magnitude off by up to 13 dB in hover and 28 dB at 80 kt). This is the documented limitation of blade-element rotors with Pitt–Peters inflow. Fletcher (p. VII-4-3) writes that such models "predict the on-axis responses well to about 10 rad/sec but have deficiencies in their off-axis angular rate response prediction", reports the same for AH-64 and BO 105 models, and attributes it to the wake distortion in pitch and roll that Pitt–Peters doesn't model (p. VII-4-4, after Rosen). Padfield 3rd ed. §5.3.3 (p. 298) calls it "a common feature of current modelling standards". Fletcher's fix is an identified aerodynamic phase lag in the flapping equations, a fitted equivalent. A wake-distortion model is added to M9 (D-041). *Since D-062* (M9, "Wake curvature"): the hover pitch-from-lateral phase error falls to −29 / 30°; roll from longitudinal grows to 8.7 dB RMS (#100); 80 kt unchanged.
 - *Yaw rate to collective (Figs. 7 and 13), open:* `tools/plot_m7c_fletcher.py` also compares r per inch of collective (`m7c_fletcher_yaw.png`) against the reviewed flight curves (DATA_GAPS.md). Every reading Fletcher drew is compared, since these figures have no coherence panel: 0.53–9.5 rad/s in hover and 3.2–9.6 rad/s at 80 kt. Eyas with the servo, mean / RMS:
 
   | | magnitude [dB] | phase [deg] |
@@ -1328,7 +1328,7 @@ Generator `eyas_ballin_app_d_cases` (`tests/validation/ballin_app_d_cases.cpp`),
   - *Main rotor, through the mixer's MIX_BP:* −9 480 ft·lbf/in, against −9 300 from the hinge-offset spring (N/2)eM_βΩ², the thrust tilt T·h and the thrust change at the hub's offset, for Eyas's 1.90°/in of β₁c. The flapping per degree of cyclic behind it matched Fletcher's flight data at M7c (on-axis pitch, 0.8 dB at 80 kt).
   - *Stabilator wash:* +1.95 ft/s/in, against +1.94 from the tail-wash table (Table 3.5.2, p. 5.3-20). It comes from the main rotor's downwash dropping with its thrust; the flapping input a₁ barely moves the factor, so the AA1FMR ruling (DATA_GAPS.md) doesn't enter.
   The net held response is about −2 800 ft·lbf/in nose-down for right pedal. Most of the gap from GenHel builds later. In D16, GenHel's pitch rate is −1.6 deg/s and Eyas's −0.8 at 0.55 s after the pedal moves, but −8.0 and −3.9 at 1.3 s, while the sideslip grows from −1° to −11° and the yaw rate to 15 deg/s. In that phase Eyas's stabilator turns nose-up (+2 000 to +3 700 ft·lbf as its angle of attack falls by about 1.3°) and stops the motion. The suspects are now the sideslip- and rate-dependent airframe terms (the fuselage and stabilator tables against sideslip, the stabilator's dynamic-pressure ratio), and anything in the Ames simulation that CR-166309 doesn't describe. Open.
-- *Off-axis* (pitch and yaw to lateral, roll to longitudinal): all three simulations miss parts of the test's off-axis response, as Ballin says of GenHel (p. 11, the linear mechanical mixing). Not yet compared in detail.
+- *Off-axis* (pitch and yaw to lateral, roll to longitudinal): all three simulations miss parts of the test's off-axis response, as Ballin says of GenHel (p. 11, the linear mechanical mixing). Not yet compared in detail. *Since D-062* (M9, "Wake curvature"), the hover steps' off-axis responses are compared there; the plots in this section are without wake curvature.
 
 ![D1](validation/m8/ballin_app_d_d1.png)
 ![D13](validation/m8/ballin_app_d_d13.png)
@@ -2008,10 +2008,10 @@ Johnson's wake curvature on the Pitt–Peters inflow gradients (D-062): K_R = 1.
 |---|---|---|
 | Exact-equation reference, rotor wiring, neutrality, real-time | ✅ | `PittPeters.WakeCurvature*`, `PittPetersRotor.WakeCurvature*`: Johnson's Eq. 11.155 in his own notation; the rotor against the tip-path-plane rate computed independently, both rotation directions; `none`, K_R = 0 and μ ≥ 0.125 bit-identical; no allocation. |
 | Closed form, Johnson Eq. 19.92 | ✅ | `PittPetersAnchors.WakeCurvatureScalesTheOffAxisFlapping`: the change in off-axis static flapping is −K_R α̇ within 1 % (K_R = 0.5 and 1.75), and the on-axis flapping is unchanged within 1 %. |
-| Fletcher hover q/δlat: phase error below 90° | ✅ | −164 / 164° → −30 / 32° (mean / RMS). |
-| Fletcher hover p/δlon: phase error below 90° | ✅ | −72 / 89° → −61 / 101°. |
-| Off-axis magnitude RMS no worse | ❌ p/δlon, ✅ q/δlat | p/δlon 5.7 → 8.9 dB; q/δlat 10.6 → 8.5 dB. The cause is a cross-coupling deficit the term uncovers (D-062; #100). |
-| On-axis moves under 1 dB and 10° RMS | ✅ | 1.5–12 rad/s: within 0.1 dB and 1.6°. |
+| Fletcher hover q/δlat: phase error below 90° | ✅ | −164 / 164° → −29 / 30° (mean / RMS). |
+| Fletcher hover p/δlon: phase error below 90° | ✅ | −72 / 89° → −62 / 102°. |
+| Off-axis magnitude RMS no worse | ❌ p/δlon, ✅ q/δlat | p/δlon 5.7 → 8.7 dB; q/δlat 10.6 → 8.3 dB. The cause is a cross-coupling deficit the term uncovers (D-062; #100). |
+| On-axis moves under 1 dB and 10° RMS | ✅ | 1.5–12 rad/s: within 0.1 dB and 1.5°. |
 | Fletcher 80 kt | ✅ | Bit-identical (K_R = 0 above μ = 0.125). |
 | Ballin's App. D/E hover steps | ✅ reported | Pitch from lateral steps follows the flight test (below). |
 | The V1 gate and the climbs | ✅ | `BallinTrim.*` pass unchanged. `eyas_m7c_cases` on Ballin's engines: every level, climb and descent trim agrees with the baseline to the solver's tolerance (sixth significant figure). A steady trim has a tip-path-plane rate only in its 4/rev ripple, so the term barely enters. |
@@ -2021,14 +2021,14 @@ Johnson's wake curvature on the Pitt–Peters inflow gradients (D-062): K_R = 1.
 | | magnitude [dB] | phase [deg] |
 |---|---|---|
 | p/δlat | −0.6 / 1.6 → −0.6 / 1.7 | −3.5 / 11.5 → −3.1 / 11.3 |
-| q/δlon | 0.0 / 1.2 → −0.1 / 1.1 | 3.0 / 8.7 → 4.9 / 10.3 |
-| p/δlon | 5.1 / 5.7 → 8.4 / 8.9 | −71 / 89 → −61 / 101 |
-| q/δlat | −10.5 / 10.7 → −8.3 / 8.5 | −164 / 164 → −30 / 32 |
+| q/δlon | 0.0 / 1.2 → −0.1 / 1.1 | 3.0 / 8.7 → 4.8 / 10.1 |
+| p/δlon | 5.1 / 5.7 → 8.2 / 8.7 | −71 / 89 → −62 / 102 |
+| q/δlat | −10.5 / 10.7 → −8.1 / 8.3 | −164 / 164 → −29 / 30 |
 
-- *Below 1.5 rad/s, on-axis:* the magnitudes get closer (p/δlat 2.2 → 1.0, q/δlon 4.0 → 2.6 dB RMS), and the phases get further (3.0 → 12.1°, 10.8 → 18.9°).
-- *Sensitivity* (D-062's table): q/δlat improves with K_R (RMS 10.7 / 8.5 / 6.8 / 5.6 dB at 1.5 / 1.75 / 2.0 / 2.2), and p/δlon worsens (8.5 / 8.9 / 9.3 / 9.7 dB). No value in the sources' range passes both.
+- *Below 1.5 rad/s, on-axis:* the magnitudes get closer (p/δlat 2.2 → 1.0, q/δlon 4.0 → 2.6 dB RMS), and the phases get further (3.0 → 12.2°, 10.8 → 18.9°).
+- *Sensitivity* (D-062's table): q/δlat improves with K_R (RMS 10.5 / 8.3 / 6.6 / 5.4 dB at 1.5 / 1.75 / 2.0 / 2.2), and p/δlon worsens (8.3 / 8.7 / 9.1 / 9.4 dB). No value in the sources' range passes both.
 - *The hover modes:* the pitch subsidence goes from −1.02 to −0.87 1/s and the roll subsidence from −5.93 to −5.64. The low-frequency oscillation becomes more unstable (+0.201 ± 0.356i → +0.251 ± 0.316i), and its stable partner becomes more damped (−0.176 ± 0.470i → −0.287 ± 0.488i).
-- *Why p/δlon grows* (D-062, the probes): the term flips the roll moment from pitch rate (L_q −0.87 → +1.32), as Johnson's Eq. 21.51 has it for K_R > 1. Before, that moment partly cancelled the direct roll from longitudinal cyclic; now the two add. The direct coupling itself is too large: Eyas's rotor cross-couples about 4° less than the one GenHel's −9.7° swashplate phase was set for. With Fletcher's identified δ3 = 7.84° added (a probe, not adopted), both off-axis responses come within 4.5 dB and 38° RMS. Open in #100, a source for the hardware's coupling in #101.
+- *Why p/δlon grows* (D-062, the probes): the term flips the roll moment from pitch rate (L_q −0.87 → +1.32), as Johnson's Eq. 21.51 has it for K_R > 1. Before, that moment partly cancelled the direct roll from longitudinal cyclic; now the two add. The direct coupling itself is too large: Eyas's rotor cross-couples about 4° less than the one GenHel's −9.7° swashplate phase was set for. With Fletcher's identified δ3 = 7.84° added (a probe on the first version, before the hinge-offset fix; not adopted), both off-axis responses come within 4.5 dB and 38° RMS. Open in #100, a source for the hardware's coupling in #101.
 
 **Ballin's App. D/E hover steps, Eyas − flight test, RMS over the 2 s from the input** (GenHel's servos; off → on; the 60 and 100 kt cases are unchanged):
 
@@ -2036,10 +2036,10 @@ Johnson's wake curvature on the Pitt–Peters inflow gradients (D-062): K_R = 1.
 |---|---|---|---|
 | D1 | 1-in. right cyclic | pitch rate 1.56 → 0.35 deg/s | roll rate 1.13 → 1.00 deg/s |
 | D2 | 1-in. left cyclic | pitch rate 2.05 → 0.57 deg/s | roll rate 1.20 → 1.13 deg/s |
-| D3 | 0.5-in. forward cyclic | roll rate 0.64 → 1.06 deg/s | pitch rate 0.99 → 0.96 deg/s |
-| E1 | 0.5-in. aft cyclic | roll rate 1.75 → 0.89 deg/s | pitch rate 2.15 → 2.30 deg/s |
+| D3 | 0.5-in. forward cyclic | roll rate 0.64 → 1.07 deg/s | pitch rate 0.99 → 0.96 deg/s |
+| E1 | 0.5-in. aft cyclic | roll rate 1.75 → 0.88 deg/s | pitch rate 2.15 → 2.30 deg/s |
 | D4 | 1-in. up collective | pitch rate 1.52 → 1.32, roll rate 0.45 → 0.73 deg/s | vertical accel. 0.79 → 0.78 ft/s² |
-| D5 | 1-in. left pedal | pitch rate 4.51 → 3.92, roll rate 1.59 → 2.27 deg/s | yaw rate 3.99 → 4.15 deg/s |
+| D5 | 1-in. left pedal | pitch rate 4.51 → 3.91, roll rate 1.59 → 2.26 deg/s | yaw rate 3.99 → 4.15 deg/s |
 | E2 | 0.5-in. down collective (WL 243.8) | pitch rate 0.74 → 0.57, roll rate 1.69 → 1.83 deg/s | vertical accel. unchanged |
 
 The lateral steps are independent flight data that agree with Fletcher's q/δlat. After a right step the test pitches nose-down, and Eyas now does too (D1 below; before, it pitched nose-up with the Ames GenHel). The forward step (D3) rolls left, as the test does, but by about 2 deg/s against about 0.7: the same p/δlon excess as in Fletcher's data. The aft step (E1) improves.
@@ -2050,4 +2050,4 @@ The lateral steps are independent flight data that agree with Fletcher's q/δlat
 
 ![Ballin Fig. D3 with wake curvature](validation/m9/m9_wake_curvature_d3.png)
 
-*Reproduce:* `./build/release/tests/eyas_m7c_fletcher <dir> data/uh60a/engine_ballin/uh60a_fletcher.yaml`, then `tools/plot_m7c_fletcher.py <dir> <plots>`; `./build/release/tests/eyas_ballin_app_d_cases <dir>`, then `tools/plot_ballin_app_d.py <dir> <plots>`. The baseline is the same generators at ed924b1. Both run nightly in `full-verification.yml`.
+*Reproduce:* `./build/release/tests/eyas_m7c_fletcher <dir> data/uh60a/engine_ballin/uh60a_fletcher.yaml`, then `tools/plot_m7c_fletcher.py <dir> <plots>` (its `m7c_fletcher_hover.png` is `m9_wake_curvature_hover.png`); `./build/release/tests/eyas_ballin_app_d_cases <dir>`, then `tools/plot_ballin_app_d.py <dir> <plots>` (its `ballin_d1.png` and `ballin_d3.png` are `m9_wake_curvature_d1.png` and `_d3.png`). The baseline is the same generators at ed924b1. Both run nightly in `full-verification.yml`.
