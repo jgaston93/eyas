@@ -59,6 +59,9 @@ public:
     CsvTable csv_table(std::string_view key) const;
 
     bool contains(std::string_view key) const;
+    // True when `key` is present and a map (a value that is either a word or
+    // a map of settings, e.g. D-062's wake_curvature).
+    bool is_map(std::string_view key) const;
     // Throws unless this node is a map whose keys are all in `allowed`.
     void allow_keys(std::initializer_list<std::string_view> allowed) const;
     Config child(std::string_view key) const;

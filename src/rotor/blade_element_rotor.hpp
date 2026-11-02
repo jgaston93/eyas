@@ -102,6 +102,14 @@ struct DynamicTwist {
     double gain_corner_fraction = 0.1;
 };
 
+// Wake curvature on the Pitt–Peters inflow gradients (D-062): the gradients
+// relax to K_R(μ) times the tip-path plane's pitch and roll rate (Johnson 2013
+// Eqs. 11.155, 11.158), K_R(μ) = k_r (1 − smoothstep(μ/fade_advance_ratio)).
+struct WakeCurvature {
+    double k_r = 0.0;                   // K_R [-] in hover, ≥ 0
+    double fade_advance_ratio = 0.125;  // μ [-] from which K_R = 0, > 0
+};
+
 struct BladeElementRotorConfig {
     // Instance name for the coupling outputs (D-003); empty: produces none.
     std::string name;
@@ -144,6 +152,9 @@ struct BladeElementRotorConfig {
     // thrust row's apparent mass is that disc's too. The cyclic inflow rows
     // are unchanged. none: the full disc, as GenHel.
     InflowTipLoss inflow_tip_loss = InflowTipLoss::none;
+    // Wake curvature on the inflow gradients (D-062), with Pitt–Peters inflow
+    // only. None: off.
+    std::optional<WakeCurvature> wake_curvature;
     std::optional<DynamicTwist> dynamic_twist;  // none: rigid in torsion (D-038)
     // The shaft the rotor turns on (D-052): its speed and azimuth are the
     // shaft's times `gear`; rotor_speed must equal gear × the shaft's governed

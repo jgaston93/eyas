@@ -98,6 +98,18 @@ void validate(const BladeElementRotorConfig& c) {
             fail("flap: delta3 must be within ±90°");
         }
     }
+    if (c.wake_curvature) {
+        if (c.inflow != InflowModel::pitt_peters) {
+            fail("wake_curvature needs pitt_peters inflow");
+        }
+        if (!(c.wake_curvature->k_r >= 0.0) || !std::isfinite(c.wake_curvature->k_r)) {
+            fail("wake_curvature: k_r must be non-negative and finite");
+        }
+        if (!(c.wake_curvature->fade_advance_ratio > 0.0) ||
+            !std::isfinite(c.wake_curvature->fade_advance_ratio)) {
+            fail("wake_curvature: fade_advance_ratio must be positive and finite");
+        }
+    }
     if (c.dynamic_twist &&
         (!(c.dynamic_twist->lag > 0.0) || !std::isfinite(c.dynamic_twist->lag))) {
         fail("dynamic_twist: lag must be positive and finite");
@@ -652,9 +664,23 @@ void BladeElementRotor::derivatives(const SimContext& ctx, std::span<const doubl
             out.xdot0[iv] = (target - deficit) * t.lambda_h * kin.omega /
                             (kVortexRingLagCoefficient * 2.0 * std::numbers::pi * inflow_tip_);
         }
+        // Wake curvature (D-062): the gradients relax to K_R(μ) times the
+        // tip-path plane's pitch and roll rate; nothing at K_R(μ) = 0.
+        Vec3 curvature = Vec3::Zero();
+        if (config_.wake_curvature) {
+            const double k_r = wake_curvature_gain(
+                config_.wake_curvature->k_r, config_.wake_curvature->fade_advance_ratio, kin.mu);
+            if (k_r > 0.0) {
+                const MultibladeFlapRate tpp =
+                    config_.flap ? multiblade_flap_rate(x, kin.psi, kin.omega, config_.num_blades)
+                                 : MultibladeFlapRate{};
+                curvature =
+                    wake_curvature_inflow(k_r, kin.omega_h, tpp.beta1c, tpp.beta1s, s_, kin.omega);
+            }
+        }
         const Vec3 rates = pitt_peters_rates(
             Vec3(x[i], x[i + 1], x[i + 2]), Vec3(loads.ct, loads.c1s, loads.c1c), kin.mu, kin.mu_z,
-            kin.cos_w, kin.sin_w, kin.omega, row, kappa, inflow_tip_);
+            kin.cos_w, kin.sin_w, kin.omega, row, kappa, inflow_tip_, curvature);
         out.xdot0[i] = rates.x();
         out.xdot0[i + 1] = rates.y();
         out.xdot0[i + 2] = rates.z();
@@ -885,8 +911,8 @@ Table1D read_spanwise(const Config& blade, const std::string& key, Dimension d, 
 
 std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& node) {
     node.allow_keys({"type", "name", "blades", "radius", "rotor_speed", "direction", "inflow",
-                     "vortex_ring", "ground_effect", "inflow_tip_loss", "hub", "blade", "controls",
-                     "pitch_input", "shaft"});
+                     "vortex_ring", "ground_effect", "inflow_tip_loss", "wake_curvature", "hub",
+                     "blade", "controls", "pitch_input", "shaft"});
     BladeElementRotorConfig c;
     if (node.contains("name")) {
         c.name = node.string("name");
@@ -950,6 +976,17 @@ std::unique_ptr<BladeElementRotor> BladeElementRotor::from_config(const Config& 
         c.inflow_tip_loss = InflowTipLoss::effective_disc;
     } else {
         node.fail("inflow_tip_loss", "must be none or effective_disc");
+    }
+    // Required, no default (D-021, D-062): none, or {k_r, fade_advance_ratio}.
+    if (node.is_map("wake_curvature")) {
+        const Config wc = node.child("wake_curvature");
+        wc.allow_keys({"k_r", "fade_advance_ratio"});
+        c.wake_curvature = WakeCurvature{wc.number("k_r"), wc.number("fade_advance_ratio")};
+        if (c.inflow != InflowModel::pitt_peters) {
+            node.fail("wake_curvature", "needs inflow: pitt_peters");
+        }
+    } else if (node.string("wake_curvature") != "none") {
+        node.fail("wake_curvature", "must be none or a map {k_r, fade_advance_ratio}");
     }
 
     const Config hub = node.child("hub");

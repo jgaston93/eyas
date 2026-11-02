@@ -411,6 +411,7 @@ TEST(Shafts, ConfigIsReadAndChecked) {
     vortex_ring: none
     ground_effect: none
     inflow_tip_loss: none
+    wake_curvature: none
     SHAFT
     hub:
       position: {x: "0 m", y: "0 m", z: "-2 m"}

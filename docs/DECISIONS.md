@@ -1533,3 +1533,83 @@ Also: accel_b against a central difference of the flown velocity (< 5e-3 m/s²);
 - `BallinT700.TrimSeedPastTheTopIsAtTheTop`: demands 1.001, 1.05 and 2 times the top's seed every engine at the top within 10⁻⁶; 0.999 times seeds just under it. `TrimSeedPastTheMapsIsFinite` and `…IsAtTheInlet` (ten times the hover torque, now at the top) pass unchanged.
 - The gate on Ballin's engines (above). The gate on the ideal drive passes at its records.
 - Mutations caught: no bound (every engine climb, and the bound's test); the seed at the rest point's fuel (137.5 kt on the engines, and the seed's test); no retry (both steady-at-top tests).
+
+## D-062 M9: wake curvature on the Pitt–Peters inflow gradients, for the off-axis response (spec §6.5, §9 M9; issue #41, D-041) — `Approved` (2026-11-01; the values chosen under the spec owner's delegation: "the best supported, most realistic values, validated against data, with the alternatives recorded") — design, a model parameter from the literature, interface addition (internal: a rotor config key)
+**Context:** with Pitt–Peters inflow Eyas's off-axis responses in hover (roll rate from longitudinal cyclic, pitch rate from lateral) have the wrong sign: phase off by 140–160° against Fletcher's flight data (VALIDATION.md M7c; D-041). Johnson 2013 §11.3 (pp. 434–436) gives the cause and the standard fix: when the tip-path plane pitches or rolls, the wake below it curves, and the induced velocity gains a gradient across the disc. With momentum theory or dynamic inflow alone the predicted low-frequency off-axis phase is 0°, where flight tests give 180°; adding the gradient "changed the sign of the off-axis response ..., as found in flight test" (Keller 1996, as Johnson reports it).
+
+**Model** (Johnson 2013 Eqs. 11.155, 11.158; in hover Eq. 19.87): the inflow equations gain a forcing A α̇_TPP,
+  L M λ̇ + λ = L C + A α̇_TPP,  A: λ_c += K_R α̇_y,TPP, λ_s += −K_R α̇_x,TPP (dimensionless rates, over Ω),
+with α̇_y,TPP = α̇_y − β̇_1c and α̇_x,TPP = α̇_x + β̇_1s. In the production form (D-027) that is M̃ dλ/dτ = C − V L̂⁻¹ (λ − λ_K): the wake-curvature inflow λ_K is the quasi-static target the gradients relax to, behind their own time constants, with no new states. Written in Eyas's hub axes (D-024: z_h down, e_r = (−cos ψ, s sin ψ, 0)) from Johnson's vortex-theory reading (Eq. 11.159: the extra downwash is K_R times the disc's own downward velocity, which slows the wake's convection), λ_K is K_R times the linear part of the tip-path plane's downward velocity over ΩR:
+  λ_K,1c = K_R (q_h − β̇_1c)/Ω,  λ_K,1s = K_R (s p_h − β̇_1s)/Ω,
+with (p_h, q_h) the body rate in hub axes and β̇_1c, β̇_1s the rates of the multiblade flap coefficients (Padfield 3rd ed. Eqs. 3.42–3.45, differentiated at ψ̇ = Ω). Check of signs: a nose-up pitch rate moves the aft disc (ψ = 0) down, slows the convection there and raises the downwash aft (λ_1c > 0); Johnson's Eq. 19.92 then gives the static off-axis flapping from shaft rate scaled by (1 − K_R) at ν_β = 1, which is what flips the sign (the test below).
+
+**Decisions and their alternatives:**
+1. *Formulation: K_R on the tip-path-plane rate (Johnson Eq. 11.155, after Keller & Curtiss 1998).* The wake follows the disc, not the shaft.
+   - Alternative, not taken: the shaft rate alone (Keller 1996). This is the earlier form, which Keller and Curtiss replaced.
+   - Alternative, not taken: an aerodynamic phase lag ψ_a in the blade loads (Fletcher 1995; Mansur & Tischler 1998). This is an identified equivalent, not a model of the wake, and D-041 already rejected it.
+   - Alternative, later: a higher-order dynamic wake with its own distortion states (Johnson cites Peters & He 1995 as the higher-order inflow). This is part of #43's Peters–He item, and the reference library has no source for its distortion terms yet.
+2. *K_R = 1.75 in hover.*
+   - The sources, as Johnson reports them (p. 435–436):
+     - vortex theory 1.5 (Keller 1996), which Johnson calls the simple estimate and uses in his worked example (Table 21.1);
+     - free-wake analysis 1.75–2.25 (Bagai, Leishman & Park 1999);
+     - UH-60A identification 1.7–2.0 (Schulein et al. 2002, with no aerodynamic phase lag; 1.4 with ψ_a fixed at the two-dimensional 11°) and 2.2 (Arnold et al. 1998).
+   - Eyas's blade element has quasi-steady airfoil tables, so no two-dimensional lag. The applicable identified range is therefore 1.7–2.0.
+   - 1.75 is the free-wake analysis's lower bound and lies inside that UH-60A range. It is the value two independent kinds of evidence share, one physical (free wake) and one from flight test. It is not fitted to Fletcher here.
+   - Alternative: 1.5, the simple vortex theory. Johnson says the κ² form "underestimates the magnitude", and 1.5 lies below the free-wake range.
+   - Alternative: 2.0–2.2, the upper identified values. These are equally supported but sit at the top of the range.
+   - Both alternatives are reported as a sensitivity in the validation; the choice doesn't move with the result.
+3. *Fade with forward speed: K_R(μ) = K_R (1 − smoothstep(μ/0.125)).*
+   - Keller & Curtiss found K_R ≈ 0 by μ = 0.10–0.15 (Johnson p. 435), so K_R is 0 from μ = 0.125, the middle of that range.
+   - The smoothstep shape is Eyas's choice: smooth, and flat at both ends, so trims and the linearization see no kink. The source gives no shape.
+   - At Fletcher's 80 kt (μ ≈ 0.19) the term is zero, consistent with the small aerodynamic phase lag Fletcher identifies there (15°, near the two-dimensional 11°). The 80 kt off-axis gap stays open.
+   - Alternative: a fade on the wake skew angle χ. This is physically closer, but the source states the result in μ, so the end point would be a conversion of ours.
+   - Alternative: no fade. This contradicts Keller & Curtiss.
+   - Alternative: Kramer et al.'s Bo-105 values, which keep K_R ≈ 1.1–1.6 at 80 kt. That is a hingeless rotor, not the UH-60A.
+4. *Where it enters: all of V L̂⁻¹(λ − λ_K), as the equation reads.* λ_K has no mean part, so in hover only the two moment rows see it. In skewed flow the thrust row's coupling to λ_1c carries it too, faded out by μ = 0.125.
+   - With tip loss on the inflow (D-051), the moment rows are the full disc's, so λ_K enters unscaled.
+   - The hinge offset is not modeled in the gradient; Johnson's derivation is for e = 0.
+5. *Config: `wake_curvature`, required (D-021).* It is `none` or a map {`k_r`, `fade_advance_ratio`} (dimensionless) and is allowed only with `inflow: pitt_peters`. With `none`, or at K_R(μ) = 0, the result is bit-identical to Eyas without it.
+   - The UH-60A configs (`tools/build_uh60a_config.py`) get it on with the values above, if the validation below passes. Otherwise it is `none` and the failure is reported. (It failed one criterion and is on by the spec owner's ruling: Outcome below.)
+   - No §6 interface changes.
+
+**Verification** (written before the code):
+- *Exact-equation reference:* the Pitt–Peters transcriptions (`pitt_peters_reference.hpp`) gain Johnson's A term in his own notation (λ_c, λ_s, α̇_y, α̇_x). `pitt_peters_rates` must agree under random states and skew.
+- *Rotor wiring:* the rotor's inflow rates equal the reference fed with the hub rates and the flap-coefficient rates computed independently. This is checked in both rotation directions.
+- *Closed form (Johnson Eq. 19.92):* a hover rotor with no hinge offset and no spring (ν_β = 1), under a steady shaft roll or pitch rate α̇ (over Ω), in both rotation directions.
+  - The off-axis static flapping is (1 − K_R) α̇. Without wake curvature, Eyas's off-axis flapping is checked to equal α̇ within 3 %; the remaining 2.3 % comes from terms Eq. 19.92 drops.
+  - The change with K_R = 0.5 and 1.75 is checked to equal −K_R α̇ within 1 %, which flips the sign at 1.75. The on-axis flapping is checked unchanged within 1 %.
+  - The first draft of this test compared the ratio to (1 − K_R) with 3 %. That ratio mixes the 2.3 % baseline into the K_R term, so the change itself is checked instead (−1.7486 α̇ at K_R = 1.75).
+- *Neutral:* `none`, K_R = 0 and μ ≥ 0.125 give bit-identical derivatives.
+- *Real-time:* no allocation, pure.
+
+**Validation**, the criteria fixed before the runs:
+- *Fletcher hover, the off-axis responses* (q/δ_lat, p/δ_lon; Figs. 3–4, the V2 band statistics):
+  - the mean phase error falls below 90° (the right sign) where Fletcher's coherence is ≥ 0.6, from 1.5 to 12 rad/s;
+  - the magnitude RMS is no worse than without the term;
+  - the on-axis responses move by under 1 dB and 10° RMS.
+- *Fletcher at 80 kt:* bit-identical (K_R = 0).
+- *The M7 regression with the term on* (the V1 gate and its climbs, Fletcher, Ballin's App. D/E steps) is reported against the runs without it.
+- *Sensitivity:* K_R = 1.5, 1.75, 2.0 and 2.2 side by side.
+
+**Outcome (2026-11-02): on in the UH-60A configs, one criterion failed; the spec owner's ruling.** Fletcher hover, Eyas minus flight, mean / RMS, 1.5–12 rad/s (`data/uh60a/uh60a_fletcher.yaml`; VALIDATION.md M9 "Wake curvature"):
+
+| | off | K_R 1.5 | **1.75** | 2.0 | 2.2 |
+|---|---|---|---|---|---|
+| q/δlat phase [deg] | −164 / 164 | −38 / 41 | **−30 / 32** | −25 / 26 | −22 / 23 |
+| q/δlat magnitude [dB] | −10.5 / 10.6 | −10.5 / 10.7 | **−8.4 / 8.5** | −6.6 / 6.8 | −5.4 / 5.6 |
+| p/δlon phase [deg] | −72 / 89 | −62 / 99 | **−61 / 101** | −60 / 103 | −60 / 105 |
+| p/δlon magnitude [dB] | 5.1 / 5.7 | 7.9 / 8.5 | **8.4 / 8.9** | 8.8 / 9.3 | 9.2 / 9.7 |
+
+- *Phase below 90°:* passes, both off-axis responses.
+- *Magnitude RMS no worse:* q/δlat passes; **p/δlon fails** (5.7 → 8.9 dB), at every K_R tried.
+- *On-axis:* passes (1.5–12 rad/s within 0.1 dB and 1.6° RMS). Below 1.5 rad/s the magnitudes get closer (p/δlat 2.3 → 1.0, q/δlon 4.0 → 2.6 dB RMS) and the phases further (3.0 → 12.2°, 10.9 → 19.0°).
+- *80 kt:* bit-identical. The M7 regression: VALIDATION.md.
+
+The rule in decision 5 would leave the term off. The spec owner ruled it on (2026-11-02): it moves q/δlat's phase by 130° to the right sign, and the probes below put p/δlon's growth down to a deficit outside this model, which the term uncovers rather than causes. The sensitivity doesn't move the choice: no value fixes p/δlon, so 1.75 stays on the sources' grounds (decision 2).
+
+*Why p/δlon grows* (probes, scratch configs and code, not kept):
+- The hover roll derivatives: L_δlon −0.774 with and without the term; L_q −0.867 → +1.324. The term flips the roll moment from pitch rate, as Johnson's Eq. 21.51 has it for K_R > 1 (the coupling (1 − K_R) θ̇). Before, L_q·q partly cancelled L_δlon in the response; now the two add.
+- So the deficit is in the direct control coupling L_δlon. With GenHel's swashplate phase set to 0, L_δlon = +0.984: Eyas's rotor alone cross-couples by about +5.4° of the cyclic's direction, and the −9.7° phase over-corrects it to −4.3°. Over 3–10 rad/s the effective cross-coupling angle is about 13° in Eyas against about 4° in the flight data: Eyas's rotor cross-couples about 4° less than the rotor the 9.7° was set for.
+- Adding Fletcher's identified δ3 (7.84°) as pitch-flap coupling, with the term on: p/δlon 4.1 / 4.4 dB, −20 / 28°; q/δlat −4.5 / 4.5 dB, −37 / 38°. Both off-axis responses then beat the term-off model. Without the term, δ3 alone leaves q/δlat at −115°. Fletcher's δ3 is an identified equivalent and GenHel's δ3 is 0 (DATA_GAPS, human-confirmed), so it isn't adopted.
+- Ruled out: the longitudinal-to-pedal mixing (no effect); D-027's eq. 23b moment mass flow (p/δlon 6.0 dB off, 9.2 on); the shaft-rate form of decision 1 (p/δlon 5.1 dB but phase −99 / 127°).
+- Open, issue #100: the candidates are pitch-flap coupling in the hardware (a source, #101), lag dynamics and lag-pitch coupling (#43), blade torsion (#45) and a higher-order wake (#43).

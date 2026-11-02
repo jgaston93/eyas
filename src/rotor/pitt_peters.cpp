@@ -3,6 +3,8 @@
 #include <cmath>
 #include <numbers>
 
+#include "util/math.hpp"
+
 namespace eyas {
 namespace {
 
@@ -27,13 +29,14 @@ Mat3 pitt_peters_gain(double X) noexcept {
 
 Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double mu_z, double cos_w,
                        double sin_w, double omega, const std::optional<VortexRingRow>& vrs,
-                       double ground, double tip) noexcept {
+                       double ground, double tip, const Vec3& curvature) noexcept {
     const WakeSkew w = wake_skew(mu, lambda.x() - mu_z);
     // To wind axes: (c, s)_w = (c cos ψ_w + s sin ψ_w, −c sin ψ_w + s cos ψ_w).
     const auto to_wind = [&](const Vec3& v) {
         return Vec3(v.x(), -v.z() * sin_w + v.y() * cos_w, v.z() * cos_w + v.y() * sin_w);
     };
-    const Vec3 lw = to_wind(lambda);
+    // λ − λ_K (D-062): exactly λ at λ_K = 0.
+    const Vec3 lw = to_wind(lambda - curvature);
     const Vec3 cw = to_wind(loads);
     // V L̂⁻¹ λ_w, with L̂ inverted in closed form: a 2×2 block coupling
     // (λ0, λ1c) and a scalar for λ1s. det > 0 for X in [0, 1].
@@ -63,6 +66,19 @@ Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double 
     const double dc = omega * (cw.z() - rc) / PittPetersMass::m1;
     // Back to hub axes.
     return {d0, ds * cos_w + dc * sin_w, dc * cos_w - ds * sin_w};
+}
+
+double wake_curvature_gain(double k_r, double fade, double mu) noexcept {
+    return mu >= fade ? 0.0 : k_r * (1.0 - smoothstep(mu / fade));
+}
+
+Vec3 wake_curvature_inflow(double k_r, const Vec3& omega_h, double beta1c_dot, double beta1s_dot,
+                           double s, double omega) noexcept {
+    // The disc point r e_r(ψ), e_r = (−cos ψ, s sin ψ, 0) (D-024), moves down
+    // (z_h) at r (q_h cos ψ + s p_h sin ψ) with the shaft and up at
+    // r (β̇_1c cos ψ + β̇_1s sin ψ) with the tip-path plane's tilt.
+    return {0.0, k_r * (s * omega_h.x() - beta1s_dot) / omega,
+            k_r * (omega_h.y() - beta1c_dot) / omega};
 }
 
 }  // namespace eyas

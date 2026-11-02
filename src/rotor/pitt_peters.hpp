@@ -80,9 +80,29 @@ struct VortexRingRow {
 // moment rows, including the cosine row's skew coupling, take the actual
 // states (the mean inflow the skewed wake carries), as the full disc's rows;
 // at tip = 1 the result is unchanged, to the bit.
+// With wake curvature (D-062), curvature = λ_K = (0, λ_K,1s, λ_K,1c) in hub
+// axes, the wake-curvature inflow the gradients relax to: Johnson 2013
+// Eq. 11.155's A α̇_TPP, so the equations read M̃ dλ_w/dτ = C_w − V L̂⁻¹
+// (λ_w − λ_K,w). At λ_K = 0 the result is unchanged, to the bit.
 Vec3 pitt_peters_rates(const Vec3& lambda, const Vec3& loads, double mu, double mu_z, double cos_w,
                        double sin_w, double omega,
                        const std::optional<VortexRingRow>& vrs = std::nullopt, double ground = 1.0,
-                       double tip = 1.0) noexcept;
+                       double tip = 1.0, const Vec3& curvature = Vec3::Zero()) noexcept;
+
+// Wake curvature (D-062): the gain K_R(μ) = K_R (1 − smoothstep(μ/μ_f)), with
+// k_r = K_R [-] in hover and fade = μ_f [-] the advance ratio where it reaches
+// zero (Keller & Curtiss 1998: K_R ≈ 0 by μ = 0.10–0.15, Johnson 2013 p. 435;
+// the shape is Eyas's). Exactly 0 from μ_f.
+double wake_curvature_gain(double k_r, double fade, double mu) noexcept;
+
+// The wake-curvature inflow λ_K = (0, λ_K,1s, λ_K,1c) (D-062): K_R times the
+// tip-path plane's downward velocity gradient over ΩR, in hub axes,
+//   λ_K,1c = K_R (q_h − β̇_1c)/Ω,  λ_K,1s = K_R (s p_h − β̇_1s)/Ω,
+// (Johnson 2013 Eqs. 11.155, 11.158–11.159), with omega_h the body rate in
+// hub axes [rad/s], (beta1c_dot, beta1s_dot) the rates of the multiblade flap
+// coefficients [rad/s], s = +1 counter-clockwise from above, −1 clockwise, and
+// omega = Ω [rad/s].
+Vec3 wake_curvature_inflow(double k_r, const Vec3& omega_h, double beta1c_dot, double beta1s_dot,
+                           double s, double omega) noexcept;
 
 }  // namespace eyas

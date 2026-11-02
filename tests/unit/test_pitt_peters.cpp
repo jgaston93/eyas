@@ -24,6 +24,7 @@
 #include "support/m3_fixtures.hpp"
 #include "support/m4_fixtures.hpp"
 #include "support/pitt_peters_reference.hpp"
+#include "util/error.hpp"
 
 namespace eyas {
 namespace {
@@ -651,6 +652,273 @@ TEST(PittPetersAnchors, DownwashSkewsDownwind) {
             }
         }
     }
+}
+
+// ---- Wake curvature (D-062) -------------------------------------------------------
+
+// Layer 1: the production equations with λ_K against Johnson 2013 Eq. 11.155
+// in his notation, A α̇_TPP = K_R (0, α̇_y,TPP, −α̇_x,TPP); at λ_K = 0, the
+// same bits as without it.
+TEST(PittPeters, WakeCurvatureMatchesJohnson2013) {
+    std::mt19937 rng(20261101);
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+    for (int i = 0; i < 200; ++i) {
+        const PPInputs in{0.08 * u(rng), 0.03 * u(rng), 0.03 * u(rng),       0.2 * (1.0 + u(rng)),
+                          0.1 * u(rng),  kPi * u(rng),  20.0 + 10.0 * u(rng)};
+        const Vec3 C(0.01 * u(rng), 0.002 * u(rng), 0.002 * u(rng));
+        const double k_r = 1.25 * (1.0 + u(rng));
+        const double a_y = 0.02 * u(rng);
+        const double a_x = 0.02 * u(rng);
+        const Vec3 lambda(in.l0, in.l1s, in.l1c);
+        const double cw = std::cos(in.psi_w);
+        const double sw = std::sin(in.psi_w);
+        const Vec3 p = pitt_peters_rates(lambda, C, in.mu, in.mu_z, cw, sw, in.omega, std::nullopt,
+                                         1.0, 1.0, Vec3(0.0, -k_r * a_x, k_r * a_y));
+        expect_rates_near(p, test::johnson_2013(in, C.x(), C.z(), C.y(), k_r, a_y, a_x), 1e-12);
+        EXPECT_EQ(pitt_peters_rates(lambda, C, in.mu, in.mu_z, cw, sw, in.omega, std::nullopt, 1.0,
+                                    1.0, Vec3::Zero()),
+                  pitt_peters_rates(lambda, C, in.mu, in.mu_z, cw, sw, in.omega));
+    }
+}
+
+// The gain K_R(μ) = K_R (1 − smoothstep(μ/μ_f)): K_R in hover, half at μ_f/2,
+// flat at both ends, exactly 0 from μ_f.
+TEST(PittPeters, WakeCurvatureGainFadesWithAdvanceRatio) {
+    EXPECT_EQ(wake_curvature_gain(1.75, 0.125, 0.0), 1.75);
+    EXPECT_NEAR(wake_curvature_gain(1.75, 0.125, 0.0625), 0.875, 1e-15);
+    EXPECT_EQ(wake_curvature_gain(1.75, 0.125, 0.125), 0.0);
+    EXPECT_EQ(wake_curvature_gain(1.75, 0.125, 0.19), 0.0);
+    const double h = 1e-6;
+    EXPECT_NEAR((wake_curvature_gain(1.75, 0.125, h) - 1.75) / h, 0.0, 1e-3);
+    EXPECT_NEAR(wake_curvature_gain(1.75, 0.125, 0.125 - h) / h, 0.0, 1e-3);
+    double last = 1.75;
+    for (double mu = 0.0; mu <= 0.2; mu += 0.001) {
+        const double g = wake_curvature_gain(1.75, 0.125, mu);
+        EXPECT_LE(g, last);
+        last = g;
+    }
+}
+
+BladeElementRotorConfig curved_rotor(RotationDirection dir, double k_r) {
+    const auto airfoil = test::airfoil_from(test::synthetic_airfoil_csv());
+    BladeElementRotorConfig c = test::flap_rotor(airfoil, {9 * kDeg, -3 * kDeg, 2 * kDeg},
+                                                 test::nonuniform_beads(8.0 - 0.4), 0.4, 20);
+    c.root_cutout = 1.2;
+    c.direction = dir;
+    c.hub_pitch = -5 * kDeg;
+    c.hub_roll = 2 * kDeg;
+    c.hub_position_b = Vec3(-0.2, 0.1, -1.8);
+    c.inflow = InflowModel::pitt_peters;
+    c.wake_curvature = WakeCurvature{k_r, 0.125};
+    return c;
+}
+
+// The wake-curvature inflow from the disc's own motion (Johnson 2013
+// Eq. 11.159: the extra downwash is K_R times the disc's downward velocity):
+// the downward velocity over ΩR of the tip-path plane's points (R, ψ), from
+// the shaft's rotation (ω_h × R e_r(ψ), D-024) and from the plane's tilt rate
+// (central differences of the blades' first harmonic, the blade states
+// advanced at their own rates), fitted to cos ψ and sin ψ.
+Vec3 curvature_reference(const BladeElementRotor& rotor, const SimContext& ctx,
+                         const std::vector<double>& x, double k_r) {
+    const BladeElementRotorConfig& c = rotor.config();
+    const test::RefCondition k = test::reference_condition(rotor, ctx);
+    const double W = c.rotor_speed;
+    const double R = c.radius;
+    const double s = c.direction == RotationDirection::counter_clockwise ? 1.0 : -1.0;
+    const int nb = c.num_blades;
+    const auto tilt = [&](double tau) {
+        double b1c = 0.0;
+        double b1s = 0.0;
+        for (int i = 0; i < nb; ++i) {
+            const auto j = static_cast<std::size_t>(2 * i);
+            const double psi = k.psi + W * tau - 2.0 * kPi * i / nb;
+            const double b = x[j] + x[j + 1] * tau;
+            b1c += 2.0 * b * std::cos(psi) / nb;
+            b1s += 2.0 * b * std::sin(psi) / nb;
+        }
+        return std::array<double, 2>{b1c, b1s};
+    };
+    const double h = 1e-5;
+    const auto up = tilt(h);
+    const auto dn = tilt(-h);
+    const double b1c_dot = (up[0] - dn[0]) / (2.0 * h);
+    const double b1s_dot = (up[1] - dn[1]) / (2.0 * h);
+    constexpr int kPoints = 64;
+    double lc = 0.0;
+    double ls = 0.0;
+    for (int i = 0; i < kPoints; ++i) {
+        const double psi = 2.0 * kPi * i / kPoints;
+        const Vec3 e_r(-std::cos(psi), s * std::sin(psi), 0.0);
+        const double shaft_down = k.omega_h.cross(R * e_r).z();
+        const double plane_up = R * (b1c_dot * std::cos(psi) + b1s_dot * std::sin(psi));
+        const double w = (shaft_down - plane_up) / (W * R);
+        lc += 2.0 * w * std::cos(psi) / kPoints;
+        ls += 2.0 * w * std::sin(psi) / kPoints;
+    }
+    return {0.0, k_r * ls, k_r * lc};
+}
+
+// The rotor's inflow rates with wake curvature are the equations above at
+// the λ_K of the reference, the gain faded at the hub's μ (both directions).
+TEST(PittPetersRotor, WakeCurvatureFromTheTipPathPlaneRate) {
+    std::mt19937 rng(62);
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+    for (const RotationDirection dir :
+         {RotationDirection::counter_clockwise, RotationDirection::clockwise}) {
+        const BladeElementRotor rotor(curved_rotor(dir, 1.75));
+        ASSERT_EQ(rotor.num_states(), 11U);
+        for (int trial = 0; trial < 6; ++trial) {
+            SimContext ctx = test::sea_level_context(0.31 + 0.17 * trial);
+            ctx.body.vel_b = Vec3(8.0 * u(rng), 8.0 * u(rng), 3.0 * u(rng));
+            ctx.body.omega_b = Vec3(0.4 * u(rng), 0.4 * u(rng), 0.4 * u(rng));
+            std::vector<double> x(rotor.num_states());
+            for (std::size_t i = 0; i < 8; i += 2) {
+                x[i] = 0.08 + 0.06 * u(rng);
+                x[i + 1] = 0.5 * u(rng);
+            }
+            x[8] = 0.05 + 0.02 * u(rng);
+            x[9] = 0.02 * u(rng);
+            x[10] = 0.02 * u(rng);
+            std::vector<double> xdot0(x.size());
+            std::vector<double> G(x.size() * 6);
+            ComponentDerivs d{xdot0, G, Wrench{}, Mat66::Zero()};
+            rotor.derivatives(ctx, x, d);
+            ASSERT_TRUE(d.converged);
+            const RotorLoads l = rotor.evaluate(ctx, x);
+            const PPInputs in = inputs_for(rotor, ctx, {x[8], x[9], x[10]});
+            ASSERT_LT(in.mu, 0.125);
+            const double t = in.mu / 0.125;
+            const double k_r = 1.75 * (1.0 - t * t * (3.0 - 2.0 * t));
+            const Vec3 curvature = curvature_reference(rotor, ctx, x, k_r);
+            const Vec3 want =
+                pitt_peters_rates(Vec3(x[8], x[9], x[10]), Vec3(l.ct, l.c1s, l.c1c), in.mu, in.mu_z,
+                                  std::cos(in.psi_w), std::sin(in.psi_w), in.omega, std::nullopt,
+                                  1.0, 1.0, curvature);
+            const Vec3 got(xdot0[8], xdot0[9], xdot0[10]);
+            EXPECT_LT((got - want).norm(), 1e-8 * want.norm()) << "trial " << trial;
+            // The term is there: without it the rates differ.
+            const Vec3 off =
+                pitt_peters_rates(Vec3(x[8], x[9], x[10]), Vec3(l.ct, l.c1s, l.c1c), in.mu, in.mu_z,
+                                  std::cos(in.psi_w), std::sin(in.psi_w), in.omega);
+            EXPECT_GT((got - off).norm(), 1e-3 * want.norm());
+            // Independent of the body acceleration, as before.
+            for (std::size_t j = std::size_t{8} * 6; j < G.size(); ++j) {
+                EXPECT_EQ(G[j], 0.0);
+            }
+        }
+    }
+}
+
+// Off, at K_R = 0 and from μ_f: the same bits as a rotor without the key.
+TEST(PittPetersRotor, WakeCurvatureIsNeutralWhenOff) {
+    BladeElementRotorConfig none = curved_rotor(RotationDirection::counter_clockwise, 1.75);
+    none.wake_curvature.reset();
+    const BladeElementRotor without(none);
+    const BladeElementRotor zero(curved_rotor(RotationDirection::counter_clockwise, 0.0));
+    const BladeElementRotor with(curved_rotor(RotationDirection::counter_clockwise, 1.75));
+    const std::vector<double> x{0.05, 0.1, 0.06, -0.2, 0.04, 0.3, 0.07, 0.0, 0.05, 0.01, 0.02};
+    const auto rates = [&](const BladeElementRotor& r, double speed) {
+        SimContext ctx = test::sea_level_context(0.3);
+        ctx.body.vel_b = Vec3(speed, 0.0, 1.0);
+        ctx.body.omega_b = Vec3(0.2, -0.1, 0.05);
+        std::vector<double> xdot0(x.size());
+        std::vector<double> G(x.size() * 6);
+        ComponentDerivs d{xdot0, G, Wrench{}, Mat66::Zero()};
+        r.derivatives(ctx, x, d);
+        return xdot0;
+    };
+    const double fade_speed = 0.125 * with.tip_speed() / std::cos(5 * kDeg) + 0.1;
+    for (const double speed : {0.0, 10.0, fade_speed, 70.0}) {
+        EXPECT_EQ(rates(zero, speed), rates(without, speed)) << speed << " m/s";
+    }
+    EXPECT_EQ(rates(with, fade_speed), rates(without, fade_speed));
+    EXPECT_EQ(rates(with, 70.0), rates(without, 70.0));
+    EXPECT_NE(rates(with, 10.0), rates(without, 10.0));
+    EXPECT_THROW(
+        {
+            BladeElementRotorConfig c = curved_rotor(RotationDirection::counter_clockwise, 1.75);
+            c.inflow = InflowModel::uniform;
+            const BladeElementRotor r(c);
+        },
+        InitError);
+    EXPECT_THROW(
+        { const BladeElementRotor r(curved_rotor(RotationDirection::counter_clockwise, -0.1)); },
+        InitError);
+}
+
+// Layer 2, Johnson 2013 Eq. 19.92: in hover, at ν_β = 1 and quasi-statically,
+// the flapping from a steady shaft rate α̇ (over Ω) is 16/γ_e α̇ on-axis and
+// (1 − K_R) α̇ off-axis, so wake curvature moves the off-axis flapping by
+// −K_R α̇, flipping it for K_R > 1, and leaves the on-axis flapping alone.
+// Anchor rotor with no hinge offset and no spring, both directions, a roll and
+// a pitch rate. Without it Eyas's off-axis flapping is α̇ within 3 % (the
+// closed form's "1"; the rest is from terms Eq. 19.92 drops); the change is
+// checked to 1 %.
+TEST(PittPetersAnchors, WakeCurvatureScalesTheOffAxisFlapping) {
+    for (const RotationDirection dir :
+         {RotationDirection::counter_clockwise, RotationDirection::clockwise}) {
+        for (const int axis : {0, 1}) {
+            const auto flapping = [&](double k_r) {
+                BladeElementRotorConfig c = test::anchor_flap_rotor(0.0, {10 * kDeg, 0.0, 0.0});
+                c.direction = dir;
+                c.hub_pitch = 0.0;
+                c.hub_roll = 0.0;
+                // At the center of rotation: no hub velocity from the rate
+                // (Johnson's Eq. 21.51 h φ̇ terms, not in Eq. 19.92).
+                c.hub_position_b = Vec3::Zero();
+                c.inflow = InflowModel::pitt_peters;
+                if (k_r > 0.0) {
+                    c.wake_curvature = WakeCurvature{k_r, 0.125};
+                }
+                const BladeElementRotor rotor(c);
+                SimContext ctx = test::sea_level_context(0.0);
+                ctx.body.omega_b(axis) = 0.05;
+                std::vector<double> x(rotor.num_states(), 0.0);
+                x[rotor.inflow_offset()] = 0.05;
+                return test::periodic_flapping(rotor, ctx, x, 40, 4);
+            };
+            const test::Harmonics base = flapping(0.0);
+            // Roll rate: on-axis lateral (β1s), off-axis longitudinal (β1c);
+            // pitch rate the other way round.
+            const auto on = [&](const test::Harmonics& h) { return axis == 0 ? h.b1s : h.b1c; };
+            const auto off = [&](const test::Harmonics& h) { return axis == 0 ? h.b1c : h.b1s; };
+            // Without it the off-axis flapping is the shaft rate over Ω itself.
+            const double rate = 0.05 / test::anchor_flap_rotor(0.0, {}).rotor_speed;
+            EXPECT_NEAR(std::abs(off(base)), rate, 0.03 * rate) << "axis " << axis;
+            // Wake curvature moves it by −K_R times that, with the sign of the
+            // rate's own off-axis term; the on-axis flapping stays.
+            const double sign = off(base) > 0.0 ? 1.0 : -1.0;
+            for (const double k_r : {0.5, 1.75}) {
+                const test::Harmonics h = flapping(k_r);
+                EXPECT_NEAR((off(h) - off(base)) * sign / rate, -k_r, 0.01 * k_r)
+                    << "K_R " << k_r << ", axis " << axis;
+                EXPECT_NEAR(on(h) / on(base), 1.0, 0.01) << "K_R " << k_r << ", axis " << axis;
+            }
+        }
+    }
+}
+
+// The real-time rules with wake curvature on.
+TEST(PittPetersRotor, WakeCurvatureIsPureAndDoesntAllocate) {
+    const BladeElementRotor rotor(curved_rotor(RotationDirection::clockwise, 1.75));
+    SimContext ctx = test::sea_level_context(0.3);
+    ctx.body.vel_b = Vec3(5.0, 1.0, 2.0);
+    ctx.body.omega_b = Vec3(0.1, -0.2, 0.05);
+    const std::vector<double> x{0.05, 0.1, 0.06, -0.2, 0.04, 0.3, 0.07, 0.0, 0.05, 0.01, 0.02};
+    std::vector<double> xd1(11);
+    std::vector<double> G1(66);
+    std::vector<double> xd2(11);
+    std::vector<double> G2(66);
+    ComponentDerivs d1{xd1, G1, Wrench{}, Mat66::Zero()};
+    ComponentDerivs d2{xd2, G2, Wrench{}, Mat66::Zero()};
+    {
+        test::AllocationCounter count;
+        rotor.derivatives(ctx, x, d1);
+        rotor.derivatives(ctx, x, d2);
+        EXPECT_EQ(count.count(), 0U);
+    }
+    EXPECT_EQ(xd1, xd2);
 }
 
 // ---- Real-time rules ---------------------------------------------------------------

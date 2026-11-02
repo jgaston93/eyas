@@ -80,7 +80,12 @@ inline PPRates pitt_peters_1980(const PPInputs& in, double c_t, double c_l, doub
 //            [0, 0, 4/(1+cos χ)]],
 // M = diag(128/75π, 16/45π, 16/45π), cos χ = |λ|/√(μ² + λ²) (Eq. 11.132 ff.).
 // −C_My and C_Mx: Eqs. 11.150–11.151 (+r cos ψ and +r sin ψ weightings).
-inline PPRates johnson_2013(const PPInputs& in, double c_t, double minus_c_my, double c_mx) {
+// With wake curvature (D-062), Eq. 11.155's last term A (α̇_y,TPP, −α̇_x,TPP),
+// A = K_R I (Eq. 11.158; axisymmetric, so the same in wind axes):
+//   L M λ̇ + λ = L C + K_R (0, α̇_y,TPP, −α̇_x,TPP),
+// with the tip-path-plane pitch and roll rates over Ω, a_y and a_x.
+inline PPRates johnson_2013(const PPInputs& in, double c_t, double minus_c_my, double c_mx,
+                            double k_r = 0.0, double a_y = 0.0, double a_x = 0.0) {
     const double pi = std::numbers::pi;
     const double lam = in.l0 - in.mu_z;
     const double V = std::sqrt(in.mu * in.mu + lam * lam);
@@ -94,10 +99,12 @@ inline PPRates johnson_2013(const PPInputs& in, double c_t, double minus_c_my, d
     const std::complex<double> rot = std::polar(1.0, -in.psi_w);
     const std::complex<double> lam_w = std::complex<double>(in.l1c, in.l1s) * rot;
     const std::complex<double> load_w = std::complex<double>(minus_c_my, c_mx) * rot;
+    const std::complex<double> a_w = std::complex<double>(k_r * a_y, -k_r * a_x) * rot;
     const Eigen::Vector3d x(in.l0, lam_w.real(), lam_w.imag());  // (λ0, λc, λs)
     const Eigen::Vector3d c(c_t, load_w.real(), load_w.imag());  // (C_T, −C_My, C_Mx)
-    // L M λ̇ = L C − λ  ⇒  λ̇ = M⁻¹ (C − L⁻¹ λ), L⁻¹ = V (L V)⁻¹.
-    const Eigen::Vector3d xdot = in.omega * M.inverse() * (c - V * LV.inverse() * x);
+    const Eigen::Vector3d A(0.0, a_w.real(), a_w.imag());        // A α̇_TPP
+    // L M λ̇ = L C − λ + A α̇  ⇒  λ̇ = M⁻¹ (C − L⁻¹ (λ − A α̇)), L⁻¹ = V (L V)⁻¹.
+    const Eigen::Vector3d xdot = in.omega * M.inverse() * (c - V * LV.inverse() * (x - A));
     const std::complex<double> d1 = std::complex<double>(xdot(1), xdot(2)) / rot;
     return {xdot(0), d1.imag(), d1.real()};
 }

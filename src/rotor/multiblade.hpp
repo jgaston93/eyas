@@ -36,4 +36,27 @@ inline MultibladeFlap multiblade_flap(std::span<const double> x, double psi,
     return m;
 }
 
+// Rates of the cyclic flap coefficients [rad/s] (D-062): d/dt of β_1c and
+// β_1s above, with x[2k + 1] = β̇_k and ψ̇ = omega = Ω [rad/s]:
+//   β̇_1c = (2/N) Σ (β̇_k cos ψ_k − Ω β_k sin ψ_k),
+//   β̇_1s = (2/N) Σ (β̇_k sin ψ_k + Ω β_k cos ψ_k).
+struct MultibladeFlapRate {
+    double beta1c = 0.0;  // [rad/s]
+    double beta1s = 0.0;  // [rad/s]
+};
+
+inline MultibladeFlapRate multiblade_flap_rate(std::span<const double> x, double psi, double omega,
+                                               int num_blades) noexcept {
+    MultibladeFlapRate m;
+    const double n = num_blades;
+    for (int k = 0; k < num_blades; ++k) {
+        const double b = x[2 * static_cast<std::size_t>(k)];
+        const double bd = x[2 * static_cast<std::size_t>(k) + 1];
+        const double p = psi - 2.0 * std::numbers::pi * k / n;
+        m.beta1c += 2.0 * (bd * std::cos(p) - omega * b * std::sin(p)) / n;
+        m.beta1s += 2.0 * (bd * std::sin(p) + omega * b * std::cos(p)) / n;
+    }
+    return m;
+}
+
 }  // namespace eyas
