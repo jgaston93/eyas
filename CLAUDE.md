@@ -80,6 +80,7 @@ The reference documents live outside this repo, in a local reference directory. 
   - experimental or published data as a validation entry.
 - Write tests first: turn acceptance criteria into GoogleTest cases.
 - Each milestone ends with an entry in `docs/VALIDATION.md`, with plots.
+- **Keep `README.md` and `docs/INTEGRATION.md` current, in the same PR as the change.** The README covers what Eyas is, its status, the quick start, the aircraft configs and the layout. The integration guide covers what a host sees: the public API (`include/eyas/`), the controls, environment and outputs, the status flags, the config defaults (`physics_rate`, `max_substeps`), the aircraft configs and their placeholders, the timing table (rerun `eyas_bench` when the cost per step moves) and the known limits. Before calling a change done, check both for anything it makes stale.
 
 ## Build & test
 
