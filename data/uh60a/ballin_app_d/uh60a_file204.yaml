@@ -181,6 +181,9 @@ components:
     ground_effect: genhel  # GenHel CR-166309 Eq. 5.8.2-1 (D-050)
     shaft: {name: rotor_drive}  # D-052
     inflow_tip_loss: effective_disc  # Johnson 2013 §3.6.2 (D-051)
+    # Johnson 2013 Eqs. 11.155, 11.158: K_R from free-wake analysis and UH-60A
+    # identification, faded out by μ = 0.10-0.15 (Keller & Curtiss; D-062)
+    wake_curvature: {k_r: 1.75, fade_advance_ratio: 0.125}
     hub:
       position: {x: "19.570795 in", y: "0 in", z: "-87.589082 in"}
       pitch: "-3.0 deg"

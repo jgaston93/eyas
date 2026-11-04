@@ -158,6 +158,7 @@ components:
     vortex_ring: none
     ground_effect: none
     inflow_tip_loss: none
+    wake_curvature: none
     hub:
       position: {x: "0 m", y: "0 m", z: "-2 m"}
       pitch: "-3 deg"
@@ -204,6 +205,37 @@ TEST(Model, InflowTipLossFromConfig) {
               InflowTipLoss::effective_disc);
     EXPECT_THROW(read("    inflow_tip_loss: prandtl\n"), InitError);
     EXPECT_THROW(read(""), InitError);
+}
+
+// D-062: wake_curvature is required, none or {k_r, fade_advance_ratio}, and
+// only with Pitt–Peters inflow.
+TEST(Model, WakeCurvatureFromConfig) {
+    std::string base = rotor_yaml(kData + "/linear_airfoil.csv");
+    base.replace(base.find("inflow: uniform"), 15, "inflow: pitt_peters");
+    const auto read = [&](const std::string& line) {
+        std::string y = base;
+        y.replace(y.find("    wake_curvature: none\n"), 25, line);
+        return BladeElementRotor::from_config(
+            Config::from_string(y, "rotor.yaml").child("components")[0]);
+    };
+    EXPECT_FALSE(read("    wake_curvature: none\n")->config().wake_curvature);
+    const auto on = read("    wake_curvature: {k_r: 1.75, fade_advance_ratio: 0.125}\n");
+    ASSERT_TRUE(on->config().wake_curvature);
+    EXPECT_EQ(on->config().wake_curvature->k_r, 1.75);
+    EXPECT_EQ(on->config().wake_curvature->fade_advance_ratio, 0.125);
+    EXPECT_THROW(read(""), InitError);
+    EXPECT_THROW(read("    wake_curvature: keller\n"), InitError);
+    EXPECT_THROW(read("    wake_curvature: {k_r: 1.75}\n"), InitError);
+    EXPECT_THROW(read("    wake_curvature: {k_r: 1.75, fade_advance_ratio: 0.125, x: 1}\n"),
+                 InitError);
+    EXPECT_THROW(read("    wake_curvature: {k_r: -1, fade_advance_ratio: 0.125}\n"), InitError);
+    // With uniform inflow: refused.
+    std::string uniform = rotor_yaml(kData + "/linear_airfoil.csv");
+    uniform.replace(uniform.find("    wake_curvature: none\n"), 25,
+                    "    wake_curvature: {k_r: 1.75, fade_advance_ratio: 0.125}\n");
+    EXPECT_THROW(BladeElementRotor::from_config(
+                     Config::from_string(uniform, "rotor.yaml").child("components")[0]),
+                 InitError);
 }
 
 // D-025: placeholder YAML values and placeholder CSV tables are all reported

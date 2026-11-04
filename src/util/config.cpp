@@ -246,6 +246,11 @@ bool Config::contains(std::string_view key) const {
     return find(key).has_value();
 }
 
+bool Config::is_map(std::string_view key) const {
+    const auto node = find(key);
+    return node && node->IsMap();
+}
+
 Config Config::child(std::string_view key) const {
     const auto node = find(key);
     if (!node) {
