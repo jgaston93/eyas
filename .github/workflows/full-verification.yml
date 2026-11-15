@@ -18,10 +18,11 @@ permissions:
   contents: read
 
 jobs:
-  # Under the strict build the whole-aircraft trims take up to 2 h each
-  # (BallinTrim.LevelFlightAgainstSikorskyGenHel: 7100 s), so the suite is
-  # split four ways (ctest -I: every fourth test) and each part may use
-  # GitHub's 6 h job limit. The gate on Ballin's engines (D-061) is left out:
+  # Under the strict build the whole-aircraft trims take up to 5 h each, and
+  # the same test's time varies by half from night to night with the runner
+  # (D-037 amendment 2026-11-15). The 13 tests that have taken over 1.5 h
+  # (ASAN_HEAVY) run in asan-heavy below; the rest are split four ways here
+  # (ctest -I: every fourth test), each part about 1.5 h of its 6 h limit. The gate on Ballin's engines (D-061) is left out:
   # about three times slower than the gate on GenHel's (an estimated 6 h
   # each), it runs in every PR's Release jobs and in the Clang job below, and
   # the engines' code it adds runs here in BallinT700Aircraft's trims.
@@ -39,6 +40,8 @@ jobs:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_MAXSIZE: 500M
       ASAN_TOO_SLOW: ^(BallinTrim\.LevelFlightOnBallinsEngines|BallinTrim/ClimbOnEngines\..*)$
+      # Keep in step with asan-heavy's groups.
+      ASAN_HEAVY: ^(Linearize\.PeriodicModelMatchesTheNonlinearResponse|BallinT700Aircraft\.(TrimsTheAutorotativeDescentAtOneHundredKnots|ConvergesOnlyOnOneTurnOfTheRotor|ContinuesFromANearbyTrim|OverrunsInASteepDescentAsInAutorotation|ColdStartsTrimTheVortexRingDescent|ColdStartFindsTheContinuedTrimInADescent)|BallinTrim\.LevelFlightAgainstSikorskyGenHel|BallinTrim/ClimbHeld\.TrendsAgainstSikorskyGenHel/b[234]|Uh60aVortexRing\.HeaveDampingChangesSignOnTheBoundary|Trim\.Uh60aTrimsFromHoverTo150Knots)$
     steps:
       - uses: actions/checkout@v5
       - name: Install Ninja and ccache
@@ -58,7 +61,54 @@ jobs:
       - name: Test (every fourth test, slow ones included)
         run: >-
           ctest --preset asan --parallel "$(nproc)" -I ${{ matrix.part }},,4
-          --exclude-regex "$ASAN_TOO_SLOW"
+          --exclude-regex "$ASAN_TOO_SLOW|$ASAN_HEAVY"
+
+  # The asan job's heavy tests under asan-fast (ASan and UBSan at -O1,
+  # assertions on; 2.4-2.6 times faster than the strict -Og build), grouped
+  # by hand so each test has a core of its own: the slowest takes about 2 h.
+  # Every name here is in the asan job's ASAN_HEAVY, and the reverse. Move a
+  # test here when it passes 1.5 h in the asan job (its times are printed).
+  asan-heavy:
+    name: Ubuntu GCC ASan+UBSan (-O1), heavy tests group ${{ matrix.group }} of 4
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: 1
+            tests: ^(Linearize\.PeriodicModelMatchesTheNonlinearResponse|BallinTrim/ClimbHeld\.TrendsAgainstSikorskyGenHel/b4|Trim\.Uh60aTrimsFromHoverTo150Knots)$
+          - group: 2
+            tests: ^(BallinT700Aircraft\.TrimsTheAutorotativeDescentAtOneHundredKnots|BallinTrim/ClimbHeld\.TrendsAgainstSikorskyGenHel/b2|BallinT700Aircraft\.ColdStartFindsTheContinuedTrimInADescent)$
+          - group: 3
+            tests: ^(BallinTrim\.LevelFlightAgainstSikorskyGenHel|BallinT700Aircraft\.ConvergesOnlyOnOneTurnOfTheRotor|BallinTrim/ClimbHeld\.TrendsAgainstSikorskyGenHel/b3)$
+          - group: 4
+            tests: ^(BallinT700Aircraft\.(ContinuesFromANearbyTrim|OverrunsInASteepDescentAsInAutorotation|ColdStartsTrimTheVortexRingDescent)|Uh60aVortexRing\.HeaveDampingChangesSignOnTheBoundary)$
+    env:
+      CC: gcc
+      CXX: g++
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Ninja and ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache libglfw3-dev libgl-dev
+      - name: Restore the compiler cache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-ubuntu-gcc-asan-fast-${{ github.sha }}
+          restore-keys: ccache-ubuntu-gcc-asan-fast-
+      - name: Configure
+        run: >-
+          cmake --preset asan-fast
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+      - name: Build
+        run: cmake --build --preset asan-fast
+      - name: Test (this group's heavy tests)
+        run: >-
+          ctest --preset asan-fast --parallel "$(nproc)" --no-tests=error
+          --tests-regex "${{ matrix.tests }}"
 
   clang:
     name: Ubuntu Clang Debug, all tests
@@ -194,7 +244,7 @@ jobs:
   # the needed jobs' results are read instead.
   report:
     name: Report a failed nightly run
-    needs: [asan, clang, validation, tidy]
+    needs: [asan, asan-heavy, clang, validation, tidy]
     if: >-
       always() && github.event_name == 'schedule' &&
       (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
