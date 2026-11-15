@@ -534,7 +534,6 @@ TEST(GenHelFps, Uh60aConfigIsGenHels) {
     EXPECT_EQ(f.yaw.wiring, YawIntegratorWiring::physical);
 }
 
-// Invalid FPS configurations are rejected at init.
 // On the ground (D-064): with ground_hold, the gear's weight on wheels holds
 // the trim release, so the derivatives are exactly those with the release
 // held by hand; with the wheels unloaded, or no hold, nothing changes. The
@@ -581,11 +580,30 @@ TEST(GenHelFps, OnTheGroundTheTrimReleaseIsHeld) {
         EXPECT_TRUE(same(derivs(fcs, ctx, x), derivs(free_fcs, ctx, x))) << k;  // airborne
     }
 
+    // Only derivatives() reads the gear (D-064): outside an evaluation the store
+    // holds whatever the last one left, so the signals and the steady states
+    // (trim's starting point) must not depend on it.
+    values.begin_evaluation();
+    values.set(wow, 1.0);  // stale: an evaluation on the ground, before a trim in the air
+    for (int k = 0; k < 20; ++k) {
+        SimContext ctx = random_context(rng);
+        ctx.controls.afcs.fps = true;
+        ctx.controls.afcs.trim_release = false;
+        SimContext stale = ctx;
+        stale.coupling = &values;
+        std::vector<double> x(Fcs::kNumStates), y(Fcs::kNumStates);
+        fcs.steady_states(stale, x);
+        free_fcs.steady_states(ctx, y);
+        EXPECT_EQ(x, y) << k;
+        EXPECT_EQ(fcs.evaluate(stale, x).potemp, free_fcs.evaluate(ctx, x).potemp) << k;
+    }
+
     GenHelFcsConfig off = c;  // without the hold the FPS doesn't read the gear
     off.fps->ground_hold = false;
     EXPECT_TRUE(Fcs(off).consumes().empty());
 }
 
+// Invalid FPS configurations are rejected at init.
 TEST(GenHelFps, RejectsInvalidConfigs) {
     const auto bad = [](auto change) {
         GenHelFcsConfig c = uh60a();

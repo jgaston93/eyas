@@ -340,6 +340,17 @@ Parked park(bool ground_hold) {
 // The FPS on the ground (D-064): parked with the FPS on, the aircraft stays
 // put for minutes; without the ground hold the FPS's holds wind up against
 // the wheels and turn it (so this test can fail).
+// A gear named for the FPS without saying whether to hold on it is rejected
+// (D-064): `ground_hold: false` is how the hold is turned off.
+TEST(Uh60aFps, AGearWithoutTheGroundHoldIsAnError) {
+    std::string t = test::ballin::config_text(test::uh60a_config_path());
+    const std::regex re(R"(\n *ground_hold: !placeholder true)");
+    ASSERT_EQ(std::distance(std::sregex_iterator(t.begin(), t.end(), re), std::sregex_iterator()),
+              1);
+    t = std::regex_replace(t, re, "");
+    EXPECT_THROW((void)Model::from_string(t, "no ground_hold"), InitError);
+}
+
 TEST(Uh60aFps, ParkedWithTheFpsOnStaysPut) {
     const Parked held = park(true);
     EXPECT_TRUE(held.on_wheels);

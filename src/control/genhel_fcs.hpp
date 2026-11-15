@@ -397,7 +397,8 @@ public:
     std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
 
-    // The signals at states x (no derivatives).
+    // The signals at states x (no derivatives). Without the gear's weight on
+    // wheels, which only derivatives() reads (D-064).
     GenHelFcsOutputs evaluate(const SimContext& ctx, std::span<const double> x) const noexcept;
 
     const GenHelFcsConfig& config() const noexcept { return config_; }
@@ -407,9 +408,6 @@ private:
     // derivatives() computes them once.
     GenHelFcsOutputs evaluate(const SimContext& ctx, std::span<const double> x,
                               const detail::GenHelAfcsSignals& s) const noexcept;
-    // `ctx`, or with the FPS's ground hold and weight on the wheels a copy in
-    // `held` with the trim release held (D-064).
-    const SimContext& with_ground_hold(const SimContext& ctx, SimContext& held) const noexcept;
 
     GenHelFcsConfig config_;
     // Time constant of each first-order SAS, PBA and FPS state [s]; 0 for the

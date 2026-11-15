@@ -760,9 +760,10 @@ def afcs_block(rig):
 
 def fps_block():
     """The FPS (Figs. 5.1.5(a)-(c)) of the genhel_fcs component, M8c3 (D-045), in GenHel's
-    units, with the assumed ground hold (D-064). The yaw integrator takes the heading error with the turn switch off and the lateral
-    acceleration with it on, the reverse of the figure as printed (DATA_GAPS.md, "UH-60A
-    AFCS"; `as_printed` selects the figure's wiring)."""
+    units, with the assumed ground hold (D-064). The yaw integrator takes the heading error
+    with the turn switch off and the lateral acceleration with it on, the reverse of the
+    figure as printed (DATA_GAPS.md, "UH-60A AFCS"; `as_printed` selects the figure's
+    wiring)."""
     f = constants("fig_5_1_5_fps.txt")
     r = "%/(deg/s)"
     return f"""\
@@ -783,9 +784,9 @@ def fps_block():
         roll_rate_gain: "{fmt(f["KRPPYO"])} {r}"  # turn switch on
         collective: {{gain: {fmt(f["KSXCYO"])}, airspeed_rate_limit: "{fmt(f["KLVXYO"])} kt/s", fade_from: "{fmt(f["LMIXYO_V0"])} kt", fade_to: "{fmt(f["LMIXYO_V1"])} kt"}}  # %/%
         integrator_wiring: physical  # DATA_GAPS.md, "UH-60A AFCS"
-      # On the ground (D-064): with weight on the wheels the FPS acts as with the trim release held,
-      # so its holds don't wind up against the ground. GenHel's FPS has none; assumed, no public
-      # source yet (DATA_GAPS.md, "UH-60A AFCS").
+      # On the ground (D-064): with weight on the wheels the FPS acts as with the
+      # trim release held, so its holds don't wind up against the ground. GenHel's
+      # FPS has none; assumed, no public source yet (DATA_GAPS.md, "UH-60A AFCS").
       ground_hold: !placeholder true
       weight_on_wheels: gear
 """
