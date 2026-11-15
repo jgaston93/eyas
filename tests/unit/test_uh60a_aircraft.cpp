@@ -27,14 +27,14 @@ constexpr double kDeg = std::numbers::pi / 180.0;
 // ---- Config ------------------------------------------------------------------------
 
 // The config loads through the public API, with exactly the placeholders
-// D-034 declares: the strut top stops (D-032 item 6). The cyclic offsets
-// were placeholders until M7c set neutral longitudinal cyclic (D-035 M7c
-// amendment).
+// D-034 declares: the strut top stops (D-032 item 6); and the FPS's assumed
+// ground hold (D-064). The cyclic offsets were placeholders until M7c set
+// neutral longitudinal cyclic (D-035 M7c amendment).
 TEST(Uh60aAircraft, ConfigLoadsWithTheDeclaredPlaceholders) {
     const Model m = Model::from_file(test::uh60a_config_path());
     std::vector<std::string> p = m.placeholders();
     std::sort(p.begin(), p.end());
-    std::vector<std::string> expect;
+    std::vector<std::string> expect = {"components[1].fps.ground_hold"};  // D-064
     for (const char* g : {"0", "1", "2"}) {
         // components[5]: the engines (D-053) come first in the config.
         expect.push_back(std::string("components[5].gears[") + g + "].strut.stop_damping");

@@ -12,6 +12,8 @@
 #include <tuple>
 #include <vector>
 
+#include "core/coupling.hpp"
+#include "core/readouts.hpp"
 #include "core/rigid_body.hpp"
 #include "sim/executive.hpp"
 #include "support/alloc_counter.hpp"
@@ -942,6 +944,37 @@ TEST(LandingGear, RestoreMidSlideIsBitIdentical) {
     const std::vector<double> second(r.ex->state().begin(), r.ex->state().end());
     EXPECT_EQ(first, second);
     EXPECT_TRUE(r.state(0).slipping[0]);
+}
+
+// Weight on wheels for the flight control system (D-064): a named gear
+// publishes 1 while any tire carries load, as its readout (D-059), else 0.
+TEST(LandingGear, PublishesWeightOnWheels) {
+    LandingGearConfig gc = uh60a_gear()->config();
+    gc.name = "gear";
+    const auto check = [](Rig& r, double expected) {
+        EXPECT_EQ(r.gear->produces(), std::vector<std::string>{"gear.weight_on_wheels"});
+        CouplingRegistry registry;
+        (void)registry.add("gear.weight_on_wheels", "gear");
+        r.gear->bind(registry);
+        CouplingOutputs values(registry.size());
+        values.begin_evaluation();
+        Readouts readouts;
+        Derivs d(r.gear->num_states());
+        d.out.coupling = &values;
+        d.out.readouts = &readouts;
+        const std::vector<double> x(r.gear_states().begin(), r.gear_states().end());
+        r.gear->derivatives(r.ctx(), x, d.out);
+        EXPECT_EQ(values.get(registry.find("gear.weight_on_wheels", "test")), expected);
+        EXPECT_EQ(readouts.weight_on_wheels, expected == 1.0);
+    };
+    Rig on = make_rig(gc, 0.0, 0.02, 0.0, true);
+    on.run(5.0);  // settled on its wheels
+    check(on, 1.0);
+    Rig off = make_rig(gc, 0.0, 1.0);  // a metre clear
+    check(off, 0.0);
+
+    gc.name.clear();  // unnamed: nothing to publish
+    EXPECT_TRUE(LandingGear(gc).produces().empty());
 }
 
 TEST(LandingGear, RejectsInvalidConfig) {

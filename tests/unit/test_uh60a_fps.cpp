@@ -9,11 +9,16 @@
 
 #include <cmath>
 #include <cstdio>
+#include <iterator>
+#include <numbers>
+#include <regex>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
+
+#include <eyas/model.hpp>
 
 #include "analysis/linearize.hpp"
 #include "support/m8c3_fps.hpp"
@@ -263,6 +268,97 @@ TEST(Uh60aFps, CondenseNamesTheEngagedReferences) {
         }
     }
     EXPECT_NO_THROW((void)condense(m, retained));
+}
+
+namespace {
+
+struct Parked {
+    double heading_change = 0.0;  // [rad] from 40 s on
+    double drift = 0.0;           // [m] of the CG from 40 s on
+    double speed = 0.0;           // [m/s] at the end
+    bool on_wheels = false;
+};
+
+// The UH-60A parked on its gear, as the pilot station's pad (D-044): the
+// hover trim's cyclic and pedal with the FPS on, collective 0.2, brakes set,
+// dropped from 2.2 m at heading 90°, then 3 minutes. Through the public API.
+Parked park(bool ground_hold) {
+    std::string t = test::ballin::config_text(test::uh60a_config_path());
+    if (!ground_hold) {
+        const std::regex re("ground_hold: !placeholder true");
+        if (std::distance(std::sregex_iterator(t.begin(), t.end(), re), std::sregex_iterator()) !=
+            1) {
+            throw std::runtime_error("expected exactly one ground_hold");
+        }
+        t = std::regex_replace(t, re, "ground_hold: false");
+    }
+    Model m = Model::from_string(t, ground_hold ? "UH-60A" : "UH-60A, no ground hold");
+    TrimCondition c;
+    c.altitude = 1000.0;  // a hover well clear of any ground, for the controls
+    c.heading = 90.0 * kDegree;
+    c.afcs = m8c3::kFps;
+    const TrimResult r = m.trim(c);
+    if (!r.converged) {
+        throw std::runtime_error("the hover trim didn't converge");
+    }
+    Controls parked = r.controls;
+    parked.collective = 0.2;
+    parked.brake_left = 1.0;
+    parked.brake_right = 1.0;
+    BodyState drop;
+    drop.pos_n = Vec3(0.0, 0.0, -2.2);
+    drop.q_nb = Quat(Eigen::AngleAxisd(90.0 * kDegree, Vec3::UnitZ()));
+    if (!m.reset(drop)) {
+        throw std::runtime_error("reset refused");
+    }
+    Environment env;
+    env.ground_height = m.outputs().altitude - 2.2;  // through the origin
+    constexpr std::int64_t kFrame = 16'666'667;
+    const auto fly = [&](double seconds) {
+        for (int k = 0; k < static_cast<int>(seconds * 60.0); ++k) {
+            const AdvanceStatus s = m.advance(parked, env, kFrame);
+            if (s.non_finite || s.rejected_dt || s.rejected_env) {
+                throw std::runtime_error("fault while parked");
+            }
+        }
+    };
+    fly(40.0);  // settled from 40 s (D-042 (d))
+    const double heading = m.outputs().heading;
+    const Vec3 pos = m.outputs().pos_n;
+    fly(140.0);
+    Parked out;
+    out.heading_change =
+        std::abs(std::remainder(m.outputs().heading - heading, 2.0 * std::numbers::pi));
+    out.drift = (m.outputs().pos_n - pos).norm();
+    out.speed = m.outputs().vel_n.norm();
+    out.on_wheels = m.outputs().weight_on_wheels;
+    return out;
+}
+
+}  // namespace
+
+// The FPS on the ground (D-064): parked with the FPS on, the aircraft stays
+// put for minutes; without the ground hold the FPS's holds wind up against
+// the wheels and turn it (so this test can fail).
+// A gear named for the FPS without saying whether to hold on it is rejected
+// (D-064): `ground_hold: false` is how the hold is turned off.
+TEST(Uh60aFps, AGearWithoutTheGroundHoldIsAnError) {
+    std::string t = test::ballin::config_text(test::uh60a_config_path());
+    const std::regex re(R"(\n *ground_hold: !placeholder true)");
+    ASSERT_EQ(std::distance(std::sregex_iterator(t.begin(), t.end(), re), std::sregex_iterator()),
+              1);
+    t = std::regex_replace(t, re, "");
+    EXPECT_THROW((void)Model::from_string(t, "no ground_hold"), InitError);
+}
+
+TEST(Uh60aFps, ParkedWithTheFpsOnStaysPut) {
+    const Parked held = park(true);
+    EXPECT_TRUE(held.on_wheels);
+    EXPECT_LT(held.heading_change, 1e-3);  // 0.06°
+    EXPECT_LT(held.drift, 1e-3);
+    EXPECT_LT(held.speed, 1e-3);
+    const Parked free_fps = park(false);
+    EXPECT_GT(free_fps.heading_change + free_fps.drift, 0.1);  // turned or crept away
 }
 
 }  // namespace

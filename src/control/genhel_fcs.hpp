@@ -31,7 +31,9 @@ class Config;
 // (main-rotor swashplate pitch at the hub centre, Padfield 3rd ed. Eq. 3.59)
 // and <name>.theta_tr (tail-rotor collective) [rad], and
 // <name>.stabilator_incidence [rad]. All are functions of the component's own
-// states, so it consumes nothing and runs first.
+// states. With the FPS's ground hold (D-064) it consumes
+// <gear>.weight_on_wheels (1 or 0) from the landing gear, which then runs
+// before it; otherwise it consumes nothing and runs first.
 namespace eyas {
 
 // A second-order servo 1/(a2 s² + a1 s + 1) with an optional rate limit
@@ -239,6 +241,13 @@ struct GenHelFps {
     double actuator_gain = 0.0;  // [1/s]
     double rate_limit = 0.0;     // [1/s]
     double authority = 0.0;      // [-], ±
+    // On the ground (D-064): with weight on the wheels the FPS acts as with
+    // the trim release held (its references track, its integrators and trim
+    // actuators stop), so its holds don't wind up against the ground.
+    // GenHel's FPS has no weight-on-wheels logic; for the UH-60A this is an
+    // assumption, a placeholder until a public source (DATA_GAPS.md).
+    bool ground_hold = false;
+    std::string weight_on_wheels;  // the landing gear's instance name; required with ground_hold
 };
 
 struct GenHelFcsConfig {
@@ -385,9 +394,11 @@ public:
 
     std::string_view name() const noexcept override { return config_.name; }
     std::vector<std::string> produces() const override;
+    std::vector<std::string> consumes() const override;
     void bind(const CouplingRegistry& registry) override;
 
-    // The signals at states x (no derivatives).
+    // The signals at states x (no derivatives). Without the gear's weight on
+    // wheels, which only derivatives() reads (D-064).
     GenHelFcsOutputs evaluate(const SimContext& ctx, std::span<const double> x) const noexcept;
 
     const GenHelFcsConfig& config() const noexcept { return config_; }
@@ -405,6 +416,7 @@ private:
     Table1D ay_ramp_;  // 0 → 1 over the lateral-acceleration ramp, corners rounded
     mutable TableCursor<1> ay_cursor_;  // search hint only (spec §6)
     CouplingSlot theta0_, theta1s_, theta1c_, theta_tr_, stab_;
+    CouplingSlot weight_on_wheels_;  // valid with the ground hold (D-064)
 };
 
 }  // namespace eyas

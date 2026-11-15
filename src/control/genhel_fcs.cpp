@@ -214,11 +214,14 @@ double fps_roll_attitude(const GenHelFpsRoll& r, double phi) noexcept {
 // with the turn switch on. The integrators run only with the FPS on and the
 // trim release up; the roll integrator stops with the turn switch on.
 void fps_signals(const GenHelFps& f, const SimContext& ctx, std::span<const double> x,
-                 const EulerAngles& e, double v, double q1, double p1, double ysens,
+                 const EulerAngles& e, double v, double q1, double p1, double ysens, bool on_ground,
                  AfcsSignals& o) noexcept {
     const AfcsSwitches& sw = ctx.controls.afcs;
-    const bool sync_all = !sw.fps || sw.trim_release;
-    const bool run = sw.fps && !sw.trim_release;
+    // The trim release: the pilot's, or with the ground hold the gear's weight
+    // on wheels (D-064, an assumption).
+    const bool release = sw.trim_release || (f.ground_hold && on_ground);
+    const bool sync_all = !sw.fps || release;
+    const bool run = sw.fps && !release;
     auto& in = o.in;
     const auto rate = [&](std::size_t i) -> double& { return o.fps_rate[i - Fcs::kFpsBegin]; };
     // `diff` is the input less the reference.
@@ -278,7 +281,7 @@ void fps_signals(const GenHelFps& f, const SimContext& ctx, std::span<const doub
     // stops at its travel as the PBA's does, D-045). With the FPS off it
     // drives back to centre, trim release or not (code review); with the FPS
     // on and the trim release held it stays.
-    const bool freeze = sw.fps && sw.trim_release;
+    const bool freeze = sw.fps && release;
     const auto channel = [&](std::size_t hold, std::size_t act, double temp) {
         const double held = pade_hold(x, hold, temp, o);
         const double cmd = sw.fps ? held : 0.0;
@@ -299,8 +302,11 @@ void fps_signals(const GenHelFps& f, const SimContext& ctx, std::span<const doub
 // (rate gyros, lateral accelerometer), the vertical gyro the Euler attitude
 // (Fig. 5.1.2: no dynamics), the airspeed VXBIKT the body-x equivalent
 // airspeed (D-040).
-AfcsSignals afcs_signals(const GenHelFcsConfig& c, const SimContext& ctx,
-                         std::span<const double> x) noexcept {
+// `on_ground`: the gear's weight on wheels this evaluation, for the FPS's
+// ground hold (D-064); read only in derivatives(), where the gear has just
+// written it, so trims and the steady states never see it.
+AfcsSignals afcs_signals(const GenHelFcsConfig& c, const SimContext& ctx, std::span<const double> x,
+                         bool on_ground = false) noexcept {
     AfcsSignals o;
     if (!c.sas) {
         return o;
@@ -419,7 +425,7 @@ AfcsSignals afcs_signals(const GenHelFcsConfig& c, const SimContext& ctx,
         o.pba_held = pade_hold(x, Fcs::kPbaHold, batemp, o);
     }
     if (c.fps) {
-        fps_signals(*c.fps, ctx, x, e, v, q1, p1, ysens, o);
+        fps_signals(*c.fps, ctx, x, e, v, q1, p1, ysens, on_ground, o);
     }
     return o;
 }
@@ -586,6 +592,10 @@ GenHelFcs::GenHelFcs(GenHelFcsConfig config)
         if (!(y.collective_fade_from < y.collective_fade_to)) {
             throw InitError("genhel_fcs: the fps collective fade needs from < to");
         }
+        if (f.ground_hold && f.weight_on_wheels.empty()) {  // D-064
+            throw InitError(
+                "genhel_fcs: the fps ground_hold needs weight_on_wheels, the landing gear's name");
+        }
         const double hold = f.hold / 4.0;  // the Padé's lag (pade_hold())
         tau_[kFpsPitchHold] = hold;
         tau_[kFpsRollHold] = hold;
@@ -610,8 +620,18 @@ std::vector<std::string> GenHelFcs::produces() const {
             n + ".stabilator_incidence"};
 }
 
+std::vector<std::string> GenHelFcs::consumes() const {
+    if (config_.fps && config_.fps->ground_hold) {
+        return {config_.fps->weight_on_wheels + ".weight_on_wheels"};
+    }
+    return {};
+}
+
 void GenHelFcs::bind(const CouplingRegistry& registry) {
     const std::string& n = config_.name;
+    if (config_.fps && config_.fps->ground_hold) {
+        weight_on_wheels_ = registry.find(config_.fps->weight_on_wheels + ".weight_on_wheels", n);
+    }
     theta0_ = registry.find(n + ".theta0", n);
     theta1s_ = registry.find(n + ".theta1s", n);
     theta1c_ = registry.find(n + ".theta1c", n);
@@ -682,7 +702,11 @@ GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx, std::span<const doub
 
 void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
                             ComponentDerivs& out) const {
-    const AfcsSignals s = afcs_signals(config_, ctx, x);
+    // D-064: the gear runs first (the coupling order), so this evaluation's
+    // weight on wheels is in the store.
+    const bool on_ground = weight_on_wheels_.valid() && ctx.coupling != nullptr &&
+                           ctx.coupling->get(weight_on_wheels_) > 0.5;
+    const AfcsSignals s = afcs_signals(config_, ctx, x, on_ground);
     const GenHelFcsOutputs o = evaluate(ctx, x, s);
     if (out.readouts != nullptr) {  // D-059
         out.readouts->main_rotor_theta0 = o.theta0;
@@ -1063,9 +1087,24 @@ GenHelPitchBias pitch_bias_from_config(const Config& node) {
 }
 
 GenHelFps fps_from_config(const Config& node) {
-    node.allow_keys({"hold", "trim_actuator", "pitch", "roll", "yaw"});
+    node.allow_keys(
+        {"hold", "trim_actuator", "pitch", "roll", "yaw", "ground_hold", "weight_on_wheels"});
     GenHelFps f;
     f.hold = node.quantity("hold", Dimension::time);
+    // D-064: optional; without it the FPS doesn't read the gear.
+    if (node.contains("ground_hold")) {
+        f.ground_hold = node.boolean("ground_hold");
+    }
+    if (node.contains("weight_on_wheels")) {
+        f.weight_on_wheels = node.string("weight_on_wheels");
+        // A gear named without saying whether to hold on it is a mistake:
+        // `ground_hold: false` turns the hold off explicitly.
+        if (!node.contains("ground_hold")) {
+            throw InitError(
+                "genhel_fcs: fps.weight_on_wheels needs fps.ground_hold (true, or false to "
+                "turn the hold off)");
+        }
+    }
     const Config ac = node.child("trim_actuator");
     ac.allow_keys({"gain", "rate_limit", "authority"});
     f.actuator_gain = ac.quantity("gain", Dimension::frequency);

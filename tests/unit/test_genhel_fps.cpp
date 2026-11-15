@@ -9,12 +9,14 @@
 #include <cmath>
 #include <limits>
 #include <random>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "control/genhel_fcs.hpp"
 #include "core/attitude.hpp"
+#include "core/coupling.hpp"
 #include "env/air_data.hpp"
 #include "env/atmosphere.hpp"
 #include "support/alloc_counter.hpp"
@@ -532,6 +534,75 @@ TEST(GenHelFps, Uh60aConfigIsGenHels) {
     EXPECT_EQ(f.yaw.wiring, YawIntegratorWiring::physical);
 }
 
+// On the ground (D-064): with ground_hold, the gear's weight on wheels holds
+// the trim release, so the derivatives are exactly those with the release
+// held by hand; with the wheels unloaded, or no hold, nothing changes. The
+// UH-60A's hold is an assumption (a placeholder, DATA_GAPS.md "UH-60A AFCS").
+TEST(GenHelFps, OnTheGroundTheTrimReleaseIsHeld) {
+    const GenHelFcsConfig& c = uh60a();
+    ASSERT_TRUE(c.fps->ground_hold);
+    ASSERT_EQ(c.fps->weight_on_wheels, "gear");
+    const Fcs free_fcs(c);  // never bound: reads no weight on wheels
+    Fcs fcs(c);
+    EXPECT_EQ(fcs.consumes(), std::vector<std::string>{"gear.weight_on_wheels"});
+    CouplingRegistry registry;
+    for (const std::string& n : fcs.produces()) {
+        (void)registry.add(n, "fcs");
+    }
+    const CouplingSlot wow = registry.add("gear.weight_on_wheels", "gear");
+    fcs.bind(registry);
+    CouplingOutputs values(registry.size());
+
+    const auto same = [](const Eval& a, const Eval& b) {
+        return a.xdot0 == b.xdot0 && a.G == b.G;  // bit for bit
+    };
+    std::mt19937_64 rng(64);
+    std::uniform_real_distribution<double> u(-1.0, 1.0);
+    for (int k = 0; k < 200; ++k) {
+        SimContext ctx = random_context(rng);
+        ctx.controls.afcs.fps = true;
+        ctx.controls.afcs.trim_release = false;
+        std::vector<double> x(Fcs::kNumStates);
+        for (double& xi : x) {
+            xi = 0.05 * u(rng);
+        }
+        SimContext held = ctx;  // the pilot's release, no ground
+        held.controls.afcs.trim_release = true;
+
+        values.begin_evaluation();
+        values.set(wow, 1.0);
+        ctx.coupling = &values;
+        EXPECT_TRUE(same(derivs(fcs, ctx, x), derivs(free_fcs, held, x))) << k;
+        EXPECT_FALSE(same(derivs(fcs, ctx, x), derivs(free_fcs, ctx, x))) << k;  // it acts
+
+        values.begin_evaluation();
+        values.set(wow, 0.0);
+        EXPECT_TRUE(same(derivs(fcs, ctx, x), derivs(free_fcs, ctx, x))) << k;  // airborne
+    }
+
+    // Only derivatives() reads the gear (D-064): outside an evaluation the store
+    // holds whatever the last one left, so the signals and the steady states
+    // (trim's starting point) must not depend on it.
+    values.begin_evaluation();
+    values.set(wow, 1.0);  // stale: an evaluation on the ground, before a trim in the air
+    for (int k = 0; k < 20; ++k) {
+        SimContext ctx = random_context(rng);
+        ctx.controls.afcs.fps = true;
+        ctx.controls.afcs.trim_release = false;
+        SimContext stale = ctx;
+        stale.coupling = &values;
+        std::vector<double> x(Fcs::kNumStates), y(Fcs::kNumStates);
+        fcs.steady_states(stale, x);
+        free_fcs.steady_states(ctx, y);
+        EXPECT_EQ(x, y) << k;
+        EXPECT_EQ(fcs.evaluate(stale, x).potemp, free_fcs.evaluate(ctx, x).potemp) << k;
+    }
+
+    GenHelFcsConfig off = c;  // without the hold the FPS doesn't read the gear
+    off.fps->ground_hold = false;
+    EXPECT_TRUE(Fcs(off).consumes().empty());
+}
+
 // Invalid FPS configurations are rejected at init.
 TEST(GenHelFps, RejectsInvalidConfigs) {
     const auto bad = [](auto change) {
@@ -552,6 +623,7 @@ TEST(GenHelFps, RejectsInvalidConfigs) {
     bad([](GenHelFcsConfig& c) {
         c.fps->yaw.collective_fade_to = c.fps->yaw.collective_fade_from;
     });
+    bad([](GenHelFcsConfig& c) { c.fps->weight_on_wheels.clear(); });  // a hold needs its gear
     EXPECT_NO_THROW(Fcs{uh60a()});
 }
 

@@ -169,6 +169,11 @@ components:
         roll_rate_gain: "0.11 %/(deg/s)"  # turn switch on
         collective: {gain: -0.625, airspeed_rate_limit: "10.0 kt/s", fade_from: "40.0 kt", fade_to: "100.0 kt"}  # %/%
         integrator_wiring: physical  # DATA_GAPS.md, "UH-60A AFCS"
+      # On the ground (D-064): with weight on the wheels the FPS acts as with the
+      # trim release held, so its holds don't wind up against the ground. GenHel's
+      # FPS has none; assumed, no public source yet (DATA_GAPS.md, "UH-60A AFCS").
+      ground_hold: !placeholder true
+      weight_on_wheels: gear
 
   - type: blade_element_rotor
     name: main_rotor

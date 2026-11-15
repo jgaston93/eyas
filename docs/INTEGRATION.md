@@ -211,7 +211,11 @@ most `kMaxEngines` = 4).
 | `fps_turn` | Turn coordination in place of heading hold. The host latches it, as the aircraft's logic does: on with the FPS on, above 60 kt, the trim release pressed and more than 2° of bank; off with the feet on the pedals and the trim release pressed, or with the FPS off. `examples/common/afcs.hpp` has `latch_turn_switch()` to copy. |
 
 The UH-60A normally flies with the SAS, pitch bias and FPS on. With everything
-off it is unstable and hard to hover, as the bare aircraft is. Trim with the
+off it is unstable and hard to hover, as the bare aircraft is. On the ground,
+while the gear carries weight, the FPS acts as with the trim release held, so
+it can stay on for a start on the gear and through a landing; off the ground
+it holds from where it lifted off. That is an assumption without a public
+source yet (D-064, the placeholder `fps.ground_hold`). Trim with the
 switches the session starts with (`TrimCondition::afcs`), and with its engine
 controls (`TrimCondition::engines`, `rotor_speed_reference`).
 
@@ -294,9 +298,9 @@ Tables are referenced relative to the YAML file, some from the shared
 `tools/build_uh60a_config.py`; don't edit them by hand.
 
 **Placeholders.** A few values have no public source yet and are tagged
-`!placeholder`: the landing gear's stop springs and dampers and, on Ballin's
-engines, the tail rotor's sense of rotation (for its torque) and the power
-lever's idle angle.
+`!placeholder`: the landing gear's stop springs and dampers, the FPS's ground
+hold (an assumed behaviour, D-064) and, on Ballin's engines, the tail rotor's
+sense of rotation (for its torque) and the power lever's idle angle.
 `Model::placeholders()` lists them. The model flies with them; the host should
 log the list so it is visible in every session.
 
