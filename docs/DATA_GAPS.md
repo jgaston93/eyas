@@ -198,6 +198,7 @@ Test oracle for D-027 layer 3, not aircraft data. Readings: `tests/validation/re
 - The nomenclature (PDF p. 66) lists LAGOMR right after THLDMR, in the group of "input constants defining the geometry of the lag damper kinematics".
 - Figure 1.1.4, "Lag damper kinematic geometry" (p. 5.1-10, PDF p. 30), draws δ₀ at the hinge in the plane of rotation, beside the lag angle δ. It looks like a reference lag angle of the damper geometry, e.g. the blade's lag position at the damper's neutral stroke.
 - Settle it from the lag-damper equations in §5.1.2 (where δ₀ enters the pick-up point positions) and the text on p. 5.1-5 (PDF p. 25) when the lag DOF is implemented (M9). It plays no part in M4 (flap only).
+- **Settled (2026-11-04, D-063):** δ₀ is the damper arm's angular offset in the pick-up geometry. It enters p. 5.1-30's kinematics only as (δ + δ₀), so it isn't a pre-lag of the blade. See "UH-60A lag damper" below.
 
 ## UH-60A airframe tables (M6b) — `ACCEPTED by human review (2026-10-13)`
 **Source:** GenHel §5.2.5 and §5.3.5, dot-matrix printouts with slashed zeros, read by eye from 200–400 dpi renders. Files: `data/uh60a/genhel/table_2_5_*.txt` (fuselage, Tables 2.5.1–2.5.11, PDF pp. 101–104) and `table_3_5_*.txt` (empennage, Tables 3.5.1–3.5.10, PDF pp. 142–145), laid out row for row as printed.
@@ -489,3 +490,23 @@ Doubtful readings (`UNVERIFIED — needs human review`; not used until confirmed
 - *Fig. C20's sign on WFIRF* (p. 79, PDF p. 93; rendered at 400 dpi): the junction prints "−" on WFIRF and "+" on KNDRP's output. Corrected to + from H&W (B96) (above). `VERIFIED by human review (2026-10-23)`: the print reads "−", so it is a misprint. Used only with the idle schedule (Stage B2).
 - *Fig. C3's speed-band relay* (p. 72, PDF p. 86): breakpoints read −1 and 4 % NP (labels above the left and below the right dashed line), output 1 outside, 0 between. `VERIFIED by human review (2026-10-23)`. It only matters below 20 ft·lbf of turbine torque (the gain switch B4 is 1 above; D-054 item 6(d)).
 - *Eq. (43)* (p. 10, PDF p. 24): prints − W_f; corrected to + W_f. **Settled by data (2026-10-23):** with + W_f the gas path reproduces Table B.1's three states (pressures within 0.7 %, power 1.6 %); with − W_f they miss by 7–9 % and 13–23 % (`BallinT700.ReproducesTableB1SteadyStates`, checked by mutation). Only the reading of the printed sign remains for a person, and the model doesn't depend on it.
+
+## UH-60A lag damper, GenHel §5.1 (M9, D-063) — transcribed and human-reviewed
+**Source:** GenHel CR-166309. Constants p. 5.1-49 (PDF p. 69, handwritten); Table 1.5.4 p. 5.1-64 (PDF p. 84, typed, slashed zeros); kinematics p. 5.1-30 (PDF p. 50, handwritten); plots Figs. 1.5.4(a), (b) pp. 5.1-55, 5.1-56 (PDF pp. 75, 76). Book page = PDF page − 20.
+
+**Constants (inches and degrees, p. 5.1-49 right column):** A_LDMR = 0.227, B_LDMR = 3.242, C_LDMR = 12.040, D_LDMR = 10.0102, R_LDMR = 6.898, θ_GEOMR = +17.481°, δ₀ = 7°. K_α1 = K_α2 = 0 (pitch–lag coupling). Units from the nomenclature, p. 5.1-46 (PDF p. 66): geometry in inches, L̇_DT in in/s, F_δ̇ in lb.
+
+**Force map, Table 1.5.4** (F [lbf] against |L̇| [in/s]; GenHel applies sign(L̇) to it, p. 5.1-30):
+- 0 to 2.0 in/s, every 0.1: 0, 100, 230, 380, 600, 900, 1300, 1650, 2080, 2480, 2950, 3210, 3360, 3450, 3525, 3565, 3590, 3615, 3630, 3650, 3660.
+- 2.0 to 7.0 in/s, every 1.0: 3660, 3742, 3805, 3875, 3940, 4000.
+
+**Checks done:**
+- The typed table agrees with both plots: 165 × 10 lbf at 0.7 in/s on Fig. 1.5.4(b); 3660 at 2; about 4000 at 7 on Fig. 1.5.4(a). The two maps meet at 2.0 in/s (3660 in both).
+- The kinematics transcription reproduces GenHel's printed moment arms (pp. 5.1-30, 5.1-31) as ∂L/∂δ and ∂L/∂β to round-off at random states (D-063). The hub pick-up's distance from the hinge is constant, 10.5246 in, as a rigid rotation requires.
+- The constants give a damper of 16.7 in and a lag arm of 8.7 in, both plausible. Neither checks the digits themselves.
+
+**Reviewed (2026-11-04):** a human reviewer confirmed the two low-confidence readings:
+- the handwritten constants, D_LDMR = 10.0102 included, from PDF p. 69 rendered at 400 dpi;
+- Table 1.5.4's 1650 at 0.7 in/s. The slashed-zero font makes 5 and 6 alike. The reviewer compared it against the 5 and 6 of 3565 in the same table. Fig. 1.5.4(b)'s point at 0.7 in/s measures 1645 lbf, and its neighbours measure within 2 % of the table.
+
+**Not given:** GenHel's lookup outside 0–7 in/s (D-063 holds the 7 in/s value); lag stops (none modeled).

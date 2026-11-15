@@ -1615,6 +1615,76 @@ The rule in decision 5 would leave the term off. The spec owner ruled it on (202
 - Ruled out: the longitudinal-to-pedal mixing (no effect); D-027's eq. 23b moment mass flow (p/δlon 6.0 dB off, 9.2 on); the shaft-rate form of decision 1 (p/δlon 5.1 dB but phase −99 / 127°).
 - Open, issue #100: the candidates are pitch-flap coupling in the hardware (a source, #101), lag dynamics and lag-pitch coupling (#43), blade torsion (#45) and a higher-order wake (#43).
 
+## D-063 M9: blade lag degree of freedom with GenHel's lag damper (spec §9 M9; issue #43) — `Proposed` (2026-11-04) — design, model data from GenHel, interface addition (internal: a rotor config key)
+**Context:** spec M9's first item is a blade lag degree of freedom with a lead–lag damper, and a ground-resonance check on the gear. Eyas's blades flap only (D-026). Fletcher (21st ERF 1995, pp. VII-4-7, 9) finds that the lag mode dominates the on-axis roll and pitch responses above about 13 rad/s. His identified model fits up to 20 rad/s, and he notes that linearized blade-element models miss the lag mode's frequency. Lag is also one candidate for #100.
+
+**Sources:**
+- GenHel (CR-166309) models the UH-60A's lag hinge and nonlinear damper. The hinge sequence is Fig. 1.1.2 (p. 5.1-8). The damper geometry is Fig. 1.1.4 (p. 5.1-10) with its kinematics on p. 5.1-30, and its moments on pp. 5.1-30 and 5.1-31. The lag and flap equations are on pp. 5.1-31 and 5.1-32. The constants are on p. 5.1-49, and the force map is Table 1.5.4 (p. 5.1-64), also plotted as Figs. 1.5.4(a) and (b) (pp. 5.1-55, 5.1-56). The text is on p. 5.1-5.
+- Johnson 2013 §16.4: Eq. 16.97 is the rigid lag equation. Eq. 16.98 and p. 601 give ν_ζ² = e S_ζ/I_ζ. Eq. 16.100 gives ν_β² = 1 + ν_ζ² for coincident hinges. Pp. 600–601 give the Coriolis coupling terms and the lag damper term C_ζ ζ̇. Eq. 16.242 gives the hub-motion lag forcing.
+- Johnson 2013 §20.3 covers ground resonance (Coleman).
+
+**What GenHel gives** (read 2026-11-04; DATA_GAPS "UH-60A lag damper"):
+- *Hinge:* one hinge at e = 1.25 ft for both flap and lag. The Euler sequence is lag δ about the rotating shaft's z, then flap β about the lagged blade's chordwise axis (Fig. 1.1.2). There is no lag spring.
+- *Sign:* GenHel's δ is positive in the direction of rotation (lead). Its lag equation has +(ṙ_s − Ω̇) and −M_LAB with drag positive.
+- *Pitch–lag coupling:* K_α1 = K_α2 = 0 (p. 5.1-49 with the pitch equation p. 5.1-24), so none for the Black Hawk.
+- *Damper:* a two-point element. The hub pick-up is fixed in the rotating shaft axes; the blade pick-up sits at C_LDMR along the span and R_LDMR off it, at θ_LDMR = θ − θ_GEOM, where θ is the blade's geometric pitch, cyclic included.
+  - The stroke is L_DT = |(X, Y, Z)_LDMR|, with δ₀ the damper arm's angular offset: (δ + δ₀) in the geometry, not a pre-lag. This settles the open δ₀ question from M4.
+  - The axial force is F = sign(L̇) f(|L̇|), from the map, in lbf against in/s.
+  - The damper's moments are M_LLD on lag and M_FLD on flap. The flap equation includes M_FLD (p. 5.1-32).
+  - *Check (2026-11-04):* GenHel's printed moment arms equal ∂L/∂δ and ∂L/∂β to round-off at random states. So M_LLD = −F ∂L/∂δ and M_FLD = −F ∂L/∂β: the damper is exactly a two-point force element. The identity also confirms the transcription of the handwritten pp. 5.1-30 and 5.1-31.
+  - GenHel takes L̇ as a backward difference over the step. Its lag and flap equations drop "small terms", and it advances them by a Fourier prediction rather than integration (p. 5.1-3).
+- *Magnitudes* (2026-11-04, at β = 3°, δ = 0, θ = 15°):
+  - L_DT = 16.7 in; ∂L/∂δ = 8.7 in/rad; ∂L/∂β = −0.08 in/rad; ∂L/∂θ = −0.17 in/rad.
+  - A 1° cyclic pitch at Ω gives 0.08 in/s of stroke rate, and 0.5° of 1/rev lag gives 2.0 in/s. The map is steepest from 0.3 to 1.2 in/s, so the pitch-rate term isn't negligible.
+  - The lag frequency from GenHel's blade is ν_ζ² = e M_b/I_b = 1.25 × 86.7/1512.6, so ν_ζ = 0.268/rev. The regressing lag mode in the fixed frame is then near Ω(1 − ν_ζ) ≈ 19.8 rad/s, where Fletcher's flight data shows it (15–20 rad/s).
+  - Hover torque against the centrifugal lag stiffness e M_b Ω² gives a mean lag of about 6°, near δ₀ = 7°.
+
+**Model (proposed):**
+1. *Kinematics: GenHel's hinge sequence, exact.* Each blade point is at r_hub + e e_r + R_ζ R_β (ρ e_span), with lag ζ about the rotating z_h, then flap β about the lagged chordwise axis. This is D-026's exact rigid-body method with no small angles, extended by one rotation. The blade is thin, so the lag inertia and first moment are the flap ones: I_ζ = I_β, S_ζ = S_β (GenHel uses I_b and M_b for both).
+   - Alternative, not taken: flap then lag. GenHel's damper geometry is written for lag then flap.
+   - Alternative, not taken: a lag hinge offset distinct from flap's (Johnson allows it). GenHel's is coincident.
+2. *Sign: ζ positive lag, against the rotation* (Johnson §16.4, p. 599), so ζ = −δ_GenHel. The config's damper data is GenHel's, converted at load.
+3. *Damper: GenHel's, as a two-point force element.* L is from the pick-up positions. F = sign(L̇) f(|L̇|) from Table 1.5.4, linear between points, mirrored for negative rates and held at the 7 in/s value beyond. GenHel's lookup outside the map isn't documented; a hydraulic damper's relief valve limits its force. The generalized forces are Q_ζ = −F ∂L/∂ζ and Q_β = −F ∂L/∂β.
+   - L̇ is computed analytically: L̇ = ∂L/∂β β̇ + ∂L/∂ζ ζ̇ + ∂L/∂θ θ̇. The derivative must be a pure function of the state, so GenHel's backward difference is out.
+   - θ̇ includes the azimuthal rate Ω ∂θ/∂ψ (cyclic) and the δ₃ term.
+   - The control-rate term ∂θ/∂u u̇ is open. The rotor reads the swashplate pitch, not its rate. Either the flight control system publishes its servo rates through the coupling store (D-003), or the term is dropped with its effect measured. Proposed: measure first (servo rate limits against the 0.08 in/s per degree above), then decide.
+   - Alternative, not taken: an equivalent linear damper (Johnson §20.3 p. 821). GenHel's map is the source.
+   - The damper is internal to the rotor and hub. The airframe loads stay the blades' free-body sum (D-026), so GenHel's hub-moment increments (p. 5.1-31) come out automatically. The drive torque passes through the hinge and damper, and on a free shaft (D-052) the shaft acceleration enters the lag equation directly.
+4. *Also a linear lag spring and damper* (K_ζ, C_ζ), for fixtures and sensitivity, as flap has.
+5. *Config: `flap.lag`*, required when `flap` is present (D-021): `none`, `{spring, damper}` (linear), or `{genhel_damper: {…geometry…, force_table: <csv>}}`. With `none` the rotor is today's, bit for bit, and its states are unchanged.
+6. *States:* [β_k, β̇_k, ζ_k, ζ̇_k] per blade, D-024 numbering. They start at zero, and trim sets them (M7).
+7. *Not modeled:* lag stops (GenHel has none); pitch–lag coupling (GenHel's is zero); elastomeric bearing stiffness (GenHel has none).
+
+**Verification (gates, written before the code):**
+- *Exact-equation reference:* extend `flap_reference.hpp`'s point-mass blade, whose positions are explicit functions of time, differentiated numerically, to lag. Add the damper as an independent two-point element: the length from the two pick-up positions, its rate by numeric differentiation, and the force applied at the pick-ups.
+  - Production β̈, ζ̈, G, the loads, H and the shaft terms must agree. The trials are random states, rates, accelerations, controls, hub tilt and both rotation directions, with a linear damper and with GenHel's.
+- *GenHel cross-check:* the moment arms equal GenHel's printed M_LLD and M_FLD, and the stroke equals p. 5.1-30's L_DT, at random states (a test of the transcription).
+- *Conservation:* with no air and no gravity, momentum is conserved (D-026 layer 2). With the damper, the energy falls at the damper's power F L̇ ≥ 0.
+- *Closed forms:*
+  - the vacuum lag frequency ν_ζ² = e S/I (Johnson p. 601) and ν_β² = 1 + ν_ζ² (Eq. 16.100), hub fixed;
+  - a linear damper's decay against C_ζ/(2 I_ζ ν_ζ Ω);
+  - the Coriolis coupling ±2 β ζ̇ against Johnson pp. 600–601 at small angles;
+  - the mean lag in hover against the torque balance (Eq. 16.97, steady).
+- *Neutral:* `lag: none` is bit-identical to today.
+- *Real-time:* no allocation, pure; cost measured with `eyas_bench`.
+
+**Validation (criteria fixed before the runs):**
+- *Fletcher hover and 80 kt* (Figs. 3 and 4, digitized and reviewed to 20 rad/s): `plot_m7c_fletcher.py`'s band opens to 20 rad/s for the on-axis responses.
+  - The on-axis magnitude and phase RMS over 12–20 rad/s (coherence ≥ 0.6) improve on the model without lag.
+  - The 1.5–12 rad/s on-axis responses move by under 1 dB and 10° RMS.
+  - The regressing lag mode's frequency (Floquet and averaged) is reported against Ω(1 − ν_ζ) and the flight data's lag dip.
+  - The off-axis responses are reported (#100).
+- *The M7 regression with lag on:* the V1 gate passes; the climbs, Fletcher, and Ballin's App. D/E steps are reported against the runs without lag.
+- *Mean lag:* reported against the torque balance, in hover and at 80 kt.
+- *Drive:* trims converge, and the rotor–drive torsional mode is stable on both engine configs.
+- *Ground resonance (spec):* on the gear at 100 % rotor speed, a lag disturbance decays with GenHel's damper. With the damper scaled down, an instability appears where an independent Coleman analysis predicts it (Johnson §20.3), using the gear's stiffness and damping about the trimmed sitting point and the hub's effective mass. The criterion is stable with the real damper; the sensitivity is reported.
+
+**Staging** (one PR each, issues under #43):
+- L1, the lag hinge with a linear damper: the equations, reference, anchors and config.
+- L2, GenHel's damper on the UH-60A: the data, the geometry and the configs on.
+- L3, trim, linearization, the drive and real-time.
+- L4, validation and the ground-resonance check.
+
 ## D-064 The FPS on the ground: weight on wheels holds the trim release, an assumption (spec §6, §9 M8c3 follow-up; D-045) — `Approved` (2026-11-15) — design, an assumed behaviour (a placeholder), interface additions (internal: an FCS config key, a landing-gear coupling output)
 
 **Context:** GenHel's FPS (Figs. 5.1.5(a)–(c), D-045 M8c3) has no weight-on-wheels input. Parked on its gear with the FPS on (the pilot station's pad, D-044, and a host's start on the ground), its attitude, heading and airspeed holds integrate against an aircraft the ground won't let move: dropped onto the gear at the hover trim's controls, the UH-60A crept from about 40 s and by 4 minutes was turning on its wheels at about 3 m/s, its heading swinging through 100°, at either heading trimmed. With the SAS and pitch bias alone it rests (under 1e-5 m/s after 4 minutes), as does the free parked case (D-042 (d)). Aircraft flight control systems commonly take a squat switch so their integrators don't wind up on the ground, but no public source in hand describes the UH-60A's: GenHel's §5.5 shows none (its OCR is poor, so not conclusive), USAAEFA's sixth-year production test (DTIC ADA180181) doesn't say, and the aircraft's operator's manual is distribution-limited and can't be used.
