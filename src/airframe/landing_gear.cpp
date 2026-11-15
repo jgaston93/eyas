@@ -402,10 +402,24 @@ void LandingGear::evaluate(const SimContext& ctx, const Frame& f, std::span<cons
     out.H.row(5) = -m * r.x() * jy + m * r.y() * jx;
 }
 
+std::vector<std::string> LandingGear::produces() const {
+    if (config_.name.empty()) {
+        return {};
+    }
+    return {config_.name + ".weight_on_wheels"};
+}
+
+void LandingGear::bind(const CouplingRegistry& registry) {
+    if (!config_.name.empty()) {
+        weight_on_wheels_ = registry.find(config_.name + ".weight_on_wheels", config_.name);
+    }
+}
+
 void LandingGear::derivatives(const SimContext& ctx, std::span<const double> x,
                               ComponentDerivs& out) const {
     const Frame f = frame(ctx);
     GearOut g;
+    bool loaded = false;
     for (std::size_t i = 0; i < config_.gears.size(); ++i) {
         g = GearOut{};
         evaluate(ctx, f, x, i, g);
@@ -419,9 +433,13 @@ void LandingGear::derivatives(const SimContext& ctx, std::span<const double> x,
         out.load0_b.F += g.load.F;
         out.load0_b.M += g.load.M;
         out.H += g.H;
-        if (out.readouts != nullptr && g.st.normal_load > 0.0) {  // D-059
-            out.readouts->weight_on_wheels = true;
-        }
+        loaded = loaded || g.st.normal_load > 0.0;
+    }
+    if (out.readouts != nullptr && loaded) {  // D-059
+        out.readouts->weight_on_wheels = true;
+    }
+    if (out.coupling != nullptr && weight_on_wheels_.valid()) {  // D-064
+        out.coupling->set(weight_on_wheels_, loaded ? 1.0 : 0.0);
     }
 }
 

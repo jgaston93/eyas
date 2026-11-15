@@ -165,6 +165,11 @@ public:
     // D-059: reports its Readouts fields in derivatives().
     ReadoutRole readout_role() const noexcept override { return ReadoutRole::landing_gear; }
     std::string_view name() const noexcept override { return config_.name; }
+    // Coupling (D-003, D-064): a named gear produces <name>.weight_on_wheels,
+    // 1 while any tire carries load (as its readout, D-059), else 0, for the
+    // flight control system. It consumes nothing.
+    std::vector<std::string> produces() const override;
+    void bind(const CouplingRegistry& registry) override;
 
     // Gear i's results at states x (all gears' states).
     GearState gear_state(const SimContext& ctx, std::span<const double> x,
@@ -184,6 +189,7 @@ private:
 
     LandingGearConfig config_;
     std::vector<double> stop_k_, stop_c_;
+    CouplingSlot weight_on_wheels_;
 };
 
 // F_z(Δ) of a tire table, extended linearly beyond its last point (D-032).

@@ -586,6 +586,10 @@ GenHelFcs::GenHelFcs(GenHelFcsConfig config)
         if (!(y.collective_fade_from < y.collective_fade_to)) {
             throw InitError("genhel_fcs: the fps collective fade needs from < to");
         }
+        if (f.ground_hold && f.weight_on_wheels.empty()) {  // D-064
+            throw InitError(
+                "genhel_fcs: the fps ground_hold needs weight_on_wheels, the landing gear's name");
+        }
         const double hold = f.hold / 4.0;  // the Padé's lag (pade_hold())
         tau_[kFpsPitchHold] = hold;
         tau_[kFpsRollHold] = hold;
@@ -610,8 +614,29 @@ std::vector<std::string> GenHelFcs::produces() const {
             n + ".stabilator_incidence"};
 }
 
+std::vector<std::string> GenHelFcs::consumes() const {
+    if (config_.fps && config_.fps->ground_hold) {
+        return {config_.fps->weight_on_wheels + ".weight_on_wheels"};
+    }
+    return {};
+}
+
+const SimContext& GenHelFcs::with_ground_hold(const SimContext& ctx,
+                                              SimContext& held) const noexcept {
+    if (!weight_on_wheels_.valid() || ctx.coupling == nullptr ||
+        !(ctx.coupling->get(weight_on_wheels_) > 0.5)) {
+        return ctx;
+    }
+    held = ctx;
+    held.controls.afcs.trim_release = true;
+    return held;
+}
+
 void GenHelFcs::bind(const CouplingRegistry& registry) {
     const std::string& n = config_.name;
+    if (config_.fps && config_.fps->ground_hold) {
+        weight_on_wheels_ = registry.find(config_.fps->weight_on_wheels + ".weight_on_wheels", n);
+    }
     theta0_ = registry.find(n + ".theta0", n);
     theta1s_ = registry.find(n + ".theta1s", n);
     theta1c_ = registry.find(n + ".theta1c", n);
@@ -621,7 +646,9 @@ void GenHelFcs::bind(const CouplingRegistry& registry) {
 
 GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx,
                                      std::span<const double> x) const noexcept {
-    return evaluate(ctx, x, afcs_signals(config_, ctx, x));
+    SimContext held;
+    const SimContext& c = with_ground_hold(ctx, held);
+    return evaluate(c, x, afcs_signals(config_, c, x));
 }
 
 GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx, std::span<const double> x,
@@ -680,8 +707,10 @@ GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx, std::span<const doub
     return o;
 }
 
-void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
+void GenHelFcs::derivatives(const SimContext& ctx_in, std::span<const double> x,
                             ComponentDerivs& out) const {
+    SimContext held;
+    const SimContext& ctx = with_ground_hold(ctx_in, held);  // D-064
     const AfcsSignals s = afcs_signals(config_, ctx, x);
     const GenHelFcsOutputs o = evaluate(ctx, x, s);
     if (out.readouts != nullptr) {  // D-059
@@ -1063,9 +1092,17 @@ GenHelPitchBias pitch_bias_from_config(const Config& node) {
 }
 
 GenHelFps fps_from_config(const Config& node) {
-    node.allow_keys({"hold", "trim_actuator", "pitch", "roll", "yaw"});
+    node.allow_keys(
+        {"hold", "trim_actuator", "pitch", "roll", "yaw", "ground_hold", "weight_on_wheels"});
     GenHelFps f;
     f.hold = node.quantity("hold", Dimension::time);
+    // D-064: optional; without it the FPS doesn't read the gear.
+    if (node.contains("ground_hold")) {
+        f.ground_hold = node.boolean("ground_hold");
+    }
+    if (node.contains("weight_on_wheels")) {
+        f.weight_on_wheels = node.string("weight_on_wheels");
+    }
     const Config ac = node.child("trim_actuator");
     ac.allow_keys({"gain", "rate_limit", "authority"});
     f.actuator_gain = ac.quantity("gain", Dimension::frequency);
