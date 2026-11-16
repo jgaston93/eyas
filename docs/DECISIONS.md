@@ -1638,3 +1638,18 @@ Amended after review (eyas#105, before merging): the first version applied the h
 - `LandingGear.PublishesWeightOnWheels`: 1 settled on the wheels, 0 a metre clear, matching the readout; an unnamed gear produces nothing.
 - `Uh60aFps.ParkedWithTheFpsOnStaysPut` (slow; public API): parked as the pad, FPS on, heading 90°, from 40 s to 3 minutes the heading changes under 1e-3 rad and the CG under 1 mm, at under 1 mm/s; the same run with `ground_hold: false` turns or creeps away (it fails without the hold).
 - `Uh60aAircraft.ConfigLoadsWithTheDeclaredPlaceholders`: `components[1].fps.ground_hold` listed.
+
+## D-065 Trim at a position: `TrimCondition::north`, `east` (spec §6.8, §6.10; D-035) — `Approved` (2026-11-16, by the spec owner) — interface addition (public: `TrimCondition`)
+
+**Context:** a host's operator places the aircraft anywhere in the session's area (an initial condition: a position, altitude, heading and flight condition). `Model::trim` always installed the trimmed state over the geodetic origin (`trim_body_state`: north and east 0), and `reset()` restarts every state but the body's at its initial value, so a host had no way to start trimmed flight elsewhere short of rebuilding the model with its origin there, which moves the session's NED frame under everything that reads it.
+
+**Decision:** `TrimCondition` gains `north` and `east` [m], NED from the geodetic origin, 0 by default. The trimmed body is installed there (`trim_body_state`), at the condition's altitude as before. Non-finite values are an `InitError`. Nothing else in the trim reads them.
+
+**Why it's an addition only:** the flat-earth dynamics don't read the horizontal position. Gravity, the atmosphere (from the height) and the components see the body's attitude, velocities and height; over a level ground the gear's height above it is along the vertical. The same condition therefore trims to the same controls, attitude and component states anywhere, and the default keeps every existing trim bit for bit. (A sloping ground plane, `ground_normal_n` (D-032), which no UH-60A config sets, makes the gear's height depend on the position: trimming at the real position is then the right thing, and is what this does.) The flat-earth map's validity (INTEGRATION §9) still bounds how far from the origin a host should go.
+
+**Alternatives:** a `Model` call that shifts the body after a trim or restore, keeping every other state, would also serve; a position in the condition keeps the trim's result self-contained (installed where asked) and needs no new call. Rebuilding the model with its origin at each new position needs no Eyas change but moves the host's NED frame and its outputs' `pos_n` with every reposition.
+
+**Tests:**
+- `Trim.BodyStateHasTheConditionsAirVelocity`: over random conditions, the body state is installed at the condition's north and east, exactly.
+- `Trim.AtAPositionAwayFromTheOrigin` (slow; public API): 60 kt at 300 m over KHSV, trimmed at the origin and 5 km north and 3 km west of it: the same iterations, controls and attitude bit for bit; the body at the offset; the geodetic outputs the D-017 map's at that point; flown on for a second, the same velocities and rates bit for bit, the positions apart by the offset to 1e-9 m (round-off: the same step added to a larger number).
+- `Trim.RejectsInvalidInputsAndLeavesTheModel`: an infinite east or a NaN north is an `InitError`, the model unchanged.

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <random>
@@ -23,6 +24,7 @@
 #include "core/component.hpp"
 #include "core/rigid_body.hpp"
 #include "engine/genhel_t700.hpp"
+#include "env/geodesy.hpp"
 #include "eyas/model.hpp"
 #include "sim/build.hpp"
 #include "support/alloc_counter.hpp"
@@ -72,6 +74,8 @@ TEST(Trim, BodyStateHasTheConditionsAirVelocity) {
         c.sideslip = 0.4 * u(rng);
         c.heading = 3.0 * u(rng);
         c.altitude = 1000.0;
+        c.north = 5000.0 * u(rng);  // D-065: installed where asked
+        c.east = 5000.0 * u(rng);
         c.wind_n = Vec3(10.0 * u(rng), 10.0 * u(rng), 2.0 * u(rng));
         const double pitch = 0.3 * u(rng);
         const double roll = 0.4 * u(rng);
@@ -86,6 +90,8 @@ TEST(Trim, BodyStateHasTheConditionsAirVelocity) {
         EXPECT_NEAR(std::remainder(e.heading - c.heading, 2.0 * std::numbers::pi), 0.0, 1e-12);
         EXPECT_EQ(b.omega_b, Vec3::Zero());
         EXPECT_DOUBLE_EQ(b.pos_n.z(), -(1000.0 - 200.0));
+        EXPECT_EQ(b.pos_n.x(), c.north);
+        EXPECT_EQ(b.pos_n.y(), c.east);
         const Vec3 va_b = air_velocity_b(b, c);
         const Vec3 va_n = b.q_nb * va_b;
         EXPECT_NEAR(va_b.norm(), c.airspeed, 1e-9);
@@ -397,6 +403,57 @@ TEST(Trim, IndependentOfHeadingAndSteadyWind) {
     // The headwind case hovers over the ground.
     const TrimResult r = solve_trim(ex, into_wind, &ref, x);
     EXPECT_LT(r.vel_b.norm(), 1e-4);  // [m/s]; the wind was set from the reference attitude
+}
+
+// D-065: a trim away from the origin is the trim at the origin, installed
+// there. Over the level ground the flat-earth dynamics never read the
+// horizontal position, so the controls, attitude and the velocities flown
+// after them are bit for bit the same; only the position and its geodetic
+// outputs move.
+TEST(Trim, AtAPositionAwayFromTheOrigin) {
+    const GeodeticOrigin o{34.6372 * units::kDegree, -86.7751 * units::kDegree, 191.7};
+    Model home = Model::from_file(test::uh60a_config_path(), o);
+    Model away = Model::from_file(test::uh60a_config_path(), o);
+    TrimCondition c = level(60);
+    c.altitude = 491.7;
+    c.heading = 0.4;
+    const TrimResult r0 = home.trim(c);
+    c.north = 5000.0;
+    c.east = -3000.0;
+    const TrimResult r1 = away.trim(c);
+    ASSERT_TRUE(r0.converged);
+    ASSERT_TRUE(r1.converged);
+    EXPECT_EQ(r1.iterations, r0.iterations);
+    EXPECT_EQ(r1.controls.collective, r0.controls.collective);
+    EXPECT_EQ(r1.controls.lat_cyclic, r0.controls.lat_cyclic);
+    EXPECT_EQ(r1.controls.lon_cyclic, r0.controls.lon_cyclic);
+    EXPECT_EQ(r1.controls.pedal, r0.controls.pedal);
+    EXPECT_EQ(r1.pitch, r0.pitch);
+    EXPECT_EQ(r1.roll, r0.roll);
+
+    const BodyState b0 = home.body_state();
+    const BodyState b1 = away.body_state();
+    EXPECT_EQ(b1.pos_n, b0.pos_n + Vec3(5000.0, -3000.0, 0.0));
+    const FlatEarthMap map({o.latitude, o.longitude, o.altitude});
+    const GeodeticPosition g = map.to_geodetic(b1.pos_n);
+    EXPECT_EQ(away.outputs().latitude, g.latitude);
+    EXPECT_EQ(away.outputs().longitude, g.longitude);
+    EXPECT_EQ(away.outputs().altitude, home.outputs().altitude);
+
+    // Flown on for a second: the same flight, 8 km apart.
+    const Environment env{c.isa_delta_T, c.wind_n, c.ground_height};
+    for (int k = 0; k < 60; ++k) {
+        ASSERT_FALSE(home.advance(r0.controls, env, 16'666'667).non_finite);
+        ASSERT_FALSE(away.advance(r1.controls, env, 16'666'667).non_finite);
+    }
+    const BodyState f0 = home.body_state();
+    const BodyState f1 = away.body_state();
+    EXPECT_EQ(f1.vel_b, f0.vel_b);
+    EXPECT_EQ(f1.omega_b, f0.omega_b);
+    // The positions, integrated from 0 and from 5 km, round differently (the
+    // same step added to a larger number keeps fewer of its bits): apart by
+    // the offset to 1e-9 m.
+    EXPECT_LT((f1.pos_n - f0.pos_n - Vec3(5000.0, -3000.0, 0.0)).norm(), 1e-9);
 }
 
 // ---- T2: free flight from trim -----------------------------------------------------
@@ -850,6 +907,12 @@ TEST(Trim, RejectsInvalidInputsAndLeavesTheModel) {
     EXPECT_THROW((void)m.trim(bad), InitError);
     bad = level(60);
     bad.isa_delta_T = -300.0;
+    EXPECT_THROW((void)m.trim(bad), InitError);
+    bad = level(60);
+    bad.east = std::numeric_limits<double>::infinity();  // D-065
+    EXPECT_THROW((void)m.trim(bad), InitError);
+    bad = level(60);
+    bad.north = std::numeric_limits<double>::quiet_NaN();
     EXPECT_THROW((void)m.trim(bad), InitError);
     TrimResult foreign;
     foreign.component_states.assign(3, 0.0);

@@ -22,6 +22,12 @@ struct TrimCondition {
     double altitude = 0.0;           // [m] MSL height of the CG, held during the trim
     double isa_delta_T = 0.0;        // [K] as Environment::isa_delta_T (D-015)
     Vec3 wind_n = Vec3::Zero();      // [m/s] constant wind, NED
+    // [m] Where the trimmed aircraft is installed, NED north and east of the
+    // geodetic origin (D-065). The flat-earth dynamics don't depend on them
+    // over a level ground: the same condition trims to the same controls and
+    // attitude anywhere; only the position and the geodetic outputs differ.
+    double north = 0.0;
+    double east = 0.0;
     // The flight control system's switches during the trim; copied into
     // TrimResult::controls (D-045).
     AfcsSwitches afcs;

@@ -27,8 +27,10 @@ report, CR-166309, and the flight-test and simulation reports listed in
 
 Milestones M0–M8d and M9's ground effect, rotor speed and engines, and wake
 curvature are done. The FPS stays on through a start on the gear and a landing
-by an assumed ground hold that awaits a public source (D-064). Next in M9: blade lag, Peters–He inflow, dynamic stall and
-turbulence (issue #43). M8e (timing on the target hardware, the host adapter,
+by an assumed ground hold that awaits a public source (D-064). A trim can
+install the aircraft away from the origin, for a host's repositioning (D-065).
+Next in M9: blade lag, Peters–He inflow, dynamic stall and turbulence
+(issue #43). M8e (timing on the target hardware, the host adapter,
 the piloted evaluation) waits for the host system. The roadmap is in the
 GitHub issues, by milestone.
 
