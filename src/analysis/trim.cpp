@@ -93,6 +93,9 @@ void check(const TrimCondition& c) {
     if (!std::isfinite(c.heading) || !std::isfinite(c.altitude) || !c.wind_n.allFinite()) {
         throw InitError("trim: heading, altitude and wind must be finite");
     }
+    if (!std::isfinite(c.north) || !std::isfinite(c.east)) {
+        throw InitError("trim: the position (north, east) must be finite");  // D-065
+    }
     // D-050: NaN is no ground. With a ground the rotor's ground effect
     // depends on the height, which the held body keeps constant, so only
     // flight at constant height is a steady state near it.
@@ -638,7 +641,7 @@ bool trim_body_state(const TrimCondition& c, double pitch, double roll, double o
     body = BodyState{};
     body.q_nb = quaternion(EulerAngles{roll, pitch, c.heading});
     const Mat3 C_bn = body.q_nb.toRotationMatrix().transpose();
-    body.pos_n = Vec3(0.0, 0.0, -(c.altitude - origin_altitude));
+    body.pos_n = Vec3(c.north, c.east, -(c.altitude - origin_altitude));  // D-065
     const double cg = std::cos(c.flight_path_angle);
     const double sg = std::sin(c.flight_path_angle);
     const auto air_n = [&](double chi) {  // unit air velocity on track χ, NED
