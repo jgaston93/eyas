@@ -469,3 +469,50 @@ TEST(Model, SimulationSectionDefaults) {
 
 }  // namespace
 }  // namespace eyas
+
+namespace eyas {
+namespace {
+
+// D-066: Model::engines() lists the aircraft's engines in config order, each
+// saying which of its controls it honours, and says so truly: closing the
+// fuel shutoff of an engine that reports none changes nothing, bit for bit,
+// and of one that reports one, runs it down.
+std::vector<double> state_after_fuel(const std::string& path, std::size_t engine, bool fuel_on) {
+    Model m = Model::from_file(path);
+    Controls u;
+    u.collective = 0.5;
+    u.engines[engine].fuel_on = fuel_on;
+    const Environment env;
+    for (int f = 0; f < 30; ++f) {
+        (void)m.advance(u, env, 16'666'667);
+    }
+    const auto x = m.state();
+    return {x.begin(), x.end()};
+}
+
+TEST(Model, EnginesSayWhatTheyHonour) {
+    const std::string genhel = std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a.yaml";
+    const std::string ballin = std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a.yaml";
+    {
+        const Model m = Model::from_file(genhel);
+        ASSERT_EQ(m.engines().size(), 2U);  // GenHel's T700, two engines
+        for (const EngineInfo& e : m.engines()) {
+            EXPECT_EQ(e, (EngineInfo{false, false}));
+        }
+    }
+    {
+        const Model m = Model::from_file(ballin);
+        ASSERT_EQ(m.engines().size(), 2U);  // Ballin's T700
+        for (const EngineInfo& e : m.engines()) {
+            EXPECT_EQ(e, (EngineInfo{true, true}));
+        }
+    }
+    EXPECT_TRUE(Model::from_string(test_yaml(), "test_model").engines().empty());
+    // The fuel shutoff as reported: ignored by GenHel's, bit for bit; it
+    // changes Ballin's engine 1, the engine reported.
+    EXPECT_EQ(state_after_fuel(genhel, 1, false), state_after_fuel(genhel, 1, true));
+    EXPECT_NE(state_after_fuel(ballin, 1, false), state_after_fuel(ballin, 1, true));
+}
+
+}  // namespace
+}  // namespace eyas

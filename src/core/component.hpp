@@ -126,6 +126,12 @@ public:
     // configured component. The default reports nothing.
     virtual ReadoutRole readout_role() const noexcept { return ReadoutRole::none; }
 
+    // The engines this component is (D-055, D-066): how many Controls::engines
+    // entries it takes, in config order after the components before it, and
+    // which of their controls each honours. The default is none.
+    virtual int engine_count() const noexcept { return 0; }
+    virtual EngineInfo engine_info() const noexcept { return {}; }
+
     // The aircraft's shafts (D-052), in config order, at init after bind():
     // a component configured on a shaft finds its index here and checks its
     // speed against the shaft's (throw InitError on a mismatch or a missing

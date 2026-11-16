@@ -3,6 +3,7 @@
 // API is usable on its own.
 #include <cmath>
 #include <string>
+#include <span>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -73,4 +74,14 @@ TEST(PublicApi, InitErrorIsCatchable) {
     }
 }
 
+}  // namespace
+
+namespace {
+// D-066: engines() through the public headers alone; none in this aircraft.
+TEST(PublicApi, EnginesAreListed) {
+    const eyas::Model m = eyas::Model::from_string(kYaml, "api.yaml");
+    const std::span<const eyas::EngineInfo> engines = m.engines();
+    EXPECT_TRUE(engines.empty());
+    EXPECT_EQ(eyas::EngineInfo{}, (eyas::EngineInfo{false, false}));
+}
 }  // namespace

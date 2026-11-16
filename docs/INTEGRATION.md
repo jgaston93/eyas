@@ -66,6 +66,7 @@ target_link_libraries(host_sim PRIVATE eyas::eyas)
 |---|---|---|
 | `Model::from_file(path)`, `Model::from_file(path, origin)` | init | Builds the aircraft from a YAML config. Throws `eyas::InitError` naming the file and key on any error. The second form takes the host's `GeodeticOrigin`, which replaces the config's (section 9). `from_string` takes YAML text. |
 | `placeholders()` | init | Every value in the aircraft without a published source yet, by config key path. Eyas does no I/O, so the host decides whether to log, show or refuse them. |
+| `engines()` | init | The aircraft's engines in config order (engine k takes `Controls::engines[k]`), each an `EngineInfo` saying whether it honours its `power_lever` and its `fuel_on` shutoff, so a host offers only controls that do something (D-066). |
 | `trim(condition)`, `trim(condition, start)` | init | Solves for the controls and attitude of steady straight flight. On convergence the model is reset to t = 0 at the trimmed state, so the next `advance()` flies on from trim; otherwise it is unchanged. Check `converged`. Allocates: never call it in the real-time loop. Pass a previous result as `start` for a nearby condition: faster and more robust. The trimmed aircraft is installed at `TrimCondition::north`, `east` [m from the origin, NED; 0 by default] and `altitude`: a host repositions an aircraft in flight by trimming there (D-065). |
 | `advance(controls, env, dt_ns)` | real time | Runs one host frame of physics and returns an `AdvanceStatus`. |
 | `outputs()` | real time | The `AircraftState` at the end of the last frame: a reference into the model; copy what you need. |
@@ -194,7 +195,7 @@ before the first frame.
 | `brake_left`, `brake_right` | 0 to 1 | 0 released, 1 full; clamped; NaN reads as released |
 | `afcs` | switches | The flight control system's switches, below |
 | `engines[k].power_lever` | 0 to 1 | 0 the idle stop, 1 fly; clamped; NaN reads as fly. Ignored by GenHel's engine |
-| `engines[k].fuel_on` | bool | false closes the fuel shutoff: the engine runs down and flames out; true again relights it at once (no starter). Ignored by GenHel's engine |
+| `engines[k].fuel_on` | bool | false closes the fuel shutoff: the engine runs down and flames out; true again relights it at once (no starter). Ignored by GenHel's engine (`Model::engines()` says which engines honour it) |
 | `rotor_speed_reference` | ≈ 1 | The engine-speed trim, a fraction of the governed rotor speed; a value that isn't positive and finite reads as 1. Both engine models honour it |
 
 Engines take `engines[]` entries in config order (the UH-60A uses 0 and 1; at

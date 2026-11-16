@@ -107,6 +107,12 @@ public:
     // host decides whether to log, display or refuse a model with gaps.
     const std::vector<std::string>& placeholders() const noexcept;
 
+    // The aircraft's engines, in config order: engine k takes
+    // Controls::engines[k] (D-055). Each says which of those controls it
+    // honours (D-066), e.g. for a host offering an engine's fuel shutoff only
+    // where it does something. Empty for an aircraft without engines.
+    std::span<const EngineInfo> engines() const noexcept;
+
     // Engineering access to the full state (body states first; spec §5).
     BodyState body_state() const noexcept;
     std::span<const double> state() const noexcept;
