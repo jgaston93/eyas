@@ -218,6 +218,9 @@ public:
     void bind(const CouplingRegistry& registry) override;
     void bind_shafts(std::span<const ShaftInfo> shafts) override;
     ReadoutRole readout_role() const noexcept override { return ReadoutRole::engines; }
+    // GenHel's engine has neither power levers nor a fuel shutoff (D-053 item 7, D-066).
+    int engine_count() const noexcept override { return config_.engines; }
+    EngineInfo engine_info() const noexcept override { return {}; }
 
     // Each engine's readouts at x and its signals there (D-060): GenHel runs
     // its N_E engines as one, so each engine's are the same. GenHel models no

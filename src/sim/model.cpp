@@ -29,6 +29,7 @@ struct Model::Impl {
     FlatEarthMap map;  // declared before executive, which is built from its origin
     Executive executive;
     std::vector<std::string> placeholders;  // data gaps, from Config (D-025)
+    std::vector<EngineInfo> engines;        // in config order (D-066)
 
     // The inputs the outputs are evaluated with: those of the last advance()
     // that ran, or the trimmed ones (D-043).
@@ -55,8 +56,15 @@ std::unique_ptr<Model::Impl> build(const Config& config, const GeodeticOrigin* o
     Executive executive = build_executive(config, origin_altitude);
     // Read after the build, so that placeholder data files noted by the
     // component readers are included.
+    // The engines in config order: each component's after the ones before
+    // it, as read_components numbers them (D-055).
+    std::vector<EngineInfo> engines;
+    for (std::size_t i = 0; i < executive.num_components(); ++i) {
+        const DynamicComponent& c = executive.component(i);
+        engines.insert(engines.end(), static_cast<std::size_t>(c.engine_count()), c.engine_info());
+    }
     return std::make_unique<Model::Impl>(
-        Model::Impl{map, std::move(executive), config.placeholders(), {}, {}});
+        Model::Impl{map, std::move(executive), config.placeholders(), std::move(engines), {}, {}});
 }
 
 }  // namespace
@@ -83,6 +91,10 @@ Model Model::from_string(std::string_view yaml, std::string_view origin) {
 
 const std::vector<std::string>& Model::placeholders() const noexcept {
     return impl_->placeholders;
+}
+
+std::span<const EngineInfo> Model::engines() const noexcept {
+    return impl_->engines;
 }
 
 AdvanceStatus Model::advance(const Controls& controls, const Environment& env,

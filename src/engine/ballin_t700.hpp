@@ -347,6 +347,9 @@ public:
     void bind(const CouplingRegistry& registry) override;
     void bind_shafts(std::span<const ShaftInfo> shafts) override;
     ReadoutRole readout_role() const noexcept override { return ReadoutRole::engines; }
+    // Each engine's power lever (D-055) and fuel shutoff (D-056) (D-066).
+    int engine_count() const noexcept override { return config_.engines; }
+    EngineInfo engine_info() const noexcept override { return {true, true}; }
 
     // One engine's readouts (D-060) at its states `x` (kEngineStates) and
     // its signals there.

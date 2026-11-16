@@ -61,6 +61,15 @@ struct EngineControls {
     friend bool operator==(const EngineControls&, const EngineControls&) = default;
 };
 
+// Which of its EngineControls one of the aircraft's engines honours (D-066):
+// what a host may offer its operator. Model::engines() lists them.
+struct EngineInfo {
+    bool power_lever = false;   // EngineControls::power_lever moves it
+    bool fuel_shutoff = false;  // EngineControls::fuel_on shuts it down
+
+    friend bool operator==(const EngineInfo&, const EngineInfo&) = default;
+};
+
 // Normalized pilot inputs (sign conventions per D-024).
 struct Controls {
     double collective = 0.0;  // [0, 1]  0 = full down, 1 = full up

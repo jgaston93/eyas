@@ -469,3 +469,82 @@ TEST(Model, SimulationSectionDefaults) {
 
 }  // namespace
 }  // namespace eyas
+
+namespace eyas {
+namespace {
+
+// D-066: Model::engines() lists the aircraft's engines in config order, each
+// saying which of its controls it honours, and says so truly, engine by
+// engine: engine k's control moves engine k (and not another), and an engine
+// that reports a control ignores none of it, one that doesn't ignores all of it.
+enum class Cut { none, fuel, lever };
+
+// Every state after 30 frames (0.5 s), and each engine's gas generator speed.
+struct After {
+    std::vector<double> x;
+    std::vector<double> ng;
+};
+
+After after(const std::string& path, std::size_t engine, Cut cut) {
+    Model m = Model::from_file(path);
+    Controls u;
+    u.collective = 0.5;
+    if (cut == Cut::fuel) {
+        u.engines[engine].fuel_on = false;
+    } else if (cut == Cut::lever) {
+        u.engines[engine].power_lever = 0.0;  // the idle stop
+    }
+    const Environment env;
+    for (int f = 0; f < 30; ++f) {
+        (void)m.advance(u, env, 16'666'667);
+    }
+    After a;
+    a.x.assign(m.state().begin(), m.state().end());
+    for (std::size_t k = 0; k < m.engines().size(); ++k) {
+        a.ng.push_back(m.outputs().engines[k].gas_generator_speed_percent);
+    }
+    return a;
+}
+
+TEST(Model, EnginesSayWhatTheyHonour) {
+    const std::string genhel = std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/uh60a.yaml";
+    const std::string ballin =
+        std::string(EYAS_VEHICLE_DATA_DIR) + "/uh60a/engine_ballin/uh60a.yaml";
+    {
+        const Model m = Model::from_file(genhel);
+        ASSERT_EQ(m.engines().size(), 2U);  // GenHel's T700, two engines
+        for (const EngineInfo& e : m.engines()) {
+            EXPECT_EQ(e, (EngineInfo{false, false}));
+        }
+    }
+    {
+        const Model m = Model::from_file(ballin);
+        ASSERT_EQ(m.engines().size(), 2U);  // Ballin's T700
+        for (const EngineInfo& e : m.engines()) {
+            EXPECT_EQ(e, (EngineInfo{true, true}));
+        }
+    }
+    EXPECT_TRUE(Model::from_string(test_yaml(), "test_model").engines().empty());
+
+    // GenHel's ignores both controls of each engine, bit for bit.
+    const After g = after(genhel, 0, Cut::none);
+    for (std::size_t k = 0; k < 2; ++k) {
+        EXPECT_EQ(after(genhel, k, Cut::fuel).x, g.x) << "engine " << k;
+        EXPECT_EQ(after(genhel, k, Cut::lever).x, g.x) << "engine " << k;
+    }
+    // Ballin's: engine k's shutoff closed, or its lever at idle, runs engine k
+    // down in half a second (by 7.5 and 5 points), and leaves the other
+    // within 0.01 point (it shares the rotor's load, 1e-4 here).
+    const After b = after(ballin, 0, Cut::none);
+    for (std::size_t k = 0; k < 2; ++k) {
+        const std::size_t other = 1 - k;
+        for (const Cut cut : {Cut::fuel, Cut::lever}) {
+            const After a = after(ballin, k, cut);
+            EXPECT_LT(a.ng[k], b.ng[k] - 2.0) << "engine " << k;
+            EXPECT_NEAR(a.ng[other], b.ng[other], 0.01) << "engine " << k;
+        }
+    }
+}
+
+}  // namespace
+}  // namespace eyas
