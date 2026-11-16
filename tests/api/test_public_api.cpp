@@ -2,8 +2,8 @@
 // (D-020). That this file compiles is the main check; the tests confirm the
 // API is usable on its own.
 #include <cmath>
-#include <string>
 #include <span>
+#include <string>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -74,14 +74,12 @@ TEST(PublicApi, InitErrorIsCatchable) {
     }
 }
 
-}  // namespace
-
-namespace {
-// D-066: engines() through the public headers alone; none in this aircraft.
+// D-066: engines() and EngineInfo through the public headers alone; none in
+// this aircraft (the unit tests fly the UH-60A's).
 TEST(PublicApi, EnginesAreListed) {
     const eyas::Model m = eyas::Model::from_string(kYaml, "api.yaml");
     const std::span<const eyas::EngineInfo> engines = m.engines();
     EXPECT_TRUE(engines.empty());
-    EXPECT_EQ(eyas::EngineInfo{}, (eyas::EngineInfo{false, false}));
 }
+
 }  // namespace

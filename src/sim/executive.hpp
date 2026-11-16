@@ -139,7 +139,8 @@ public:
 
     std::size_t num_states() const noexcept { return x_.size(); }
     std::size_t num_components() const noexcept { return components_.size(); }
-    // Component i (config order), its first state index and its state count.
+    // Component i (config order, never the evaluation order: Model::engines()
+    // relies on it, D-066), its first state index and its state count.
     const DynamicComponent& component(std::size_t i) const noexcept { return *components_[i]; }
     std::size_t component_offset(std::size_t i) const noexcept { return offsets_[i]; }
     std::size_t component_size(std::size_t i) const noexcept { return sizes_[i]; }
