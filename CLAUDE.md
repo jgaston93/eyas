@@ -112,7 +112,7 @@ clang-tidy -p build/debug src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.
   - Eyas is single-threaded and synchronous, with no threads, IPC or transport inside it. Host adapters live in the host codebase.
 - **API:** `init(config)`, `trim(condition)`, `advance(...)`, `outputs() → AircraftState`, `reset`, `snapshot`, `restore`. `AircraftState` grows in tiers, and existing fields never change meaning, units or frame.
 - **Data-driven:** aircraft are defined by YAML and CSV loaded at `init()`. Imperial data is converted to SI at load time.
-- Architectural problems are tracked in `docs/SPEC_REVIEW.md`. The early ones (the periodic rotor's linearization, the data path between components, stateful gear and stabilator, the timing budget) are resolved (D-035, D-003, D-004, D-005); #33, an unconverged iteration the host can't see, is open.
+- Architectural problems are tracked in `docs/SPEC_REVIEW.md`. The early ones (the periodic rotor's linearization, the data path between components, stateful gear and stabilator, the timing budget) are resolved (D-035, D-003, D-004, D-005); #33 (an unconverged iteration the host can't see) and #34 (a crash diverging to finite garbage before it's flagged) are open.
 
 ## Real-time rules (§7), applying to everything reachable from `advance()`
 
@@ -120,7 +120,7 @@ clang-tidy -p build/debug src/util/*.cpp src/sim/*.cpp src/core/*.cpp src/env/*.
 - No exceptions and no I/O.
 - Bounded iterations, each with a convergence flag.
 - Bit-identical determinism.
-- Stay within the timing budget: 8.3 ms per `advance()` host frame (D-005; INTEGRATION.md §6).
+- Stay within the timing budget: the worst `advance()` of a host frame within 50 % of the frame, 8.3 ms at 60 Hz (D-005; INTEGRATION.md §6).
 - Table lookups use hunt search with a cached index.
 - Use `double` everywhere, fixed-size Eigen types and `std::span` in hot paths, and no raw `new`/`delete`.
 
