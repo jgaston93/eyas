@@ -90,7 +90,13 @@ in its own window (GLFW and OpenGL 2.1; built when both are found, otherwise
   flight pauses (INPUT LOST) when no sample arrives for 250 ms
   (`--input-timeout`) or the device disconnects, and resumes when input
   returns.
-- The bare UH-60A has no AFCS yet (M8c), so it is unstable and hard to hover.
+- **Runs and views:** `--duration` stops after that much simulated time
+  (default: until the window closes); `--no-pace` runs as fast as it can,
+  for tests; `--view chase|cg|observer` starts in that view; `--screenshot`
+  saves the last frame drawn (a binary PPM); `--no-help` starts with the
+  help hidden.
+- With its AFCS off (`--afcs none`) the bare UH-60A is unstable and hard to
+  hover; `--afcs` sets the switches at every start.
 
 ### FlightGear as the out-the-window view
 

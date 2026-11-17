@@ -177,8 +177,9 @@ outputs) and checks the worst frame against the budget of 8.3 ms (D-005). On the
 | | vortex-ring descent | 44 | 741 / 1044 / 1371 |
 
 Run `eyas_bench --config <yaml>` on the target hardware before committing to a
-frame rate; `--load N` adds N busy threads to mimic the host's load, and
-`--rate` sets the frame rate.
+frame rate; `--load N` adds N busy threads to mimic the host's load,
+`--rate` sets the frame rate, `--frames N` the frames per case (3600), and
+`--csv FILE` writes every timing sample (`case,kind,index,us`).
 
 ## 7. Inputs: `eyas::Controls`
 
