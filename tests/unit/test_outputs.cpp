@@ -3,6 +3,7 @@
 // textbook relations, and against the physics of the trimmed condition.
 
 #include <cmath>
+#include <cstring>
 #include <numbers>
 #include <vector>
 
@@ -387,6 +388,23 @@ TEST(Outputs, SnapshotBytesRoundTripBitForBit) {
     EXPECT_EQ(a_bytes, b_bytes);  // the whole state, controls and environment
 }
 
+// No ground (NaN, the default) round-trips bit for bit too.
+TEST(Outputs, SnapshotBytesKeepANanGround) {
+    Model m = Model::from_file(test::uh60a_config_path());
+    Snapshot snap = m.make_snapshot();
+    ASSERT_TRUE(m.snapshot(snap));
+    std::vector<std::byte> bytes(snap.byte_size());
+    ASSERT_TRUE(snap.to_bytes(bytes));
+    Snapshot into = m.make_snapshot();
+    ASSERT_TRUE(into.from_bytes(bytes));
+    std::vector<std::byte> round(into.byte_size());
+    ASSERT_TRUE(into.to_bytes(round));
+    EXPECT_EQ(round, bytes);
+    double ground = 0.0;  // the last double: the environment's ground height
+    std::memcpy(&ground, bytes.data() + bytes.size() - sizeof ground, sizeof ground);
+    EXPECT_TRUE(std::isnan(ground));
+}
+
 TEST(Outputs, BadSnapshotBytesChangeNothing) {
     Model m = Model::from_file(test::uh60a_config_path());
     Snapshot snap = m.make_snapshot();
@@ -416,6 +434,17 @@ TEST(Outputs, BadSnapshotBytesChangeNothing) {
     const std::size_t n = (snap.byte_size() - 16 - 16 - (48 + 6 + (kMaxEngines * 9) + 8) - 40) / 8;
     flag[16 + (n * 8) + 16 + 48] = std::byte{2};
     refused(flag, "a switch neither 0 nor 1");
+    // A fuel switch of 2: the first engine's, after the six AFCS switches and
+    // its lever.
+    std::vector<std::byte> fuel = good;
+    fuel[16 + (n * 8) + 16 + 48 + 6 + 8] = std::byte{2};
+    refused(fuel, "a fuel switch neither 0 nor 1");
+    // The right total length but another state length in the header: the
+    // state-length check itself (D-067's review).
+    std::vector<std::byte> length = good;
+    std::uint64_t claimed = n - 1;
+    std::memcpy(length.data() + 8, &claimed, sizeof claimed);
+    refused(length, "the state's length");
     // Another aircraft's bytes: a buffer of another length.
     Model other = Model::from_string(test::m2_yaml(), "m2");
     Snapshot o = other.make_snapshot();

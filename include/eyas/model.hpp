@@ -44,8 +44,10 @@ public:
     // False, writing nothing, if `out` isn't byte_size() long.
     bool to_bytes(std::span<std::byte> out) const noexcept;
     // False, changing nothing, if `in` isn't byte_size() long, its tag or
-    // version isn't this build's, or its state's length isn't this buffer's
-    // (another aircraft). It doesn't judge the state: restore() does.
+    // version isn't this build's, or its state's length isn't this buffer's.
+    // The bytes don't name their aircraft: two configs with states of the same
+    // length take each other's, so the host restores only into the config that
+    // made them (D-067). It doesn't judge the state: restore() does.
     bool from_bytes(std::span<const std::byte> in) noexcept;
 
 private:

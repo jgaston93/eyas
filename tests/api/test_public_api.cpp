@@ -84,8 +84,12 @@ TEST(PublicApi, SnapshotBytes) {
     eyas::Snapshot s = m.make_snapshot();
     std::vector<std::byte> bytes(s.byte_size());
     EXPECT_TRUE(s.to_bytes(bytes));
-    EXPECT_TRUE(s.from_bytes(bytes));
-    EXPECT_TRUE(m.restore(s));
+    eyas::Snapshot t = m.make_snapshot();
+    EXPECT_TRUE(t.from_bytes(bytes));
+    std::vector<std::byte> again(t.byte_size());
+    EXPECT_TRUE(t.to_bytes(again));
+    EXPECT_EQ(again, bytes);
+    EXPECT_TRUE(m.restore(t));
 }
 
 TEST(PublicApi, EnginesAreListed) {
