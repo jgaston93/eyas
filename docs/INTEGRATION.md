@@ -73,6 +73,7 @@ target_link_libraries(host_sim PRIVATE eyas::eyas)
 | `reset(body)` | real time | Restarts at t = 0 from a rigid-body state, every other state at its initial value. Returns false and changes nothing on a non-finite state. For a trimmed restart, call `trim()`. |
 | `make_snapshot()` | init | Allocates a snapshot buffer sized for this model, once. |
 | `snapshot(buf)`, `restore(buf)` | real time | Save and restore the whole state, including the controls and environment the outputs were evaluated with. Reusing the buffer never allocates. For freeze, rewind and instructor-station recall. |
+| `buf.byte_size()`, `buf.to_bytes(out)`, `buf.from_bytes(in)` | real time | A snapshot as bytes and back (D-067), for a host that records a session to replay it: the same bytes for the same snapshot; read into a buffer from `make_snapshot()` of the same aircraft; valid for the same build and platform only. Bad bytes are refused and change nothing. |
 
 `Model` is movable, not copyable. Keep it in a `std::optional` or
 `std::unique_ptr` on the host side, so it can be empty before initialization.
