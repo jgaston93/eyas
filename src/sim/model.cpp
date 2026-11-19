@@ -153,8 +153,8 @@ constexpr std::uint32_t kSnapshotTag = 0x4E535945U;  // "EYSN" read little-endia
 constexpr std::uint32_t kSnapshotVersion = 1U;
 // The controls' and environment's sizes as written: 6 doubles, 6 switches,
 // per engine a double and a switch, a double; 5 doubles.
-constexpr std::size_t kControlsBytes = (6 * 8) + 6 + (kMaxEngines * (8 + 1)) + 8;
-constexpr std::size_t kEnvironmentBytes = 5 * 8;
+constexpr std::size_t kControlsBytes = (std::size_t{6} * 8) + 6 + (kMaxEngines * (8 + 1)) + 8;
+constexpr std::size_t kEnvironmentBytes = std::size_t{5} * 8;
 constexpr std::size_t kHeaderBytes = 4 + 4 + 8;
 
 class ByteWriter {
@@ -273,9 +273,9 @@ bool Snapshot::from_bytes(std::span<const std::byte> in) noexcept {
         }
         c.rotor_speed_reference = probe.get<double>();
         env.isa_delta_T = probe.get<double>();
-        const double wx = probe.get<double>();
-        const double wy = probe.get<double>();
-        const double wz = probe.get<double>();
+        const auto wx = probe.get<double>();
+        const auto wy = probe.get<double>();
+        const auto wz = probe.get<double>();
         env.wind_n = Vec3(wx, wy, wz);
         env.ground_height = probe.get<double>();
         if (!probe.ok()) {
