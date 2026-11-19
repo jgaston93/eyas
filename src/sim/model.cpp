@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <numbers>
@@ -143,6 +144,152 @@ TrimResult Model::trim_from(const TrimCondition& condition, const TrimResult* st
     outputs_.last_advance = AdvanceStatus{};
     update_outputs();
     return r;
+}
+
+namespace {
+
+// D-067: a snapshot's bytes. Native byte order; each field written alone.
+constexpr std::uint32_t kSnapshotTag = 0x4E535945U;  // "EYSN" read little-endian
+constexpr std::uint32_t kSnapshotVersion = 1U;
+// The controls' and environment's sizes as written: 6 doubles, 6 switches,
+// per engine a double and a switch, a double; 5 doubles.
+constexpr std::size_t kControlsBytes = (6 * 8) + 6 + (kMaxEngines * (8 + 1)) + 8;
+constexpr std::size_t kEnvironmentBytes = 5 * 8;
+constexpr std::size_t kHeaderBytes = 4 + 4 + 8;
+
+class ByteWriter {
+public:
+    explicit ByteWriter(std::span<std::byte> out) noexcept : out_(out) {}
+    template <typename T>
+    void put(const T& v) noexcept {
+        std::memcpy(out_.data() + at_, &v, sizeof(T));
+        at_ += sizeof(T);
+    }
+    void flag(bool b) noexcept { put(static_cast<std::uint8_t>(b ? 1 : 0)); }
+
+private:
+    std::span<std::byte> out_;
+    std::size_t at_ = 0;
+};
+
+class ByteReader {
+public:
+    explicit ByteReader(std::span<const std::byte> in) noexcept : in_(in) {}
+    template <typename T>
+    T get() noexcept {
+        T v{};
+        std::memcpy(&v, in_.data() + at_, sizeof(T));
+        at_ += sizeof(T);
+        return v;
+    }
+    // A switch: 0 or 1; anything else marks the bytes bad.
+    bool flag() noexcept {
+        const auto b = get<std::uint8_t>();
+        ok_ = ok_ && b <= 1;
+        return b == 1;
+    }
+    [[nodiscard]] bool ok() const noexcept { return ok_; }
+
+private:
+    std::span<const std::byte> in_;
+    std::size_t at_ = 0;
+    bool ok_ = true;
+};
+
+}  // namespace
+
+std::size_t Snapshot::byte_size() const noexcept {
+    return kHeaderBytes + (x_.size() * sizeof(double)) + (2 * sizeof(std::int64_t)) +
+           kControlsBytes + kEnvironmentBytes;
+}
+
+bool Snapshot::to_bytes(std::span<std::byte> out) const noexcept {
+    if (out.size() != byte_size()) {
+        return false;
+    }
+    ByteWriter w(out);
+    w.put(kSnapshotTag);
+    w.put(kSnapshotVersion);
+    w.put(static_cast<std::uint64_t>(x_.size()));
+    for (const double v : x_) {
+        w.put(v);
+    }
+    w.put(n_steps_);
+    w.put(remainder_ns_);
+    const Controls& c = controls_;
+    for (const double v : {c.collective, c.lat_cyclic, c.lon_cyclic, c.pedal, c.brake_left,
+                           c.brake_right}) {
+        w.put(v);
+    }
+    for (const bool b : {c.afcs.sas_digital, c.afcs.sas_analog, c.afcs.pitch_bias, c.afcs.fps,
+                         c.afcs.fps_turn, c.afcs.trim_release}) {
+        w.flag(b);
+    }
+    for (const EngineControls& e : c.engines) {
+        w.put(e.power_lever);
+        w.flag(e.fuel_on);
+    }
+    w.put(c.rotor_speed_reference);
+    w.put(env_.isa_delta_T);
+    w.put(env_.wind_n.x());
+    w.put(env_.wind_n.y());
+    w.put(env_.wind_n.z());
+    w.put(env_.ground_height);
+    return true;
+}
+
+bool Snapshot::from_bytes(std::span<const std::byte> in) noexcept {
+    if (in.size() != byte_size()) {
+        return false;
+    }
+    ByteReader r(in);
+    if (r.get<std::uint32_t>() != kSnapshotTag || r.get<std::uint32_t>() != kSnapshotVersion ||
+        r.get<std::uint64_t>() != x_.size()) {
+        return false;
+    }
+    // Read whole before anything changes: bad bytes change nothing.
+    Controls c;
+    Environment env;
+    std::int64_t n_steps = 0;
+    std::int64_t remainder_ns = 0;
+    {
+        ByteReader probe = r;
+        for (std::size_t k = 0; k < x_.size(); ++k) {
+            (void)probe.get<double>();
+        }
+        n_steps = probe.get<std::int64_t>();
+        remainder_ns = probe.get<std::int64_t>();
+        for (double* v : {&c.collective, &c.lat_cyclic, &c.lon_cyclic, &c.pedal, &c.brake_left,
+                          &c.brake_right}) {
+            *v = probe.get<double>();
+        }
+        for (bool* b : {&c.afcs.sas_digital, &c.afcs.sas_analog, &c.afcs.pitch_bias,
+                        &c.afcs.fps, &c.afcs.fps_turn, &c.afcs.trim_release}) {
+            *b = probe.flag();
+        }
+        for (EngineControls& e : c.engines) {
+            e.power_lever = probe.get<double>();
+            e.fuel_on = probe.flag();
+        }
+        c.rotor_speed_reference = probe.get<double>();
+        env.isa_delta_T = probe.get<double>();
+        const double wx = probe.get<double>();
+        const double wy = probe.get<double>();
+        const double wz = probe.get<double>();
+        env.wind_n = Vec3(wx, wy, wz);
+        env.ground_height = probe.get<double>();
+        if (!probe.ok()) {
+            return false;
+        }
+    }
+    for (double& v : x_) {
+        v = r.get<double>();
+    }
+    n_steps_ = n_steps;
+    remainder_ns_ = remainder_ns;
+    controls_ = c;
+    env_ = env;
+    return true;
 }
 
 Snapshot Model::make_snapshot() const {

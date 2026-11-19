@@ -14,6 +14,7 @@
 #include "rotor/blade_element_rotor.hpp"
 #include "support/alloc_counter.hpp"
 #include "support/bit_identical.hpp"
+#include "support/m2_fixtures.hpp"
 #include "support/m6d_fixtures.hpp"
 #include "util/units.hpp"
 
@@ -316,6 +317,113 @@ TEST(Outputs, RestoreBringsBackTheOutputs) {
     }
     EXPECT_TRUE(m.outputs().weight_on_wheels);
     EXPECT_TRUE(test::bit_identical(test::physical_outputs(m.outputs()), before));
+}
+
+// D-067: a snapshot to bytes and back: the same bytes each time, and a
+// model of the same aircraft restored from them flies on bit for bit as the
+// original; bad bytes change nothing; neither allocates.
+TEST(Outputs, SnapshotBytesRoundTripBitForBit) {
+    Model a = Model::from_file(test::uh60a_config_path());
+    Controls c;
+    c.collective = 0.3;
+    c.lat_cyclic = 0.05;
+    c.pedal = -0.2;
+    c.brake_left = 1.0;
+    c.afcs.sas_digital = true;
+    c.afcs.fps = true;
+    c.engines[1].fuel_on = false;
+    c.rotor_speed_reference = 1.01;
+    Environment env;
+    env.ground_height = 12.5;
+    env.isa_delta_T = 7.5;
+    env.wind_n = Vec3(3.0, -1.5, 0.25);
+    BodyState s;
+    s.pos_n = Vec3(0.0, 0.0, -12.5 - 2.2);
+    ASSERT_TRUE(a.reset(s));
+    for (int f = 0; f < 90; ++f) {
+        (void)a.advance(c, env, 16'666'667);
+    }
+    Snapshot snap = a.make_snapshot();
+    ASSERT_TRUE(a.snapshot(snap));
+    std::vector<std::byte> bytes(snap.byte_size());
+    std::vector<std::byte> again(snap.byte_size());
+    {
+        const test::AllocationCounter count;
+        ASSERT_TRUE(snap.to_bytes(bytes));
+        ASSERT_TRUE(snap.to_bytes(again));
+        EXPECT_EQ(count.count(), 0U);
+    }
+    EXPECT_EQ(bytes, again);  // the same snapshot, the same bytes
+
+    // Another model of the aircraft, elsewhere, restored from the bytes.
+    Model b = Model::from_file(test::uh60a_config_path());
+    Snapshot into = b.make_snapshot();
+    {
+        const test::AllocationCounter count;
+        ASSERT_TRUE(into.from_bytes(bytes));
+        EXPECT_EQ(count.count(), 0U);
+    }
+    // Read in and written out again, the same bytes: every field both ways.
+    std::vector<std::byte> round(into.byte_size());
+    ASSERT_TRUE(into.to_bytes(round));
+    EXPECT_EQ(round, bytes);
+    ASSERT_TRUE(b.restore(into));
+    EXPECT_TRUE(test::bit_identical(test::physical_outputs(b.outputs()),
+                                    test::physical_outputs(a.outputs())));
+    for (int f = 0; f < 60; ++f) {  // and on from there, the same
+        (void)a.advance(c, env, 16'666'667);
+        (void)b.advance(c, env, 16'666'667);
+    }
+    EXPECT_TRUE(test::bit_identical(test::physical_outputs(b.outputs()),
+                                    test::physical_outputs(a.outputs())));
+    Snapshot back = b.make_snapshot();
+    ASSERT_TRUE(b.snapshot(back));
+    std::vector<std::byte> b_bytes(back.byte_size());
+    Snapshot a_now = a.make_snapshot();
+    ASSERT_TRUE(a.snapshot(a_now));
+    std::vector<std::byte> a_bytes(a_now.byte_size());
+    ASSERT_TRUE(back.to_bytes(b_bytes));
+    ASSERT_TRUE(a_now.to_bytes(a_bytes));
+    EXPECT_EQ(a_bytes, b_bytes);  // the whole state, controls and environment
+}
+
+TEST(Outputs, BadSnapshotBytesChangeNothing) {
+    Model m = Model::from_file(test::uh60a_config_path());
+    Snapshot snap = m.make_snapshot();
+    std::vector<std::byte> good(snap.byte_size());
+    ASSERT_TRUE(snap.to_bytes(good));
+    std::vector<std::byte> before(snap.byte_size());
+    ASSERT_TRUE(snap.to_bytes(before));
+    const auto refused = [&](std::vector<std::byte> bad, const char* why) {
+        EXPECT_FALSE(snap.from_bytes(bad)) << why;
+        std::vector<std::byte> now(snap.byte_size());
+        ASSERT_TRUE(snap.to_bytes(now));
+        EXPECT_EQ(now, before) << why << ": changed";
+    };
+    refused(std::vector<std::byte>(good.begin(), good.end() - 1), "a byte short");
+    std::vector<std::byte> longer = good;
+    longer.push_back(std::byte{0});
+    refused(longer, "a byte long");
+    std::vector<std::byte> tag = good;
+    tag[0] ^= std::byte{1};
+    refused(tag, "the tag");
+    std::vector<std::byte> version = good;
+    version[4] ^= std::byte{2};
+    refused(version, "the version");
+    std::vector<std::byte> flag = good;
+    // The first switch: after the header (16 bytes), the state (n doubles),
+    // the two counters (16) and the controls' six doubles (48).
+    const std::size_t n = (snap.byte_size() - 16 - 16 - (48 + 6 + (kMaxEngines * 9) + 8) - 40) / 8;
+    flag[16 + (n * 8) + 16 + 48] = std::byte{2};
+    refused(flag, "a switch neither 0 nor 1");
+    // Another aircraft's bytes: a buffer of another length.
+    Model other = Model::from_string(test::m2_yaml(), "m2");
+    Snapshot o = other.make_snapshot();
+    std::vector<std::byte> theirs(o.byte_size());
+    ASSERT_TRUE(o.to_bytes(theirs));
+    EXPECT_FALSE(snap.from_bytes(theirs));
+    std::vector<std::byte> small(o.byte_size() - 1);
+    EXPECT_FALSE(o.to_bytes(small));  // to_bytes wants exactly its size
 }
 
 }  // namespace

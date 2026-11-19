@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -31,6 +32,21 @@ namespace eyas {
 class Snapshot {
 public:
     Snapshot() = default;
+
+    // As bytes (D-067), for a host that records a session and restores it
+    // later: to_bytes() writes byte_size() bytes; from_bytes() reads them into
+    // a buffer from make_snapshot() of the same aircraft config. The bytes are
+    // valid only for the same build and platform (native byte order; the
+    // state's layout is the build's), carry a tag, a version and the state's
+    // length, and are the same for the same snapshot, bit for bit (every field
+    // written explicitly: no padding). Both are real-time safe (no allocation).
+    [[nodiscard]] std::size_t byte_size() const noexcept;
+    // False, writing nothing, if `out` isn't byte_size() long.
+    bool to_bytes(std::span<std::byte> out) const noexcept;
+    // False, changing nothing, if `in` isn't byte_size() long, its tag or
+    // version isn't this build's, or its state's length isn't this buffer's
+    // (another aircraft). It doesn't judge the state: restore() does.
+    bool from_bytes(std::span<const std::byte> in) noexcept;
 
 private:
     friend class Model;
