@@ -217,8 +217,8 @@ bool Snapshot::to_bytes(std::span<std::byte> out) const noexcept {
     w.put(n_steps_);
     w.put(remainder_ns_);
     const Controls& c = controls_;
-    for (const double v : {c.collective, c.lat_cyclic, c.lon_cyclic, c.pedal, c.brake_left,
-                           c.brake_right}) {
+    for (const double v :
+         {c.collective, c.lat_cyclic, c.lon_cyclic, c.pedal, c.brake_left, c.brake_right}) {
         w.put(v);
     }
     for (const bool b : {c.afcs.sas_digital, c.afcs.sas_analog, c.afcs.pitch_bias, c.afcs.fps,
@@ -263,8 +263,8 @@ bool Snapshot::from_bytes(std::span<const std::byte> in) noexcept {
                           &c.brake_right}) {
             *v = probe.get<double>();
         }
-        for (bool* b : {&c.afcs.sas_digital, &c.afcs.sas_analog, &c.afcs.pitch_bias,
-                        &c.afcs.fps, &c.afcs.fps_turn, &c.afcs.trim_release}) {
+        for (bool* b : {&c.afcs.sas_digital, &c.afcs.sas_analog, &c.afcs.pitch_bias, &c.afcs.fps,
+                        &c.afcs.fps_turn, &c.afcs.trim_release}) {
             *b = probe.flag();
         }
         for (EngineControls& e : c.engines) {
