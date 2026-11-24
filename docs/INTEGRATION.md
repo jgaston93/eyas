@@ -196,6 +196,7 @@ before the first frame.
 | `pedal` | −1 to 1 | +1 full **right** pedal (many hosts use + left: check yours) |
 | `brake_left`, `brake_right` | 0 to 1 | 0 released, 1 full; clamped; NaN reads as released |
 | `afcs` | switches | The flight control system's switches, below |
+| `trim_on_controls` | bool | The FPS's trim actuators carried on the controls, not added in the mixer (D-068, below); false by default |
 | `engines[k].power_lever` | 0 to 1 | 0 the idle stop, 1 fly; clamped; NaN reads as fly. Ignored by GenHel's engine |
 | `engines[k].fuel_on` | bool | false closes the fuel shutoff: the engine runs down and flames out; true again relights it at once (no starter). Ignored by GenHel's engine (`Model::engines()` says which engines honour it) |
 | `rotor_speed_reference` | ≈ 1 | The engine-speed trim, a fraction of the governed rotor speed; a value that isn't positive and finite reads as 1. Both engine models honour it |
@@ -236,7 +237,14 @@ loader's response (a frame's lag alone moves the attitude by hundredths of a
 degree). Switching the flag in flight moves the mixer by the actuators'
 displacement at once unless the controls move with it: switch with them near
 centre, or hand them back to the mixer (the flag off) only as the controls
-return to where the pilot holds them. Snapshots carry the flag.
+return to where the pilot holds them. Snapshots carry the flag (their bytes'
+version 2: bytes an older Eyas wrote aren't read). After a trim the actuators
+sit at centre, so a host starting from `TrimResult::controls` moves its
+controls' centres there; if they aren't at centre (`fps_trim_*` not 0), it
+adds them. Eyas doesn't clamp the cyclic and pedals: with the flag set the
+control plus its actuator is held by the cockpit's stops, while GenHel's sums
+can command a little past them, so the two differ near a stop. The example
+adapter (`examples/adapter/`) doesn't use the flag.
 
 ## 8. Environment: `eyas::Environment`
 

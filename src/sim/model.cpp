@@ -151,7 +151,7 @@ namespace {
 // D-067: a snapshot's bytes. Native byte order; each field written alone.
 constexpr std::uint32_t kSnapshotTag = 0x4E535945U;  // "EYSN" read little-endian
 constexpr std::uint32_t kSnapshotVersion = 2U;       // 2: Controls::trim_on_controls (D-068)
-// The controls' and environment's sizes as written: 6 doubles, 6 switches,
+// The controls' and environment's sizes as written: 6 doubles, 7 switches,
 // per engine a double and a switch, a double; 5 doubles.
 constexpr std::size_t kControlsBytes = (std::size_t{6} * 8) + 7 + (kMaxEngines * (8 + 1)) + 8;
 constexpr std::size_t kEnvironmentBytes = std::size_t{5} * 8;
