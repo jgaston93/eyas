@@ -150,10 +150,10 @@ namespace {
 
 // D-067: a snapshot's bytes. Native byte order; each field written alone.
 constexpr std::uint32_t kSnapshotTag = 0x4E535945U;  // "EYSN" read little-endian
-constexpr std::uint32_t kSnapshotVersion = 1U;
+constexpr std::uint32_t kSnapshotVersion = 2U;       // 2: Controls::trim_on_controls (D-068)
 // The controls' and environment's sizes as written: 6 doubles, 6 switches,
 // per engine a double and a switch, a double; 5 doubles.
-constexpr std::size_t kControlsBytes = (std::size_t{6} * 8) + 6 + (kMaxEngines * (8 + 1)) + 8;
+constexpr std::size_t kControlsBytes = (std::size_t{6} * 8) + 7 + (kMaxEngines * (8 + 1)) + 8;
 constexpr std::size_t kEnvironmentBytes = std::size_t{5} * 8;
 constexpr std::size_t kHeaderBytes = 4 + 4 + 8;
 
@@ -222,7 +222,7 @@ bool Snapshot::to_bytes(std::span<std::byte> out) const noexcept {
         w.put(v);
     }
     for (const bool b : {c.afcs.sas_digital, c.afcs.sas_analog, c.afcs.pitch_bias, c.afcs.fps,
-                         c.afcs.fps_turn, c.afcs.trim_release}) {
+                         c.afcs.fps_turn, c.afcs.trim_release, c.trim_on_controls}) {
         w.flag(b);
     }
     for (const EngineControls& e : c.engines) {
@@ -264,7 +264,7 @@ bool Snapshot::from_bytes(std::span<const std::byte> in) noexcept {
             *v = probe.get<double>();
         }
         for (bool* b : {&c.afcs.sas_digital, &c.afcs.sas_analog, &c.afcs.pitch_bias, &c.afcs.fps,
-                        &c.afcs.fps_turn, &c.afcs.trim_release}) {
+                        &c.afcs.fps_turn, &c.afcs.trim_release, &c.trim_on_controls}) {
             *b = probe.flag();
         }
         for (EngineControls& e : c.engines) {
@@ -415,6 +415,9 @@ void Model::update_outputs() noexcept {
     o.main_rotor_theta1s = r.main_rotor_theta1s;
     o.main_rotor_theta1c = r.main_rotor_theta1c;
     o.tail_rotor_theta0 = r.tail_rotor_theta0;
+    o.fps_trim_lon_cyclic = r.fps_trim_lon_cyclic;
+    o.fps_trim_lat_cyclic = r.fps_trim_lat_cyclic;
+    o.fps_trim_pedal = r.fps_trim_pedal;
 }
 
 }  // namespace eyas

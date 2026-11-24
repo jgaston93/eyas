@@ -334,6 +334,7 @@ TEST(Outputs, SnapshotBytesRoundTripBitForBit) {
     c.afcs.fps = true;
     c.engines[1].fuel_on = false;
     c.rotor_speed_reference = 1.01;
+    c.trim_on_controls = true;  // D-068
     Environment env;
     env.ground_height = 12.5;
     env.isa_delta_T = 7.5;
@@ -431,13 +432,17 @@ TEST(Outputs, BadSnapshotBytesChangeNothing) {
     std::vector<std::byte> flag = good;
     // The first switch: after the header (16 bytes), the state (n doubles),
     // the two counters (16) and the controls' six doubles (48).
-    const std::size_t n = (snap.byte_size() - 16 - 16 - (48 + 6 + (kMaxEngines * 9) + 8) - 40) / 8;
+    // The switches: the six AFCS ones, then trim_on_controls (D-068).
+    const std::size_t n = (snap.byte_size() - 16 - 16 - (48 + 7 + (kMaxEngines * 9) + 8) - 40) / 8;
     flag[16 + (n * 8) + 16 + 48] = std::byte{2};
     refused(flag, "a switch neither 0 nor 1");
-    // A fuel switch of 2: the first engine's, after the six AFCS switches and
+    std::vector<std::byte> on_controls = good;
+    on_controls[16 + (n * 8) + 16 + 48 + 6] = std::byte{2};
+    refused(on_controls, "trim_on_controls neither 0 nor 1");
+    // A fuel switch of 2: the first engine's, after the seven switches and
     // its lever.
     std::vector<std::byte> fuel = good;
-    fuel[16 + (n * 8) + 16 + 48 + 6 + 8] = std::byte{2};
+    fuel[16 + (n * 8) + 16 + 48 + 7 + 8] = std::byte{2};
     refused(fuel, "a fuel switch neither 0 nor 1");
     // The right total length but another state length in the header: the
     // state-length check itself (D-067's review).

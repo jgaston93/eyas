@@ -123,6 +123,15 @@ struct AircraftState {
     double main_rotor_theta1s = detail::kNan;    // [rad] + nose-down disc tilt needs θ1s < 0
     double main_rotor_theta1c = detail::kNan;    // [rad]
     double tail_rotor_theta0 = detail::kNan;     // [rad]
+    // The FPS's trim actuators (D-068) as the control displacements they
+    // equal, in Controls' units: the change in lon_cyclic, lat_cyclic and
+    // pedal that moves the mixer as far (the actuator's inches over half the
+    // control's travel, in the control's own sense). Reported whether or not
+    // Controls::trim_on_controls is set; a host whose controls carry them
+    // moves its controls' centres here. NaN without an FPS.
+    double fps_trim_lon_cyclic = detail::kNan;  // [-]
+    double fps_trim_lat_cyclic = detail::kNan;  // [-]
+    double fps_trim_pedal = detail::kNan;       // [-]
 
     // ---- Tier 5: diagnostics ------------------------------------------------
     AdvanceStatus last_advance;  // status of the most recent advance()

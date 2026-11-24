@@ -81,6 +81,12 @@ struct Controls {
     double brake_left = 0.0;   // [0, 1]
     double brake_right = 0.0;  // [0, 1]
     AfcsSwitches afcs;         // switch positions, not inputs that trim solves for
+    // The FPS's trim actuators carried on the controls (D-068): true, the
+    // flight control system leaves their inches out of its mixer's sums, the
+    // host's controls carrying them (a cockpit whose controls a control
+    // loader moves to AircraftState::fps_trim_*); false, as GenHel's sums.
+    // Not an input that trim solves for.
+    bool trim_on_controls = false;
     // Engine controls (D-055), not inputs that trim solves for.
     std::array<EngineControls, kMaxEngines> engines{};
     // The engines' power-turbine speed reference (the cockpit's engine-speed

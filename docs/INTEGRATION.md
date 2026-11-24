@@ -222,6 +222,22 @@ source yet (D-064, the placeholder `fps.ground_hold`). Trim with the
 switches the session starts with (`TrimCondition::afcs`), and with its engine
 controls (`TrimCondition::engines`, `rotor_speed_reference`).
 
+**The FPS's trim actuators on a moving cockpit's controls** (D-068). In the
+aircraft the trim actuators move the cyclic and pedals; Eyas adds them inside
+its mixer instead, so a desk's controls stay where the pilot puts them. Every
+frame `AircraftState::fps_trim_lon_cyclic`, `fps_trim_lat_cyclic` and
+`fps_trim_pedal` report where they are, as the change in `Controls`' own
+units that moves the mixer as far (NaN without an FPS). A host with a control
+loader moves its controls' centres there and sets
+`Controls::trim_on_controls`: the mixer then leaves the actuators out, the
+controls carrying them, so a pilot holding a control against the trim
+overrides it, as in the aircraft. The controls then lag the actuators by the
+loader's response (a frame's lag alone moves the attitude by hundredths of a
+degree). Switching the flag in flight moves the mixer by the actuators'
+displacement at once unless the controls move with it: switch with them near
+centre, or hand them back to the mixer (the flag off) only as the controls
+return to where the pilot holds them. Snapshots carry the flag.
+
 ## 8. Environment: `eyas::Environment`
 
 | Field | Units | Meaning |
@@ -250,7 +266,7 @@ end of the frame.
 | 3 · Air data | `true_airspeed`, `equivalent_airspeed`, `calibrated_airspeed`, `indicated_airspeed`, `angle_of_attack`, `sideslip`, `pressure_altitude`, `vertical_speed`, `outside_air_temperature` | Cockpit instruments. An ideal pitot-static system: indicated equals calibrated (no position-error data). |
 | 4 · Rotor | `rotor_speed_percent`, `main_rotor_thrust`, `main_rotor_torque`, `main_rotor_power`, `coning`, `flap_1c`, `flap_1s`, `main_rotor_azimuth`, `tail_rotor_thrust`, `tail_rotor_azimuth`, `weight_on_wheels` | Rotor tachometer, torque, rotor visuals, sound. |
 | 4 · Drive | `tail_rotor_torque`, `tail_rotor_power`, `engines[k]`: `gas_generator_speed_percent` (NG), `power_turbine_speed_percent` (NP), `torque`, `power`, `fuel_flow`, `turbine_gas_temperature`, `out` | Engine instruments. Torque is in N·m; a percent-torque gauge waits for a sourced 100 % reference. |
-| Controls | `stabilator_incidence`, `main_rotor_theta0`, `main_rotor_theta1s`, `main_rotor_theta1c`, `tail_rotor_theta0` | Stabilator position indicator, control-position displays. |
+| Controls | `stabilator_incidence`, `main_rotor_theta0`, `main_rotor_theta1s`, `main_rotor_theta1c`, `tail_rotor_theta0`; `fps_trim_lon_cyclic`, `fps_trim_lat_cyclic`, `fps_trim_pedal` (D-068) | Stabilator position indicator, control-position displays; a control loader's spring centres. |
 | 5 · Diagnostics | `last_advance`, `quat_norm_error` | Health monitoring. |
 
 A field for a part the aircraft doesn't have, or that its model doesn't
