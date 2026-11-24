@@ -441,8 +441,11 @@ void fps_inches(const GenHelFps& f, const GenHelSas& s, const GenHelRigging& r,
     il.xpols = limit(x[Fcs::kFpsYawAct], auth) * s.descale_yaw / r.k_pedal;
 }
 
-// The automatic inches into the mixer at states x.
-InnerLoop inner_loop(const GenHelFcsConfig& c, std::span<const double> x) noexcept {
+// The automatic inches into the mixer at states x; the FPS's trim actuators
+// among them unless the controls carry them (D-068), though their inches are
+// reported either way.
+InnerLoop inner_loop(const GenHelFcsConfig& c, std::span<const double> x,
+                     bool trim_on_controls) noexcept {
     InnerLoop il;
     if (c.sas) {
         il.xb = x[Fcs::kPitchAct];
@@ -454,9 +457,11 @@ InnerLoop inner_loop(const GenHelFcsConfig& c, std::span<const double> x) noexce
         }
         if (c.fps) {
             fps_inches(*c.fps, *c.sas, c.rigging, x, il);
-            il.xb += il.xbols;
-            il.xa += il.xaols;
-            il.xp += il.xpols;
+            if (!trim_on_controls) {
+                il.xb += il.xbols;
+                il.xa += il.xaols;
+                il.xp += il.xpols;
+            }
         }
     }
     return il;
@@ -655,7 +660,7 @@ GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx, std::span<const doub
     o.roll_a = s.roll_a;
     o.yaw_d = s.yaw_d;
     o.yaw_a = s.yaw_a;
-    const InnerLoop il = inner_loop(config_, x);
+    const InnerLoop il = inner_loop(config_, x, ctx.controls.trim_on_controls);
     if (config_.sas) {
         o.xbils = x[kPitchAct];
         o.xails = x[kRollAct];
@@ -676,6 +681,13 @@ GenHelFcsOutputs GenHelFcs::evaluate(const SimContext& ctx, std::span<const doub
         o.xbols = il.xbols;
         o.xaols = il.xaols;
         o.xpols = il.xpols;
+        // Inches → the normalized control (D-068): mix() takes
+        // sign_lon_stick · inches(u) on the longitudinal stick and inches(u)
+        // on the others, half the travel per unit of u.
+        o.trim_lon_cyclic =
+            r.sign_lon_stick * il.xbols / (0.5 * (r.lon_cyclic.hi - r.lon_cyclic.lo));
+        o.trim_lat_cyclic = il.xaols / (0.5 * (r.lat_cyclic.hi - r.lat_cyclic.lo));
+        o.trim_pedal = il.xpols / (0.5 * (r.pedal.hi - r.pedal.lo));
     }
     const Mixer m = mix(r, ctx.controls, il);
     o.theta0_cmd = m.theta0;
@@ -713,6 +725,11 @@ void GenHelFcs::derivatives(const SimContext& ctx, std::span<const double> x,
         out.readouts->main_rotor_theta1s = o.theta1s;
         out.readouts->main_rotor_theta1c = o.theta1c;
         out.readouts->tail_rotor_theta0 = o.theta_tr;
+        if (config_.fps) {
+            out.readouts->fps_trim_lon_cyclic = o.trim_lon_cyclic;
+            out.readouts->fps_trim_lat_cyclic = o.trim_lat_cyclic;
+            out.readouts->fps_trim_pedal = o.trim_pedal;
+        }
     }
     if (out.coupling != nullptr && theta0_.valid()) {
         out.coupling->set(theta0_, o.theta0);

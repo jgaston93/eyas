@@ -92,6 +92,18 @@ TEST(PublicApi, SnapshotBytes) {
     EXPECT_TRUE(m.restore(t));
 }
 
+// D-068: the flag through the public headers; without an FPS the actuators
+// aren't reported.
+TEST(PublicApi, TrimOnControls) {
+    eyas::Model m = eyas::Model::from_string(kYaml, "api.yaml");
+    eyas::Controls c;
+    c.trim_on_controls = true;
+    (void)m.advance(c, eyas::Environment{}, 16'666'667);
+    EXPECT_TRUE(std::isnan(m.outputs().fps_trim_lon_cyclic));
+    EXPECT_TRUE(std::isnan(m.outputs().fps_trim_lat_cyclic));
+    EXPECT_TRUE(std::isnan(m.outputs().fps_trim_pedal));
+}
+
 TEST(PublicApi, EnginesAreListed) {
     const eyas::Model m = eyas::Model::from_string(kYaml, "api.yaml");
     const std::span<const eyas::EngineInfo> engines = m.engines();

@@ -334,6 +334,7 @@ TEST(Outputs, SnapshotBytesRoundTripBitForBit) {
     c.afcs.fps = true;
     c.engines[1].fuel_on = false;
     c.rotor_speed_reference = 1.01;
+    c.trim_on_controls = true;  // D-068
     Environment env;
     env.ground_height = 12.5;
     env.isa_delta_T = 7.5;
@@ -389,6 +390,53 @@ TEST(Outputs, SnapshotBytesRoundTripBitForBit) {
 }
 
 // No ground (NaN, the default) round-trips bit for bit too.
+// D-068: the bytes carry Controls::trim_on_controls. No output reads it
+// right after a restore (the rotor's controls are the servos' states, not the
+// mixer's command, and the next advance() takes the host's controls), so the
+// round trip alone can't show a writer that drops it (the review): the
+// flag's byte is checked where the layout puts it, after the header, the
+// state, the counters, six doubles and six switches; set in flight with the
+// actuators off centre, the restored model's outputs those of the one that
+// made the bytes.
+TEST(Outputs, SnapshotBytesCarryTheTrimOnTheControls) {
+    Model a = Model::from_file(test::uh60a_config_path());
+    TrimCondition tc;
+    tc.airspeed = 80.0 * units::kKnot;
+    tc.altitude = 1000.0;
+    tc.afcs.sas_digital = tc.afcs.sas_analog = tc.afcs.pitch_bias = tc.afcs.fps = true;
+    const TrimResult r = a.trim(tc);
+    ASSERT_TRUE(r.converged);
+    const Environment env;
+    for (const bool flag : {true, false}) {
+        SCOPED_TRACE(flag);
+        Controls c = r.controls;
+        c.trim_on_controls = flag;
+        for (int f = 0; f < 60; ++f) {
+            Controls u = c;
+            u.lat_cyclic += f < 30 ? 0.05 : -0.05;
+            (void)a.advance(u, env, 16'666'667);
+        }
+        ASSERT_GT(std::abs(a.outputs().fps_trim_lat_cyclic), 1e-4);  // off centre
+        Snapshot snap = a.make_snapshot();
+        ASSERT_TRUE(a.snapshot(snap));
+        std::vector<std::byte> bytes(snap.byte_size());
+        ASSERT_TRUE(snap.to_bytes(bytes));
+        const std::size_t n =
+            (snap.byte_size() - 16 - 16 - (48 + 7 + (kMaxEngines * 9) + 8) - 40) / 8;
+        EXPECT_EQ(bytes[16 + (n * 8) + 16 + 48 + 6], flag ? std::byte{1} : std::byte{0});
+
+        Model b = Model::from_file(test::uh60a_config_path());
+        Snapshot into = b.make_snapshot();
+        ASSERT_TRUE(into.from_bytes(bytes));
+        ASSERT_TRUE(b.restore(into));
+        EXPECT_EQ(b.outputs().main_rotor_theta1c, a.outputs().main_rotor_theta1c);
+        EXPECT_EQ(b.outputs().fps_trim_lat_cyclic, a.outputs().fps_trim_lat_cyclic);
+        std::vector<std::byte> again(into.byte_size());
+        ASSERT_TRUE(into.to_bytes(again));
+        EXPECT_EQ(again, bytes);
+    }
+}
+
 TEST(Outputs, SnapshotBytesKeepANanGround) {
     Model m = Model::from_file(test::uh60a_config_path());
     Snapshot snap = m.make_snapshot();
@@ -431,13 +479,17 @@ TEST(Outputs, BadSnapshotBytesChangeNothing) {
     std::vector<std::byte> flag = good;
     // The first switch: after the header (16 bytes), the state (n doubles),
     // the two counters (16) and the controls' six doubles (48).
-    const std::size_t n = (snap.byte_size() - 16 - 16 - (48 + 6 + (kMaxEngines * 9) + 8) - 40) / 8;
+    // The switches: the six AFCS ones, then trim_on_controls (D-068).
+    const std::size_t n = (snap.byte_size() - 16 - 16 - (48 + 7 + (kMaxEngines * 9) + 8) - 40) / 8;
     flag[16 + (n * 8) + 16 + 48] = std::byte{2};
     refused(flag, "a switch neither 0 nor 1");
-    // A fuel switch of 2: the first engine's, after the six AFCS switches and
+    std::vector<std::byte> on_controls = good;
+    on_controls[16 + (n * 8) + 16 + 48 + 6] = std::byte{2};
+    refused(on_controls, "trim_on_controls neither 0 nor 1");
+    // A fuel switch of 2: the first engine's, after the seven switches and
     // its lever.
     std::vector<std::byte> fuel = good;
-    fuel[16 + (n * 8) + 16 + 48 + 6 + 8] = std::byte{2};
+    fuel[16 + (n * 8) + 16 + 48 + 7 + 8] = std::byte{2};
     refused(fuel, "a fuel switch neither 0 nor 1");
     // The right total length but another state length in the header: the
     // state-length check itself (D-067's review).

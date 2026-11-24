@@ -287,6 +287,9 @@ struct GenHelFcsOutputs {
     double potemp = 0.0, rotemp = 0.0, yotemp = 0.0;
     double fps_pitch = 0.0, fps_roll = 0.0, fps_yaw = 0.0;
     double xbols = 0.0, xaols = 0.0, xpols = 0.0;
+    // The same as control displacements in Controls' units (D-068): the
+    // change in lon_cyclic, lat_cyclic and pedal that moves the mixer as far.
+    double trim_lon_cyclic = 0.0, trim_lat_cyclic = 0.0, trim_pedal = 0.0;
 };
 
 namespace detail {

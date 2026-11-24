@@ -62,6 +62,7 @@ AircraftState queried(const Executive& ex, const Controls& c, const Environment&
     o.tail_rotor_torque = o.tail_rotor_power = nan;
     o.stabilator_incidence = nan;
     o.main_rotor_theta0 = o.main_rotor_theta1s = o.main_rotor_theta1c = o.tail_rotor_theta0 = nan;
+    o.fps_trim_lon_cyclic = o.fps_trim_lat_cyclic = o.fps_trim_pedal = nan;
     Vec6 a;
     (void)ex.body_acceleration(c, env, a);
     const std::span<const double> x = ex.state();
@@ -156,6 +157,11 @@ AircraftState queried(const Executive& ex, const Controls& c, const Environment&
         o.main_rotor_theta1s = f.theta1s;
         o.main_rotor_theta1c = f.theta1c;
         o.tail_rotor_theta0 = f.theta_tr;
+        if (static_cast<const GenHelFcs&>(ex.component(i)).config().fps) {  // D-068
+            o.fps_trim_lon_cyclic = f.trim_lon_cyclic;
+            o.fps_trim_lat_cyclic = f.trim_lat_cyclic;
+            o.fps_trim_pedal = f.trim_pedal;
+        }
     }
     return o;
 }
@@ -210,6 +216,9 @@ void expect_readouts(const Model& m, const Controls& c, const Environment& env, 
     expect_same(o.main_rotor_theta1s, want.main_rotor_theta1s, "main_rotor_theta1s");
     expect_same(o.main_rotor_theta1c, want.main_rotor_theta1c, "main_rotor_theta1c");
     expect_same(o.tail_rotor_theta0, want.tail_rotor_theta0, "tail_rotor_theta0");
+    expect_same(o.fps_trim_lon_cyclic, want.fps_trim_lon_cyclic, "fps_trim_lon_cyclic");
+    expect_same(o.fps_trim_lat_cyclic, want.fps_trim_lat_cyclic, "fps_trim_lat_cyclic");
+    expect_same(o.fps_trim_pedal, want.fps_trim_pedal, "fps_trim_pedal");
 }
 
 // A doublet of ±0.05 starting at frame `start`, 15 frames each way.

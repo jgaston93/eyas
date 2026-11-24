@@ -257,6 +257,55 @@ TEST(GenHelFps, TrimActuatorInchesJoinTheMixer) {
     EXPECT_NEAR(f.evaluate(ctx, x).xaols / kInch, -100.0 * 0.16 / 1.6, 1e-12);
 }
 
+// D-068: the trim actuators reported as control displacements, and carried
+// on the controls. Moving the controls by the reported displacements with
+// Controls::trim_on_controls set gives the mixer exactly what GenHel's sums
+// give with the controls at rest; with the flag set and the controls at
+// rest, the mixer is as with the actuators centred. Each axis away from
+// centre and in both senses, so a wrong sign or travel is caught; and past
+// an actuator's stop, at the stop.
+TEST(GenHelFps, TrimActuatorsCarriedOnTheControls) {
+    const Fcs f(uh60a());
+    for (const double sense : {1.0, -1.0}) {
+        SCOPED_TRACE(sense);
+        SimContext ctx;
+        ctx.air = isa_atmosphere(0.0, 0.0);
+        ctx.controls.collective = 0.5;
+        ctx.controls.lon_cyclic = 0.1;
+        ctx.controls.lat_cyclic = -0.05;
+        ctx.controls.pedal = 0.02;
+        std::vector<double> x(Fcs::kNumStates, 0.0);
+        const GenHelFcsOutputs centred = f.evaluate(ctx, x);
+        EXPECT_EQ(centred.trim_lon_cyclic, 0.0);
+        x[Fcs::kFpsPitchAct] = sense * 20.0 * kPct;
+        x[Fcs::kFpsRollAct] = sense * -30.0 * kPct;
+        x[Fcs::kFpsYawAct] = sense * 130.0 * kPct;         // past its stop: at it
+        const GenHelFcsOutputs sums = f.evaluate(ctx, x);  // GenHel's sums
+        EXPECT_NE(sums.trim_lon_cyclic, 0.0);
+        EXPECT_NE(sums.trim_lat_cyclic, 0.0);
+        EXPECT_NE(sums.trim_pedal, 0.0);
+
+        SimContext on = ctx;
+        on.controls.trim_on_controls = true;
+        const GenHelFcsOutputs rest = f.evaluate(on, x);  // the controls at rest
+        EXPECT_NEAR(rest.a1s_cmd, centred.a1s_cmd, 1e-15);
+        EXPECT_NEAR(rest.b1s_cmd, centred.b1s_cmd, 1e-15);
+        EXPECT_NEAR(rest.thettr_cmd, centred.thettr_cmd, 1e-15);
+        EXPECT_EQ(rest.trim_lon_cyclic, sums.trim_lon_cyclic);  // reported either way
+        EXPECT_EQ(rest.trim_lat_cyclic, sums.trim_lat_cyclic);
+        EXPECT_EQ(rest.trim_pedal, sums.trim_pedal);
+
+        on.controls.lon_cyclic += sums.trim_lon_cyclic;
+        on.controls.lat_cyclic += sums.trim_lat_cyclic;
+        on.controls.pedal += sums.trim_pedal;
+        const GenHelFcsOutputs carried = f.evaluate(on, x);  // the controls moved by them
+        EXPECT_NEAR(carried.a1s_cmd, sums.a1s_cmd, 1e-14);
+        EXPECT_NEAR(carried.b1s_cmd, sums.b1s_cmd, 1e-14);
+        EXPECT_NEAR(carried.thettr_cmd, sums.thettr_cmd, 1e-14);
+        EXPECT_NEAR(carried.theta0_cmd, sums.theta0_cmd, 1e-15);
+    }
+}
+
 // A synchronizer that has been tracking a steadily turning heading holds,
 // when the FPS engages, the heading less its rate times kSyncTau: at a
 // standard-rate turn (3°/s) 0.03°, 0.066 % of yaw command (KSPSYO −2.2

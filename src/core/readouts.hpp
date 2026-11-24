@@ -55,10 +55,13 @@ struct Readouts {
     // Airframe
     double stabilator_incidence = kNan;  // [rad]
     // Flight controls
-    double main_rotor_theta0 = kNan;   // [rad]
-    double main_rotor_theta1s = kNan;  // [rad]
-    double main_rotor_theta1c = kNan;  // [rad]
-    double tail_rotor_theta0 = kNan;   // [rad]
+    double main_rotor_theta0 = kNan;    // [rad]
+    double main_rotor_theta1s = kNan;   // [rad]
+    double main_rotor_theta1c = kNan;   // [rad]
+    double tail_rotor_theta0 = kNan;    // [rad]
+    double fps_trim_lon_cyclic = kNan;  // [-] D-068
+    double fps_trim_lat_cyclic = kNan;  // [-]
+    double fps_trim_pedal = kNan;       // [-]
 };
 
 }  // namespace eyas

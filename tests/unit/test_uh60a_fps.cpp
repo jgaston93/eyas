@@ -7,6 +7,7 @@
 // wirings with each other (DATA_GAPS.md, "UH-60A AFCS"). Gates are set from
 // the runs with a margin, each stated beside its numbers.
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <iterator>
@@ -336,6 +337,84 @@ Parked park(bool ground_hold) {
 }
 
 }  // namespace
+
+// The trim actuators carried on the controls (D-068), as a host with a
+// control loader flies them: at 100 kt with the FPS on, a lateral stick kick
+// (0.1 for 1 s) and 20 s hands-off, flown three ways through the public API:
+// (a) GenHel's sums; (b) Controls::trim_on_controls with the controls moved
+// each frame by the actuators the last frame reported (as a loader moves
+// them, a frame late); (c) the flag set and the controls at rest. (b)
+// differs from (a) only by that frame's lag: about 4 times less at a 240 Hz
+// host frame than at 60 Hz (the actuators move linearly in a frame), and at
+// 60 Hz 0.025° at most (gate 0.1°). (c), the actuators in neither the sums
+// nor the controls (a pilot holding the controls against them), departs by
+// about 2.5° (gate: 20 times (b)'s at 60 Hz).
+struct Carried {
+    double ab = 0.0;    // the largest attitude difference, (a) to (b) [rad]
+    double ac = 0.0;    // (a) to (c)
+    double trim = 0.0;  // the actuators' largest excursion [-]
+};
+
+Carried fly_carried(int host_hz) {
+    const std::string t = test::ballin::config_text(test::uh60a_config_path());
+    TrimCondition c;
+    c.airspeed = 100.0 * units::kKnot;
+    c.altitude = 1000.0;
+    c.afcs = m8c3::kFps;
+    std::vector<Model> m;
+    Controls trimmed;
+    for (int k = 0; k < 3; ++k) {
+        m.push_back(Model::from_string(t, "UH-60A"));
+        const TrimResult r = m.back().trim(c);
+        if (!r.converged) {
+            throw std::runtime_error("the 100 kt trim didn't converge");
+        }
+        trimmed = r.controls;
+    }
+    const Environment env;
+    const std::int64_t frame = 1'000'000'000 / host_hz;
+    Carried out;
+    for (int f = 0; f < 21 * host_hz; ++f) {
+        Controls u = trimmed;
+        if (f >= host_hz && f < 2 * host_hz) {
+            u.lat_cyclic += 0.1;
+        }
+        Controls on = u;
+        on.trim_on_controls = true;
+        Controls carried = on;
+        const AircraftState& was = m[1].outputs();
+        carried.lon_cyclic += was.fps_trim_lon_cyclic;
+        carried.lat_cyclic += was.fps_trim_lat_cyclic;
+        carried.pedal += was.fps_trim_pedal;
+        const AdvanceStatus sa = m[0].advance(u, env, frame);
+        const AdvanceStatus sb = m[1].advance(carried, env, frame);
+        const AdvanceStatus sc = m[2].advance(on, env, frame);
+        if (sa.non_finite || sb.non_finite || sc.non_finite) {
+            throw std::runtime_error("non-finite");
+        }
+        const AircraftState& a = m[0].outputs();
+        const AircraftState& b = m[1].outputs();
+        const AircraftState& cc = m[2].outputs();
+        out.ab = std::max({out.ab, std::abs(a.roll - b.roll), std::abs(a.pitch - b.pitch)});
+        out.ac = std::max({out.ac, std::abs(a.roll - cc.roll), std::abs(a.pitch - cc.pitch)});
+        out.trim = std::max({out.trim, std::abs(a.fps_trim_lat_cyclic),
+                             std::abs(a.fps_trim_lon_cyclic), std::abs(a.fps_trim_pedal)});
+    }
+    return out;
+}
+
+TEST(Uh60aFps, TrimActuatorsCarriedOnTheControlsFlyAsGenHelsSums) {
+    const Carried at60 = fly_carried(60);
+    const Carried at240 = fly_carried(240);
+    std::printf(
+        "carried vs sums %.4f deg at 60 Hz, %.4f deg at 240 Hz; at rest vs sums %.3f deg;"
+        " actuators to %.4f\n",
+        at60.ab / kDegree, at240.ab / kDegree, at60.ac / kDegree, at60.trim);
+    EXPECT_GT(at60.trim, 0.01);  // the actuators moved
+    EXPECT_LT(at60.ab, 0.1 * kDegree);
+    EXPECT_LT(at240.ab, at60.ab / 3.0);  // the difference is the frame's lag
+    EXPECT_GT(at60.ac, 20.0 * at60.ab);
+}
 
 // The FPS on the ground (D-064): parked with the FPS on, the aircraft stays
 // put for minutes; without the ground hold the FPS's holds wind up against
